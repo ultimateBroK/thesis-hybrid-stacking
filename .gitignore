@@ -77,7 +77,7 @@ reports/
 .coverage
 htmlcov/
 .tox/
-
+.tracking/
 
 CLAUDE.md
 AGENTS.md

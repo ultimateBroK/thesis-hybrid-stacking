@@ -8,7 +8,6 @@ import numpy as np
 import polars as pl
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression, Ridge, Lasso, ElasticNet
-from sklearn.ensemble import RandomForestClassifier
 
 from thesis.config.loader import Config
 
@@ -135,8 +134,11 @@ def train_stacking(config: Config) -> None:
     joblib.dump(model, model_path)
     logger.info(f"Saved meta-learner: {model_path}")
 
-    # Generate predictions
+    # Generate predictions with confidence threshold
     logger.info("Generating stacking predictions...")
+
+    # Confidence threshold: only predict when max probability >= 0.6
+    confidence_threshold = 0.6
 
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(X_meta)
@@ -149,6 +151,26 @@ def train_stacking(config: Config) -> None:
             idx = int(p) + 1  # Map -1,0,1 to 0,1,2
             idx = max(0, min(2, idx))
             probs[i, idx] = 1.0
+
+    # Apply confidence threshold: low confidence -> Hold (class 0)
+    max_probs = np.max(probs, axis=1)
+    low_confidence_mask = max_probs < confidence_threshold
+
+    # Log confidence statistics
+    n_low_conf = np.sum(low_confidence_mask)
+    logger.info(
+        f"Confidence threshold ({confidence_threshold}): {n_low_conf}/{len(probs)} "
+        f"({100 * n_low_conf / len(probs):.1f}%) predictions set to Hold (low confidence)"
+    )
+
+    # Create final predictions with confidence filtering
+    final_preds = np.argmax(probs, axis=1) - 1  # Convert 0,1,2 to -1,0,1
+    final_preds[low_confidence_mask] = 0  # Set low confidence to Hold (0)
+
+    # Update probabilities for low confidence cases: set Hold=1.0, others=0.0
+    probs_filtered = probs.copy()
+    probs_filtered[low_confidence_mask, :] = 0.0
+    probs_filtered[low_confidence_mask, 1] = 1.0  # Class 0 (Hold) is index 1
 
     # Save predictions
     preds_df = pl.DataFrame(
@@ -383,6 +405,39 @@ def generate_test_predictions(config: Config) -> None:
         ]
     )
 
+    # Generate stacking predictions with confidence threshold
+    logger.info("Generating stacking predictions on test set...")
+    meta_path = Path(config.models["stacking"].model_path)
+    if not meta_path.exists():
+        raise FileNotFoundError(f"Meta-learner not found: {meta_path}")
+
+    meta_learner = joblib.load(meta_path)
+
+    # Align predictions by timestamp
+    aligned = lgbm_preds_df.join(lstm_preds_df, on="timestamp", suffix="_lstm")
+    logger.info(f"Aligned test predictions: {len(aligned)} samples")
+
+    if len(aligned) == 0:
+        raise ValueError(
+            "No matching timestamps found between LightGBM and LSTM test predictions."
+        )
+
+    # Create meta-features (same as in training)
+    X_meta = np.hstack(
+        [
+            aligned[
+                ["pred_proba_class_minus1", "pred_proba_class_0", "pred_proba_class_1"]
+            ].to_numpy(),
+            aligned[
+                [
+                    "pred_proba_class_minus1_lstm",
+                    "pred_proba_class_0_lstm",
+                    "pred_proba_class_1_lstm",
+                ]
+            ].to_numpy(),
+        ]
+    )
+
     # Generate stacking predictions
     if hasattr(meta_learner, "predict_proba"):
         final_probs = meta_learner.predict_proba(X_meta)
@@ -394,13 +449,34 @@ def generate_test_predictions(config: Config) -> None:
             idx = max(0, min(2, idx))
             final_probs[i, idx] = 1.0
 
+    # Apply confidence threshold: 0.6 minimum confidence
+    confidence_threshold = 0.6
+    max_probs = np.max(final_probs, axis=1)
+    low_confidence_mask = max_probs < confidence_threshold
+
+    # Log confidence statistics
+    n_low_conf = np.sum(low_confidence_mask)
+    logger.info(
+        f"Confidence threshold ({confidence_threshold}): {n_low_conf}/{len(final_probs)} "
+        f"({100 * n_low_conf / len(final_probs):.1f}%) predictions set to Hold (low confidence)"
+    )
+
+    # Set low confidence predictions to Hold (class 0)
+    final_preds = np.argmax(final_probs, axis=1)
+    final_preds[low_confidence_mask] = 1  # Index 1 = Hold (class 0)
+
+    # Update probabilities for low confidence cases
+    final_probs_filtered = final_probs.copy()
+    final_probs_filtered[low_confidence_mask, :] = 0.0
+    final_probs_filtered[low_confidence_mask, 1] = 1.0  # Set Hold prob to 1.0
+
     # Save final predictions
     final_preds_df = pl.DataFrame(
         {
             "timestamp": aligned["timestamp"],
-            "pred_proba_class_minus1": final_probs[:, 0],  # Short
-            "pred_proba_class_0": final_probs[:, 1],  # Hold
-            "pred_proba_class_1": final_probs[:, 2],  # Long
+            "pred_proba_class_minus1": final_probs_filtered[:, 0],  # Short
+            "pred_proba_class_0": final_probs_filtered[:, 1],  # Hold
+            "pred_proba_class_1": final_probs_filtered[:, 2],  # Long
         }
     )
 

@@ -44,6 +44,10 @@ def generate_features(config: Config) -> None:
         logger.info("Generating technical indicators...")
         df_pd = _add_technical_indicators(df_pd, config)
     
+    # Generate microstructure features (candlestick patterns, volume delta)
+    logger.info("Generating microstructure features...")
+    df_pd = _add_microstructure_features(df_pd, config)
+    
     # Generate pivot points
     if config.features.use_pivots:
         logger.info("Generating pivot points...")
@@ -135,15 +139,6 @@ def _add_technical_indicators(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     
     # ATR
     df["atr_14"] = talib.ATR(df["high"], df["low"], df["close"], timeperiod=config.features.atr_period)
-    
-    # Additional indicators
-    # Bollinger Bands
-    upper, middle, lower = talib.BBANDS(df["close"], timeperiod=20)
-    df["bb_upper"] = upper
-    df["bb_middle"] = middle
-    df["bb_lower"] = lower
-    df["bb_width"] = (upper - lower) / middle
-    df["bb_position"] = (df["close"] - lower) / (upper - lower)
     
     # Volatility
     df["returns"] = df["close"].pct_change()
@@ -320,6 +315,112 @@ def _add_spread_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     # Spread MA
     df["spread_ma_20"] = df["avg_spread"].rolling(20).mean()
     df["spread_ratio"] = df["avg_spread"] / df["spread_ma_20"]
+    
+    return df
+
+
+def _add_microstructure_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add candlestick patterns, volume delta, and orderflow proxies.
+    
+    Features for directional trading signal prediction:
+        - Candlestick patterns (engulfing, doji, hammer, etc.)
+        - Volume delta (buying/selling pressure)
+        - Consecutive bar analysis
+        - Body-to-wick ratios (market conviction)
+    
+    Args:
+        df: DataFrame.
+        config: Configuration object.
+        
+    Returns:
+        DataFrame with microstructure features.
+    """
+    import pandas as pd
+    
+    if isinstance(df, pl.DataFrame):
+        df = df.to_pandas()
+    
+    # 1. Candlestick Patterns
+    df["body"] = df["close"] - df["open"]
+    df["body_prev"] = df["body"].shift(1)
+    df["is_bullish"] = (df["body"] > 0).astype(int)
+    df["is_bearish"] = (df["body"] < 0).astype(int)
+    
+    # Bullish Engulfing
+    df["bullish_engulfing"] = (
+        (df["is_bullish"] == 1) & 
+        (df["body_prev"] < 0) & 
+        (df["body"].abs() > df["body_prev"].abs())
+    ).astype(int)
+    
+    # Bearish Engulfing
+    df["bearish_engulfing"] = (
+        (df["is_bearish"] == 1) & 
+        (df["body_prev"] > 0) & 
+        (df["body"].abs() > df["body_prev"].abs())
+    ).astype(int)
+    
+    # Doji
+    df["range"] = df["high"] - df["low"]
+    df["doji"] = (df["body"].abs() / (df["range"] + 1e-10) < 0.1).astype(int)
+    
+    # Hammer
+    df["upper_wick"] = df["high"] - df[["close", "open"]].max(axis=1)
+    df["lower_wick"] = df[["close", "open"]].min(axis=1) - df["low"]
+    df["hammer"] = (
+        (df["lower_wick"] > 2 * df["body"].abs()) & 
+        (df["upper_wick"] < df["body"].abs()) &
+        (df["is_bullish"] == 1)
+    ).astype(int)
+    
+    # Shooting Star
+    df["shooting_star"] = (
+        (df["upper_wick"] > 2 * df["body"].abs()) & 
+        (df["lower_wick"] < df["body"].abs()) &
+        (df["is_bearish"] == 1)
+    ).astype(int)
+    
+    # Marubozu (no wicks - strong directional conviction)
+    df["marubozu"] = (
+        (df["upper_wick"] < 0.1 * df["range"]) & 
+        (df["lower_wick"] < 0.1 * df["range"])
+    ).astype(int)
+    
+    # 2. Volume Delta (Orderflow proxy)
+    df["volume_delta"] = np.where(
+        df["close"] > df["open"],
+        df["volume"],   # Buying volume
+        -df["volume"]   # Selling volume
+    )
+    
+    # Volume delta moving averages
+    df["volume_delta_ma_10"] = df["volume_delta"].rolling(10).mean()
+    df["volume_delta_ma_20"] = df["volume_delta"].rolling(20).mean()
+    
+    # 3. Body-to-Wick Ratio (Market conviction)
+    df["body_wick_ratio"] = df["body"].abs() / (df["upper_wick"] + df["lower_wick"] + 1e-10)
+    
+    # 4. Consecutive bars analysis
+    df["consecutive_bull"] = df["is_bullish"].groupby(
+        (df["is_bullish"] != df["is_bullish"].shift()).cumsum()
+    ).cumsum()
+    
+    df["consecutive_bear"] = df["is_bearish"].groupby(
+        (df["is_bearish"] != df["is_bearish"].shift()).cumsum()
+    ).cumsum()
+    
+    # 5. Tick intensity (relative volume)
+    df["tick_intensity"] = df["volume"] / df["volume"].rolling(20).mean()
+    
+    # 6. Close position in range (bullish/bearish pressure)
+    df["close_in_range"] = (df["close"] - df["low"]) / (df["range"] + 1e-10)
+    
+    # 7. Large body detection (strong momentum)
+    body_ma = df["body"].abs().rolling(20).mean()
+    df["large_body"] = (df["body"].abs() > 1.5 * body_ma).astype(int)
+    
+    # Cleanup intermediate columns
+    df = df.drop(columns=["body_prev"])
     
     return df
 

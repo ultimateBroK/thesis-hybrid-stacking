@@ -98,7 +98,7 @@ use_session = true
 use_spread = true
 
 # EMA periods
-ema_periods = [20, 50, 200]
+ema_periods = [34, 89]    # Fibonacci numbers for Gold (was [20, 50, 200])
 
 # RSI
 rsi_period = 14
@@ -129,7 +129,7 @@ spread_multiplier = 0.5  # Multiplier for spread-based features
 
 # Feature selection
 drop_high_corr = true
-correlation_threshold = 0.95
+correlation_threshold = 0.90    # Tighter threshold for new features (was 0.95)
 
 # =============================================================================
 # TRIPLE-BARRIER LABELS
@@ -139,8 +139,8 @@ correlation_threshold = 0.95
 labels_path = "data/processed/labels.parquet"
 
 # Triple-Barrier parameters
-atr_multiplier_tp = 2.0   # Take-profit = Close + 2 * ATR
-atr_multiplier_sl = 1.0   # Stop-loss = Close - 1 * ATR
+atr_multiplier_tp = 1.5   # Take-profit = Close + 1.5 * ATR (SYMMETRIC - was 2.0)
+atr_multiplier_sl = 1.5   # Stop-loss = Close - 1.5 * ATR (SYMMETRIC - was 1.0)
 
 # Alternative: fixed pips (if ATR not available)
 use_fixed_pips = false
@@ -148,7 +148,7 @@ tp_pips = 20
 sl_pips = 10
 
 # Time horizon (bars)
-horizon_bars = 10
+horizon_bars = 20         # Extended from 10 to allow trades to develop
 
 # Classes: +1 (Long), 0 (Hold/No trade), -1 (Short)
 num_classes = 3
@@ -177,7 +177,7 @@ downsampling_ratio = 0.5
 
 # Hyperparameter tuning
 use_optuna = true
-optuna_trials = 30  # Set to 100 for final thesis run
+optuna_trials = 100  # Increased from 30 for better hyperparameter search
 optuna_timeout = 3600  # seconds
 
 # Cross-validation for tuning (now using Walk-Forward CV)
@@ -214,12 +214,12 @@ predictions_path = "data/predictions/lstm_oof.parquet"
 sequences_path = "data/processed/lstm_sequences.npz"
 
 # Sequence parameters
-sequence_length = 60  # 60 bars = 60 hours = 2.5 trading days
+sequence_length = 120  # 120 bars = 5 trading days (increased from 60)
 step_size = 1  # Overlapping sequences with step=1
 
-# Architecture - REDUCED for faster training (thesis deadline optimization)
-hidden_size = 64    # Reduced from 128 to 64 (2x speedup, still functional)
-num_layers = 1      # Reduced from 2 to 1 (2x speedup, less overfitting risk)
+# Architecture - INCREASED for better regime detection
+hidden_size = 128    # Increased from 64 to 128 (2x capacity)
+num_layers = 2       # Increased from 1 to 2 (hierarchical pattern capture)
 dropout = 0.3
 bidirectional = false
 
