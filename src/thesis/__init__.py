@@ -6,4 +6,4 @@ Nguyen Duc Hieu - 2151061192
 """
 
 __version__ = "0.1.0"
-__author__ = "Nguyen Duc Hieu"
+__author__ = "Hieu Nguyen"
