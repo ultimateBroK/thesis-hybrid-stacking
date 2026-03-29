@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.4
         with:
           environments: default
 
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.4
         with:
           environments: default
 
@@ -93,7 +93,7 @@ jobs:
           }
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         if: always() && hashFiles('coverage.xml') != ''
         with:
           files: ./coverage.xml
@@ -110,7 +110,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.4
         with:
           environments: default
 
@@ -165,7 +165,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.4
         with:
           environments: default
 
@@ -193,7 +193,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Pixi
-        uses: prefix-dev/setup-pixi@v0.8.1
+        uses: prefix-dev/setup-pixi@v0.9.4
         with:
           environments: default
 
