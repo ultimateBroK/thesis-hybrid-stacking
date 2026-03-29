@@ -56,41 +56,14 @@ jobs:
         with:
           environments: default
 
-      - name: Create tests directory
-        run: mkdir -p tests
-
-      - name: Create sample test file
-        run: |
-          cat > tests/test_placeholder.py << 'EOF'
-          """Placeholder test - replace with actual tests."""
-          
-          def test_placeholder():
-              """Placeholder test that always passes."""
-              assert True, "Placeholder test passed"
-          
-          def test_import_thesis():
-              """Test that thesis package can be imported."""
-              try:
-                  import sys
-                  from pathlib import Path
-                  sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-                  import thesis
-                  assert hasattr(thesis, '__version__')
-              except ImportError as e:
-                  raise AssertionError(f"Failed to import thesis: {e}")
-          EOF
-
       - name: Run pytest with coverage
         run: |
-          pixi run test --cov=src --cov-report=xml --cov-report=term-missing || {
-            echo "Tests completed with issues or no tests found"
-            # Create empty coverage file if none exists
-            if [ ! -f "coverage.xml" ]; then
-              echo '<?xml version="1.0" encoding="UTF-8"?>
-              <coverage version="7.0" timestamp="0" lines-valid="0" lines-covered="0" line-rate="0" branches-covered="0" branches-valid="0" branch-rate="0" complexity="0">
-              </coverage>' > coverage.xml
-            fi
-          }
+          pixi run test --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=70 -v
+
+      - name: Run critical tests separately
+        run: |
+          pixi run test -v -m critical --tb=short
+        if: always()
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v5
