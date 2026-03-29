@@ -530,21 +530,51 @@ shap.waterfall_plot(model, test_data[date="2025-08-15"])
 
 ## 3. Dependencies Between Stages (DAG)
 
-```
-Stage 1: Data
-    ↓
-Stage 2: Features ← needs OHLCV from Stage 1
-    ↓
-Stage 3: Labels ← needs Features + OHLCV
-    ↓
-Stage 4: Split ← needs Labels
-    ↓
-Stage 5: LightGBM ←┐
-Stage 6: LSTM ←────┼── needs Train/Val from Stage 4
-    ↓              │
-Stage 7: Stack ←───┘ ← needs OOF from both 5 & 6
-    ↓
-Stage 8: Report ← needs Stacking + Test data from Stage 4
+```mermaid
+flowchart TB
+    %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1e3a5f', 'primaryTextColor': '#fff', 'primaryBorderColor': '#4a90e2', 'lineColor': '#a0a0a0', 'secondaryColor': '#2d4a22', 'tertiaryColor': '#5c3d0f'}}}%%
+    S1["🗃️ Stage 1: Data<br/>Ticks → OHLCV"]
+    S2["📊 Stage 2: Features<br/>OHLCV + Indicators"]
+    S3["🏷️ Stage 3: Labels<br/>Triple-Barrier"]
+    S4["✂️ Stage 4: Split<br/>Train/Val/Test"]
+    S5["🌳 Stage 5: LightGBM<br/>Tabular Model"]
+    S6["🧠 Stage 6: LSTM<br/>Sequential Model"]
+    S7["🎯 Stage 7: Stack<br/>Meta-learner"]
+    S8["📈 Stage 8: Report<br/>Results & SHAP"]
+    
+    S1 --> S2 --> S3 --> S4
+    S4 --> S5 & S6
+    S5 --> S7
+    S6 --> S7
+    S7 --> S8
+    
+    note1["Needs OHLCV<br/>from Stage 1"] -.-> S2
+    note2["Needs Features<br/>+ OHLCV"] -.-> S3
+    note3["Needs Labels"] -.-> S4
+    note4["Needs Train/Val<br/>from Stage 4"] -.-> S5
+    note4 -.-> S6
+    note5["Needs OOF from<br/>both 5 & 6"] -.-> S7
+    note6["Needs Stacking +<br/>Test from Stage 4"] -.-> S8
+    
+    classDef stage1 fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef stage2 fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+    classDef stage3 fill:#5c3d0f,stroke:#ff9800,stroke-width:2px,color:#fff
+    classDef stage4 fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#fff
+    classDef stage5 fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#fff
+    classDef stage6 fill:#3e2723,stroke:#795548,stroke-width:2px,color:#fff
+    classDef stage7 fill:#01579b,stroke:#03a9f4,stroke-width:2px,color:#fff
+    classDef stage8 fill:#f57f17,stroke:#ffeb3b,stroke-width:2px,color:#fff
+    classDef noteStyle fill:#37474f,stroke:#78909c,stroke-width:1px,color:#eceff1,stroke-dasharray: 5 5
+    
+    class S1 stage1
+    class S2 stage2
+    class S3 stage3
+    class S4 stage4
+    class S5 stage5
+    class S6 stage6
+    class S7 stage7
+    class S8 stage8
+    class note1,note2,note3,note4,note5,note6 noteStyle
 ```
 
 **Key rule:** You can restart from any stage. Earlier stages cached.

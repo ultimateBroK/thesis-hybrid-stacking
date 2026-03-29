@@ -2,34 +2,92 @@
 
 ## 🏗️ Big Picture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        THESIS PIPELINE                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Stage 1: DATA          Stage 2: FEATURES      Stage 3: LABELS  │
-│  ├─ Read ticks        ├─ EMA (20,50,200)    ├─ Triple-Barrier   │
-│  ├─ Make H1 candles   ├─ RSI, MACD, ATR    │   TP = 2×ATR     │
-│  └─ Save to parquet   ├─ Pivot points       │   SL = 1×ATR      │
-│                       ├─ Session hours      │   10 bars         │
-│                       └─ Lag features       └─ 3 classes       │
-│                                                                  │
-│  Stage 4: SPLIT                                                  │
-│  ├─ Train: 2018-2022 (60%)      ← Training period             │
-│  ├─ Val:   2023 (15%)          ← Validation for stacking        │
-│  └─ Test:  2024-2026 (25%)     ← Final backtest period        │
-│                                                                  │
-│  Stage 5: LIGHTGBM    Stage 6: LSTM         Stage 7: STACKING  │
-│  ├─ Tabular learning  ├─ Sequential data    ├─ Combine both     │
-│  ├─ Optuna tuning     ├─ 60-bar sequences   ├─ Meta-learner     │
-│  └─ Feature importance └─ PyTorch CPU        └─ Calibrated      │
-│                                                                  │
-│  Stage 8: BACKTEST     Stage 9: REPORTING                        │
-│  ├─ CFD simulation     ├─ SHAP explainability                    │
-│  ├─ Real costs         ├─ Performance metrics                     │
-│  └─ Equity curve       └─ Thesis markdown                        │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1e3a5f', 'primaryTextColor': '#fff', 'primaryBorderColor': '#4a90e2', 'lineColor': '#a0a0a0', 'secondaryColor': '#2d4a22', 'tertiaryColor': '#5c3d0f'}}}%%
+flowchart TB
+    subgraph Stage1["🗃️ Stage 1: DATA"]
+        D1["Read ticks"]
+        D2["Make H1 candles"]
+        D3["Save to parquet"]
+    end
+
+    subgraph Stage2["📊 Stage 2: FEATURES"]
+        F1["EMA (20,50,200)"]
+        F2["RSI, MACD, ATR"]
+        F3["Pivot points"]
+        F4["Session hours"]
+        F5["Lag features"]
+    end
+
+    subgraph Stage3["🏷️ Stage 3: LABELS"]
+        L1["Triple-Barrier"]
+        L2["TP = 2×ATR"]
+        L3["SL = 1×ATR"]
+        L4["10 bars horizon"]
+        L5["3 classes"]
+    end
+
+    subgraph Stage4["✂️ Stage 4: SPLIT"]
+        S1["Train: 2018-2022 (60%)"]
+        S2["Val: 2023 (15%)"]
+        S3["Test: 2024-2026 (25%)"]
+    end
+
+    subgraph Stage5["🌳 Stage 5: LIGHTGBM"]
+        GB1["Tabular learning"]
+        GB2["Optuna tuning"]
+        GB3["Feature importance"]
+    end
+
+    subgraph Stage6["🧠 Stage 6: LSTM"]
+        NN1["Sequential data"]
+        NN2["60-bar sequences"]
+        NN3["PyTorch CPU"]
+    end
+
+    subgraph Stage7["🎯 Stage 7: STACKING"]
+        ST1["Combine both"]
+        ST2["Meta-learner"]
+        ST3["Calibrated"]
+    end
+
+    subgraph Stage8["💰 Stage 8: BACKTEST"]
+        BT1["CFD simulation"]
+        BT2["Real costs"]
+        BT3["Equity curve"]
+    end
+
+    subgraph Stage9["📝 Stage 9: REPORTING"]
+        R1["SHAP explainability"]
+        R2["Performance metrics"]
+        R3["Thesis markdown"]
+    end
+
+    Stage1 --> Stage2 --> Stage3 --> Stage4
+    Stage4 --> Stage5 & Stage6
+    Stage5 --> Stage7
+    Stage6 --> Stage7
+    Stage7 --> Stage8 --> Stage9
+
+    classDef stage1 fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef stage2 fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+    classDef stage3 fill:#5c3d0f,stroke:#ff9800,stroke-width:2px,color:#fff
+    classDef stage4 fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#fff
+    classDef stage5 fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#fff
+    classDef stage6 fill:#3e2723,stroke:#795548,stroke-width:2px,color:#fff
+    classDef stage7 fill:#01579b,stroke:#03a9f4,stroke-width:2px,color:#fff
+    classDef stage8 fill:#f57f17,stroke:#ffeb3b,stroke-width:2px,color:#fff
+    classDef stage9 fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+
+    class Stage1,D1,D2,D3 stage1
+    class Stage2,F1,F2,F3,F4,F5 stage2
+    class Stage3,L1,L2,L3,L4,L5 stage3
+    class Stage4,S1,S2,S3 stage4
+    class Stage5,GB1,GB2,GB3 stage5
+    class Stage6,NN1,NN2,NN3 stage6
+    class Stage7,ST1,ST2,ST3 stage7
+    class Stage8,BT1,BT2,BT3 stage8
+    class Stage9,R1,R2,R3 stage9
 ```
 
 ## 📁 Code Structure
@@ -81,20 +139,54 @@ data/raw/XAUUSD/
 ```
 
 **2. Output Chain**:
-```
-ticks → ohlcv.parquet → features.parquet → labels.parquet
-                                          ↓
-                    ┌─────────────────────┼─────────────────────┐
-                    ↓                     ↓                     ↓
-              train.parquet          val.parquet          test.parquet
-                    ↓                     ↓                     ↓
-            lightgbm_oof.parquet   lstm_oof.parquet   final_predictions.parquet
-                    ↓                     ↓                     ↓
-                    └──────────┬──────────┘                     ↓
-                               ↓                                ↓
-                         stacking_meta.pkl                backtest_results.json
-                               ↓                                ↓
-                         final_predictions.parquet      thesis_report.md
+
+```mermaid
+flowchart LR
+    %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1e3a5f', 'primaryTextColor': '#fff', 'primaryBorderColor': '#4a90e2', 'lineColor': '#a0a0a0'}}}%%
+    T["🪶 Ticks"] --> O["📊 ohlcv.parquet"]
+    O --> F["📈 features.parquet"]
+    F --> L["🏷️ labels.parquet"]
+    
+    L --> TR["📗 train.parquet"]
+    L --> V["📙 val.parquet"]
+    L --> TE["📕 test.parquet"]
+    
+    TR --> LGBM["🌳 lightgbm_oof.parquet"]
+    TE --> LGBM
+    V --> LSTM["🧠 lstm_oof.parquet"]
+    TE --> LSTM
+    
+    LGBM --> META["🎯 stacking_meta.pkl"]
+    LSTM --> META
+    
+    META --> FINAL["🎯 final_predictions.parquet"]
+    TE --> FINAL
+    
+    FINAL --> BT["💰 backtest_results.json"]
+    BT --> RPT["📄 thesis_report.md"]
+    
+    classDef raw fill:#5c3d0f,stroke:#ff9800,stroke-width:2px,color:#fff
+    classDef processed fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef features fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+    classDef labels fill:#f57f17,stroke:#ffeb3b,stroke-width:2px,color:#fff
+    classDef split fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#fff
+    classDef model fill:#01579b,stroke:#03a9f4,stroke-width:2px,color:#fff
+    classDef lstm fill:#3e2723,stroke:#795548,stroke-width:2px,color:#fff
+    classDef meta fill:#00695c,stroke:#00bcd4,stroke-width:2px,color:#fff
+    classDef output fill:#c62828,stroke:#f44336,stroke-width:2px,color:#fff
+    classDef report fill:#1a237e,stroke:#3f51b5,stroke-width:2px,color:#fff
+    
+    class T raw
+    class O processed
+    class F features
+    class L labels
+    class TR,V,TE split
+    class LGBM model
+    class LSTM lstm
+    class META meta
+    class FINAL output
+    class BT output
+    class RPT report
 ```
 
 ## 🔧 Key Components
@@ -139,15 +231,39 @@ Actual dates used:
 Important: Test period includes gold's 2024-2026 bull run (2065 to 4494 USD).
 
 ### 5. Model Stacking
-```
-LightGBM outputs:  [P(short), P(hold), P(long)]
-LSTM outputs:        [P(short), P(hold), P(long)]
-                         ↓
-                  Meta-features: 6 numbers
-                         ↓
-              Logistic Regression (meta-learner)
-                         ↓
-              Final: [P(short), P(hold), P(long)]
+
+```mermaid
+flowchart LR
+    %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1e3a5f', 'primaryTextColor': '#fff', 'primaryBorderColor': '#4a90e2', 'lineColor': '#a0a0a0'}}}%%
+    subgraph LightGBM["🌳 LightGBM"]
+        LG1["Tabular Features"]
+        LG2["Predict"]
+        LG3["[P(short), P(hold), P(long)]"]
+    end
+    
+    subgraph LSTM["🧠 LSTM"]
+        LS1["60-bar Sequences"]
+        LS2["Predict"]
+        LS3["[P(short), P(hold), P(long)]"]
+    end
+    
+    subgraph Meta["🎯 Meta-Learner"]
+        M1["Meta-features: 6 numbers"]
+        M2["Logistic Regression"]
+        M3["Calibrated Output"]
+    end
+    
+    LG3 --> M1
+    LS3 --> M1
+    M1 --> M2 --> M3
+    
+    classDef lightgbm fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+    classDef lstm fill:#3e2723,stroke:#795548,stroke-width:2px,color:#fff
+    classDef meta fill:#01579b,stroke:#03a9f4,stroke-width:2px,color:#fff
+    
+    class LightGBM,LG1,LG2,LG3 lightgbm
+    class LSTM,LS1,LS2,LS3 lstm
+    class Meta,M1,M2,M3 meta
 ```
 
 ### 6. LSTM Normalization (Anti-Leakage)
@@ -207,18 +323,42 @@ This saves hours when re-running.
 
 ## 🔄 Pipeline Dependencies
 
-```
-Stage 1 (data) ─────┐
-                    ↓
-Stage 2 (features) ─┤
-                    ↓
-Stage 3 (labels) ─────┤
-                    ↓
-Stage 4 (split) ──────┤
-                    ├──→ Stage 5 (LightGBM) ───┐
-                    └──→ Stage 6 (LSTM) ──────┼──→ Stage 7 (Stacking)
-                                              ↓
-                                    Stage 8 (Backtest) ───→ Stage 9 (Report)
+```mermaid
+flowchart TB
+    %%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#1e3a5f', 'primaryTextColor': '#fff', 'primaryBorderColor': '#4a90e2', 'lineColor': '#a0a0a0'}}}%%
+    S1["🗃️ Stage 1: Data"] --> S2
+    S2["📊 Stage 2: Features"] --> S3
+    S3["🏷️ Stage 3: Labels"] --> S4
+    S4["✂️ Stage 4: Split"]
+    
+    S4 --> S5["🌳 Stage 5: LightGBM"]
+    S4 --> S6["🧠 Stage 6: LSTM"]
+    
+    S5 --> S7["🎯 Stage 7: Stacking"]
+    S6 --> S7
+    
+    S7 --> S8["💰 Stage 8: Backtest"]
+    S8 --> S9["📝 Stage 9: Report"]
+    
+    classDef stage1 fill:#1e3a5f,stroke:#4a90e2,stroke-width:2px,color:#fff
+    classDef stage2 fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+    classDef stage3 fill:#5c3d0f,stroke:#ff9800,stroke-width:2px,color:#fff
+    classDef stage4 fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#fff
+    classDef stage5 fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#fff
+    classDef stage6 fill:#3e2723,stroke:#795548,stroke-width:2px,color:#fff
+    classDef stage7 fill:#01579b,stroke:#03a9f4,stroke-width:2px,color:#fff
+    classDef stage8 fill:#f57f17,stroke:#ffeb3b,stroke-width:2px,color:#fff
+    classDef stage9 fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#fff
+    
+    class S1 stage1
+    class S2 stage2
+    class S3 stage3
+    class S4 stage4
+    class S5 stage5
+    class S6 stage6
+    class S7 stage7
+    class S8 stage8
+    class S9 stage9
 ```
 
 If you run Stage 5, it auto-runs 1-4 first.
