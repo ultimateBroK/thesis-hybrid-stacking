@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import calendar
@@ -12,10 +13,11 @@ import lzma
 from pathlib import Path
 import random
 import struct
+import sys
 import aiohttp
 import polars as pl
 
-from thesis.config.loader import load_config, Config
+from src.thesis.config.loader import load_config, Config
 
 logger = logging.getLogger(__name__)
 BASE_URL = "https://datafeed.dukascopy.com/datafeed"
@@ -348,6 +350,7 @@ def run_download_job(
     end_month: int | None = None,
     skip_current_month: bool = False,
     config: Config | None = None,
+    dry_run: bool = False,
 ) -> bool:
     """Download, validate, and repair monthly tick parquet files for one symbol."""
     download_config = build_download_config(
@@ -362,6 +365,11 @@ def run_download_job(
         skip_current_month=skip_current_month,
         config=config,
     )
+
+    if dry_run:
+        logger.info("[DRY RUN] Would download to: %s", download_config.output_dir)
+        logger.info("[DRY RUN] State file: %s", download_config.state_file)
+
     download_config.output_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
@@ -427,6 +435,9 @@ def run_download_job(
                 continue
 
             if file_path.exists():
+                if dry_run:
+                    logger.info("[DRY RUN] Would check %s for missing hours", key)
+                    continue
                 logger.info("Checking %s ...", key)
                 rows, missing = repair_month(download_config, year, month, file_path)
                 flag = "full" if missing == 0 else f"{missing} hrs missing"
@@ -434,6 +445,12 @@ def run_download_job(
                 if is_past:
                     state[key] = {"rows": rows, "missing_hours": missing}
                     save_state(download_config.state_file, state)
+                continue
+
+            if dry_run:
+                logger.info("[DRY RUN] Would download %s", key)
+                slots = all_slots(download_config, year, month)
+                logger.info("[DRY RUN]   %d hour slots to fetch", len(slots))
                 continue
 
             logger.info("Download %s ...", key)
@@ -456,3 +473,148 @@ def run_download_job(
                 state[key] = {"rows": rows, "missing_hours": timed_out}
                 save_state(download_config.state_file, state)
     return True
+
+
+def main() -> int:
+    """CLI entry point for Dukascopy tick data downloader."""
+    parser = argparse.ArgumentParser(
+        description="Download Dukascopy tick data for forex/crypto assets",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Download XAUUSD from 2018 to present
+    python download_data.py --symbol XAUUSD --start-year 2018
+    
+    # Download with custom date range and high concurrency
+    python download_data.py --symbol EURUSD --start-year 2020 --start-month 6 \\
+        --end-year 2022 --end-month 12 --concurrency 100
+    
+    # Dry run to see what would be downloaded
+    python download_data.py --symbol XAUUSD --start-year 2023 --dry-run
+    
+    # Force re-download with debug logging
+    python download_data.py --symbol XAUUSD --start-year 2022 --force --log-level DEBUG
+    
+    # Download crypto (24/7 trading)
+    python download_data.py --symbol BTCUSD --asset-class crypto --start-year 2021
+        """,
+    )
+
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        required=True,
+        help="Trading symbol (e.g., XAUUSD, EURUSD, BTCUSD)",
+    )
+
+    parser.add_argument(
+        "--asset-class",
+        type=str,
+        choices=["forex", "crypto", "index", "stock"],
+        default="forex",
+        help="Asset class (default: forex)",
+    )
+
+    parser.add_argument(
+        "--start-year",
+        type=int,
+        required=True,
+        help="Start year (e.g., 2018)",
+    )
+
+    parser.add_argument(
+        "--start-month",
+        type=int,
+        default=1,
+        help="Start month 1-12 (default: 1)",
+    )
+
+    parser.add_argument(
+        "--end-year",
+        type=int,
+        default=None,
+        help="End year (default: current year)",
+    )
+
+    parser.add_argument(
+        "--end-month",
+        type=int,
+        default=None,
+        help="End month 1-12 (default: current month)",
+    )
+
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=50,
+        help="Number of parallel downloads (default: 50)",
+    )
+
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-download (ignore existing files)",
+    )
+
+    parser.add_argument(
+        "--skip-current-month",
+        action="store_true",
+        help="Skip current incomplete month",
+    )
+
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config.toml",
+        help="Path to config file (default: config.toml)",
+    )
+
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        default="INFO",
+        help="Logging level (default: INFO)",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be downloaded without downloading",
+    )
+
+    args = parser.parse_args()
+
+    # Setup logging
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Load config
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError:
+        logger.error("Config file not found: %s", args.config)
+        return 1
+
+    # Run download
+    success = run_download_job(
+        symbol=args.symbol,
+        asset_class=args.asset_class,
+        start_year=args.start_year,
+        start_month=args.start_month,
+        end_year=args.end_year,
+        end_month=args.end_month,
+        concurrency=args.concurrency,
+        force=args.force,
+        skip_current_month=args.skip_current_month,
+        config=config,
+        dry_run=args.dry_run,
+    )
+
+    return 0 if success else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
