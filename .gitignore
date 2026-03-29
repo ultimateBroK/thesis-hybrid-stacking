@@ -48,6 +48,7 @@ venv.bak/
 
 # GitHub
 .github/*
+!.github/workflows/
 
 # Jupyter
 .ipynb_checkpoints/

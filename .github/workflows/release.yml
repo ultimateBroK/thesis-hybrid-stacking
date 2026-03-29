@@ -94,6 +94,9 @@ jobs:
     permissions:
       contents: write
       discussions: write
+    outputs:
+      tag_name: ${{ steps.get_version.outputs.version }}
+      release_date: ${{ steps.release_date.outputs.date }}
     
     steps:
       - name: Checkout repository
@@ -131,6 +134,13 @@ jobs:
             echo 'EOF'
           } >> $GITHUB_OUTPUT
 
+      - name: Set release date
+        id: release_date
+        run: |
+          RELEASE_DATE=$(date -u +"%Y-%m-%d")
+          echo "date=$RELEASE_DATE" >> $GITHUB_OUTPUT
+          echo "Release date: $RELEASE_DATE"
+
       - name: Create Git tag
         run: |
           git config user.name "GitHub Actions Bot"
@@ -155,7 +165,7 @@ jobs:
             ## 📋 Release Notes
             
             **Version:** ${{ steps.get_version.outputs.version }}  
-            **Date:** $(date -u +"%Y-%m-%d")  
+            **Date:** ${{ steps.release_date.outputs.date }}  
             **Thesis:** Hybrid Stacking (LSTM + LightGBM) for XAU/USD H1 Trading Signals
             
             ## 🔄 Changes Since Last Release
@@ -166,7 +176,7 @@ jobs:
             
             ```bash
             # Clone repository
-            git clone <repository-url>
+            git clone https://github.com/${{ github.repository }}.git
             cd thesis
             
             # Install dependencies
@@ -249,7 +259,7 @@ jobs:
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ needs.create-release.outputs.tag_name || 'latest' }}
+          tag_name: v${{ needs.create-release.outputs.tag_name }}
           files: |
             release-artifacts/thesis-source.tar.gz
         continue-on-error: true
@@ -266,7 +276,8 @@ jobs:
           echo "🎉 RELEASE PUBLISHED!"
           echo ""
           echo "Repository: ${{ github.repository }}"
-          echo "Version: v${{ needs.create-release.outputs.tag_name || 'latest' }}"
+          echo "Version: v${{ needs.create-release.outputs.tag_name }}"
+          echo "Release Date: ${{ needs.create-release.outputs.release_date }}"
           echo "Branch: main"
           echo ""
           echo "Validation: ${{ needs.final-validation.result }}"
@@ -280,7 +291,8 @@ jobs:
           echo "## 🎉 Release Successfully Published!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** v${{ needs.create-release.outputs.tag_name || 'latest' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ needs.create-release.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Release Date:** ${{ needs.create-release.outputs.release_date }}" >> $GITHUB_STEP_SUMMARY
           echo "**URL:** https://github.com/${{ github.repository }}/releases" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Workflow Status" >> $GITHUB_STEP_SUMMARY

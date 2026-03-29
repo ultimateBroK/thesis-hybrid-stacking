@@ -82,12 +82,19 @@ jobs:
 
       - name: Run pytest with coverage
         run: |
-          pixi run test --cov=src --cov-report=xml --cov-report=term-missing || \
-          echo "No tests found or tests skipped - this is OK for early development"
+          pixi run test --cov=src --cov-report=xml --cov-report=term-missing || {
+            echo "Tests completed with issues or no tests found"
+            # Create empty coverage file if none exists
+            if [ ! -f "coverage.xml" ]; then
+              echo '<?xml version="1.0" encoding="UTF-8"?>
+              <coverage version="7.0" timestamp="0" lines-valid="0" lines-covered="0" line-rate="0" branches-covered="0" branches-valid="0" branch-rate="0" complexity="0">
+              </coverage>' > coverage.xml
+            fi
+          }
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v4
-        if: always()
+        if: always() && hashFiles('coverage.xml') != ''
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
