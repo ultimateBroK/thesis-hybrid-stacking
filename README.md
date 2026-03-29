@@ -16,10 +16,10 @@
 Xây dựng pipeline end-to-end dự báo tín hiệu giao dịch **CFD Vàng (XAU/USD)** trên khung H1 bằng kiến trúc **Hybrid Stacking (LSTM + LightGBM)**. Hai mô hình nền dự báo độc lập; mô hình tầng trên học cách kết hợp xác suất đầu ra để phân loại 3 nhãn: **mua (+1), trung tính (0), bán (-1)**.
 
 ```
-Tầng dưới: LSTM (chuỗi OHLCV 60 nến)  ─┐
-                                        ├─> Xác suất 3 lớp ─┐
-Tầng dưới: LightGBM (đặc trưng kỹ thuật) ─┘                ├─> Tầng trên → 3 nhãn
-                                                            └─> OOF theo thời gian + Purging/Embargo
+Tầng dưới: LSTM (chuỗi OHLCV 60 nến)  ────┐
+                                          ├─> Xác suất 3 lớp ─┐
+Tầng dưới: LightGBM (đặc trưng kỹ thuật) ─┘                   ├─> Tầng trên → 3 nhãn
+                                                              └─> OOF theo thời gian + Purging/Embargo
 ```
 
 ---
@@ -60,17 +60,17 @@ Raw Tick Data (Dukascopy)
         │
         ├──────────────────┬──────────────────┐
         ▼                  ▼                  ▼
-  LSTM (60-bar OHLCV)  LightGBM (features)   │
+  LSTM (60-bar OHLCV)  LightGBM (features)    │
         │                  │                  │
         └──── Xác suất ────┘                  │
-                    │                          │
-                    ▼                          │
-            Meta-Learner (Stacking)            │
-                    │                          │
-                    ▼                          │
+                    │                         │
+                    ▼                         │
+            Meta-Learner (Stacking)           │
+                    │                         │
+                    ▼                         │
             Dự báo 3 nhãn                     │
-                    │                          │
-                    ▼                          │
+                    │                         │
+                    ▼                         │
             Backtest OOS ◄────────────────────┘
                     │
                     ▼
