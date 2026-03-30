@@ -5,10 +5,10 @@ Classes:
     0: Hold/No trade (neither hit within horizon)
     -1: Short (stop loss hit first)
 
-Parameters:
-    TP = Close + 2 × ATR
-    SL = Close - 1 × ATR  
-    Horizon = 10 bars
+Parameters (per config.toml - symmetric barriers):
+    TP = Close + 1.5 × ATR
+    SL = Close - 1.5 × ATR  
+    Horizon = 20 bars
 """
 
 import logging
@@ -55,7 +55,7 @@ def generate_labels(config: Config) -> None:
     atr_sl = config.labels.atr_multiplier_sl
     horizon = config.labels.horizon_bars
     
-    logger.info(f"Triple-Barrier parameters:")
+    logger.info("Triple-Barrier parameters:")
     logger.info(f"  TP: {atr_tp} × ATR")
     logger.info(f"  SL: {atr_sl} × ATR")
     logger.info(f"  Horizon: {horizon} bars")
@@ -109,12 +109,12 @@ def generate_labels(config: Config) -> None:
         label = 0  # Default: no touch
         touch_bar = 0
         
-        for j, (h, l) in enumerate(zip(future_high, future_low)):
+        for j, (h, low_val) in enumerate(zip(future_high, future_low)):
             if h >= tp_price:
                 label = 1  # Long
                 touch_bar = j + 1
                 break
-            elif l <= sl_price:
+            elif low_val <= sl_price:
                 label = -1  # Short
                 touch_bar = j + 1
                 break

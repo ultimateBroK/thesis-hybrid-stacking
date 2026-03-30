@@ -67,7 +67,7 @@ def train_lightgbm(config: Config) -> None:
 
     # Import LightGBM
     try:
-        import lightgbm as lgb
+        import lightgbm as lgb  # noqa: F401
     except ImportError:
         raise ImportError("LightGBM not installed. Run: pip install lightgbm")
 

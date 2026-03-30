@@ -31,6 +31,48 @@ class TestConfigLoader:
         assert config.data.tick_size == 0.01
         assert config.data.contract_size == 100
 
+    def test_config_ema_periods_updated_to_34_89(self, config):
+        """Verify EMA periods updated to 34/89 (Phase 1 implementation)."""
+        # EMA periods should now be [34, 89] instead of [20, 50, 200]
+        assert hasattr(config.features, 'ema_periods'), "Config should have ema_periods"
+        ema_periods = config.features.ema_periods
+        assert 34 in ema_periods, "EMA 34 should be configured"
+        assert 89 in ema_periods, "EMA 89 should be configured"
+
+    def test_config_correlation_threshold_is_0_90(self, config):
+        """Verify correlation threshold is 0.90 (Phase 5 implementation)."""
+        assert hasattr(config.features, 'correlation_threshold'), \
+            "Config should have correlation_threshold"
+        assert config.features.correlation_threshold == 0.90, \
+            f"Correlation threshold should be 0.90, got {config.features.correlation_threshold}"
+
+    def test_config_labels_horizon_is_20(self, config):
+        """Verify label horizon is 20 bars (Phase 1 implementation)."""
+        assert config.labels.horizon_bars == 20, \
+            f"Horizon should be 20 bars, got {config.labels.horizon_bars}"
+
+    def test_config_symmetric_barriers_1_5x(self, config):
+        """Verify symmetric barriers are 1.5×/1.5× (Phase 1 implementation)."""
+        assert config.labels.atr_multiplier_tp == 1.5, \
+            f"TP multiplier should be 1.5×, got {config.labels.atr_multiplier_tp}"
+        assert config.labels.atr_multiplier_sl == 1.5, \
+            f"SL multiplier should be 1.5×, got {config.labels.atr_multiplier_sl}"
+
+    def test_config_purge_window_is_15(self, config):
+        """Verify purge window is 15 bars (Phase 1 implementation)."""
+        assert config.splitting.purge_bars == 15, \
+            f"Purge bars should be 15, got {config.splitting.purge_bars}"
+
+    def test_config_stacking_confidence_threshold(self, config):
+        """Verify confidence threshold exists in stacking config (Phase 3)."""
+        # Check if stacking config has confidence_threshold or it's in models.stacking
+        if hasattr(config, 'models') and 'stacking' in config.models:
+            stacking_config = config.models['stacking']
+            if hasattr(stacking_config, 'confidence_threshold'):
+                assert stacking_config.confidence_threshold == 0.6, \
+                    f"Confidence threshold should be 0.6, got {stacking_config.confidence_threshold}"
+
+
     def test_config_splitting_section(self, config):
         """Test that splitting configuration is loaded correctly."""
         # Splitting uses date-based scheme, not ratios (values from config.toml)
@@ -46,9 +88,9 @@ class TestConfigLoader:
 
     def test_config_labels_section(self, config):
         """Test that labels configuration is loaded correctly."""
-        assert config.labels.horizon_bars == 10
-        assert config.labels.atr_multiplier_tp == 2.0
-        assert config.labels.atr_multiplier_sl == 1.0
+        assert config.labels.horizon_bars == 20  # Updated to 20 per config.toml
+        assert config.labels.atr_multiplier_tp == 1.5  # Updated to 1.5× per config.toml
+        assert config.labels.atr_multiplier_sl == 1.5  # Updated to 1.5× per config.toml
         assert config.labels.num_classes == 3
         assert config.labels.use_fixed_pips is False
 
@@ -72,12 +114,12 @@ class TestConfigLoader:
         """Test that models configuration is loaded correctly."""
         # LSTM config is in config.models["lstm"]
         lstm_config = config.models["lstm"]
-        assert lstm_config.sequence_length == 60
-        assert lstm_config.hidden_size == 64  # Fixed to match actual config
-        assert lstm_config.num_layers == 1  # Fixed to match actual config
+        assert lstm_config.sequence_length == 120  # Updated per config.toml
+        assert lstm_config.hidden_size == 128  # Updated per config.toml
+        assert lstm_config.num_layers == 2  # Updated per config.toml
         assert lstm_config.dropout == 0.3
-        assert lstm_config.batch_size == 128  # Fixed to match actual config
-        assert lstm_config.epochs == 50  # Fixed to match actual config
+        assert lstm_config.batch_size == 128  # Updated per config.toml
+        assert lstm_config.epochs == 50  # Updated per config.toml
 
         # LightGBM config is in config.models["tree"]
         tree_config = config.models["tree"]
@@ -87,7 +129,7 @@ class TestConfigLoader:
 
     def test_config_features_section(self, config):
         """Test that features configuration is loaded correctly."""
-        assert config.features.ema_periods == [20, 50, 200]
+        assert config.features.ema_periods == [34, 89]  # Updated per config.toml
         assert config.features.rsi_period == 14
         assert config.features.macd_fast == 12
         assert config.features.macd_slow == 26

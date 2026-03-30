@@ -12,7 +12,7 @@ clean-cache = "rm -f data/processed/train.parquet data/processed/val.parquet dat
 clean-all = "rm -f data/processed/*.parquet && rm -rf models/*"
 lint = "ruff check src/"
 format = "ruff format src/"
-test = "pytest tests/"
+test = "pytest tests/ -W ignore::_pytest.warning_types.PytestUnknownMarkWarning"
 
 [dependencies]
 python = ">=3.13,<3.14"

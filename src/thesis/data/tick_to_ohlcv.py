@@ -6,7 +6,6 @@ NY market close at 17:00 DST-aware (America/New_York).
 
 import logging
 from pathlib import Path
-from typing import Iterator
 
 import polars as pl
 from tqdm import tqdm

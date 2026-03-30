@@ -100,9 +100,10 @@ def train_stacking(config: Config) -> None:
         try:
             import lightgbm as lgb
 
+            cfg = config.models["stacking"]
             model = lgb.LGBMClassifier(
-                n_estimators=100,
-                learning_rate=0.1,
+                n_estimators=cfg.n_estimators,
+                learning_rate=cfg.learning_rate,
                 objective="multiclass",
                 num_class=3,
                 random_state=config.workflow.random_seed,
@@ -265,7 +266,7 @@ def generate_test_predictions(config: Config) -> None:
     seq_length = config.models["lstm"].sequence_length
     features = test_df.select(ohlcv_cols).to_numpy()
 
-    # Load training normalization statistics (CRITICAL: prevents data leakage)
+    # Load training normalization statistics (use training stats to prevent data leakage)
     stats_path = Path(config.models["lstm"].model_path).parent / "lstm_norm_stats.npz"
     if not stats_path.exists():
         raise FileNotFoundError(
@@ -485,3 +486,40 @@ def generate_test_predictions(config: Config) -> None:
     final_preds_df.write_parquet(final_path)
     logger.info(f"Saved final test predictions: {final_path}")
     logger.info(f"Total test predictions: {len(final_preds_df)} samples")
+
+
+def apply_confidence_threshold(
+    predictions: np.ndarray, probabilities: np.ndarray, threshold: float = 0.6
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply confidence threshold to predictions.
+
+    Predictions with max probability below threshold are converted to Hold (0).
+
+    Args:
+        predictions: Array of predicted labels (-1, 0, 1)
+        probabilities: Array of probability distributions (n_samples, n_classes)
+        threshold: Minimum confidence threshold (default 0.6)
+
+    Returns:
+        Tuple of (filtered_predictions, filtered_probabilities)
+    """
+    # Create copies to avoid modifying inputs
+    filtered_preds = predictions.copy()
+    filtered_probs = probabilities.copy()
+
+    # Calculate max probability for each prediction
+    max_probs = np.max(probabilities, axis=1)
+
+    # Find low confidence predictions
+    low_conf_mask = max_probs < threshold
+
+    # Convert low confidence predictions to Hold (class 0)
+    filtered_preds[low_conf_mask] = 0
+
+    # Update probabilities: set Hold probability to 1.0 for low confidence
+    filtered_probs[low_conf_mask, :] = 0.0
+    # Assuming Hold is at index 1 (classes: -1=index 0, 0=index 1, 1=index 2)
+    if filtered_probs.shape[1] >= 2:
+        filtered_probs[low_conf_mask, 1] = 1.0
+
+    return filtered_preds, filtered_probs

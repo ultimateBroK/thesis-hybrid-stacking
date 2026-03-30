@@ -1,15 +1,25 @@
 """Data splitting with purge and embargo for time-series.
 
 Implements the market regime-based split scheme:
-    Train (70%): 2018-2021 - Normal + Trade War + COVID shock
-    Val (15%): 2022 - Russia-Ukraine + Fed hikes (stress test)
-    Test (15%): 2023-03/2026 - SVB crisis + Gold ATH + "New Regime"
+    Train (60%): 2018-2022 - Extended foundation period covering:
+        - Trade War (2018-2019)
+        - COVID-19 shock (2020)
+        - Recovery + inflation (2021)
+        - Russia-Ukraine conflict start + Fed hikes begin (2022)
+    Val (15%): 2023 - High-rate + Gold ATH regime:
+        - Fed maintains high rates
+        - Gold breaks traditional inverse relationship with rates
+        - First ATH waves appear
+    Test (25%): 2024-2026 - Newest regime (Out-of-Sample):
+        - US Election 2024
+        - Multiple ATH breaks
+        - Geopolitical tensions
+        - Real test for overfitting
 
 Purge/Embargo prevents data leakage between splits.
 """
 
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -61,7 +71,7 @@ def split_data(config: Config) -> None:
     val_pct = len(val_df) / total * 100
     test_pct = len(test_df) / total * 100
     
-    logger.info(f"Raw split sizes:")
+    logger.info("Raw split sizes:")
     logger.info(f"  Train: {len(train_df):,} ({train_pct:.1f}%)")
     logger.info(f"  Val: {len(val_df):,} ({val_pct:.1f}%)")
     logger.info(f"  Test: {len(test_df):,} ({test_pct:.1f}%)")
@@ -74,7 +84,7 @@ def split_data(config: Config) -> None:
         )
     
     # Log final sizes
-    logger.info(f"Final split sizes (after purge/embargo):")
+    logger.info("Final split sizes (after purge/embargo):")
     logger.info(f"  Train: {len(train_df):,}")
     logger.info(f"  Val: {len(val_df):,}")
     logger.info(f"  Test: {len(test_df):,}")

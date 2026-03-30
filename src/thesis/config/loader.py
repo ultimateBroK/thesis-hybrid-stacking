@@ -95,10 +95,10 @@ class SplittingConfig:
     """Data splitting configuration with market regime-based scheme."""
 
     train_start: str = "2018-01-01"
-    train_end: str = "2021-12-31 23:59:59"
-    val_start: str = "2022-01-01"
-    val_end: str = "2022-12-31 23:59:59"
-    test_start: str = "2023-01-01"
+    train_end: str = "2022-12-31 23:59:59"
+    val_start: str = "2023-01-01"
+    val_end: str = "2023-12-31 23:59:59"
+    test_start: str = "2024-01-01"
     test_end: str = "2026-03-31 23:59:59"
     purge_bars: int = 15
     embargo_bars: int = 10
@@ -120,7 +120,7 @@ class FeaturesConfig:
     use_pivots: bool = True
     use_session: bool = True
     use_spread: bool = True
-    ema_periods: list = field(default_factory=lambda: [20, 50, 200])
+    ema_periods: list = field(default_factory=lambda: [34, 89])
     rsi_period: int = 14
     macd_fast: int = 12
     macd_slow: int = 26
@@ -131,7 +131,7 @@ class FeaturesConfig:
     lag_periods: list = field(default_factory=lambda: [1, 2, 3, 5, 10])
     spread_multiplier: float = 0.5
     drop_high_corr: bool = True
-    correlation_threshold: float = 0.95
+    correlation_threshold: float = 0.90
 
 
 @dataclass
@@ -139,12 +139,12 @@ class LabelsConfig:
     """Triple-Barrier label configuration."""
 
     labels_path: str = "data/processed/labels.parquet"
-    atr_multiplier_tp: float = 2.0
-    atr_multiplier_sl: float = 1.0
+    atr_multiplier_tp: float = 1.5
+    atr_multiplier_sl: float = 1.5
     use_fixed_pips: bool = False
     tp_pips: int = 20
     sl_pips: int = 10
-    horizon_bars: int = 10
+    horizon_bars: int = 20
     num_classes: int = 3
     class_labels: dict = field(
         default_factory=lambda: {"-1": "Short", "0": "Hold", "1": "Long"}
@@ -191,18 +191,18 @@ class LSTMModelConfig:
     model_path: str = "models/lstm_model.pt"
     predictions_path: str = "data/predictions/lstm_oof.parquet"
     sequences_path: str = "data/processed/lstm_sequences.npz"
-    sequence_length: int = 60
+    sequence_length: int = 120
     step_size: int = 1
     hidden_size: int = 128
     num_layers: int = 2
     dropout: float = 0.3
     bidirectional: bool = False
-    batch_size: int = 64
-    epochs: int = 100
+    batch_size: int = 128
+    epochs: int = 50
     learning_rate: float = 0.001
     weight_decay: float = 1e-5
-    patience: int = 15
-    min_delta: float = 0.0001
+    patience: int = 10
+    min_delta: float = 0.001
     device: str = "cpu"
     num_workers: int = 4
     save_best: bool = True
@@ -218,9 +218,15 @@ class StackingConfig:
     n_folds: int = 5
     stacking_purge: int = 10
     stacking_embargo: int = 5
+    # Logistic Regression params
     C: float = 1.0
+    # ElasticNet params
     alpha: float = 1.0
     l1_ratio: float = 0.5
+    # LightGBM meta-learner params (when meta_learner="lightgbm")
+    n_estimators: int = 100
+    learning_rate: float = 0.1
+    # Calibration
     calibrate_probabilities: bool = True
     calibration_method: str = "isotonic"
 

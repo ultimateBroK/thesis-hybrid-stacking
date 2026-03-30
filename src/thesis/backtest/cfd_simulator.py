@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
@@ -123,7 +123,7 @@ def _simulate_trades(df: pl.DataFrame, config: Config) -> List[Dict]:
             # Use probabilities
             proba_long = row["pred_proba_class_1"]
             proba_short = row["pred_proba_class_minus1"]
-            proba_hold = row["pred_proba_class_0"]
+            # proba_hold extracted but not used in current threshold logic
             
             # Threshold for trading (need high confidence)
             threshold = 0.6

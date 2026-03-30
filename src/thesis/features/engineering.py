@@ -113,7 +113,6 @@ def _add_technical_indicators(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     Returns:
         DataFrame with technical indicators.
     """
-    import pandas as pd
     
     # Ensure pandas
     if isinstance(df, pl.DataFrame):
@@ -275,7 +274,6 @@ def _add_lag_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     Returns:
         DataFrame with lag features.
     """
-    import pandas as pd
     
     if isinstance(df, pl.DataFrame):
         df = df.to_pandas()
@@ -304,7 +302,6 @@ def _add_spread_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     Returns:
         DataFrame with spread features.
     """
-    import pandas as pd
     
     if isinstance(df, pl.DataFrame):
         df = df.to_pandas()
@@ -335,7 +332,6 @@ def _add_microstructure_features(df: pl.DataFrame, config: Config) -> pl.DataFra
     Returns:
         DataFrame with microstructure features.
     """
-    import pandas as pd
     
     if isinstance(df, pl.DataFrame):
         df = df.to_pandas()
@@ -435,7 +431,6 @@ def _drop_high_correlation(df: pl.DataFrame, threshold: float) -> pl.DataFrame:
     Returns:
         DataFrame with highly correlated features removed.
     """
-    import pandas as pd
     
     # Convert to pandas for correlation
     df_pd = df.to_pandas() if isinstance(df, pl.DataFrame) else df

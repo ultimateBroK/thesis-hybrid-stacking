@@ -3,13 +3,11 @@
 import logging
 from pathlib import Path
 
-import joblib
 import numpy as np
 import polars as pl
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
 
 from thesis.config.loader import Config
 
@@ -206,7 +204,6 @@ def train_lstm(config: Config) -> None:
     )
 
     # Ensure timestamp has same dtype as LightGBM predictions
-    # LightGBM uses datetime[ms, America/New_York] with tz-aware timestamps
     if str(val_df["timestamp"].dtype) != str(preds_df["timestamp"].dtype):
         preds_df = preds_df.with_columns(
             pl.col("timestamp").cast(val_df["timestamp"].dtype)
@@ -240,7 +237,7 @@ def _create_sequences(df, feature_cols, seq_length):
 
     # Remap labels: -1, 0, 1 -> 0, 1, 2 for PyTorch CrossEntropyLoss
     label_map = {-1: 0, 0: 1, 1: 2}
-    labels = np.array([label_map[int(l)] for l in labels])
+    labels = np.array([label_map[int(label_val)] for label_val in labels])
 
     X, y = [], []
     for i in range(len(features) - seq_length):

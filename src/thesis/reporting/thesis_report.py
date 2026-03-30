@@ -6,9 +6,9 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 import shap
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from thesis.config.loader import Config
 
@@ -65,7 +65,6 @@ def _generate_shap_summary(config: Config) -> None:
     """
     try:
         import joblib
-        import lightgbm as lgb
         
         # Load model
         model_path = Path(config.models["tree"].model_path)
@@ -160,26 +159,28 @@ Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
 | Asset | XAU/USD (Gold) |
 | Timeframe | H1 (1 hour) |
 | Data Period | 2018-01 to 2026-03 |
-| Train Period | 2018-2021 (70%) |
-| Val Period | 2022 (15%) |
-| Test Period | 2023-03/2026 (15%) |
+| Train Period | {config.splitting.train_start[:4]}-{config.splitting.train_end[:4]} (60%) |
+| Val Period | {config.splitting.val_start[:4]} (15%) |
+| Test Period | {config.splitting.test_start[:4]}-{config.splitting.test_end[:4]} (25%) |
 | Purge | {config.splitting.purge_bars} bars |
 | Embargo | {config.splitting.embargo_bars} bars |
 
 ### Market Regime Split Rationale
 
-**Train (2018-2021):** Normal + Trade War + COVID shock
-- Establishes baseline relationships
-- Gold's flight-to-safety during pandemic
+**Train ({config.splitting.train_start[:4]}-{config.splitting.train_end[:4]}):** Extended foundation period covering:
+- Trade War (2018-2019), COVID-19 shock (2020)
+- Recovery + inflation (2021), Russia-Ukraine start + Fed hikes (2022)
+- Establishes baseline across multiple regimes
 
-**Validation (2022):** Russia-Ukraine war + Fed rate hikes
-- Stress test on geopolitical shock
-- Rising rates typically pressure gold
+**Validation ({config.splitting.val_start[:4]}):** High-rate + Gold ATH regime:
+- Fed maintains high rates
+- Gold breaks traditional inverse relationship with rates
+- First ATH waves appear
 
-**Test (2023-03/2026):** SVB crisis + Gold ATH + "New Regime"
-- **Critical:** Gold ATH while rates elevated
-- Paradigm shift where gold rises despite high rates
-- Tests model on new market regime
+**Test ({config.splitting.test_start[:4]}-{config.splitting.test_end[:4]}):** Newest regime (Out-of-Sample):
+- US Election 2024, Multiple ATH breaks
+- Geopolitical tensions, Real test for overfitting
+- **Critical:** Gold ATH while rates elevated (paradigm shift)
 
 ---
 
@@ -256,7 +257,3 @@ Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
 """
     
     return report
-
-
-# Need numpy import
-import numpy as np

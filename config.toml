@@ -97,8 +97,8 @@ use_pivots = true
 use_session = true
 use_spread = true
 
-# EMA periods
-ema_periods = [34, 89]    # Fibonacci numbers for Gold (was [20, 50, 200])
+# EMA periods - Fibonacci numbers commonly used for Gold technical analysis
+ema_periods = [34, 89]
 
 # RSI
 rsi_period = 14
@@ -129,7 +129,7 @@ spread_multiplier = 0.5  # Multiplier for spread-based features
 
 # Feature selection
 drop_high_corr = true
-correlation_threshold = 0.90    # Tighter threshold for new features (was 0.95)
+correlation_threshold = 0.90    # Threshold for removing highly correlated features
 
 # =============================================================================
 # TRIPLE-BARRIER LABELS
@@ -139,8 +139,8 @@ correlation_threshold = 0.90    # Tighter threshold for new features (was 0.95)
 labels_path = "data/processed/labels.parquet"
 
 # Triple-Barrier parameters
-atr_multiplier_tp = 1.5   # Take-profit = Close + 1.5 * ATR (SYMMETRIC - was 2.0)
-atr_multiplier_sl = 1.5   # Stop-loss = Close - 1.5 * ATR (SYMMETRIC - was 1.0)
+atr_multiplier_tp = 1.5   # Take-profit = Close + 1.5 * ATR
+atr_multiplier_sl = 1.5   # Stop-loss = Close - 1.5 * ATR
 
 # Alternative: fixed pips (if ATR not available)
 use_fixed_pips = false
@@ -148,7 +148,7 @@ tp_pips = 20
 sl_pips = 10
 
 # Time horizon (bars)
-horizon_bars = 20         # Extended from 10 to allow trades to develop
+horizon_bars = 20         # Bars to wait for barrier touch before neutral label
 
 # Classes: +1 (Long), 0 (Hold/No trade), -1 (Short)
 num_classes = 3
@@ -177,7 +177,7 @@ downsampling_ratio = 0.5
 
 # Hyperparameter tuning
 use_optuna = true
-optuna_trials = 100  # Increased from 30 for better hyperparameter search
+optuna_trials = 100  # Number of trials for hyperparameter search
 optuna_timeout = 3600  # seconds
 
 # Cross-validation for tuning (now using Walk-Forward CV)
@@ -214,24 +214,24 @@ predictions_path = "data/predictions/lstm_oof.parquet"
 sequences_path = "data/processed/lstm_sequences.npz"
 
 # Sequence parameters
-sequence_length = 120  # 120 bars = 5 trading days (increased from 60)
+sequence_length = 120  # 120 bars = 5 trading days
 step_size = 1  # Overlapping sequences with step=1
 
-# Architecture - INCREASED for better regime detection
-hidden_size = 128    # Increased from 64 to 128 (2x capacity)
-num_layers = 2       # Increased from 1 to 2 (hierarchical pattern capture)
+# Architecture
+hidden_size = 128    # LSTM hidden state dimension
+num_layers = 2       # Number of LSTM layers
 dropout = 0.3
 bidirectional = false
 
-# Training - REDUCED epochs for faster training
-batch_size = 128    # Increased from 64 (2x speedup, good convergence)
-epochs = 50         # Reduced from 100 (2x speedup, sufficient for thesis)
+# Training
+batch_size = 128    # Mini-batch size for gradient descent
+epochs = 50         # Maximum training epochs
 learning_rate = 0.001
 weight_decay = 1e-5
 
-# Early stopping - MORE AGGRESSIVE
-patience = 10       # Reduced from 15 (stop sooner if not improving)
-min_delta = 0.001   # Increased from 0.0001 (less strict, faster convergence)
+# Early stopping
+patience = 10       # Epochs to wait before stopping if no improvement
+min_delta = 0.001   # Minimum validation loss improvement required
 
 # Device (CPU only)
 device = "cpu"
@@ -262,6 +262,10 @@ stacking_embargo = 5
 C = 1.0  # Inverse regularization strength for logistic regression
 alpha = 1.0  # Regularization for ridge/lasso
 l1_ratio = 0.5  # For elastic_net
+
+# LightGBM meta-learner params (when meta_learner = "lightgbm")
+n_estimators = 100
+learning_rate = 0.1
 
 # Probability calibration
 calibrate_probabilities = true
