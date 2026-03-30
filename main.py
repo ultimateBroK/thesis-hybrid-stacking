@@ -34,19 +34,56 @@ from thesis.config.loader import load_config
 from thesis.pipeline.runner import run_thesis_workflow
 
 
-def setup_logging() -> logging.Logger:
+_ORIGINAL_STDOUT = sys.stdout
+_ORIGINAL_STDERR = sys.stderr
+_PIPELINE_LOG_STREAM = None
+
+
+class TeeWriter:
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, data: str) -> int:
+        for stream in self._streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self._streams:
+            stream.flush()
+
+    def isatty(self) -> bool:
+        return any(getattr(stream, "isatty", lambda: False)() for stream in self._streams)
+
+
+def setup_logging(log_path: str | Path | None = None) -> logging.Logger:
     """Configure logging for the pipeline."""
-    # Ensure logs directory exists before creating file handler
-    Path("logs").mkdir(parents=True, exist_ok=True)
-    
+    global _PIPELINE_LOG_STREAM
+
+    if log_path is None:
+        project_root = Path(__file__).resolve().parent
+        log_path = project_root / "logs" / "pipeline.log"
+    else:
+        log_path = Path(log_path)
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if _PIPELINE_LOG_STREAM is not None and not _PIPELINE_LOG_STREAM.closed:
+        _PIPELINE_LOG_STREAM.close()
+
+    _PIPELINE_LOG_STREAM = log_path.open("a", encoding="utf-8", buffering=1)
+    sys.stdout = TeeWriter(_ORIGINAL_STDOUT, _PIPELINE_LOG_STREAM)
+    sys.stderr = TeeWriter(_ORIGINAL_STDERR, _PIPELINE_LOG_STREAM)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler("logs/pipeline.log", encoding="utf-8"),
+            logging.StreamHandler(_ORIGINAL_STDOUT),
+            logging.FileHandler(log_path, encoding="utf-8"),
         ],
+        force=True,
     )
     return logging.getLogger("thesis")
 
