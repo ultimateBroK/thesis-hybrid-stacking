@@ -82,7 +82,8 @@ def run_thesis_workflow(config: Config, stage: Optional[str] = None) -> None:
                 logger.info(f"Skipping disabled stage: {stage_name}")
                 continue
 
-            logger.info(f"\n{'=' * 70}")
+            logger.info("")
+            logger.info(f"{'=' * 70}")
             logger.info(f"STAGE {stage_name.upper()}")
             logger.info(f"{'=' * 70}")
 

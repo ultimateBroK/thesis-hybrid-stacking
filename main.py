@@ -11,7 +11,7 @@ Usage:
     python main.py [--stage STAGE] [--force] [--config CONFIG]
 
 Options:
-    --stage STAGE    Run specific stage only (data, features, labels, split, 
+    --stage STAGE    Run specific stage only (data, features, labels, split,
                       lightgbm, lstm, stacking, backtest, report)
     --force           Force re-run (ignore cache)
     --config CONFIG   Path to config file (default: config.toml)
@@ -34,18 +34,32 @@ from thesis.config.loader import load_config
 from thesis.pipeline.runner import run_thesis_workflow
 
 
+import re
+
+
 _ORIGINAL_STDOUT = sys.stdout
 _ORIGINAL_STDERR = sys.stderr
 _PIPELINE_LOG_STREAM = None
 
+# ANSI escape sequence regex for stripping colors
+_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
 
 class TeeWriter:
-    def __init__(self, *streams):
+    """Tee output to multiple streams, with ANSI stripping for file output."""
+
+    def __init__(self, *streams, strip_ansi_for=None):
         self._streams = streams
+        self._strip_ansi_for = strip_ansi_for or []
 
     def write(self, data: str) -> int:
-        for stream in self._streams:
-            stream.write(data)
+        for i, stream in enumerate(self._streams):
+            # Strip ANSI codes for designated streams (log file)
+            if i in self._strip_ansi_for:
+                clean_data = _ANSI_ESCAPE.sub("", data)
+                stream.write(clean_data)
+            else:
+                stream.write(data)
         return len(data)
 
     def flush(self) -> None:
@@ -53,7 +67,10 @@ class TeeWriter:
             stream.flush()
 
     def isatty(self) -> bool:
-        return any(getattr(stream, "isatty", lambda: False)() for stream in self._streams)
+        # Only return True if the first stream (console) is a tty
+        # This prevents tqdm from showing progress bars in log files
+        first_stream = self._streams[0]
+        return getattr(first_stream, "isatty", lambda: False)()
 
 
 def setup_logging(log_path: str | Path | None = None) -> logging.Logger:
@@ -72,8 +89,15 @@ def setup_logging(log_path: str | Path | None = None) -> logging.Logger:
         _PIPELINE_LOG_STREAM.close()
 
     _PIPELINE_LOG_STREAM = log_path.open("a", encoding="utf-8", buffering=1)
-    sys.stdout = TeeWriter(_ORIGINAL_STDOUT, _PIPELINE_LOG_STREAM)
-    sys.stderr = TeeWriter(_ORIGINAL_STDERR, _PIPELINE_LOG_STREAM)
+    # Use strip_ansi_for=[1] to strip ANSI codes when writing to file stream (index 1)
+    sys.stdout = TeeWriter(_ORIGINAL_STDOUT, _PIPELINE_LOG_STREAM, strip_ansi_for=[1])
+    sys.stderr = TeeWriter(_ORIGINAL_STDERR, _PIPELINE_LOG_STREAM, strip_ansi_for=[1])
+
+    # Configure optuna logging to disable colors
+    import optuna.logging
+
+    optuna.logging.disable_default_handler()
+    optuna.logging.enable_propagation()  # Let our handlers handle optuna logs
 
     logging.basicConfig(
         level=logging.INFO,
@@ -105,82 +129,96 @@ Examples:
     python main.py --force --config my_config.toml
         """,
     )
-    
+
     parser.add_argument(
         "--stage",
         type=str,
-        choices=["data", "features", "labels", "split", 
-                "lightgbm", "lstm", "stacking", "backtest", "report", "all"],
+        choices=[
+            "data",
+            "features",
+            "labels",
+            "split",
+            "lightgbm",
+            "lstm",
+            "stacking",
+            "backtest",
+            "report",
+            "all",
+        ],
         default="all",
         help="Run specific stage only (default: all)",
     )
-    
+
     parser.add_argument(
         "--force",
         action="store_true",
         help="Force re-run (ignore cache)",
     )
-    
+
     parser.add_argument(
         "--config",
         type=str,
         default="config.toml",
         help="Path to configuration file (default: config.toml)",
     )
-    
+
     parser.add_argument(
         "--jobs",
         type=int,
         default=-1,
         help="Number of parallel jobs (default: -1 = all cores)",
     )
-    
+
     parser.add_argument(
         "--seed",
         type=int,
         default=42,
         help="Random seed for reproducibility (default: 42)",
     )
-    
+
     return parser.parse_args()
 
 
 def main() -> int:
     """Main entry point."""
     args = parse_args()
-    
+
     # Setup logging (creates logs/ dir automatically)
     logger = setup_logging()
-    
+
     logger.info("=" * 70)
     logger.info("Hybrid Stacking (LSTM + LightGBM) - XAU/USD H1 Trading Signals")
     logger.info("Bachelor's Thesis - Thuy Loi University")
     logger.info("Student: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung")
     logger.info("=" * 70)
-    
+
     try:
         # Load configuration
         logger.info(f"Loading configuration from: {args.config}")
         config = load_config(args.config)
-        
+
         # Apply command-line overrides
         if args.force:
             config.workflow.force_rerun = True
             logger.info("Force re-run enabled (ignoring cache)")
-        
+
         if args.jobs != -1:
             config.workflow.n_jobs = args.jobs
-        
+
         config.workflow.random_seed = args.seed
-        
+
         # Log configuration summary
         logger.info(f"Data range: {config.data.start_date} to {config.data.end_date}")
-        logger.info(f"Train: {config.splitting.train_start} → {config.splitting.train_end}")
+        logger.info(
+            f"Train: {config.splitting.train_start} → {config.splitting.train_end}"
+        )
         logger.info(f"Val: {config.splitting.val_start} → {config.splitting.val_end}")
-        logger.info(f"Test: {config.splitting.test_start} → {config.splitting.test_end}")
+        logger.info(
+            f"Test: {config.splitting.test_start} → {config.splitting.test_end}"
+        )
         logger.info(f"LSTM sequence length: {config.models['lstm'].sequence_length}")
         logger.info(f"Triple-Barrier horizon: {config.labels.horizon_bars} bars")
-        
+
         # Run pipeline
         if args.stage == "all":
             logger.info("Running full pipeline...")
@@ -188,14 +226,14 @@ def main() -> int:
         else:
             logger.info(f"Running stage: {args.stage}")
             run_thesis_workflow(config, stage=args.stage)
-        
+
         logger.info("=" * 70)
         logger.info("Pipeline completed successfully!")
         logger.info(f"Results: {config.paths.final_report}")
         logger.info("=" * 70)
-        
+
         return 0
-        
+
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
         return 1
