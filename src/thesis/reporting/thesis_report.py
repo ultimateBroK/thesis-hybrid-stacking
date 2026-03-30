@@ -131,6 +131,8 @@ def _create_markdown_report(backtest_data: dict, config: Config) -> str:
     """
     metrics = backtest_data.get("metrics", {})
     
+    results_conclusion = _build_results_conclusion(metrics)
+
     report = f"""# Hybrid Stacking (LSTM + LightGBM) for XAU/USD Trading Signals
 
 ## Bachelor's Thesis Report
@@ -241,7 +243,7 @@ Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
 1. **Hybrid stacking** successfully combines LightGBM and LSTM predictions
 2. **Market regime split** enables evaluation on new paradigm (gold ATH despite high rates)
 3. **Triple-Barrier labeling** provides realistic trade targets
-4. Results demonstrate [model effectiveness on test set]
+{results_conclusion}
 
 ---
 
@@ -257,3 +259,29 @@ Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
 """
     
     return report
+
+
+def _build_results_conclusion(metrics: dict) -> str:
+    """Create a metrics-aware concluding statement for the thesis report."""
+    total_return = metrics.get("total_return_pct")
+    sharpe_ratio = metrics.get("sharpe_ratio")
+    max_drawdown = metrics.get("max_drawdown_pct")
+    win_rate = metrics.get("win_rate")
+    total_trades = metrics.get("total_trades")
+
+    numeric_values = [
+        total_return,
+        sharpe_ratio,
+        max_drawdown,
+        win_rate,
+        total_trades,
+    ]
+    if any(value is None for value in numeric_values):
+        return "4. Out-of-sample backtest metrics were generated successfully for the test window"
+
+    return (
+        "4. Out-of-sample backtest executed "
+        f"{int(total_trades)} trades with {win_rate * 100:.1f}% win rate, "
+        f"{total_return:.2f}% total return, {sharpe_ratio:.2f} Sharpe ratio, "
+        f"and {max_drawdown:.2f}% max drawdown"
+    )

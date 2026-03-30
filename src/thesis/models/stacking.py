@@ -373,7 +373,6 @@ def generate_test_predictions(config: Config) -> None:
 
     logger.info(f"LSTM test predictions: {len(lstm_preds_df)} samples")
 
-    # ============ Stacking Predictions ============
     logger.info("Generating stacking predictions on test set...")
     meta_path = Path(config.models["stacking"].model_path)
     if not meta_path.exists():
@@ -384,39 +383,12 @@ def generate_test_predictions(config: Config) -> None:
     # Align predictions by timestamp
     aligned = lgbm_preds_df.join(lstm_preds_df, on="timestamp", suffix="_lstm")
     logger.info(f"Aligned test predictions: {len(aligned)} samples")
-
-    if len(aligned) == 0:
-        raise ValueError(
-            "No matching timestamps found between LightGBM and LSTM test predictions."
+    if len(aligned) != len(test_df):
+        logger.info(
+            "Skipped %s warm-up bars before stacking because LSTM uses %s-bar sequences",
+            len(test_df) - len(aligned),
+            seq_length,
         )
-
-    # Create meta-features (same as in training)
-    X_meta = np.hstack(
-        [
-            aligned[
-                ["pred_proba_class_minus1", "pred_proba_class_0", "pred_proba_class_1"]
-            ].to_numpy(),
-            aligned[
-                [
-                    "pred_proba_class_minus1_lstm",
-                    "pred_proba_class_0_lstm",
-                    "pred_proba_class_1_lstm",
-                ]
-            ].to_numpy(),
-        ]
-    )
-
-    # Generate stacking predictions with confidence threshold
-    logger.info("Generating stacking predictions on test set...")
-    meta_path = Path(config.models["stacking"].model_path)
-    if not meta_path.exists():
-        raise FileNotFoundError(f"Meta-learner not found: {meta_path}")
-
-    meta_learner = joblib.load(meta_path)
-
-    # Align predictions by timestamp
-    aligned = lgbm_preds_df.join(lstm_preds_df, on="timestamp", suffix="_lstm")
-    logger.info(f"Aligned test predictions: {len(aligned)} samples")
 
     if len(aligned) == 0:
         raise ValueError(
