@@ -102,9 +102,14 @@ def validate_no_lookahead(
 
     # Check 4: Label distribution balance
     # Extremely imbalanced labels suggest bias
-    hold_pct = (labels == 0).sum() / total
-    long_pct = (labels == 1).sum() / total
-    short_pct = (labels == -1).sum() / total
+    if total > 0:
+        hold_pct = (labels == 0).sum() / total
+        long_pct = (labels == 1).sum() / total
+        short_pct = (labels == -1).sum() / total
+    else:
+        hold_pct = 0.0
+        long_pct = 0.0
+        short_pct = 0.0
 
     results["details"]["hold_pct"] = hold_pct
     results["details"]["long_pct"] = long_pct

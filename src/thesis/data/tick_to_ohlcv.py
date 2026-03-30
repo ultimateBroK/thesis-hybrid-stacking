@@ -126,7 +126,7 @@ def _aggregate_to_h1(ticks: pl.DataFrame, config: Config) -> pl.DataFrame:
         pl.col("ask_volume").sum().alias("ask_volume"),
         pl.col("bid_volume").sum().alias("bid_volume"),
         pl.col("spread").mean().alias("avg_spread"),
-        pl.count().alias("tick_count"),
+        pl.len().alias("tick_count"),
     ])
     
     # Sort by hour
