@@ -4,9 +4,8 @@ Tests for trading math validation, Kelly criterion calculation,
 Calmar ratio validation, and statistical bounds checking.
 """
 
-import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 class TestTradingMathValidator:

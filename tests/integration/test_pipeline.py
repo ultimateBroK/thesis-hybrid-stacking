@@ -1,7 +1,6 @@
 """Integration tests for complete pipeline."""
 
 import numpy as np
-import polars as pl
 import pytest
 
 try:

@@ -14,7 +14,6 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -113,7 +112,7 @@ def run_backtest(config: Config) -> None:
     logger.info(f"Saved backtest results: {output_path}")
 
 
-def _simulate_trades(df: pl.DataFrame, config: Config) -> Dict:
+def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
     """Simulate trades with proper margin call and stop-out enforcement.
 
     CRITICAL FIXES:
@@ -404,7 +403,7 @@ def _calculate_pnl(
     spread: float,
     slippage: float,
     value_per_pip: float,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Calculate PnL in pips and dollars.
 
     Args:
@@ -433,7 +432,7 @@ def _calculate_pnl(
     return pnl, dollar_pnl
 
 
-def _calculate_metrics(results: Dict, config: Config) -> Dict:
+def _calculate_metrics(results: dict, config: Config) -> dict:
     """Calculate backtest metrics from equity curve.
 
     CRITICAL FIX: Uses equity curve for drawdown calculation, not trade returns.

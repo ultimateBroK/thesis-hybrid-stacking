@@ -11,10 +11,16 @@ Usage:
     python main.py [--stage STAGE] [--force] [--config CONFIG]
 
 Options:
-    --stage STAGE    Run specific stage only (data, features, labels, split,
-                      lightgbm, lstm, stacking, backtest, report)
-    --force           Force re-run (ignore cache)
-    --config CONFIG   Path to config file (default: config.toml)
+    --stage STAGE         Run specific stage only (data, features, labels, split,
+                          lightgbm, lstm, stacking, backtest, report)
+    --force               Force re-run (ignore cache)
+    --config CONFIG       Path to config file (default: config.toml)
+    --session-id NAME     Use custom session ID (default: auto-generated)
+    --list-sessions       List all existing sessions and exit
+
+Session Management:
+    Each pipeline run creates a session folder: results/SYMBOL_TIMEFRAME_YYYYMMDD_HHMMSS/
+    The 'results/latest' symlink always points to the most recent session.
 
 Environment Variables:
     THESIS_WORKFLOW__FORCE_RERUN=true    Force pipeline re-run
@@ -32,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from thesis.config.loader import load_config
 from thesis.pipeline.runner import run_thesis_workflow
+from thesis.pipeline.session import SessionManager
 
 
 import re
@@ -73,16 +80,11 @@ class TeeWriter:
         return getattr(first_stream, "isatty", lambda: False)()
 
 
-def setup_logging(log_path: str | Path | None = None) -> logging.Logger:
+def setup_logging(log_path: str | Path) -> logging.Logger:
     """Configure logging for the pipeline."""
     global _PIPELINE_LOG_STREAM
 
-    if log_path is None:
-        project_root = Path(__file__).resolve().parent
-        log_path = project_root / "logs" / "pipeline.log"
-    else:
-        log_path = Path(log_path)
-
+    log_path = Path(log_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     if _PIPELINE_LOG_STREAM is not None and not _PIPELINE_LOG_STREAM.closed:
@@ -176,6 +178,20 @@ Examples:
         help="Random seed for reproducibility (default: 42)",
     )
 
+    # Session management arguments
+    parser.add_argument(
+        "--session-id",
+        type=str,
+        default=None,
+        help="Custom session ID (default: auto-generated from timestamp)",
+    )
+
+    parser.add_argument(
+        "--list-sessions",
+        action="store_true",
+        help="List all existing sessions and exit",
+    )
+
     return parser.parse_args()
 
 
@@ -183,8 +199,47 @@ def main() -> int:
     """Main entry point."""
     args = parse_args()
 
-    # Setup logging (creates logs/ dir automatically)
-    logger = setup_logging()
+    # Handle --list-sessions before anything else
+    if args.list_sessions:
+        from thesis.pipeline.session import list_sessions
+
+        sessions = list_sessions()
+        if sessions:
+            print(f"Found {len(sessions)} session(s):")
+            for session in sessions:
+                print(f"  - {session}")
+            print(f"\nLatest: results/{sessions[-1]}/")
+        else:
+            print("No sessions found in results/")
+        return 0
+
+    # Load configuration first (before setting up logging)
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as e:
+        print(f"Error: Configuration file not found: {e}", file=sys.stderr)
+        return 1
+
+    # Apply command-line overrides
+    if args.session_id:
+        config.paths.session_id = args.session_id
+
+    if args.force:
+        config.workflow.force_rerun = True
+
+    if args.jobs != -1:
+        config.workflow.n_jobs = args.jobs
+
+    config.workflow.random_seed = args.seed
+
+    # Initialize session (always creates session folder)
+    session_manager = SessionManager(config)
+    session_manager.update_config_paths(config)
+    session_manager.create_config_snapshot()
+
+    # Setup logging NOW (after session is initialized)
+    log_path = session_manager.get_log_path()
+    logger = setup_logging(log_path)
 
     logger.info("=" * 70)
     logger.info("Hybrid Stacking (LSTM + LightGBM) - XAU/USD H1 Trading Signals")
@@ -193,20 +248,6 @@ def main() -> int:
     logger.info("=" * 70)
 
     try:
-        # Load configuration
-        logger.info(f"Loading configuration from: {args.config}")
-        config = load_config(args.config)
-
-        # Apply command-line overrides
-        if args.force:
-            config.workflow.force_rerun = True
-            logger.info("Force re-run enabled (ignoring cache)")
-
-        if args.jobs != -1:
-            config.workflow.n_jobs = args.jobs
-
-        config.workflow.random_seed = args.seed
-
         # Log configuration summary
         logger.info(f"Data range: {config.data.start_date} to {config.data.end_date}")
         logger.info(
@@ -222,10 +263,10 @@ def main() -> int:
         # Run pipeline
         if args.stage == "all":
             logger.info("Running full pipeline...")
-            run_thesis_workflow(config)
+            run_thesis_workflow(config, session_manager=session_manager)
         else:
             logger.info(f"Running stage: {args.stage}")
-            run_thesis_workflow(config, stage=args.stage)
+            run_thesis_workflow(config, stage=args.stage, session_manager=session_manager)
 
         logger.info("=" * 70)
         logger.info("Pipeline completed successfully!")

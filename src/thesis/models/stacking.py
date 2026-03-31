@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -15,12 +16,14 @@ logger = logging.getLogger("thesis.models")
 
 
 def train_stacking(config: Config) -> None:
-    """Train hybrid stacking meta-learner.
+    """Train and persist the stacking meta-learner.
 
-    Combines LightGBM and LSTM predictions using a meta-learner.
+    Combines LightGBM and LSTM validation probabilities, fits the configured
+    meta-learner, optionally calibrates probabilities, and saves filtered
+    confidence-aware predictions for downstream evaluation.
 
     Args:
-        config: Configuration object.
+        config: Loaded application configuration.
     """
     logger.info("Loading base model predictions...")
 
@@ -81,6 +84,7 @@ def train_stacking(config: Config) -> None:
     meta_learner_type = config.models["stacking"].meta_learner
     logger.info(f"Training meta-learner: {meta_learner_type}")
 
+    model: Any
     if meta_learner_type == "logistic_regression":
         model = LogisticRegression(
             C=config.models["stacking"].C,
@@ -141,13 +145,16 @@ def train_stacking(config: Config) -> None:
     # Confidence threshold: only predict when max probability >= 0.6
     confidence_threshold = 0.6
 
-    if hasattr(model, "predict_proba"):
-        probs = model.predict_proba(X_meta)
+    predict_proba_fn = getattr(model, "predict_proba", None)
+    if callable(predict_proba_fn):
+        probs_raw: Any = predict_proba_fn(X_meta)
+        if hasattr(probs_raw, "toarray"):
+            probs_raw = probs_raw.toarray()
+        probs = np.asarray(probs_raw, dtype=float)
     else:
         # For regression-based meta-learners, convert to probabilities
-        # This is a simplified approach
-        preds = model.predict(X_meta)
-        probs = np.zeros((len(preds), 3))
+        preds = np.asarray(model.predict(X_meta))
+        probs = np.zeros((len(preds), 3), dtype=float)
         for i, p in enumerate(preds):
             idx = int(p) + 1  # Map -1,0,1 to 0,1,2
             idx = max(0, min(2, idx))
@@ -294,6 +301,8 @@ def generate_test_predictions(config: Config) -> None:
 
     # LSTM model architecture (must match training)
     class LSTMModel(nn.Module):
+        """Inference-time LSTM architecture matching the training model."""
+
         def __init__(
             self,
             input_size,
@@ -319,7 +328,15 @@ def generate_test_predictions(config: Config) -> None:
             self.dropout = nn.Dropout(dropout)
             self.fc = nn.Linear(lstm_output_dim, num_classes)
 
-        def forward(self, x):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            """Compute class logits for a batch of LSTM sequences.
+
+            Args:
+                x: Input tensor with shape ``(batch, seq_len, input_size)``.
+
+            Returns:
+                Logits tensor with shape ``(batch, num_classes)``.
+            """
             num_directions = 2 if self.bidirectional else 1
             h0 = torch.zeros(
                 self.num_layers * num_directions, x.size(0), self.hidden_size

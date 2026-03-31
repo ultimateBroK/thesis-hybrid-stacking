@@ -12,12 +12,20 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
 def _parse_env_value(value: str) -> Any:
-    """Parse environment variable string to appropriate Python type."""
+    """Parse an environment variable string into a Python value.
+
+    Args:
+        value: Raw environment variable value.
+
+    Returns:
+        Parsed value as ``int``, ``float``, ``bool``, ``list``, or ``str``.
+    """
     value = value.strip()
 
     # Try int
@@ -41,15 +49,26 @@ def _parse_env_value(value: str) -> Any:
     # Try list (comma-separated)
     if "," in value:
         parts = [p.strip() for p in value.split(",")]
-        parsed = [_parse_env_value(p) if not p.startswith("[") else p for p in parts]
-        # Check if all are numeric for proper list
-        return parsed
+        return [_parse_env_value(p) if not p.startswith("[") else p for p in parts]
 
     return value
 
 
-def _apply_env_overrides(config: dict, prefix: str = "THESIS") -> dict:
-    """Apply environment variable overrides to config dict."""
+def _apply_env_overrides(
+    config: dict[str, Any], prefix: str = "THESIS"
+) -> dict[str, Any]:
+    """Apply environment variable overrides to a nested config mapping.
+
+    Supports keys shaped as ``<PREFIX>_<SECTION>__<OPTION>`` and nested
+    overrides such as ``THESIS_MODELS__LSTM__LEARNING_RATE``.
+
+    Args:
+        config: Mutable configuration mapping loaded from TOML.
+        prefix: Environment variable prefix.
+
+    Returns:
+        The same mapping with applicable overrides applied.
+    """
     pattern = re.compile(rf"^{prefix}_(.+)__(.+)$")
 
     for key, value in os.environ.items():
@@ -127,15 +146,17 @@ class FeaturesConfig:
     use_pivots: bool = True
     use_session: bool = True
     use_spread: bool = True
-    ema_periods: list = field(default_factory=lambda: [34, 89])
+    ema_periods: list[int] = field(default_factory=lambda: [34, 89])
     rsi_period: int = 14
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
     atr_period: int = 14
     pivot_lookback: int = 1
-    session_hours: list = field(default_factory=lambda: [[0, 8], [8, 17], [17, 21]])
-    lag_periods: list = field(default_factory=lambda: [1, 2, 3, 5, 10])
+    session_hours: list[list[int]] = field(
+        default_factory=lambda: [[0, 8], [8, 17], [17, 21]]
+    )
+    lag_periods: list[int] = field(default_factory=lambda: [1, 2, 3, 5, 10])
     spread_multiplier: float = 0.5
     drop_high_corr: bool = True
     correlation_threshold: float = 0.90
@@ -153,7 +174,7 @@ class LabelsConfig:
     sl_pips: int = 10
     horizon_bars: int = 20
     num_classes: int = 3
-    class_labels: dict = field(
+    class_labels: dict[str, str] = field(
         default_factory=lambda: {"-1": "Short", "0": "Hold", "1": "Long"}
     )
     min_atr: float = 0.0001
@@ -259,7 +280,7 @@ class BacktestConfig:
     trade_sunday: bool = False
     trade_friday_close: bool = False
     friday_close_hour: int = 21
-    metrics: list = field(
+    metrics: list[str] = field(
         default_factory=lambda: [
             "sharpe",
             "sortino",
@@ -314,12 +335,16 @@ class WorkflowConfig:
 class PathsConfig:
     """Path configuration for all artifacts."""
 
+    # Session configuration
+    use_sessions: bool = True  # Always True - sessions are mandatory
+    session_id: str = ""  # Auto-generated if empty
+    session_path: str = ""  # Computed path to session folder
+
+    # Global paths (shared across sessions)
     data_raw: str = "data/raw/XAUUSD"
     data_processed: str = "data/processed"
-    data_predictions: str = "data/predictions"
-    models: str = "models"
-    results: str = "results"
-    logs: str = "logs"
+
+    # Artifact files (prefixed with session_path)
     ohlcv: str = "data/processed/ohlcv.parquet"
     features: str = "data/processed/features.parquet"
     labels: str = "data/processed/labels.parquet"
@@ -334,6 +359,29 @@ class PathsConfig:
     final_predictions: str = "data/predictions/final_predictions.parquet"
     backtest_results: str = "results/backtest_results.json"
     final_report: str = "results/thesis_report.md"
+
+    def get_resolved_path(self, path_attr: str) -> str:
+        """Get resolved path considering session configuration."""
+        path_value = getattr(self, path_attr)
+
+        # Don't modify global data paths (features, labels, etc.)
+        if path_attr in [
+            "ohlcv",
+            "features",
+            "labels",
+            "train_data",
+            "val_data",
+            "test_data",
+            "data_raw",
+            "data_processed",
+        ]:
+            return path_value
+
+        # Prepend session_path to artifact paths
+        if self.session_path:
+            return f"{self.session_path}/{path_value}"
+
+        return path_value
 
 
 @dataclass
@@ -428,20 +476,85 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
 
 
 def _ensure_directories(config: Config) -> None:
-    """Create necessary directories if they don't exist."""
+    """Create required top-level data directories.
+
+    Args:
+        config: Loaded application configuration.
+    """
     dirs_to_create = [
         config.paths.data_raw,
         config.paths.data_processed,
-        config.paths.data_predictions,
-        config.paths.models,
-        config.paths.results,
-        config.paths.logs,
     ]
 
     for dir_path in dirs_to_create:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
 
+def generate_session_path(
+    symbol: str, timeframe: str, timestamp: datetime | None = None
+) -> Path:
+    """Generate session folder path following naming convention.
+
+    Format: results/{SYMBOL}_{TIMEFRAME}_{YYYYMMDD}_{HHMMSS}/
+
+    Args:
+        symbol: Trading pair symbol (e.g., "XAUUSD")
+        timeframe: Timeframe string (e.g., "H1", "1H")
+        timestamp: Optional timestamp, defaults to current time
+
+    Returns:
+        Path to session folder
+    """
+    if timestamp is None:
+        timestamp = datetime.now()
+
+    # Normalize symbol (uppercase, no special chars)
+    symbol_clean = symbol.upper().replace("/", "").replace("-", "")
+
+    # Normalize timeframe (uppercase)
+    timeframe_clean = timeframe.upper()
+
+    # Format: SYMBOL_TIMEFRAME_YYYYMMDD_HHMMSS
+    session_name = f"{symbol_clean}_{timeframe_clean}_{timestamp:%Y%m%d_%H%M%S}"
+
+    return Path("results") / session_name
+
+
+def initialize_session(config: Config, custom_session_id: str | None = None) -> Path:
+    """Initialize a new session with proper folder structure.
+
+    Args:
+        config: Configuration object
+        custom_session_id: Optional custom session ID, auto-generated if None
+
+    Returns:
+        Path to created session folder
+    """
+    # Generate or use custom session ID
+    if custom_session_id:
+        session_path = Path("results") / custom_session_id
+    else:
+        # Generate from symbol and timeframe
+        symbol = config.data.symbol
+        timeframe = config.data.timeframe
+        session_path = generate_session_path(symbol, timeframe)
+
+    # Store in config
+    config.paths.session_id = session_path.name
+    config.paths.session_path = str(session_path)
+
+    # Create session subdirectories
+    subdirs = ["config", "models", "predictions", "reports", "backtest", "logs"]
+    for subdir in subdirs:
+        (session_path / subdir).mkdir(parents=True, exist_ok=True)
+
+    return session_path
+
+
 def get_config() -> Config:
-    """Get default configuration (singleton pattern)."""
+    """Load and return configuration using default path.
+
+    Returns:
+        Fully initialized configuration object.
+    """
     return load_config()

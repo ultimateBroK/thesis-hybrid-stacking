@@ -139,19 +139,23 @@ Override qua biến môi trường: `THESIS_<SECTION>__<KEY>` (ví dụ `THESIS_
 
 ### Artifacts tạo ra trong pipeline
 
-| Artifact | Stage tạo | Stage tiêu thụ | Định dạng |
-|----------|----------|---------------|-----------|
-| `ohlcv.parquet` | Data preparation | Features, Labels | Parquet |
-| `features.parquet` | Feature engineering | Labels, Models | Parquet |
-| `labels.parquet` | Labeling | Splitting, Models | Parquet |
-| `train.parquet` / `val.parquet` / `test.parquet` | Splitting | Models | Parquet |
-| `lgbm_model.pkl` | Baseline training | Stacking | Pickle |
-| `lstm_model.pt` | LSTM training | Stacking | PyTorch |
-| `stacking_model.pkl` | Stacking training | Backtest, Reporting | Pickle |
-| `predictions.parquet` | Stacking / Inference | Backtest, Reporting | Parquet |
-| `backtest_results.json` | Backtest | Reporting | JSON |
-| `report.md` / `report.json` | Reporting | — | Markdown/JSON |
-| `figures/*.png` | Reporting | — | PNG |
+| Artifact | Stage tạo | Stage tiêu thụ | Định dạng | Vị trí (Session-based) |
+|----------|----------|---------------|-----------|------------------------|
+| `ohlcv.parquet` | Data preparation | Features, Labels | Parquet | `data/processed/` (global cache) |
+| `features.parquet` | Feature engineering | Labels, Models | Parquet | `data/processed/` (global cache) |
+| `labels.parquet` | Labeling | Splitting, Models | Parquet | `data/processed/` (global cache) |
+| `train.parquet` / `val.parquet` / `test.parquet` | Splitting | Models | Parquet | `data/processed/` (global cache) |
+| `lightgbm_model.pkl` | Baseline training | Stacking | Pickle | `results/{session}/models/` |
+| `lstm_model.pt` | LSTM training | Stacking | PyTorch | `results/{session}/models/` |
+| `stacking_meta_learner.pkl` | Stacking training | Backtest, Reporting | Pickle | `results/{session}/models/` |
+| `predictions.parquet` | Stacking / Inference | Backtest, Reporting | Parquet | `results/{session}/predictions/` |
+| `backtest_results.json` | Backtest | Reporting | JSON | `results/{session}/backtest/` |
+| `thesis_report.md` / `thesis_report.json` | Reporting | — | Markdown/JSON | `results/{session}/reports/` |
+| `figures/*.png` | Reporting | — | PNG | `results/{session}/reports/` |
+| `pipeline.log` | All stages | Debugging | Text | `results/{session}/logs/` |
+
+> **Lưu ý:** Mỗi lần chạy pipeline tạo một **session** riêng biệt trong `results/XAUUSD_H1_YYYYMMDD_HHMMSS/`.  
+> Symlink `results/latest/` luôn trỏ đến session mới nhất để dễ truy cập.
 
 ### Cơ chế cache
 - Mỗi stage kiểm tra artifact đầu ra đã tồn tại chưa

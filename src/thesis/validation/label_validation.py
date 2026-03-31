@@ -6,7 +6,6 @@ indicate lookahead bias or data contamination.
 
 import polars as pl
 import numpy as np
-from typing import Dict
 from pathlib import Path
 import logging
 
@@ -18,7 +17,7 @@ def validate_no_lookahead(
     max_horizon: int = 20,
     max_rapid_change_pct: float = 25.0,  # Increased from 5% - triple-barrier naturally has more switches
     max_win_rate: float = 0.60,
-) -> Dict:  # Increased from 70% - 50% is normal
+) -> dict:  # Increased from 70% - 50% is normal
     """Check that labels are generated correctly without peeking too far.
 
     Tests:
@@ -132,7 +131,7 @@ def validate_no_lookahead(
     return results
 
 
-def run_label_validation_pipeline(config_path: str = "config.toml") -> Dict:
+def run_label_validation_pipeline(config_path: str = "config.toml") -> dict:
     """Run full label validation as part of pipeline.
 
     Args:

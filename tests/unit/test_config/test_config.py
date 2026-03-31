@@ -321,10 +321,6 @@ random_seed = 42
 [paths]
 data_raw = "data/raw/XAUUSD"
 data_processed = "data/processed"
-data_predictions = "data/predictions"
-models = "models"
-results = "results"
-logs = "logs"
 ohlcv = "data/processed/ohlcv.parquet"
 features = "data/processed/features.parquet"
 labels = "data/processed/labels.parquet"

@@ -54,30 +54,59 @@ venv.bak/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Project-specific
-/data
-!/data/raw/
-/data/processed/
-/data/predictions/
-/models
-!/models/.gitkeep
-/results
+# Session-based results (all artifacts - large files)
+/results/*/
 !/results/.gitkeep
-/logs
-!/logs/.gitkeep
+!/results/*/.gitkeep
+
+# Raw and processed data (large datasets)
+/data/
+
+# Model artifacts (large binary files)
 *.pkl
 *.joblib
 *.pt
+*.pth
+*.h5
+*.onnx
+*.safetensors
 *.npz
+*.npy
+
+# Cache directories
 .cache/
-reports/
+__pycache__/
+*.py[cod]
+
+# Logs (large text files)
+/logs/*.log
+/logs/*.txt
+*.log
+.tracking/
 
 # Test artifacts
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
-.tracking/
 
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation build artifacts
+docs/_build/
+docs/api/
+*.html.pdf
+
+# Claude agent files
 CLAUDE.md
 AGENTS.md

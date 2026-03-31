@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import polars as pl
 import talib
 
@@ -22,10 +23,15 @@ logger = logging.getLogger("thesis.features")
 
 
 def generate_features(config: Config) -> None:
-    """Generate features from OHLCV data.
+    """Build and persist feature-enriched bars for modeling.
+
+    The function loads OHLCV bars, applies configured feature families
+    (technical, microstructure, pivots, sessions, lags, spread), handles
+    missing values, optionally prunes highly correlated columns, and saves both
+    the feature table and feature manifest.
 
     Args:
-        config: Configuration object.
+        config: Loaded application configuration.
     """
     # Load OHLCV
     ohlcv_path = Path(config.data.ohlcv_path)
@@ -36,7 +42,7 @@ def generate_features(config: Config) -> None:
     logger.info(f"Loading OHLCV: {ohlcv_path}")
     df = pl.read_parquet(ohlcv_path)
 
-    # Convert to pandas for TA-Lib
+    # Feature routines rely on pandas APIs and TA-Lib; convert once upfront.
     df_pd = df.to_pandas()
 
     # Generate technical features
@@ -117,15 +123,18 @@ def generate_features(config: Config) -> None:
     logger.info(f"Feature list: {feature_list_path}")
 
 
-def _add_technical_indicators(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_technical_indicators(
+    df: pl.DataFrame | pd.DataFrame,
+    config: Config,
+) -> pd.DataFrame:
     """Add technical indicators using TA-Lib.
 
     Args:
-        df: OHLCV DataFrame (pandas).
-        config: Configuration object.
+        df: OHLCV bars as a Polars or pandas dataframe.
+        config: Application configuration.
 
     Returns:
-        DataFrame with technical indicators.
+        pandas DataFrame with technical indicators appended.
     """
 
     # Ensure pandas
@@ -168,7 +177,10 @@ def _add_technical_indicators(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df
 
 
-def _add_pivot_points(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_pivot_points(
+    df: pl.DataFrame | pd.DataFrame,
+    config: Config,
+) -> pd.DataFrame:
     """Add pivot point features.
 
     P = (H + L + C) / 3
@@ -176,14 +188,12 @@ def _add_pivot_points(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     S1 = 2P - H
 
     Args:
-        df: DataFrame.
-        config: Configuration object.
+        df: OHLCV bars as a Polars or pandas dataframe.
+        config: Application configuration.
 
     Returns:
-        DataFrame with pivot features.
+        pandas DataFrame with pivot and prior-day range features.
     """
-    import pandas as pd
-
     if isinstance(df, pl.DataFrame):
         df = df.to_pandas()
 
@@ -248,7 +258,10 @@ def _add_pivot_points(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df
 
 
-def _add_session_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_session_features(
+    df: pl.DataFrame | pd.DataFrame,
+    config: Config,
+) -> pd.DataFrame:
     """Add session encoding features.
 
     Sessions:
@@ -257,14 +270,12 @@ def _add_session_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
         - NY PM: 17:00-21:00 NY
 
     Args:
-        df: DataFrame.
-        config: Configuration object.
+        df: OHLCV bars as a Polars or pandas dataframe.
+        config: Application configuration.
 
     Returns:
-        DataFrame with session features.
+        pandas DataFrame with session and weekday features.
     """
-    import pandas as pd
-
     if isinstance(df, pl.DataFrame):
         df = df.to_pandas()
 
@@ -296,15 +307,18 @@ def _add_session_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df
 
 
-def _add_lag_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_lag_features(
+    df: pl.DataFrame | pd.DataFrame,
+    config: Config,
+) -> pd.DataFrame:
     """Add lag features for tree models.
 
     Args:
-        df: DataFrame.
-        config: Configuration object.
+        df: OHLCV bars as a Polars or pandas dataframe.
+        config: Application configuration.
 
     Returns:
-        DataFrame with lag features.
+        pandas DataFrame with lagged price and volume features.
     """
 
     if isinstance(df, pl.DataFrame):
@@ -324,15 +338,18 @@ def _add_lag_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df
 
 
-def _add_spread_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_spread_features(
+    df: pl.DataFrame | pd.DataFrame,
+    config: Config,
+) -> pd.DataFrame:
     """Add spread-related features.
 
     Args:
-        df: DataFrame.
-        config: Configuration object.
+        df: OHLCV bars as a Polars or pandas dataframe.
+        config: Application configuration.
 
     Returns:
-        DataFrame with spread features.
+        pandas DataFrame with spread-level and spread-regime features.
     """
 
     if isinstance(df, pl.DataFrame):
@@ -348,7 +365,10 @@ def _add_spread_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df
 
 
-def _add_microstructure_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_microstructure_features(
+    df: pl.DataFrame | pd.DataFrame,
+    config: Config,
+) -> pd.DataFrame:
     """Add candlestick patterns, volume delta, and orderflow proxies.
 
     Features for directional trading signal prediction:
@@ -358,11 +378,11 @@ def _add_microstructure_features(df: pl.DataFrame, config: Config) -> pl.DataFra
         - Body-to-wick ratios (market conviction)
 
     Args:
-        df: DataFrame.
-        config: Configuration object.
+        df: OHLCV bars as a Polars or pandas dataframe.
+        config: Application configuration.
 
     Returns:
-        DataFrame with microstructure features.
+        pandas DataFrame with candlestick and orderflow proxy features.
     """
 
     if isinstance(df, pl.DataFrame):
@@ -458,15 +478,18 @@ def _add_microstructure_features(df: pl.DataFrame, config: Config) -> pl.DataFra
     return df
 
 
-def _drop_high_correlation(df: pl.DataFrame, threshold: float) -> pl.DataFrame:
+def _drop_high_correlation(
+    df: pl.DataFrame | pd.DataFrame,
+    threshold: float,
+) -> pl.DataFrame | pd.DataFrame:
     """Drop features with correlation above threshold.
 
     Args:
-        df: DataFrame.
-        threshold: Correlation threshold.
+        df: Feature dataframe in Polars or pandas format.
+        threshold: Absolute correlation threshold for feature removal.
 
     Returns:
-        DataFrame with highly correlated features removed.
+        Dataframe with highly correlated numeric features removed.
     """
 
     # Convert to pandas for correlation

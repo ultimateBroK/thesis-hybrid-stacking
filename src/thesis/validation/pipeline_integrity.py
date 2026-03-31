@@ -8,7 +8,6 @@ import hashlib
 import shutil
 import polars as pl
 from pathlib import Path
-from typing import Dict, List
 from dataclasses import dataclass
 import logging
 
@@ -20,9 +19,9 @@ class IntegrityReport:
     """Pipeline integrity check results."""
 
     passed: bool
-    errors: List[str]
-    warnings: List[str]
-    stage_status: Dict[str, str]
+    errors: list[str]
+    warnings: list[str]
+    stage_status: dict[str, str]
 
 
 def _compute_file_hash(file_path: Path) -> str:
@@ -36,11 +35,11 @@ def _compute_file_hash(file_path: Path) -> str:
             for chunk in iter(lambda: f.read(4096), b""):
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
-    except Exception:
+    except OSError:
         return ""
 
 
-def verify_pipeline_integrity(config_hash: str = "") -> IntegrityReport:
+def verify_pipeline_integrity(_config_hash: str = "") -> IntegrityReport:
     """Verify that all pipeline outputs are consistent and non-corrupted.
 
     Checks:
@@ -213,21 +212,21 @@ def force_clean_rebuild(confirm: bool = True) -> None:
 
     size_mb = total_size / (1024 * 1024)
 
-    print("\n🧹 CLEAN REBUILD PREVIEW")
-    print(f"   Files to delete: {files_count}")
-    print(f"   Total size: {size_mb:.1f} MB")
-    print(f"   Directories: {', '.join(dirs_to_clean)}")
-    print("\n   This will force a complete rebuild of:")
-    print("   - Labels (triple-barrier)")
-    print("   - Features")
-    print("   - Train/Val/Test splits")
-    print("   - Models (LightGBM, LSTM, Stacking)")
-    print("   - Backtest results")
+    logger.info("\n🧹 CLEAN REBUILD PREVIEW")
+    logger.info(f"   Files to delete: {files_count}")
+    logger.info(f"   Total size: {size_mb:.1f} MB")
+    logger.info(f"   Directories: {', '.join(dirs_to_clean)}")
+    logger.info("\n   This will force a complete rebuild of:")
+    logger.info("   - Labels (triple-barrier)")
+    logger.info("   - Features")
+    logger.info("   - Train/Val/Test splits")
+    logger.info("   - Models (LightGBM, LSTM, Stacking)")
+    logger.info("   - Backtest results")
 
     if confirm:
         response = input("\n⚠️  Proceed with clean rebuild? [y/N]: ")
         if response.lower() != "y":
-            print("❌ Clean rebuild cancelled.")
+            logger.info("❌ Clean rebuild cancelled.")
             return
 
     # Execute cleanup
@@ -236,7 +235,7 @@ def force_clean_rebuild(confirm: bool = True) -> None:
     for dir_name in dirs_to_clean:
         dir_path = Path(dir_name)
         if dir_path.exists():
-            print(f"\n  Cleaning {dir_name}...")
+            logger.info(f"\n  Cleaning {dir_name}...")
             shutil.rmtree(dir_path)
             dir_path.mkdir(parents=True, exist_ok=True)
             deleted_count += 1
@@ -244,15 +243,15 @@ def force_clean_rebuild(confirm: bool = True) -> None:
     for file_name in files_to_clean:
         file_path = Path(file_name)
         if file_path.exists():
-            print(f"  Removing {file_name}...")
+            logger.info(f"  Removing {file_name}...")
             file_path.unlink()
 
-    print("\n✅ Clean rebuild completed.")
-    print(f"   Deleted: {deleted_count} directories")
-    print("\n   Next steps:")
-    print("   1. Run: python main.py --force")
-    print("   2. Wait for pipeline completion")
-    print("   3. Validate: python -m thesis.validation.run_all_validations")
+    logger.info("\n✅ Clean rebuild completed.")
+    logger.info(f"   Deleted: {deleted_count} directories")
+    logger.info("\n   Next steps:")
+    logger.info("   1. Run: python main.py --force")
+    logger.info("   2. Wait for pipeline completion")
+    logger.info("   3. Validate: python -m thesis.validation.run_all_validations")
 
 
 def backup_critical_files(backup_dir: str = ".tracking/backups") -> Path:
@@ -293,7 +292,7 @@ if __name__ == "__main__":
 
     if "--check" in sys.argv:
         report = verify_pipeline_integrity()
-        print(generate_integrity_report(report))
+        logger.info(generate_integrity_report(report))
         sys.exit(0 if report.passed else 1)
 
     elif "--clean" in sys.argv:
@@ -301,13 +300,13 @@ if __name__ == "__main__":
 
     elif "--backup" in sys.argv:
         backup_path = backup_critical_files()
-        print(f"Backup created: {backup_path}")
+        logger.info(f"Backup created: {backup_path}")
 
     else:
-        print(
+        logger.info(
             "Usage: python -m thesis.validation.pipeline_integrity [--check|--clean|--backup]"
         )
-        print("")
-        print("  --check   Verify pipeline integrity")
-        print("  --clean   Force clean rebuild (deletes all intermediate files)")
-        print("  --backup  Create backup of critical files")
+        logger.info("")
+        logger.info("  --check   Verify pipeline integrity")
+        logger.info("  --clean   Force clean rebuild (deletes all intermediate files)")
+        logger.info("  --backup  Create backup of critical files")

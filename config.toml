@@ -367,38 +367,54 @@ n_jobs = -1  # Use all available CPU cores
 random_seed = 42
 
 # =============================================================================
-# PATHS
+# PATHS (Session-Aware Output Structure)
 # =============================================================================
+#
+# SESSION-BASED OUTPUT:
+# By default, each pipeline run creates an isolated session folder:
+#   results/XAUUSD_H1_20250331_110145/
+#   ├── models/      (session-specific models)
+#   ├── predictions/ (session-specific predictions)
+#   ├── reports/     (session-specific reports)
+#   ├── backtest/    (session-specific backtest results)
+#   └── logs/        (session logs)
+#
+# GLOBAL CACHE (shared across sessions):
+#   data/processed/  (features, labels, train/val/test splits)
+#   data/raw/        (downloaded OHLCV data)
+#
+# The "results/latest" symlink always points to the most recent session.
 
 [paths]
+# Session configuration (enabled by default)
+use_sessions = true           # Enable session-based output
+session_id = ""             # Auto-generated if empty: {SYMBOL}_{TIMEFRAME}_{YYYYMMDD}_{HHMMSS}
+# session_id = "experiment_1"  # Example: use custom session ID
+
 # Input/Output directories
 data_raw = "data/raw/XAUUSD"
 data_processed = "data/processed"
-data_predictions = "data/predictions"
-models = "models"
-results = "results"
-logs = "logs"
 
 # Artifact files
 ohlcv = "data/processed/ohlcv.parquet"
 features = "data/processed/features.parquet"
 labels = "data/processed/labels.parquet"
 
-# Split datasets
+# Split datasets (global cache - shared across sessions)
 train_data = "data/processed/train.parquet"
 val_data = "data/processed/val.parquet"
 test_data = "data/processed/test.parquet"
 
-# Models
+# Models (session-aware when use_sessions=true)
 lgbm_model = "models/lightgbm_model.pkl"
 lstm_model = "models/lstm_model.pt"
 stacking_model = "models/stacking_meta_learner.pkl"
 
-# Predictions
+# Predictions (session-aware when use_sessions=true)
 lgbm_oof = "data/predictions/lightgbm_oof.parquet"
 lstm_oof = "data/predictions/lstm_oof.parquet"
 final_predictions = "data/predictions/final_predictions.parquet"
 
-# Results
+# Results (session-aware when use_sessions=true)
 backtest_results = "results/backtest_results.json"
 final_report = "results/thesis_report.md"

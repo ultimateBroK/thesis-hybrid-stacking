@@ -37,12 +37,12 @@ def run_all_validations(config_path: str = "config.toml") -> dict:
     """
     results = {"passed": True, "checks": {}}
 
-    print("\n" + "=" * 80)
-    print("COMPREHENSIVE VALIDATION SUITE")
-    print("=" * 80)
+    logger.info("\n" + "=" * 80)
+    logger.info("COMPREHENSIVE VALIDATION SUITE")
+    logger.info("=" * 80)
 
     # 1. Pipeline Integrity Check
-    print("\n[1/3] Running pipeline integrity check...")
+    logger.info("\n[1/3] Running pipeline integrity check...")
     try:
         integrity_report = verify_pipeline_integrity()
         results["checks"]["integrity"] = {
@@ -53,19 +53,19 @@ def run_all_validations(config_path: str = "config.toml") -> dict:
 
         if not integrity_report.passed:
             results["passed"] = False
-            print(generate_integrity_report(integrity_report))
-            print("\n❌ Pipeline integrity check FAILED")
-            print("   Fix: Run force_clean_rebuild() and re-run pipeline")
+            logger.info(generate_integrity_report(integrity_report))
+            logger.info("\n❌ Pipeline integrity check FAILED")
+            logger.info("   Fix: Run force_clean_rebuild() and re-run pipeline")
             return results
         else:
-            print("✅ Pipeline integrity: PASSED")
+            logger.info("✅ Pipeline integrity: PASSED")
     except Exception as e:
         logger.error(f"Integrity check failed: {e}")
         results["checks"]["integrity"] = {"passed": False, "error": str(e)}
         results["passed"] = False
 
     # 2. Label Validation
-    print("\n[2/3] Running label validation...")
+    logger.info("\n[2/3] Running label validation...")
     try:
         label_results = run_label_validation_pipeline(config_path)
         results["checks"]["labels"] = {
@@ -75,20 +75,20 @@ def run_all_validations(config_path: str = "config.toml") -> dict:
 
         if not label_results["passed"]:
             results["passed"] = False
-            print("❌ Label validation FAILED")
+            logger.error("❌ Label validation FAILED")
             for error in label_results.get("errors", []):
-                print(f"   Error: {error}")
+                logger.error(f"   Error: {error}")
         else:
-            print("✅ Label validation: PASSED")
+            logger.info("✅ Label validation: PASSED")
             if label_results.get("warnings"):
-                print(f"   Warnings: {len(label_results['warnings'])}")
+                logger.warning(f"   Warnings: {len(label_results['warnings'])}")
     except Exception as e:
         logger.error(f"Label validation failed: {e}")
         results["checks"]["labels"] = {"passed": False, "error": str(e)}
         results["passed"] = False
 
     # 3. Math Consistency Check
-    print("\n[3/3] Running math consistency check...")
+    logger.info("\n[3/3] Running math consistency check...")
     try:
         math_results = run_math_validation_from_files()
         results["checks"]["math"] = {
@@ -99,37 +99,41 @@ def run_all_validations(config_path: str = "config.toml") -> dict:
 
         if not math_results["passed"]:
             results["passed"] = False
-            print("❌ Math consistency check FAILED")
+            logger.error("❌ Math consistency check FAILED")
             for warning in math_results.get("warnings", []):
-                print(f"   Warning: {warning}")
+                logger.warning(f"   Warning: {warning}")
         else:
-            print("✅ Math consistency: PASSED")
-            print(f"   Expected return: {math_results['expected_return']:.1%}")
-            print(f"   Kelly fraction: {math_results['kelly_fraction']:.1%}")
+            logger.info("✅ Math consistency: PASSED")
+            logger.info(f"   Expected return: {math_results['expected_return']:.1%}")
+            logger.info(f"   Kelly fraction: {math_results['kelly_fraction']:.1%}")
 
             if math_results.get("warnings"):
-                print(f"   Warnings: {len(math_results['warnings'])}")
+                logger.warning(f"   Warnings: {len(math_results['warnings'])}")
                 for warning in math_results["warnings"]:
-                    print(f"     - {warning}")
+                    logger.warning(f"     - {warning}")
     except Exception as e:
         logger.error(f"Math validation failed: {e}")
         results["checks"]["math"] = {"passed": False, "error": str(e)}
         results["passed"] = False
 
     # Summary
-    print("\n" + "=" * 80)
+    logger.info("\n" + "=" * 80)
     if results["passed"]:
-        print("✅ ALL VALIDATIONS PASSED")
-        print("=" * 80)
-        print("\nSystem is ready for further testing.")
+        logger.info("✅ ALL VALIDATIONS PASSED")
+        logger.info("=" * 80)
+        logger.info("\nSystem is ready for further testing.")
     else:
-        print("❌ SOME VALIDATIONS FAILED")
-        print("=" * 80)
-        print("\nPlease fix the issues above before proceeding.")
-        print("\nRecommended actions:")
-        print("  1. If label validation failed: Fix triple_barrier.py and regenerate")
-        print("  2. If math check failed: Investigate backtest for hidden advantages")
-        print("  3. If integrity failed: Run force_clean_rebuild()")
+        logger.error("❌ SOME VALIDATIONS FAILED")
+        logger.info("=" * 80)
+        logger.info("\nPlease fix the issues above before proceeding.")
+        logger.info("\nRecommended actions:")
+        logger.info(
+            "  1. If label validation failed: Fix triple_barrier.py and regenerate"
+        )
+        logger.info(
+            "  2. If math check failed: Investigate backtest for hidden advantages"
+        )
+        logger.info("  3. If integrity failed: Run force_clean_rebuild()")
 
     return results
 

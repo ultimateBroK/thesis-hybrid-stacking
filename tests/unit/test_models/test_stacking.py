@@ -1,7 +1,6 @@
 """Tests for meta-learner stacking."""
 
 import numpy as np
-import polars as pl
 import pytest
 
 try:

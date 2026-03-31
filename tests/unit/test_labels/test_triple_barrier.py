@@ -4,7 +4,6 @@ Critical for correct label generation and trading signal creation.
 """
 
 import pandas as pd
-import polars as pl
 import numpy as np
 import pytest
 

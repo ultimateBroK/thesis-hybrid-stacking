@@ -3,7 +3,6 @@ Test fixtures for the thesis testing suite.
 Uses small slices of real XAUUSD data for testing.
 """
 
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple

@@ -7,7 +7,6 @@ import pandas as pd
 import polars as pl
 import numpy as np
 import pytest
-from pathlib import Path
 
 
 class TestDataSplitting:
@@ -87,7 +86,6 @@ class TestDataSplitting:
 
     def test_class_distribution_logging(self, sample_features_df):
         """Test that class distribution can be calculated."""
-        from thesis.data.splitting import _log_class_distribution
 
         # Add labels to data
         df = sample_features_df.clone()

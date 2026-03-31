@@ -7,7 +7,6 @@ this validator will flag it as mathematically inconsistent.
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Dict, Optional
 import logging
 
 logger = logging.getLogger("thesis.validation")
@@ -62,7 +61,7 @@ class TradingMathValidator:
         kelly = edge / self.avg_win
         return max(0.0, min(1.0, kelly))  # Clamp between 0 and 1
 
-    def validate_consistency(self, actual_return: float) -> Dict:
+    def validate_consistency(self, actual_return: float) -> dict:
         """Check if actual return is within statistical bounds.
 
         Args:
@@ -126,7 +125,7 @@ class TradingMathValidator:
             "warning": not within_3_sigma and not red_flag,
         }
 
-    def validate_calmar(self, calmar_ratio: float, max_drawdown: float) -> Dict:
+    def validate_calmar(self, calmar_ratio: float, max_drawdown: float) -> dict:
         """Validate Calmar ratio is within realistic bounds.
 
         Args:
@@ -182,10 +181,10 @@ class TradingMathValidator:
 
 
 def validate_backtest_math(
-    backtest_results: Dict,
-    model_accuracy: Optional[float] = None,
+    backtest_results: dict,
+    model_accuracy: float | None = None,
     risk_per_trade: float = 0.01,
-) -> Dict:
+) -> dict:
     """Validate backtest results for mathematical consistency.
 
     Args:
@@ -299,8 +298,8 @@ def validate_backtest_math(
 
 def run_math_validation_from_files(
     backtest_path: str = "results/backtest_results.json",
-    model_accuracy: Optional[float] = None,
-) -> Dict:
+    model_accuracy: float | None = None,
+) -> dict:
     """Run math validation from saved backtest results.
 
     Args:

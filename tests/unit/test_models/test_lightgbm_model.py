@@ -1,7 +1,6 @@
 """Tests for LightGBM model."""
 
 import numpy as np
-import polars as pl
 import pytest
 
 try:

@@ -8,9 +8,8 @@ Tests for tick data conversion to OHLCV H1 format, including:
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import polars as pl
 import pytest
 from datetime import datetime
@@ -568,7 +567,6 @@ class TestTimezoneHandling:
 
     def test_market_timezone_conversion(self):
         """Test that timestamps are converted to market timezone."""
-        from thesis.data.tick_to_ohlcv import _process_tick_file
 
         config = MagicMock()
         config.data.market_tz = "America/New_York"
@@ -689,7 +687,6 @@ class TestDataValidation:
 
     def test_negative_spread_handling(self):
         """Test handling of negative spreads (bid > ask)."""
-        from thesis.data.tick_to_ohlcv import _process_tick_file
 
         config = MagicMock()
         config.data.market_tz = "America/New_York"

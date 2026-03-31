@@ -5,7 +5,7 @@ where temporal order must be preserved to prevent data leakage.
 """
 
 import logging
-from typing import Iterator, List, Tuple
+from typing import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -67,7 +67,7 @@ class SlidingWindowCV:
 
     def generate_windows(
         self, overall_start: datetime, overall_end: datetime
-    ) -> List[WalkForwardWindow]:
+    ) -> list[WalkForwardWindow]:
         """Generate sliding windows covering the date range.
 
         Args:
@@ -144,7 +144,7 @@ class SlidingWindowCV:
         timestamp_col: str = "timestamp",
         overall_start: datetime = None,
         overall_end: datetime = None,
-    ) -> Iterator[Tuple[np.ndarray, np.ndarray, str]]:
+    ) -> Iterator[tuple[np.ndarray, np.ndarray, str]]:
         """Generate train/val indices for each window.
 
         Args:
@@ -281,7 +281,7 @@ class ExpandingWindowCV:
 
     def generate_windows(
         self, overall_start: datetime, overall_end: datetime
-    ) -> List[WalkForwardWindow]:
+    ) -> list[WalkForwardWindow]:
         """Generate expanding windows."""
         windows = []
 
@@ -341,7 +341,7 @@ class ExpandingWindowCV:
         timestamp_col: str = "timestamp",
         overall_start: datetime = None,
         overall_end: datetime = None,
-    ) -> Iterator[Tuple[np.ndarray, np.ndarray, str]]:
+    ) -> Iterator[tuple[np.ndarray, np.ndarray, str]]:
         """Generate train/val indices for expanding windows."""
         if overall_start is None:
             overall_start = df[timestamp_col].min()
@@ -410,7 +410,7 @@ class PurgedKFold:
 
     def split(
         self, df: pl.DataFrame, timestamp_col: str = "timestamp"
-    ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+    ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         """Generate purged K-Fold splits.
 
         Args:

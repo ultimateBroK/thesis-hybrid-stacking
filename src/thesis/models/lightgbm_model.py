@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -15,10 +16,14 @@ logger = logging.getLogger("thesis.models")
 
 
 def train_lightgbm(config: Config) -> None:
-    """Train LightGBM model with optional Optuna tuning.
+    """Train the LightGBM base model and save stacking artifacts.
+
+    This stage loads train/validation parquet files, trains LightGBM with either
+    fixed parameters or Optuna tuning, persists the model, and writes validation
+    probabilities aligned by timestamp for the stacking stage.
 
     Args:
-        config: Configuration object.
+        config: Loaded application configuration.
     """
     logger.info("Loading training data...")
 
@@ -62,7 +67,9 @@ def train_lightgbm(config: Config) -> None:
     if config.models["tree"].use_class_weights:
         classes = np.unique(y_train)
         weights = compute_class_weight("balanced", classes=classes, y=y_train)
-        class_weights = {c: w for c, w in zip(classes, weights)}
+        class_weights = {
+            int(class_id): float(weight) for class_id, weight in zip(classes, weights)
+        }
         logger.info(f"Class weights: {class_weights}")
 
     # Import LightGBM
@@ -122,8 +129,27 @@ def train_lightgbm(config: Config) -> None:
     logger.info(f"Saved validation predictions: {preds_path}")
 
 
-def _train_fixed_params(X_train, y_train, X_val, y_val, class_weights, config):
-    """Train with fixed hyperparameters."""
+def _train_fixed_params(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    class_weights: dict[int, float] | None,
+    config: Config,
+) -> Any:
+    """Train LightGBM with fixed configuration values.
+
+    Args:
+        X_train: Training features.
+        y_train: Training labels.
+        X_val: Validation features used for early stopping.
+        y_val: Validation labels.
+        class_weights: Optional class rebalancing weights.
+        config: Loaded application configuration.
+
+    Returns:
+        Trained ``lightgbm.LGBMClassifier`` instance.
+    """
     import lightgbm as lgb
 
     cfg = config.models["tree"]
@@ -158,20 +184,41 @@ def _train_fixed_params(X_train, y_train, X_val, y_val, class_weights, config):
 
 
 def _train_with_optuna(
-    X_train,
-    y_train,
-    X_val,
-    y_val,
-    class_weights,
-    config,
-    train_df=None,
-    feature_cols=None,
-):
-    """Train with Optuna hyperparameter optimization using Walk-Forward CV."""
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    class_weights: dict[int, float] | None,
+    config: Config,
+    train_df: pl.DataFrame | None = None,
+    feature_cols: list[str] | None = None,
+) -> Any:
+    """Train LightGBM with Optuna hyperparameter optimization.
+
+    Uses walk-forward cross-validation when available, otherwise falls back to
+    the fixed train/validation split.
+
+    Args:
+        X_train: Training features.
+        y_train: Training labels.
+        X_val: Validation features.
+        y_val: Validation labels.
+        class_weights: Optional class rebalancing weights.
+        config: Loaded application configuration.
+        train_df: Optional training frame with timestamps for walk-forward CV.
+        feature_cols: Optional feature names for DataFrame-based fitting.
+
+    Returns:
+        Trained ``lightgbm.LGBMClassifier`` instance.
+    """
     import lightgbm as lgb
     import optuna
     from sklearn.metrics import accuracy_score, f1_score
-    from thesis.models.cross_validation import create_cv_splitter
+    from thesis.models.cross_validation import (
+        ExpandingWindowCV,
+        SlidingWindowCV,
+        create_cv_splitter,
+    )
     import pandas as pd
 
     cfg = config.models["tree"]
@@ -179,17 +226,22 @@ def _train_with_optuna(
     # Check if we should use Walk-Forward CV (from splitting config)
     use_wf_cv = getattr(config.splitting, "use_walk_forward_cv", True)
 
+    cv_splitter: SlidingWindowCV | ExpandingWindowCV | None = None
     if use_wf_cv and train_df is not None:
-        logger.info("Using Walk-Forward Cross-Validation for hyperparameter tuning")
-        cv_splitter = create_cv_splitter(config)
-        timestamps = train_df["timestamp"]
-        overall_start = timestamps.min()
-        overall_end = timestamps.max()
+        candidate_splitter = create_cv_splitter(config)
+        if isinstance(candidate_splitter, (SlidingWindowCV, ExpandingWindowCV)):
+            cv_splitter = candidate_splitter
+            logger.info("Using Walk-Forward Cross-Validation for hyperparameter tuning")
+        else:
+            logger.warning(
+                "Walk-forward CV was requested but splitter is not walk-forward. "
+                "Falling back to fixed train/val tuning."
+            )
     else:
         logger.info("Using fixed train/val split for hyperparameter tuning")
-        cv_splitter = None
 
-    def objective(trial):
+    def objective(trial: Any) -> float:
+        """Evaluate one Optuna trial and return its scalar score."""
         params = {
             "num_leaves": trial.suggest_int("num_leaves", 20, 150),
             "max_depth": trial.suggest_int("max_depth", 3, 12),
@@ -208,7 +260,7 @@ def _train_with_optuna(
             "verbose": -1,
         }
 
-        if cv_splitter is not None:
+        if cv_splitter is not None and train_df is not None:
             # Walk-Forward CV: Evaluate on multiple time windows
             fold_scores = []
             fold_f1_scores = []
@@ -218,10 +270,8 @@ def _train_with_optuna(
                 pd.DataFrame(X_train, columns=feature_cols) if feature_cols else None
             )
 
-            for fold_idx, (train_idx, val_idx, window_name) in enumerate(
-                cv_splitter.split(
-                    train_df, overall_start=overall_start, overall_end=overall_end
-                )
+            for fold_idx, (train_idx, val_idx, _window_name) in enumerate(
+                cv_splitter.split(train_df)
             ):
                 # Use DataFrames with feature names instead of numpy arrays
                 if X_train_df is not None:
@@ -263,8 +313,8 @@ def _train_with_optuna(
                 return 0.0
 
             # Return mean accuracy across folds (more robust than single validation)
-            mean_acc = np.mean(fold_scores)
-            mean_f1 = np.mean(fold_f1_scores)
+            mean_acc = float(np.mean(fold_scores))
+            mean_f1 = float(np.mean(fold_f1_scores))
 
             # Combine accuracy and F1 for balanced metric
             score = 0.6 * mean_acc + 0.4 * mean_f1
@@ -312,18 +362,25 @@ def _train_with_optuna(
     return model
 
 
-def _generate_oof_predictions(model, X_data, y_data, config, timestamps=None):
+def _generate_oof_predictions(
+    model: Any,
+    X_data: np.ndarray,
+    y_data: np.ndarray,
+    config: Config,
+    timestamps: np.ndarray | None = None,
+) -> pl.DataFrame | np.ndarray:
     """Generate out-of-fold predictions for stacking.
 
     Args:
-        model: Trained model to use for OOF generation
-        X_data: Feature array
-        y_data: Target array
-        config: Configuration object
-        timestamps: Optional timestamps to include in output DataFrame
+        model: Trained model used for out-of-fold generation.
+        X_data: Feature matrix.
+        y_data: Target vector.
+        config: Loaded application configuration.
+        timestamps: Optional timestamps for aligned tabular output.
 
     Returns:
-        DataFrame with predictions and timestamps if provided
+        Polars DataFrame when ``timestamps`` is provided, otherwise a NumPy
+        array of probabilities.
     """
     from sklearn.model_selection import StratifiedKFold
 

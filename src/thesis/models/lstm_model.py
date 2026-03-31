@@ -15,11 +15,26 @@ logger = logging.getLogger("thesis.models")
 
 
 class LSTMClassifier(nn.Module):
-    """LSTM classifier for time-series."""
+    """Sequence classifier built on top of an LSTM encoder.
+
+    The network consumes fixed-length OHLCV sequences and outputs logits for
+    the three trading labels ``[-1, 0, 1]`` (encoded as ``[0, 1, 2]`` during
+    training).
+    """
 
     def __init__(
         self, input_size, hidden_size, num_layers, num_classes, dropout, bidirectional
     ):
+        """Initialize LSTM sequence classifier layers.
+
+        Args:
+            input_size: Number of input features per timestep.
+            hidden_size: Hidden dimension of the LSTM encoder.
+            num_layers: Number of stacked LSTM layers.
+            num_classes: Number of output classes.
+            dropout: Dropout probability applied after the encoder.
+            bidirectional: Whether to use a bidirectional LSTM encoder.
+        """
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -38,10 +53,17 @@ class LSTMClassifier(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(lstm_output_size, num_classes)
 
-    def forward(self, x):
-        # x: (batch, seq_len, input_size)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run a forward pass through the classifier.
+
+        Args:
+            x: Input tensor with shape ``(batch, seq_len, input_size)``.
+
+        Returns:
+            Logits tensor with shape ``(batch, num_classes)``.
+        """
         lstm_out, _ = self.lstm(x)
-        # Take last timestep
+        # Use the final timestep representation for sequence classification.
         last_out = lstm_out[:, -1, :]
         last_out = self.dropout(last_out)
         out = self.fc(last_out)
@@ -49,10 +71,14 @@ class LSTMClassifier(nn.Module):
 
 
 def train_lstm(config: Config) -> None:
-    """Train LSTM model.
+    """Train the LSTM base model and persist validation predictions.
+
+    This routine prepares normalized OHLCV sequences, trains the LSTM with
+    early stopping, saves the best checkpoint, stores normalization statistics
+    for inference, and writes validation probabilities for stacking.
 
     Args:
-        config: Configuration object.
+        config: Loaded application configuration.
     """
     logger.info("Preparing LSTM data...")
 
@@ -217,16 +243,21 @@ def train_lstm(config: Config) -> None:
     logger.info(f"Saved LSTM predictions: {preds_path}")
 
 
-def _create_sequences(df, feature_cols, seq_length):
+def _create_sequences(
+    df: pl.DataFrame,
+    feature_cols: list[str],
+    seq_length: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Create sequences for LSTM.
 
     Args:
-        df: DataFrame.
+        df: Input dataframe containing features and label.
         feature_cols: Columns to use as features.
         seq_length: Sequence length.
 
     Returns:
-        Tuple of (X, y, feature_means, feature_stds) arrays.
+        Tuple of ``(X, y, feature_means, feature_stds)`` arrays where ``X`` has
+        shape ``(n_samples, seq_length, n_features)`` and ``y`` is class-encoded.
     """
     features = df.select(feature_cols).to_numpy()
     labels = df["label"].to_numpy()

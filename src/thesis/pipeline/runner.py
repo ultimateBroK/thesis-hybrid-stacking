@@ -14,44 +14,37 @@ Stages:
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from thesis.config.loader import Config
+from thesis.pipeline.session import SessionManager
 
 logger = logging.getLogger("thesis.pipeline")
 
 
-class PipelineStage:
-    """Base class for pipeline stages."""
-
-    def __init__(self, name: str, config: Config):
-        self.name = name
-        self.config = config
-        self.output_path: Optional[Path] = None
-
-    def check_cache(self) -> bool:
-        """Check if stage output exists and is valid."""
-        if self.config.workflow.force_rerun:
-            return False
-        if self.output_path and self.output_path.exists():
-            logger.info(f"  Cache hit: {self.output_path}")
-            return True
-        return False
-
-    def run(self) -> None:
-        """Execute the stage. Must be implemented by subclasses."""
-        raise NotImplementedError
-
-
-def run_thesis_workflow(config: Config, stage: Optional[str] = None) -> None:
+def run_thesis_workflow(
+    config: Config,
+    stage: str | None = None,
+    session_manager: SessionManager | None = None,
+) -> None:
     """Run the thesis pipeline workflow.
 
     Args:
         config: Configuration object with all settings.
         stage: Specific stage to run, or None for full pipeline.
+        session_manager: Optional SessionManager for session-aware workflow.
     """
+    # Initialize session (always enabled)
+    if session_manager is None:
+        session_manager = SessionManager(config)
+        session_manager.update_config_paths(config)
+        session_manager.create_latest_symlink()
+        session_manager.create_config_snapshot()
+        logger.info(f"Session enabled: {config.paths.session_id}")
+        logger.info(f"Session path: {config.paths.session_path}")
+
     logger.info("=" * 70)
     logger.info("STARTING THESIS PIPELINE")
+    logger.info(f"Session ID: {config.paths.session_id}")
     logger.info("=" * 70)
 
     stages = [

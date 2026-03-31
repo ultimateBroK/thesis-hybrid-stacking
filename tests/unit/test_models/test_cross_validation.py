@@ -1,9 +1,7 @@
 """Tests for cross-validation splitters."""
 
-import numpy as np
-import polars as pl
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     from thesis.models.cross_validation import (
