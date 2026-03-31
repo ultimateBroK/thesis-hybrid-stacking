@@ -89,6 +89,13 @@ class DataConfig:
     tick_size: float = 0.01
     contract_size: int = 100
 
+    # Download configuration (Dukascopy)
+    symbol: str = "XAUUSD"
+    asset_class: str = "fx"
+    download_concurrency: int = 8
+    download_force: bool = False
+    download_skip_current_month: bool = False
+
 
 @dataclass
 class SplittingConfig:

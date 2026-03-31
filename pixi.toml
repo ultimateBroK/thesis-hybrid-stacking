@@ -6,6 +6,7 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [tasks]
+data = "python data_download.py --symbol XAUUSD --start-year 2026 --start-month 3"
 workflow = "python main.py"
 force = "python main.py --force"
 clean-cache = "rm -f data/processed/train.parquet data/processed/val.parquet data/processed/test.parquet data/processed/labels.parquet"

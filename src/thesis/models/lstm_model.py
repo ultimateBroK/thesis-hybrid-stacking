@@ -72,7 +72,9 @@ def train_lstm(config: Config) -> None:
     # Select OHLCV features for sequences
     ohlcv_cols = ["open", "high", "low", "close", "volume"]
 
-    X_train, y_train, train_means, train_stds = _create_sequences(train_df, ohlcv_cols, seq_length)
+    X_train, y_train, train_means, train_stds = _create_sequences(
+        train_df, ohlcv_cols, seq_length
+    )
     X_val, y_val, _, _ = _create_sequences(val_df, ohlcv_cols, seq_length)
 
     logger.info(f"Training sequences: {X_train.shape}")

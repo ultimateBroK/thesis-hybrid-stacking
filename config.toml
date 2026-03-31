@@ -35,6 +35,13 @@ end_date = "2026-03-31"
 tick_size = 0.01  # Minimum price movement
 contract_size = 100  # Standard lot = 100 oz
 
+# Download configuration (Dukascopy tick data)
+symbol = "XAUUSD"                  # Symbol to download
+asset_class = "fx"                 # Asset class: "fx" or "crypto"
+download_concurrency = 8           # Parallel download threads
+download_force = false             # Force re-verify existing months
+download_skip_current_month = false  # Skip checking/repairing current month
+
 # =============================================================================
 # DATA SPLITTING (Updated Scheme - Market Regime Based with Walk-Forward CV)
 # =============================================================================

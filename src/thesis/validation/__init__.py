@@ -11,13 +11,13 @@ This module provides tools to validate:
 from thesis.validation.label_validation import (
     validate_no_lookahead,
     run_label_validation_pipeline,
-    quick_label_check
+    quick_label_check,
 )
 
 from thesis.validation.math_consistency import (
     TradingMathValidator,
     validate_backtest_math,
-    run_math_validation_from_files
+    run_math_validation_from_files,
 )
 
 from thesis.validation.pipeline_integrity import (
@@ -25,7 +25,7 @@ from thesis.validation.pipeline_integrity import (
     generate_integrity_report,
     force_clean_rebuild,
     backup_critical_files,
-    IntegrityReport
+    IntegrityReport,
 )
 
 __all__ = [
@@ -33,12 +33,10 @@ __all__ = [
     "validate_no_lookahead",
     "run_label_validation_pipeline",
     "quick_label_check",
-    
     # Math consistency
     "TradingMathValidator",
     "validate_backtest_math",
     "run_math_validation_from_files",
-    
     # Pipeline integrity
     "verify_pipeline_integrity",
     "generate_integrity_report",

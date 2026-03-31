@@ -2,37 +2,36 @@
 
 from __future__ import annotations
 
-import argparse
-import asyncio
-import logging
-import calendar
-from dataclasses import dataclass
-from datetime import date, datetime, timezone
-import json
-import lzma
-from pathlib import Path
-import random
-import struct
-import sys
-import aiohttp
-import polars as pl
+# Add src directory to path for imports when running as script  # noqa: E402
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
 
-from src.thesis.config.loader import load_config, Config
+src_dir = Path(__file__).parent / "src"  # noqa: E402
+if src_dir.exists() and str(src_dir) not in sys.path:  # noqa: E402
+    sys.path.insert(0, str(src_dir))  # noqa: E402
+
+import argparse  # noqa: E402
+import asyncio  # noqa: E402
+import logging  # noqa: E402
+import calendar  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from datetime import date, datetime, timezone  # noqa: E402
+import json  # noqa: E402
+import lzma  # noqa: E402
+import random  # noqa: E402
+import struct  # noqa: E402
+import aiohttp  # noqa: E402
+import polars as pl  # noqa: E402
+
+from thesis.config.paths import DEFAULT_PATHS, ProjectPaths  # noqa: E402
 
 logger = logging.getLogger(__name__)
 BASE_URL = "https://datafeed.dukascopy.com/datafeed"
 
 
-def _get_symbol_paths(config: Config, symbol: str) -> tuple[Path, Path]:
-    """Get raw data directory and state file paths for a symbol."""
-    raw_dir = Path(config.paths.data_raw)
-    state_file = raw_dir / f".{symbol}_download_state.json"
-    return raw_dir, state_file
-
-
-@dataclass
+@dataclass(frozen=True)
 class DownloadRuntimeConfig:
-    """Runtime config for Dukascopy tick downloader."""
+    """Immutable runtime config for Dukascopy tick downloader."""
 
     symbol: str
     start_year: int
@@ -58,12 +57,9 @@ def build_download_config(
     end_year: int | None = None,
     end_month: int | None = None,
     skip_current_month: bool = False,
-    config: Config | None = None,
+    paths: ProjectPaths = DEFAULT_PATHS,
 ) -> DownloadRuntimeConfig:
     """Build an immutable runtime config for the downloader."""
-    if config is None:
-        config = load_config()
-    output_dir, state_file = _get_symbol_paths(config, symbol)
     return DownloadRuntimeConfig(
         symbol=symbol,
         start_year=start_year,
@@ -74,20 +70,18 @@ def build_download_config(
         concurrency=concurrency,
         force=force,
         skip_current_month=skip_current_month,
-        output_dir=output_dir,
-        state_file=state_file,
+        output_dir=paths.raw_data_dir(symbol),
+        state_file=paths.state_file(symbol),
     )
 
 
 def list_available_raw_months(
     symbol: str,
     *,
-    config: Config | None = None,
+    paths: ProjectPaths = DEFAULT_PATHS,
 ) -> list[tuple[int, int]]:
     """Return list of (year, month) from YYYY-MM.parquet files in raw dir."""
-    if config is None:
-        config = load_config()
-    raw_dir, _ = _get_symbol_paths(config, symbol)
+    raw_dir = paths.raw_data_dir(symbol)
     if not raw_dir.exists():
         return []
     result: list[tuple[int, int]] = []
@@ -107,7 +101,13 @@ def load_state(state_file: Path) -> dict[str, dict[str, int]]:
     """Read the downloaded-month tracking state from disk."""
     if state_file.exists():
         with state_file.open() as handle:
-            return json.load(handle)
+            data = json.load(handle)
+        if isinstance(data, list):
+            migrated = {key: {"rows": -1, "missing_hours": 0} for key in data}
+            save_state(state_file, migrated)
+            logger.info("Migrated state file to new format (%d entries)", len(migrated))
+            return migrated
+        return data
     return {}
 
 
@@ -118,16 +118,31 @@ def save_state(state_file: Path, state: dict[str, dict[str, int]]) -> None:
         json.dump(state, handle, indent=2, sort_keys=True)
 
 
-def parse_hour(
-    raw: bytes, year: int, month: int, day: int, hour: int
-) -> pl.DataFrame | None:
+def migrate_old_markers(
+    output_dir: Path,
+    state_file: Path,
+    state: dict[str, dict[str, int]],
+) -> dict[str, dict[str, int]]:
+    """Absorb old `*.parquet.complete` files into the JSON state file."""
+    if not output_dir.exists():
+        return state
+
+    old_markers = list(output_dir.glob("*.parquet.complete"))
+    for marker in old_markers:
+        key = marker.name.replace(".parquet.complete", "")
+        state.setdefault(key, {"rows": -1, "missing_hours": 0})
+        marker.unlink()
+    if old_markers:
+        logger.info("Migrated %d old markers -> %s", len(old_markers), state_file)
+    return state
+
+
+def parse_hour(raw: bytes, year: int, month: int, day: int, hour: int) -> pl.DataFrame | None:
     """Decode raw Dukascopy bi5 bytes into a tick dataframe."""
     if not raw:
         return None
 
-    base_ms = int(
-        datetime(year, month, day, hour, tzinfo=timezone.utc).timestamp() * 1000
-    )
+    base_ms = int(datetime(year, month, day, hour, tzinfo=timezone.utc).timestamp() * 1000)
     chunk = 20
     records = [
         (
@@ -143,9 +158,17 @@ def parse_hour(
         return None
     return pl.DataFrame(
         records,
+
         schema=["timestamp_ms", "ask", "bid", "ask_volume", "bid_volume"],
         orient="row",
     )
+
+
+def to_datetime_df(df: pl.DataFrame) -> pl.DataFrame:
+    """Convert an epoch-based tick dataframe into canonical timestamp columns."""
+    return df.with_columns(
+        pl.from_epoch("timestamp_ms", time_unit="ms").alias("timestamp")
+    ).select(["timestamp", "ask", "bid", "ask_volume", "bid_volume"])
 
 
 async def _fetch_one(
@@ -159,13 +182,13 @@ async def _fetch_one(
     month: int,
 ) -> pl.DataFrame | None | str:
     """Fetch, decompress, and parse one hourly file asynchronously."""
-    url = f"{BASE_URL}/{config.symbol}/{year:04d}/{month_idx:02d}/{day:02d}/{hour:02d}h_ticks.bi5"
+    url = (
+        f"{BASE_URL}/{config.symbol}/{year:04d}/{month_idx:02d}/{day:02d}/{hour:02d}h_ticks.bi5"
+    )
     async with semaphore:
         for attempt in range(4):
             try:
-                async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
                     if response.status == 404:
                         return None
                     if response.status in (429, 503):
@@ -197,9 +220,7 @@ async def _fetch_hours_async(
     async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
         results = await asyncio.gather(
             *[
-                _fetch_one(
-                    session, semaphore, config, year, month_idx, day, hour, month
-                )
+                _fetch_one(session, semaphore, config, year, month_idx, day, hour, month)
                 for year, month_idx, day, hour in slots
             ]
         )
@@ -230,67 +251,45 @@ def fetch_hours(
     return frames, timed_out
 
 
-def _get_slots(
-    config: DownloadRuntimeConfig,
-    year: int,
-    month: int,
-    *,
-    exclude_weekends: bool = False,
-) -> list[tuple[int, int, int, int]]:
-    """Generate hour slots for a month.
-
-    Args:
-        exclude_weekends: If True, exclude all weekend hours (for repair checks).
-                         If False, allow Sunday evening 21:00-24:00 (for full download).
-    """
+def all_slots(config: DownloadRuntimeConfig, year: int, month: int) -> list[tuple[int, int, int, int]]:
+    """Return all tradeable hour slots for a month."""
     month_idx = month - 1
     days_in_month = calendar.monthrange(year, month)[1]
-
     if config.asset_class == "crypto":
         return [
             (year, month_idx, day, hour)
             for day in range(1, days_in_month + 1)
             for hour in range(24)
         ]
-
-    slots = []
-    for day in range(1, days_in_month + 1):
-        weekday = date(year, month, day).weekday()
-        if exclude_weekends:
-            # Weekdays only (Mon-Fri)
-            if weekday < 5:
-                for hour in range(24):
-                    slots.append((year, month_idx, day, hour))
-        else:
-            # All except Saturday, and Sunday before 21:00
-            if weekday != 5:  # Not Saturday
-                start_hour = 21 if weekday == 6 else 0
-                for hour in range(start_hour, 24):
-                    slots.append((year, month_idx, day, hour))
-    return slots
+    return [
+        (year, month_idx, day, hour)
+        for day in range(1, days_in_month + 1)
+        for hour in range(24)
+        if date(year, month, day).weekday() != 5
+        and not (date(year, month, day).weekday() == 6 and hour < 21)
+    ]
 
 
-all_slots = lambda config, year, month: _get_slots(
-    config, year, month, exclude_weekends=False
-)
-weekday_slots = lambda config, year, month: _get_slots(
-    config, year, month, exclude_weekends=True
-)
-
-
-def _get_covered_hours(df: pl.DataFrame) -> set[tuple[int, int]]:
-    """Extract set of (day, hour) tuples covered in the dataframe."""
-    return set(
-        df.with_columns(
-            [
-                pl.col("timestamp").dt.day().alias("_day"),
-                pl.col("timestamp").dt.hour().alias("_hour"),
-            ]
-        )
-        .select(["_day", "_hour"])
-        .unique()
-        .rows()
-    )
+def weekday_slots(
+    config: DownloadRuntimeConfig,
+    year: int,
+    month: int,
+) -> list[tuple[int, int, int, int]]:
+    """Return Mon-Fri slots, or 24/7 slots for crypto, for repair checks."""
+    month_idx = month - 1
+    days_in_month = calendar.monthrange(year, month)[1]
+    if config.asset_class == "crypto":
+        return [
+            (year, month_idx, day, hour)
+            for day in range(1, days_in_month + 1)
+            for hour in range(24)
+        ]
+    return [
+        (year, month_idx, day, hour)
+        for day in range(1, days_in_month + 1)
+        if date(year, month, day).weekday() < 5
+        for hour in range(24)
+    ]
 
 
 def repair_month(
@@ -301,7 +300,17 @@ def repair_month(
 ) -> tuple[int, int]:
     """Detect and patch missing weekday-hour slots in an existing parquet file."""
     df = pl.read_parquet(file_path)
-    covered = _get_covered_hours(df)
+    covered = set(
+        df.with_columns(
+            [
+                pl.col("timestamp").dt.day().alias("_day"),
+                pl.col("timestamp").dt.hour().alias("_hour"),
+            ]
+        )
+        .select(["_day", "_hour"])
+        .unique()
+        .rows()
+    )
 
     missing = [
         (year, month_idx, day, hour)
@@ -315,27 +324,46 @@ def repair_month(
     new_frames, _ = fetch_hours(config, missing, month)
     if new_frames:
         added = sum(len(frame) for frame in new_frames)
-        new_dfs = [
-            frame.with_columns(
-                pl.from_epoch("timestamp_ms", time_unit="ms").alias("timestamp")
-            ).select(["timestamp", "ask", "bid", "ask_volume", "bid_volume"])
-            for frame in new_frames
-        ]
+        # Ensure consistent datetime precision (microseconds) for all frames
         df = (
-            pl.concat([df] + new_dfs)
+            pl.concat([
+                df.with_columns(pl.col("timestamp").cast(pl.Datetime("us"))),
+                *[to_datetime_df(frame).with_columns(
+                    pl.col("timestamp").cast(pl.Datetime("us"))
+                ) for frame in new_frames]
+            ])
             .unique(subset=["timestamp"], keep="first")
             .sort("timestamp")
         )
         df.write_parquet(file_path)
         logger.info("-> Patched +%s rows", f"{added:,}")
 
-    covered_after = _get_covered_hours(df)
+    covered_after = set(
+        df.with_columns(
+            [
+                pl.col("timestamp").dt.day().alias("_day"),
+                pl.col("timestamp").dt.hour().alias("_hour"),
+            ]
+        )
+        .select(["_day", "_hour"])
+        .unique()
+        .rows()
+    )
     still_missing = sum(
         1
         for _, _, day, hour in weekday_slots(config, year, month)
         if (day, hour) not in covered_after
     )
     return len(df), still_missing
+
+
+def _infer_state_from_file(file_path: Path) -> tuple[int, int]:
+    """Read row count from parquet file. Returns (rows, missing_hours=0)."""
+    try:
+        df = pl.read_parquet(file_path)
+        return len(df), 0
+    except Exception:
+        return -1, 0
 
 
 def run_download_job(
@@ -349,11 +377,10 @@ def run_download_job(
     end_year: int | None = None,
     end_month: int | None = None,
     skip_current_month: bool = False,
-    config: Config | None = None,
-    dry_run: bool = False,
+    paths: ProjectPaths = DEFAULT_PATHS,
 ) -> bool:
     """Download, validate, and repair monthly tick parquet files for one symbol."""
-    download_config = build_download_config(
+    config = build_download_config(
         symbol,
         start_year,
         start_month,
@@ -363,43 +390,36 @@ def run_download_job(
         end_year=end_year,
         end_month=end_month,
         skip_current_month=skip_current_month,
-        config=config,
+        paths=paths,
     )
-
-    if dry_run:
-        logger.info("[DRY RUN] Would download to: %s", download_config.output_dir)
-        logger.info("[DRY RUN] State file: %s", download_config.state_file)
-
-    download_config.output_dir.mkdir(parents=True, exist_ok=True)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()
-    effective_end_year = (
-        download_config.end_year if download_config.end_year is not None else now.year
-    )
-    effective_end_month = (
-        download_config.end_month
-        if download_config.end_month is not None
-        else now.month
+    effective_end_year = config.end_year if config.end_year is not None else now.year
+    effective_end_month = config.end_month if config.end_month is not None else now.month
+
+    state = migrate_old_markers(
+        config.output_dir,
+        config.state_file,
+        load_state(config.state_file),
     )
 
-    state = load_state(download_config.state_file)
-
-    for year in range(download_config.start_year, effective_end_year + 1):
-        month_start = (
-            download_config.start_month if year == download_config.start_year else 1
+    for year in range(config.start_year, effective_end_year + 1):
+        month_start = config.start_month if year == config.start_year else 1
+        month_end = (
+            effective_end_month
+            if year == effective_end_year
+            else 12
         )
-        month_end = effective_end_month if year == effective_end_year else 12
         for month in range(month_start, month_end + 1):
             key = f"{year}-{month:02d}"
-            file_path = download_config.output_dir / f"{key}.parquet"
+            file_path = config.output_dir / f"{key}.parquet"
             is_past = not (year == now.year and month == now.month)
             is_current_month = year == now.year and month == now.month
             entry = state.get(key)
 
-            if download_config.skip_current_month and is_current_month:
-                logger.info(
-                    "Skip     %s  (current month, skip_current_month=True)", key
-                )
+            if config.skip_current_month and is_current_month:
+                logger.info("Skip     %s  (current month, skip_current_month=True)", key)
                 continue
 
             if (
@@ -407,61 +427,32 @@ def run_download_job(
                 and entry
                 and entry["missing_hours"] == 0
                 and file_path.exists()
-                and not download_config.force
+                and not config.force
             ):
-                logger.info(
-                    "Skip     %s  rows=%10s  missing=0", key, f"{entry['rows']:,}"
-                )
+                logger.info("Skip     %s  rows=%10s  missing=0", key, f"{entry['rows']:,}")
                 continue
 
-            if (
-                file_path.exists()
-                and entry is None
-                and is_past
-                and not download_config.force
-            ):
-                try:
-                    df = pl.read_parquet(file_path)
-                    rows = len(df)
-                except Exception:
-                    rows = -1
+            if file_path.exists() and entry is None and is_past and not config.force:
+                rows, _ = _infer_state_from_file(file_path)
                 state[key] = {"rows": rows, "missing_hours": 0}
-                save_state(download_config.state_file, state)
-                logger.info(
-                    "Skip     %s  rows=%10s  (inferred from file, no state)",
-                    key,
-                    f"{rows:,}",
-                )
+                save_state(config.state_file, state)
+                logger.info("Skip     %s  rows=%10s  (inferred from file, no state)", key, f"{rows:,}")
                 continue
 
             if file_path.exists():
-                if dry_run:
-                    logger.info("[DRY RUN] Would check %s for missing hours", key)
-                    continue
                 logger.info("Checking %s ...", key)
-                rows, missing = repair_month(download_config, year, month, file_path)
+                rows, missing = repair_month(config, year, month, file_path)
                 flag = "full" if missing == 0 else f"{missing} hrs missing"
                 logger.info("   %s  rows=%10s  %s", key, f"{rows:,}", flag)
                 if is_past:
                     state[key] = {"rows": rows, "missing_hours": missing}
-                    save_state(download_config.state_file, state)
-                continue
-
-            if dry_run:
-                logger.info("[DRY RUN] Would download %s", key)
-                slots = all_slots(download_config, year, month)
-                logger.info("[DRY RUN]   %d hour slots to fetch", len(slots))
+                    save_state(config.state_file, state)
                 continue
 
             logger.info("Download %s ...", key)
-            frames, timed_out = fetch_hours(
-                download_config, all_slots(download_config, year, month), month
-            )
+            frames, timed_out = fetch_hours(config, all_slots(config, year, month), month)
             if frames:
-                combined = pl.concat(frames).sort("timestamp_ms")
-                df = combined.with_columns(
-                    pl.from_epoch("timestamp_ms", time_unit="ms").alias("timestamp")
-                ).select(["timestamp", "ask", "bid", "ask_volume", "bid_volume"])
+                df = to_datetime_df(pl.concat(frames).sort("timestamp_ms"))
                 df.write_parquet(file_path)
                 logger.info("Saved %s rows.", f"{len(df):,}")
             else:
@@ -471,148 +462,219 @@ def run_download_job(
             if is_past:
                 rows = len(df) if df is not None else 0
                 state[key] = {"rows": rows, "missing_hours": timed_out}
-                save_state(download_config.state_file, state)
+                save_state(config.state_file, state)
     return True
 
-
-def main() -> int:
-    """CLI entry point for Dukascopy tick data downloader."""
-    parser = argparse.ArgumentParser(
-        description="Download Dukascopy tick data for forex/crypto assets",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    # Download XAUUSD from 2018 to present
-    python download_data.py --symbol XAUUSD --start-year 2018
+def _add_download_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Add download subcommand parser with config.toml defaults."""
+    from thesis.config.loader import load_config
     
-    # Download with custom date range and high concurrency
-    python download_data.py --symbol EURUSD --start-year 2020 --start-month 6 \\
-        --end-year 2022 --end-month 12 --concurrency 100
+    # Load config to get defaults
+    try:
+        cfg = load_config("config.toml")
+        data_cfg = cfg.data
+        
+        # Parse start_date for year/month defaults
+        start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
+        default_start_year = start_dt.year
+        default_start_month = start_dt.month
+        
+        # Parse end_date for year/month defaults (optional)
+        end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
+        default_end_year = end_dt.year
+        default_end_month = end_dt.month
+        
+        # Get download-specific defaults
+        default_symbol = data_cfg.symbol
+        default_asset_class = data_cfg.asset_class
+        default_concurrency = data_cfg.download_concurrency
+        default_force = data_cfg.download_force
+        default_skip_current = data_cfg.download_skip_current_month
+    except Exception:
+        # Fallback defaults if config loading fails
+        default_symbol = "XAUUSD"
+        default_asset_class = "fx"
+        default_start_year = 2018
+        default_start_month = 1
+        default_end_year = None  # Current year
+        default_end_month = None  # Current month
+        default_concurrency = 8
+        default_force = False
+        default_skip_current = False
     
-    # Dry run to see what would be downloaded
-    python download_data.py --symbol XAUUSD --start-year 2023 --dry-run
-    
-    # Force re-download with debug logging
-    python download_data.py --symbol XAUUSD --start-year 2022 --force --log-level DEBUG
-    
-    # Download crypto (24/7 trading)
-    python download_data.py --symbol BTCUSD --asset-class crypto --start-year 2021
-        """,
+    download = subparsers.add_parser(
+        "download",
+        help="Download raw tick data from Dukascopy",
+        description="Download historical tick data for a symbol.",
+    )
+    download.add_argument(
+        "--symbol",
+        default=default_symbol,
+        help=f"Symbol to download (default: {default_symbol})",
+    )
+    download.add_argument(
+        "--asset-class",
+        choices=["fx", "crypto"],
+        default=default_asset_class,
+        help=f"Asset class (default: {default_asset_class})",
+    )
+    download.add_argument(
+        "--start-year",
+        type=int,
+        default=default_start_year,
+        help=f"Start year (default: {default_start_year})",
+    )
+    download.add_argument(
+        "--start-month",
+        type=int,
+        default=default_start_month,
+        help=f"Start month 1-12 (default: {default_start_month})",
+    )
+    download.add_argument(
+        "--end-year",
+        type=int,
+        default=default_end_year,
+        help="End year (default: current year)" if default_end_year is None else f"End year (default: {default_end_year})",
+    )
+    download.add_argument(
+        "--end-month",
+        type=int,
+        default=default_end_month,
+        help="End month (default: current month)" if default_end_month is None else f"End month (default: {default_end_month})",
+    )
+    download.add_argument(
+        "--concurrency",
+        type=int,
+        default=default_concurrency,
+        help=f"Parallel downloads (default: {default_concurrency})",
+    )
+    download.add_argument(
+        "--force",
+        action=argparse.BooleanOptionalAction,
+        default=default_force,
+        help=f"Force re-verify existing months (default: {default_force})",
+    )
+    download.add_argument(
+        "--skip-current-month",
+        action=argparse.BooleanOptionalAction,
+        default=default_skip_current,
+        help=f"Skip checking/repairing current month (default: {default_skip_current})",
     )
 
+
+def _get_download_defaults_from_config():
+    """Helper to extract download defaults from config.toml."""
+    from thesis.config.loader import load_config
+    from datetime import datetime
+    
+    try:
+        cfg = load_config("config.toml")
+        data_cfg = cfg.data
+        
+        start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
+        
+        return {
+            "symbol": data_cfg.symbol,
+            "asset_class": data_cfg.asset_class,
+            "start_year": start_dt.year,
+            "start_month": start_dt.month,
+            "end_year": end_dt.year,
+            "end_month": end_dt.month,
+            "concurrency": data_cfg.download_concurrency,
+            "force": data_cfg.download_force,
+            "skip_current_month": data_cfg.download_skip_current_month,
+        }
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Failed to load config defaults: {e}")
+        return None
+
+
+def main():
+    """CLI entry point for data download."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        prog="data_download.py",
+        description="Download historical tick data from Dukascopy.",
+    )
+    
+    # Add the download parser to main parser (simplified version)
     parser.add_argument(
         "--symbol",
-        type=str,
-        required=True,
-        help="Trading symbol (e.g., XAUUSD, EURUSD, BTCUSD)",
+        default="XAUUSD",
+        help="Symbol to download (default: XAUUSD)",
     )
-
     parser.add_argument(
         "--asset-class",
-        type=str,
-        choices=["forex", "crypto", "index", "stock"],
-        default="forex",
-        help="Asset class (default: forex)",
+        choices=["fx", "crypto"],
+        default="fx",
+        help="Asset class (default: fx)",
     )
-
     parser.add_argument(
         "--start-year",
         type=int,
         required=True,
-        help="Start year (e.g., 2018)",
+        help="Start year",
     )
-
     parser.add_argument(
         "--start-month",
         type=int,
-        default=1,
-        help="Start month 1-12 (default: 1)",
+        required=True,
+        help="Start month 1-12",
     )
-
     parser.add_argument(
         "--end-year",
         type=int,
         default=None,
         help="End year (default: current year)",
     )
-
     parser.add_argument(
         "--end-month",
         type=int,
         default=None,
-        help="End month 1-12 (default: current month)",
+        help="End month (default: current month)",
     )
-
     parser.add_argument(
         "--concurrency",
         type=int,
-        default=50,
-        help="Number of parallel downloads (default: 50)",
+        default=8,
+        help="Parallel downloads (default: 8)",
     )
-
     parser.add_argument(
         "--force",
-        action="store_true",
-        help="Force re-download (ignore existing files)",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Force re-verify existing months (default: False)",
     )
-
     parser.add_argument(
         "--skip-current-month",
-        action="store_true",
-        help="Skip current incomplete month",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Skip checking/repairing current month (default: False)",
     )
-
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config.toml",
-        help="Path to config file (default: config.toml)",
-    )
-
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Logging level (default: INFO)",
-    )
-
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be downloaded without downloading",
-    )
-
+    
     args = parser.parse_args()
-
-    # Setup logging
+    
+    # Configure logging
     logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        level=logging.INFO,
+        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
     )
-
-    # Load config
-    try:
-        config = load_config(args.config)
-    except FileNotFoundError:
-        logger.error("Config file not found: %s", args.config)
-        return 1
-
+    
     # Run download
     success = run_download_job(
         symbol=args.symbol,
         asset_class=args.asset_class,
         start_year=args.start_year,
         start_month=args.start_month,
-        end_year=args.end_year,
-        end_month=args.end_month,
         concurrency=args.concurrency,
         force=args.force,
+        end_year=args.end_year,
+        end_month=args.end_month,
         skip_current_month=args.skip_current_month,
-        config=config,
-        dry_run=args.dry_run,
     )
-
+    
     return 0 if success else 1
 
 
