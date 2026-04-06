@@ -271,12 +271,20 @@ class BacktestConfig:
     swap_short: float = 5.0
     initial_capital: float = 100000.0
     currency: str = "USD"
-    leverage: int = 100
+    leverage: int = 50  # Reduced from 100 for more realistic simulation
     max_positions: int = 1
     risk_per_trade: float = 0.01
     position_size_method: str = "fixed_fractional"
     margin_call_level: float = 0.5
     stop_out_level: float = 0.2
+    
+    # NEW: Additional risk controls
+    max_hold_bars: int = 100  # Maximum bars to hold a position
+    use_trailing_stop: bool = True  # Enable trailing stop loss
+    trailing_stop_atr_multiplier: float = 1.0  # Trailing stop distance
+    max_daily_loss_pct: float = 0.05  # Stop trading after 5% daily loss
+    max_consecutive_losses: int = 5  # Pause after 5 consecutive losses
+    
     trade_sunday: bool = False
     trade_friday_close: bool = False
     friday_close_hour: int = 21

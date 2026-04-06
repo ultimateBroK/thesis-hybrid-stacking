@@ -51,6 +51,18 @@ _PIPELINE_LOG_STREAM = None
 # ANSI escape sequence regex for stripping colors
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
+# Color codes for terminal output (ADHD-friendly visual cues)
+class Colors:
+    """ANSI color codes for terminal output."""
+    GREEN = "\033[92m"      # Success
+    YELLOW = "\033[93m"     # Warning/Attention
+    RED = "\033[91m"        # Error
+    BLUE = "\033[94m"       # Info/Stage headers
+    CYAN = "\033[96m"       # Secondary info
+    MAGENTA = "\033[95m"    # Special highlights
+    BOLD = "\033[1m"        # Emphasis
+    RESET = "\033[0m"       # Reset
+
 
 class TeeWriter:
     """Tee output to multiple streams, with ANSI stripping for file output."""
@@ -80,8 +92,26 @@ class TeeWriter:
         return getattr(first_stream, "isatty", lambda: False)()
 
 
+class ColoredFormatter(logging.Formatter):
+    """Custom formatter with color support for different log levels."""
+    
+    LEVEL_COLORS = {
+        logging.DEBUG: Colors.CYAN,
+        logging.INFO: Colors.GREEN,
+        logging.WARNING: Colors.YELLOW,
+        logging.ERROR: Colors.RED,
+        logging.CRITICAL: Colors.RED + Colors.BOLD,
+    }
+    
+    def format(self, record):
+        # Add color to levelname
+        color = self.LEVEL_COLORS.get(record.levelno, Colors.RESET)
+        record.levelname = f"{color}{record.levelname}{Colors.RESET}"
+        return super().format(record)
+
+
 def setup_logging(log_path: str | Path) -> logging.Logger:
-    """Configure logging for the pipeline."""
+    """Configure logging for the pipeline with color support."""
     global _PIPELINE_LOG_STREAM
 
     log_path = Path(log_path)
@@ -101,14 +131,23 @@ def setup_logging(log_path: str | Path) -> logging.Logger:
     optuna.logging.disable_default_handler()
     optuna.logging.enable_propagation()  # Let our handlers handle optuna logs
 
+    # Console handler with colors
+    console_handler = logging.StreamHandler(_ORIGINAL_STDOUT)
+    console_handler.setFormatter(ColoredFormatter(
+        fmt="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    ))
+    
+    # File handler without colors
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter(
+        fmt="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    ))
+
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[
-            logging.StreamHandler(_ORIGINAL_STDOUT),
-            logging.FileHandler(log_path, encoding="utf-8"),
-        ],
+        handlers=[console_handler, file_handler],
         force=True,
     )
     return logging.getLogger("thesis")
@@ -205,19 +244,19 @@ def main() -> int:
 
         sessions = list_sessions()
         if sessions:
-            print(f"Found {len(sessions)} session(s):")
+            print(f"{Colors.CYAN}Found {len(sessions)} session(s):{Colors.RESET}")
             for session in sessions:
-                print(f"  - {session}")
-            print(f"\nLatest: results/{sessions[-1]}/")
+                print(f"  {Colors.GREEN}●{Colors.RESET} {session}")
+            print(f"\n{Colors.CYAN}Latest:{Colors.RESET} results/{sessions[-1]}/")
         else:
-            print("No sessions found in results/")
+            print(f"{Colors.YELLOW}No sessions found in results/{Colors.RESET}")
         return 0
 
     # Load configuration first (before setting up logging)
     try:
         config = load_config(args.config)
     except FileNotFoundError as e:
-        print(f"Error: Configuration file not found: {e}", file=sys.stderr)
+        print(f"{Colors.RED}Error: Configuration file not found: {e}{Colors.RESET}", file=sys.stderr)
         return 1
 
     # Apply command-line overrides
@@ -241,45 +280,46 @@ def main() -> int:
     log_path = session_manager.get_log_path()
     logger = setup_logging(log_path)
 
-    logger.info("=" * 70)
-    logger.info("Hybrid Stacking (LSTM + LightGBM) - XAU/USD H1 Trading Signals")
-    logger.info("Bachelor's Thesis - Thuy Loi University")
-    logger.info("Student: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung")
-    logger.info("=" * 70)
+    # Visual header with colors
+    logger.info(f"{Colors.BLUE}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
+    logger.info(f"{Colors.BLUE}{Colors.BOLD}Hybrid Stacking (LSTM + LightGBM) - XAU/USD H1 Trading Signals{Colors.RESET}")
+    logger.info(f"{Colors.CYAN}Bachelor's Thesis - Thuy Loi University{Colors.RESET}")
+    logger.info(f"{Colors.CYAN}Student: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung{Colors.RESET}")
+    logger.info(f"{Colors.BLUE}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
 
     try:
-        # Log configuration summary
-        logger.info(f"Data range: {config.data.start_date} to {config.data.end_date}")
+        # Log configuration summary with visual cues
+        logger.info(f"{Colors.CYAN}▶ Data range:{Colors.RESET} {config.data.start_date} to {config.data.end_date}")
         logger.info(
-            f"Train: {config.splitting.train_start} → {config.splitting.train_end}"
+            f"{Colors.CYAN}▶ Train:{Colors.RESET} {config.splitting.train_start} → {config.splitting.train_end}"
         )
-        logger.info(f"Val: {config.splitting.val_start} → {config.splitting.val_end}")
+        logger.info(f"{Colors.CYAN}▶ Val:{Colors.RESET} {config.splitting.val_start} → {config.splitting.val_end}")
         logger.info(
-            f"Test: {config.splitting.test_start} → {config.splitting.test_end}"
+            f"{Colors.CYAN}▶ Test:{Colors.RESET} {config.splitting.test_start} → {config.splitting.test_end}"
         )
-        logger.info(f"LSTM sequence length: {config.models['lstm'].sequence_length}")
-        logger.info(f"Triple-Barrier horizon: {config.labels.horizon_bars} bars")
+        logger.info(f"{Colors.CYAN}▶ LSTM sequence length:{Colors.RESET} {config.models['lstm'].sequence_length}")
+        logger.info(f"{Colors.CYAN}▶ Triple-Barrier horizon:{Colors.RESET} {config.labels.horizon_bars} bars")
 
         # Run pipeline
         if args.stage == "all":
-            logger.info("Running full pipeline...")
+            logger.info(f"{Colors.BLUE}{Colors.BOLD}▶ Running full pipeline...{Colors.RESET}")
             run_thesis_workflow(config, session_manager=session_manager)
         else:
-            logger.info(f"Running stage: {args.stage}")
+            logger.info(f"{Colors.BLUE}{Colors.BOLD}▶ Running stage: {args.stage}{Colors.RESET}")
             run_thesis_workflow(config, stage=args.stage, session_manager=session_manager)
 
-        logger.info("=" * 70)
-        logger.info("Pipeline completed successfully!")
-        logger.info(f"Results: {config.paths.final_report}")
-        logger.info("=" * 70)
+        logger.info(f"{Colors.GREEN}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
+        logger.info(f"{Colors.GREEN}{Colors.BOLD}✓ Pipeline completed successfully!{Colors.RESET}")
+        logger.info(f"{Colors.GREEN}✓ Results:{Colors.RESET} {config.paths.final_report}")
+        logger.info(f"{Colors.GREEN}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
 
         return 0
 
     except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
+        logger.error(f"{Colors.RED}✗ File not found: {e}{Colors.RESET}")
         return 1
     except Exception as e:
-        logger.exception(f"Pipeline failed: {e}")
+        logger.exception(f"{Colors.RED}✗ Pipeline failed: {e}{Colors.RESET}")
         return 1
 
 

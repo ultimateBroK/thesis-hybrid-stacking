@@ -110,3 +110,5 @@ docs/api/
 # Claude agent files
 CLAUDE.md
 AGENTS.md
+
+codedb.snapshot

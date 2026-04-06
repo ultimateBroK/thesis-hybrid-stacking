@@ -113,7 +113,13 @@ def run_backtest(config: Config) -> None:
 
 
 def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
-    """Simulate trades with proper margin call and stop-out enforcement.
+    """Simulate trades with proper margin call, stop-out, and risk management.
+
+    NEW FEATURES:
+    - Trailing stop loss to protect profits
+    - Maximum position hold time (max_hold_bars)
+    - Daily loss limit (max_daily_loss_pct)
+    - Consecutive loss limit (max_consecutive_losses)
 
     CRITICAL FIXES:
     1. Tracks equity curve after each trade (not just at end)
@@ -137,11 +143,23 @@ def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
     position = None
     entry_price = 0
     entry_time = None
+    entry_bar_idx = 0  # Track when position was opened
     open_position_size = 0.0
+    highest_price_since_entry = 0.0  # For trailing stop
+    lowest_price_since_entry = float('inf')  # For trailing stop
+    consecutive_losses = 0
+    daily_loss_tracker = {}  # Track daily losses
 
     # Margin levels from config
     margin_call_level = getattr(config.backtest, "margin_call_level", 0.5)  # 50%
     stop_out_level = getattr(config.backtest, "stop_out_level", 0.2)  # 20%
+
+    # NEW: Risk management parameters
+    max_hold_bars = getattr(config.backtest, "max_hold_bars", 100)  # Max bars to hold
+    use_trailing_stop = getattr(config.backtest, "use_trailing_stop", True)
+    trailing_stop_atr_multiplier = getattr(config.backtest, "trailing_stop_atr_multiplier", 1.0)
+    max_daily_loss_pct = getattr(config.backtest, "max_daily_loss_pct", 0.05)  # 5% daily loss limit
+    max_consecutive_losses = getattr(config.backtest, "max_consecutive_losses", 5)
 
     # Trading costs
     spread = config.backtest.spread_pips * 0.01
@@ -152,11 +170,127 @@ def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
     value_per_pip = 1.0
 
     termination_reason = "completed"  # Track why simulation ended
+    daily_loss_limit_hit = False
 
     # Convert to pandas for iteration
     df_pd = df.to_pandas()
 
     for i, row in df_pd.iterrows():
+        # Get current date for daily loss tracking
+        current_date = pd.to_datetime(row["timestamp"]).date()
+        
+        # Check daily loss limit
+        if current_date in daily_loss_tracker:
+            daily_loss = daily_loss_tracker[current_date]
+            daily_loss_pct = abs(daily_loss) / initial_capital
+            if daily_loss_pct >= max_daily_loss_pct:
+                if not daily_loss_limit_hit:
+                    logger.warning(
+                        f"📉 DAILY LOSS LIMIT HIT at bar {i}! "
+                        f"Daily loss: {daily_loss_pct*100:.1f}% (limit: {max_daily_loss_pct*100:.1f}%). "
+                        f"Stopping trading for {current_date}."
+                    )
+                    daily_loss_limit_hit = True
+                # Skip trading for rest of day
+                if position is not None:
+                    # Close position at current price
+                    exit_price = row["close"]
+                    timestamp = row["timestamp"]
+                    
+                    pnl, dollar_pnl = _calculate_pnl(
+                        position,
+                        entry_price,
+                        exit_price,
+                        open_position_size,
+                        spread,
+                        slippage,
+                        value_per_pip,
+                    )
+                    
+                    trades.append(
+                        {
+                            "entry_time": entry_time,
+                            "exit_time": timestamp,
+                            "position": position,
+                            "entry_price": entry_price,
+                            "exit_price": exit_price,
+                            "position_size": open_position_size,
+                            "pnl_pips": pnl,
+                            "pnl_dollar": dollar_pnl,
+                            "exit_reason": "daily_loss_limit",
+                        }
+                    )
+                    
+                    capital += dollar_pnl
+                    equity_curve.append(capital)
+                    
+                    # Track daily loss
+                    if current_date not in daily_loss_tracker:
+                        daily_loss_tracker[current_date] = 0
+                    daily_loss_tracker[current_date] += dollar_pnl
+                    
+                    # Track consecutive losses
+                    if dollar_pnl < 0:
+                        consecutive_losses += 1
+                    else:
+                        consecutive_losses = 0
+                    
+                    position = None
+                    open_position_size = 0.0
+                continue
+            else:
+                daily_loss_limit_hit = False
+        
+        # Check consecutive loss limit
+        if consecutive_losses >= max_consecutive_losses:
+            logger.warning(
+                f"🛑 CONSECUTIVE LOSS LIMIT at bar {i}! "
+                f"{consecutive_losses} consecutive losses. "
+                f"Pausing trading."
+            )
+            # Close any open position
+            if position is not None:
+                exit_price = row["close"]
+                timestamp = row["timestamp"]
+                
+                pnl, dollar_pnl = _calculate_pnl(
+                    position,
+                    entry_price,
+                    exit_price,
+                    open_position_size,
+                    spread,
+                    slippage,
+                    value_per_pip,
+                )
+                
+                trades.append(
+                    {
+                        "entry_time": entry_time,
+                        "exit_time": timestamp,
+                        "position": position,
+                        "entry_price": entry_price,
+                        "exit_price": exit_price,
+                        "position_size": open_position_size,
+                        "pnl_pips": pnl,
+                        "pnl_dollar": dollar_pnl,
+                        "exit_reason": "consecutive_loss_limit",
+                    }
+                )
+                
+                capital += dollar_pnl
+                equity_curve.append(capital)
+                
+                # Track daily loss
+                if current_date not in daily_loss_tracker:
+                    daily_loss_tracker[current_date] = 0
+                daily_loss_tracker[current_date] += dollar_pnl
+                
+                position = None
+                open_position_size = 0.0
+            
+            termination_reason = f"consecutive_loss_limit_at_bar_{i}"
+            break
+
         # CRITICAL: Check margin conditions BEFORE processing signal
         # Check for stop-out (20% equity remaining)
         if capital <= initial_capital * stop_out_level:
@@ -257,6 +391,165 @@ def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
 
         # Handle position exits
         if position is not None:
+            # Update highest/lowest price for trailing stop
+            if position == "long":
+                highest_price_since_entry = max(highest_price_since_entry, current_price)
+            else:  # short
+                lowest_price_since_entry = min(lowest_price_since_entry, current_price)
+            
+            # Check for max hold time
+            bars_held = i - entry_bar_idx
+            if bars_held >= max_hold_bars:
+                logger.info(
+                    f"⏱️ MAX HOLD TIME at bar {i} ({bars_held} bars). Closing position."
+                )
+                pnl, dollar_pnl = _calculate_pnl(
+                    position,
+                    entry_price,
+                    current_price,
+                    open_position_size,
+                    spread,
+                    slippage,
+                    value_per_pip,
+                )
+
+                trades.append(
+                    {
+                        "entry_time": entry_time,
+                        "exit_time": timestamp,
+                        "position": position,
+                        "entry_price": entry_price,
+                        "exit_price": current_price,
+                        "position_size": open_position_size,
+                        "pnl_pips": pnl,
+                        "pnl_dollar": dollar_pnl,
+                        "exit_reason": "max_hold_time",
+                    }
+                )
+
+                capital += dollar_pnl
+                equity_curve.append(capital)
+                
+                # Track daily loss
+                if current_date not in daily_loss_tracker:
+                    daily_loss_tracker[current_date] = 0
+                daily_loss_tracker[current_date] += dollar_pnl
+                
+                # Track consecutive losses
+                if dollar_pnl < 0:
+                    consecutive_losses += 1
+                else:
+                    consecutive_losses = 0
+                
+                position = None
+                open_position_size = 0.0
+                continue
+            
+            # Check for trailing stop
+            if use_trailing_stop:
+                atr = row.get("atr_14", 10.0)
+                trailing_distance = atr * trailing_stop_atr_multiplier
+                
+                if position == "long":
+                    # Trailing stop for long: exit if price drops below highest - atr
+                    trailing_stop_price = highest_price_since_entry - trailing_distance
+                    if current_price <= trailing_stop_price:
+                        logger.info(
+                            f"🛑 TRAILING STOP at bar {i}. "
+                            f"Price: {current_price:.2f}, Stop: {trailing_stop_price:.2f}"
+                        )
+                        pnl, dollar_pnl = _calculate_pnl(
+                            position,
+                            entry_price,
+                            current_price,
+                            open_position_size,
+                            spread,
+                            slippage,
+                            value_per_pip,
+                        )
+
+                        trades.append(
+                            {
+                                "entry_time": entry_time,
+                                "exit_time": timestamp,
+                                "position": position,
+                                "entry_price": entry_price,
+                                "exit_price": current_price,
+                                "position_size": open_position_size,
+                                "pnl_pips": pnl,
+                                "pnl_dollar": dollar_pnl,
+                                "exit_reason": "trailing_stop",
+                            }
+                        )
+
+                        capital += dollar_pnl
+                        equity_curve.append(capital)
+                        
+                        # Track daily loss
+                        if current_date not in daily_loss_tracker:
+                            daily_loss_tracker[current_date] = 0
+                        daily_loss_tracker[current_date] += dollar_pnl
+                        
+                        # Track consecutive losses
+                        if dollar_pnl < 0:
+                            consecutive_losses += 1
+                        else:
+                            consecutive_losses = 0
+                        
+                        position = None
+                        open_position_size = 0.0
+                        continue
+                
+                else:  # short
+                    # Trailing stop for short: exit if price rises above lowest + atr
+                    trailing_stop_price = lowest_price_since_entry + trailing_distance
+                    if current_price >= trailing_stop_price:
+                        logger.info(
+                            f"🛑 TRAILING STOP at bar {i}. "
+                            f"Price: {current_price:.2f}, Stop: {trailing_stop_price:.2f}"
+                        )
+                        pnl, dollar_pnl = _calculate_pnl(
+                            position,
+                            entry_price,
+                            current_price,
+                            open_position_size,
+                            spread,
+                            slippage,
+                            value_per_pip,
+                        )
+
+                        trades.append(
+                            {
+                                "entry_time": entry_time,
+                                "exit_time": timestamp,
+                                "position": position,
+                                "entry_price": entry_price,
+                                "exit_price": current_price,
+                                "position_size": open_position_size,
+                                "pnl_pips": pnl,
+                                "pnl_dollar": dollar_pnl,
+                                "exit_reason": "trailing_stop",
+                            }
+                        )
+
+                        capital += dollar_pnl
+                        equity_curve.append(capital)
+                        
+                        # Track daily loss
+                        if current_date not in daily_loss_tracker:
+                            daily_loss_tracker[current_date] = 0
+                        daily_loss_tracker[current_date] += dollar_pnl
+                        
+                        # Track consecutive losses
+                        if dollar_pnl < 0:
+                            consecutive_losses += 1
+                        else:
+                            consecutive_losses = 0
+                        
+                        position = None
+                        open_position_size = 0.0
+                        continue
+
             # Check for opposite signal (exit and reverse)
             should_exit = False
             if (position == "long" and signal == -1) or (
@@ -291,6 +584,18 @@ def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
 
                 capital += dollar_pnl
                 equity_curve.append(capital)  # Track equity after each trade
+                
+                # Track daily loss
+                if current_date not in daily_loss_tracker:
+                    daily_loss_tracker[current_date] = 0
+                daily_loss_tracker[current_date] += dollar_pnl
+                
+                # Track consecutive losses
+                if dollar_pnl < 0:
+                    consecutive_losses += 1
+                else:
+                    consecutive_losses = 0
+                
                 position = None
                 open_position_size = 0.0
 
@@ -299,7 +604,12 @@ def _simulate_trades(df: pl.DataFrame, config: Config) -> dict:
             position = "long" if signal == 1 else "short"
             entry_price = current_price
             entry_time = timestamp
+            entry_bar_idx = i  # Track entry bar index
             open_position_size = candidate_position_size
+            
+            # Reset trailing stop tracking
+            highest_price_since_entry = current_price
+            lowest_price_since_entry = current_price
 
             # Adjust for spread and slippage
             if position == "long":

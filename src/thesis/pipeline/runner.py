@@ -20,6 +20,63 @@ from thesis.pipeline.session import SessionManager
 
 logger = logging.getLogger("thesis.pipeline")
 
+# Visual stage indicators for ADHD-friendly output
+STAGE_ICONS = {
+    "data": "📊",
+    "features": "🔧",
+    "labels": "🏷️",
+    "split": "✂️",
+    "lightgbm": "🌳",
+    "lstm": "🧠",
+    "stacking": "🥞",
+    "backtest": "📈",
+    "report": "📄",
+}
+
+STAGE_COLORS = {
+    "data": "\033[94m",      # Blue
+    "features": "\033[96m",  # Cyan
+    "labels": "\033[95m",   # Magenta
+    "split": "\033[93m",    # Yellow
+    "lightgbm": "\033[92m", # Green
+    "lstm": "\033[92m",     # Green
+    "stacking": "\033[94m", # Blue
+    "backtest": "\033[91m", # Red
+    "report": "\033[94m",   # Blue
+}
+
+RESET = "\033[0m"
+BOLD = "\033[1m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+
+
+def _log_stage_header(stage_name: str) -> None:
+    """Log a visually distinct stage header with color and icon."""
+    icon = STAGE_ICONS.get(stage_name, "▶")
+    color = STAGE_COLORS.get(stage_name, "")
+    
+    logger.info("")
+    logger.info(f"{color}{BOLD}{'=' * 70}{RESET}")
+    logger.info(f"{color}{BOLD} {icon} STAGE {stage_name.upper()}{RESET}")
+    logger.info(f"{color}{BOLD}{'=' * 70}{RESET}")
+
+
+def _log_stage_complete(stage_name: str) -> None:
+    """Log stage completion with visual indicator."""
+    logger.info(f"{GREEN}✓ Stage {stage_name} completed{RESET}")
+
+
+def _log_stage_skipped(stage_name: str) -> None:
+    """Log stage skip with visual indicator."""
+    logger.info(f"{YELLOW}⊘ Stage {stage_name} skipped (disabled){RESET}")
+
+
+def _log_using_cached(artifact: str) -> None:
+    """Log cache hit with visual indicator."""
+    logger.info(f"  {YELLOW}↻ Using cached: {artifact}{RESET}")
+
 
 def run_thesis_workflow(
     config: Config,
@@ -39,13 +96,13 @@ def run_thesis_workflow(
         session_manager.update_config_paths(config)
         session_manager.create_latest_symlink()
         session_manager.create_config_snapshot()
-        logger.info(f"Session enabled: {config.paths.session_id}")
-        logger.info(f"Session path: {config.paths.session_path}")
+        logger.info(f"{GREEN}✓ Session enabled:{RESET} {config.paths.session_id}")
+        logger.info(f"{GREEN}✓ Session path:{RESET} {config.paths.session_path}")
 
-    logger.info("=" * 70)
-    logger.info("STARTING THESIS PIPELINE")
-    logger.info(f"Session ID: {config.paths.session_id}")
-    logger.info("=" * 70)
+    logger.info(f"{BOLD}{'=' * 70}{RESET}")
+    logger.info(f"{BOLD} STARTING THESIS PIPELINE{RESET}")
+    logger.info(f"{GREEN}✓ Session ID:{RESET} {config.paths.session_id}")
+    logger.info(f"{BOLD}{'=' * 70}{RESET}")
 
     stages = [
         ("data", _run_data_stage),
@@ -63,32 +120,42 @@ def run_thesis_workflow(
         # Run specific stage
         stage_map = {name: func for name, func in stages}
         if stage in stage_map:
-            logger.info(f"Running stage: {stage}")
+            _log_stage_header(stage)
             stage_map[stage](config)
+            _log_stage_complete(stage)
         else:
             raise ValueError(f"Unknown stage: {stage}")
     else:
         # Run full pipeline
+        completed = 0
+        skipped = 0
+        
         for stage_name, stage_func in stages:
             # Check if stage is enabled in config
             if not _is_stage_enabled(stage_name, config):
-                logger.info(f"Skipping disabled stage: {stage_name}")
+                _log_stage_skipped(stage_name)
+                skipped += 1
                 continue
 
-            logger.info("")
-            logger.info(f"{'=' * 70}")
-            logger.info(f"STAGE {stage_name.upper()}")
-            logger.info(f"{'=' * 70}")
+            _log_stage_header(stage_name)
 
             try:
                 stage_func(config)
+                _log_stage_complete(stage_name)
+                completed += 1
             except Exception as e:
-                logger.exception(f"Stage {stage_name} failed: {e}")
+                logger.exception(f"{BOLD}{'=' * 70}{RESET}")
+                logger.exception(f"{RED}✗ Stage {stage_name} failed: {e}{RESET}")
+                logger.exception(f"{BOLD}{'=' * 70}{RESET}")
                 raise
 
-    logger.info("\n" + "=" * 70)
-    logger.info("ALL STAGES COMPLETED")
-    logger.info("=" * 70)
+        logger.info("")
+        logger.info(f"{GREEN}{BOLD}{'=' * 70}{RESET}")
+        logger.info(f"{GREEN}{BOLD}✓ ALL STAGES COMPLETED{RESET}")
+        logger.info(f"{GREEN}  Completed: {completed} stages{RESET}")
+        if skipped > 0:
+            logger.info(f"{YELLOW}  Skipped: {skipped} stages{RESET}")
+        logger.info(f"{GREEN}{BOLD}{'=' * 70}{RESET}")
 
 
 def _is_stage_enabled(stage_name: str, config: Config) -> bool:
@@ -114,14 +181,14 @@ def _run_data_stage(config: Config) -> None:
     output_path = Path(config.data.ohlcv_path)
 
     if config.workflow.force_rerun or not output_path.exists():
-        logger.info("Processing raw tick data to OHLCV H1...")
-        logger.info(f"  Source: {config.data.raw_data_path}")
-        logger.info(f"  Output: {output_path}")
+        logger.info(f"  {STAGE_COLORS['data']}▶ Processing raw tick data to OHLCV H1...{RESET}")
+        logger.info(f"    Source: {config.data.raw_data_path}")
+        logger.info(f"    Output: {output_path}")
 
         process_all_tick_files(config)
-        logger.info(f"  Saved OHLCV data: {output_path}")
+        logger.info(f"  {GREEN}✓ Saved OHLCV data:{RESET} {output_path}")
     else:
-        logger.info(f"  Using cached OHLCV: {output_path}")
+        _log_using_cached(f"OHLCV: {output_path}")
 
 
 def _run_features_stage(config: Config) -> None:
@@ -131,19 +198,19 @@ def _run_features_stage(config: Config) -> None:
     output_path = Path(config.features.features_path)
 
     if config.workflow.force_rerun or not output_path.exists():
-        logger.info("Generating technical features...")
-        logger.info(f"  Input: {config.data.ohlcv_path}")
-        logger.info(f"  Output: {output_path}")
+        logger.info(f"  {STAGE_COLORS['features']}▶ Generating technical features...{RESET}")
+        logger.info(f"    Input: {config.data.ohlcv_path}")
+        logger.info(f"    Output: {output_path}")
 
         # Check if input exists
         if not Path(config.data.ohlcv_path).exists():
-            logger.info("  Running data stage first (dependency)...")
+            logger.info(f"  {YELLOW}⚠ Running data stage first (dependency)...{RESET}")
             _run_data_stage(config)
 
         generate_features(config)
-        logger.info(f"  Saved features: {output_path}")
+        logger.info(f"  {GREEN}✓ Saved features:{RESET} {output_path}")
     else:
-        logger.info(f"  Using cached features: {output_path}")
+        _log_using_cached(f"features: {output_path}")
 
 
 def _run_labels_stage(config: Config) -> None:
@@ -153,22 +220,22 @@ def _run_labels_stage(config: Config) -> None:
     output_path = Path(config.labels.labels_path)
 
     if config.workflow.force_rerun or not output_path.exists():
-        logger.info("Generating Triple-Barrier labels...")
-        logger.info(f"  Input: {config.features.features_path}")
-        logger.info(f"  Output: {output_path}")
+        logger.info(f"  {STAGE_COLORS['labels']}▶ Generating Triple-Barrier labels...{RESET}")
+        logger.info(f"    Input: {config.features.features_path}")
+        logger.info(f"    Output: {output_path}")
         logger.info(
-            f"  Params: TP={config.labels.atr_multiplier_tp}×ATR, SL={config.labels.atr_multiplier_sl}×ATR, horizon={config.labels.horizon_bars} bars"
+            f"    Params: TP={config.labels.atr_multiplier_tp}×ATR, SL={config.labels.atr_multiplier_sl}×ATR, horizon={config.labels.horizon_bars} bars"
         )
 
         # Check dependencies
         if not Path(config.features.features_path).exists():
-            logger.info("  Running features stage first (dependency)...")
+            logger.info(f"  {YELLOW}⚠ Running features stage first (dependency)...{RESET}")
             _run_features_stage(config)
 
         generate_labels(config)
-        logger.info(f"  Saved labels: {output_path}")
+        logger.info(f"  {GREEN}✓ Saved labels:{RESET} {output_path}")
     else:
-        logger.info(f"  Using cached labels: {output_path}")
+        _log_using_cached(f"labels: {output_path}")
 
 
 def _run_split_stage(config: Config) -> None:

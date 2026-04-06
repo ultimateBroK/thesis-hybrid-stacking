@@ -295,12 +295,19 @@ swap_short = 5.0   # Swap for short positions (annualized %)
 # Account parameters
 initial_capital = 100000.0  # USD
 currency = "USD"
-leverage = 100  # 1:100 leverage
+leverage = 50  # 1:50 leverage (reduced from 100 for more realistic simulation)
 max_positions = 1  # Only 1 position at a time
 
 # Risk management
 risk_per_trade = 0.01  # 1% risk per trade
 position_size_method = "fixed_fractional"  # Options: fixed_fractional, kelly, optimal_f
+
+# NEW: Additional risk controls
+max_hold_bars = 100  # Maximum bars to hold a position (prevents indefinite holds)
+use_trailing_stop = true  # Enable trailing stop loss
+trailing_stop_atr_multiplier = 1.0  # Trailing stop distance = 1.0 * ATR
+max_daily_loss_pct = 0.05  # Stop trading after 5% daily loss
+max_consecutive_losses = 5  # Pause after 5 consecutive losses
 
 # Stop-out
 margin_call_level = 0.5  # 50% margin level

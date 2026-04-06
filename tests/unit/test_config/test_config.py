@@ -98,7 +98,7 @@ class TestConfigLoader:
         """Test that backtest configuration is loaded correctly."""
         assert config.backtest.initial_capital == 100000.0  # Actual value from config
         assert config.backtest.risk_per_trade == 0.01
-        assert config.backtest.leverage == 100
+        assert config.backtest.leverage == 50  # Updated to 50 for more realistic simulation
         assert config.backtest.spread_pips == 2.0
         assert config.backtest.slippage_pips == 1.0
         assert config.backtest.max_positions == 1
