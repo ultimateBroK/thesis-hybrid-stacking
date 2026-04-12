@@ -112,9 +112,10 @@ def _generate_shap_summary(config: Config) -> None:
 
         X_test = test_df.select(feature_cols).to_numpy()
 
-        # Sample for SHAP
+        # Sample for SHAP (use local RNG to avoid global state mutation)
         n_samples = min(config.reporting.shap_samples, len(X_test))
-        sample_idx = np.random.choice(len(X_test), n_samples, replace=False)
+        rng = np.random.default_rng(config.workflow.seed)
+        sample_idx = rng.choice(len(X_test), n_samples, replace=False)
         X_sample = X_test[sample_idx]
 
         # Calculate SHAP values
@@ -129,6 +130,7 @@ def _generate_shap_summary(config: Config) -> None:
             feature_names=feature_cols,
             max_display=config.reporting.shap_max_display,
             show=False,
+            rng=rng,
         )
 
         shap_path = Path(config.reporting.shap_summary_path)
