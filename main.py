@@ -281,10 +281,8 @@ def main() -> int:
     config.workflow.random_seed = args.seed
 
     # Set random seeds for reproducibility across all libraries
-    import numpy as np
     import torch
 
-    np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)

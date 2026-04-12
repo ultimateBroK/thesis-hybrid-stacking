@@ -114,7 +114,7 @@ def _generate_shap_summary(config: Config) -> None:
 
         # Sample for SHAP (use local RNG to avoid global state mutation)
         n_samples = min(config.reporting.shap_samples, len(X_test))
-        rng = np.random.default_rng(config.workflow.seed)
+        rng = np.random.default_rng(config.workflow.random_seed)
         sample_idx = rng.choice(len(X_test), n_samples, replace=False)
         X_sample = X_test[sample_idx]
 
