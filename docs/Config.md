@@ -30,7 +30,7 @@ n_estimators = 100          # Fewer trees (default: 500)
 
 [models.lstm]
 epochs = 20                 # Fewer epochs (default: 100)
-sequence_length = 30        # Shorter sequences (default: 60)
+sequence_length = 60        # Shorter sequences (default: 120)
 
 [workflow]
 n_jobs = 8                  # Use 8 cores (not all)
@@ -51,8 +51,8 @@ epochs = 200                 # More training
 hidden_size = 256            # Bigger network
 
 [splitting]
-purge_bars = 20              # More safety
-embargo_bars = 15
+purge_bars = 25              # More safety (≥ horizon)
+embargo_bars = 10
 ```
 
 Time increase: 1 hour → 3 hours
@@ -126,7 +126,7 @@ val_end = "2023-12-31"        # Updated: 1 year validation
 val_pct = 0.15                # Validation percentage
 test_start = "2024-01-01"
 test_end = "2026-03-31"       # Updated: Gold bull run period
-purge_bars = 15
+purge_bars = 25
 embargo_bars = 10
 ```
 
@@ -140,13 +140,13 @@ Important: Test period includes exceptional market conditions. Returns will be i
 What to change: purge_bars, embargo_bars
 - Higher = more safety (removes more data)
 - Lower = more data (slight risk of leakage)
-Recommendation: 10-20 is good
+Recommendation: purge ≥ horizon_bars (e.g. 25 for h=20)
 
 ### [features] Section
 
 ```toml
 [features]
-ema_periods = [20, 50, 200]      # Moving averages
+ema_periods = [34, 89]            # Moving averages
 rsi_period = 14                   # RSI lookback
 macd_fast = 12
 macd_slow = 26
@@ -164,9 +164,9 @@ Example:
 
 ```toml
 [labels]
-atr_multiplier_tp = 2.0   # Profit = 2 × ATR
-atr_multiplier_sl = 1.0     # Stop = 1 × ATR
-horizon_bars = 10           # Look ahead 10 bars
+atr_multiplier_tp = 1.5   # Profit = 1.5 × ATR
+atr_multiplier_sl = 1.5     # Stop = 1.5 × ATR (symmetric)
+horizon_bars = 20           # Look ahead 20 bars
 ```
 
 This controls your trading style!
@@ -221,7 +221,7 @@ optuna_timeout = 7200  # 2 hours max
 
 ```toml
 [models.lstm]
-sequence_length = 60
+sequence_length = 120
 hidden_size = 128
 num_layers = 2
 dropout = 0.3
@@ -233,7 +233,7 @@ Adjust based on timeframe:
 
 For 1H:
 ```toml
-sequence_length = 60     # 2.5 days of history
+sequence_length = 120    # 5 days of history
 epochs = 100
 ```
 
@@ -335,9 +335,9 @@ python main.py --config config_safe.toml
 
 ### Priority 1: Labels (Big Impact)
 ```toml
-atr_multiplier_tp = 2.0   # Try 1.5, 2.0, 2.5, 3.0
-atr_multiplier_sl = 1.0     # Try 0.5, 1.0, 1.5, 2.0
-horizon_bars = 10         # Try 5, 10, 15, 20
+atr_multiplier_tp = 1.5   # Try 1.5, 2.0, 2.5, 3.0
+atr_multiplier_sl = 1.5     # Try 0.5, 1.0, 1.5, 2.0
+horizon_bars = 20         # Try 10, 15, 20, 30
 ```
 
 ### Priority 2: Backtest (Reality Check)
@@ -352,7 +352,7 @@ max_position_size = 2.0   # Try 1.0, 1.5, 2.0
 ```toml
 optuna_trials = 100       # Try 50, 100, 200
 epochs = 100              # Try 50, 100, 200
-sequence_length = 60      # Try 30, 60, 90
+sequence_length = 120     # Try 60, 90, 120, 150
 ```
 
 ## 🔒 Data Leakage Prevention
@@ -412,9 +412,9 @@ Result: 25% return, 18% max DD, 42% win rate
 ### Example 3: Current Configuration (Gold Bull Run)
 ```toml
 [labels]
-atr_multiplier_tp = 2.0
-atr_multiplier_sl = 1.0
-horizon_bars = 10
+atr_multiplier_tp = 1.5
+atr_multiplier_sl = 1.5
+horizon_bars = 20
 
 [backtest.cfd]
 risk_per_trade = 0.01

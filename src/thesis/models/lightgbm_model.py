@@ -353,11 +353,10 @@ def _train_with_optuna(
 
     model = lgb.LGBMClassifier(**best_params)
 
-    # Train on full training + validation data for final model
-    logger.info("Training final model on combined train+val data...")
-    X_combined = np.vstack([X_train, X_val])
-    y_combined = np.concatenate([y_train, y_val])
-    model.fit(X_combined, y_combined)
+    # Train on training set only so that validation predictions passed to
+    # the stacking meta-learner are truly out-of-sample.
+    logger.info("Training final model on training set only (OOS for stacking)...")
+    model.fit(X_train, y_train)
 
     return model
 

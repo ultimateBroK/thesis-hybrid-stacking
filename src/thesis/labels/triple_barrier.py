@@ -178,13 +178,10 @@ def _generate_labels_corrected(
             sl_touched = future_low <= sl_price
 
             if tp_touched and sl_touched:
-                # Both touched on same bar - use close price to break tie
-                # This is realistic: in real trading, you'd see which side was hit
-                future_close = close_arr[future_idx]
-                if future_close >= current_close:
-                    label = 1  # Long (close above entry favors TP)
-                else:
-                    label = -1  # Short (close below entry favors SL)
+                # Both touched on same bar - intra-bar path is unknown.
+                # Assign Hold (0) to avoid inflating performance with
+                # unknowable tie-breaking heuristics.
+                label = 0
                 touch_bar = j + 1
                 break
             elif tp_touched:

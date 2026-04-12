@@ -627,8 +627,8 @@ class TestConfigurationPropagation:
         )
 
         # Test splitting configuration
-        assert config.splitting.purge_bars == 15, (
-            f"Expected purge 15 bars, got {config.splitting.purge_bars}"
+        assert config.splitting.purge_bars == 25, (
+            f"Expected purge 25 bars, got {config.splitting.purge_bars}"
         )
 
         # Test confidence threshold

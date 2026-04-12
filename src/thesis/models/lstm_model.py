@@ -101,7 +101,9 @@ def train_lstm(config: Config) -> None:
     X_train, y_train, train_means, train_stds = _create_sequences(
         train_df, ohlcv_cols, seq_length
     )
-    X_val, y_val, _, _ = _create_sequences(val_df, ohlcv_cols, seq_length)
+    X_val, y_val, _, _ = _create_sequences(
+        val_df, ohlcv_cols, seq_length, norm_stats=(train_means, train_stds)
+    )
 
     logger.info(f"Training sequences: {X_train.shape}")
     logger.info(f"Validation sequences: {X_val.shape}")
@@ -247,6 +249,7 @@ def _create_sequences(
     df: pl.DataFrame,
     feature_cols: list[str],
     seq_length: int,
+    norm_stats: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Create sequences for LSTM.
 
@@ -254,6 +257,9 @@ def _create_sequences(
         df: Input dataframe containing features and label.
         feature_cols: Columns to use as features.
         seq_length: Sequence length.
+        norm_stats: Optional ``(means, stds)`` from the training set.  When
+            provided, these statistics are used instead of computing them from
+            *df* to prevent lookahead bias on validation / test data.
 
     Returns:
         Tuple of ``(X, y, feature_means, feature_stds)`` arrays where ``X`` has
@@ -263,9 +269,12 @@ def _create_sequences(
     labels = df["label"].to_numpy()
 
     # Normalize features per column
-    feature_means = features.mean(axis=0)
-    feature_stds = features.std(axis=0)
-    feature_stds[feature_stds == 0] = 1  # Avoid division by zero
+    if norm_stats is not None:
+        feature_means, feature_stds = norm_stats
+    else:
+        feature_means = features.mean(axis=0)
+        feature_stds = features.std(axis=0)
+    feature_stds = np.where(feature_stds == 0, 1.0, feature_stds)
     features = (features - feature_means) / feature_stds
 
     # Remap labels: -1, 0, 1 -> 0, 1, 2 for PyTorch CrossEntropyLoss

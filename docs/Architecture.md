@@ -12,7 +12,7 @@ flowchart TB
     end
 
     subgraph Stage2["📊 Stage 2: FEATURES"]
-        F1["EMA (20,50,200)"]
+        F1["EMA (34,89)"]
         F2["RSI, MACD, ATR"]
         F3["Pivot points"]
         F4["Session hours"]
@@ -21,9 +21,9 @@ flowchart TB
 
     subgraph Stage3["🏷️ Stage 3: LABELS"]
         L1["Triple-Barrier"]
-        L2["TP = 2×ATR"]
-        L3["SL = 1×ATR"]
-        L4["10 bars horizon"]
+        L2["TP = 1.5×ATR"]
+        L3["SL = 1.5×ATR"]
+        L4["20 bars horizon"]
         L5["3 classes"]
     end
 
@@ -41,7 +41,7 @@ flowchart TB
 
     subgraph Stage6["🧠 Stage 6: LSTM"]
         NN1["Sequential data"]
-        NN2["60-bar sequences"]
+        NN2["120-bar sequences"]
         NN3["PyTorch CPU"]
     end
 
@@ -212,10 +212,10 @@ candle = {
 ### 3. Triple-Barrier Labels
 ```python
 # For each candle:
-tp = close + 2 * atr      # Take profit
-sl = close - 1 * atr      # Stop loss
+tp = close + 1.5 * atr    # Take profit
+sl = close - 1.5 * atr    # Stop loss
 
-# Look ahead 10 bars:
+# Look ahead 20 bars:
 if high hits tp first:  label = +1 (Long)
 if low hits sl first:   label = -1 (Short)
 if neither:             label = 0  (Hold)
@@ -242,7 +242,7 @@ flowchart LR
     end
     
     subgraph LSTM["🧠 LSTM"]
-        LS1["60-bar Sequences"]
+        LS1["120-bar Sequences"]
         LS2["Predict"]
         LS3["[P(short), P(hold), P(long)]"]
     end
@@ -385,7 +385,7 @@ If you run Stage 5, it auto-runs 1-4 first.
 ### Purge and Embargo
 ```toml
 [splitting]
-purge_bars = 15      # Remove 15 bars around split
+purge_bars = 25      # Remove 25 bars around split (≥ horizon)
 embargo_bars = 10    # Additional safety margin
 ```
 

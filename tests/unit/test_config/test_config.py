@@ -34,44 +34,50 @@ class TestConfigLoader:
     def test_config_ema_periods_updated_to_34_89(self, config):
         """Verify EMA periods updated to 34/89 (Phase 1 implementation)."""
         # EMA periods should now be [34, 89] instead of [20, 50, 200]
-        assert hasattr(config.features, 'ema_periods'), "Config should have ema_periods"
+        assert hasattr(config.features, "ema_periods"), "Config should have ema_periods"
         ema_periods = config.features.ema_periods
         assert 34 in ema_periods, "EMA 34 should be configured"
         assert 89 in ema_periods, "EMA 89 should be configured"
 
     def test_config_correlation_threshold_is_0_90(self, config):
         """Verify correlation threshold is 0.90 (Phase 5 implementation)."""
-        assert hasattr(config.features, 'correlation_threshold'), \
+        assert hasattr(config.features, "correlation_threshold"), (
             "Config should have correlation_threshold"
-        assert config.features.correlation_threshold == 0.90, \
+        )
+        assert config.features.correlation_threshold == 0.90, (
             f"Correlation threshold should be 0.90, got {config.features.correlation_threshold}"
+        )
 
     def test_config_labels_horizon_is_20(self, config):
         """Verify label horizon is 20 bars (Phase 1 implementation)."""
-        assert config.labels.horizon_bars == 20, \
+        assert config.labels.horizon_bars == 20, (
             f"Horizon should be 20 bars, got {config.labels.horizon_bars}"
+        )
 
     def test_config_symmetric_barriers_1_5x(self, config):
         """Verify symmetric barriers are 1.5×/1.5× (Phase 1 implementation)."""
-        assert config.labels.atr_multiplier_tp == 1.5, \
+        assert config.labels.atr_multiplier_tp == 1.5, (
             f"TP multiplier should be 1.5×, got {config.labels.atr_multiplier_tp}"
-        assert config.labels.atr_multiplier_sl == 1.5, \
+        )
+        assert config.labels.atr_multiplier_sl == 1.5, (
             f"SL multiplier should be 1.5×, got {config.labels.atr_multiplier_sl}"
+        )
 
-    def test_config_purge_window_is_15(self, config):
-        """Verify purge window is 15 bars (Phase 1 implementation)."""
-        assert config.splitting.purge_bars == 15, \
-            f"Purge bars should be 15, got {config.splitting.purge_bars}"
+    def test_config_purge_window_is_25(self, config):
+        """Verify purge window is 25 bars (>= horizon_bars=20 to prevent leakage)."""
+        assert config.splitting.purge_bars == 25, (
+            f"Purge bars should be 25, got {config.splitting.purge_bars}"
+        )
 
     def test_config_stacking_confidence_threshold(self, config):
         """Verify confidence threshold exists in stacking config (Phase 3)."""
         # Check if stacking config has confidence_threshold or it's in models.stacking
-        if hasattr(config, 'models') and 'stacking' in config.models:
-            stacking_config = config.models['stacking']
-            if hasattr(stacking_config, 'confidence_threshold'):
-                assert stacking_config.confidence_threshold == 0.6, \
+        if hasattr(config, "models") and "stacking" in config.models:
+            stacking_config = config.models["stacking"]
+            if hasattr(stacking_config, "confidence_threshold"):
+                assert stacking_config.confidence_threshold == 0.6, (
                     f"Confidence threshold should be 0.6, got {stacking_config.confidence_threshold}"
-
+                )
 
     def test_config_splitting_section(self, config):
         """Test that splitting configuration is loaded correctly."""
@@ -82,7 +88,7 @@ class TestConfigLoader:
         assert config.splitting.val_end == "2023-12-31 23:59:59"
         assert config.splitting.test_start == "2024-01-01"
         assert config.splitting.test_end == "2026-03-31 23:59:59"
-        assert config.splitting.purge_bars == 15
+        assert config.splitting.purge_bars == 25
         assert config.splitting.embargo_bars == 10
         assert config.splitting.use_walk_forward_cv is True
 
@@ -98,7 +104,9 @@ class TestConfigLoader:
         """Test that backtest configuration is loaded correctly."""
         assert config.backtest.initial_capital == 100000.0  # Actual value from config
         assert config.backtest.risk_per_trade == 0.01
-        assert config.backtest.leverage == 50  # Updated to 50 for more realistic simulation
+        assert (
+            config.backtest.leverage == 50
+        )  # Updated to 50 for more realistic simulation
         assert config.backtest.spread_pips == 2.0
         assert config.backtest.slippage_pips == 1.0
         assert config.backtest.max_positions == 1

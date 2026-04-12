@@ -75,7 +75,7 @@ test_start = "2024-01-01"
 test_end = "2026-03-31 23:59:59"
 
 # Purge and embargo to prevent leakage
-purge_bars = 15  # Remove overlap between splits
+purge_bars = 25  # Must be >= horizon_bars (20) to prevent label leakage
 embargo_bars = 10  # No evaluation on embargo bars
 
 # Walk-Forward CV configuration for LightGBM hyperparameter tuning
@@ -83,6 +83,7 @@ walk_forward_window_type = "sliding"  # Options: "sliding" or "expanding"
 walk_forward_train_years = 2  # Training window size in years
 walk_forward_val_years = 1    # Validation window size in years
 walk_forward_step_years = 1 # Step size between windows
+use_walk_forward_cv = true  # Enable Walk-Forward CV for LightGBM tuning
 
 # Auto-generated windows (based on train period 2018-2022):
 # Window 1: Train 2018-2019 | Val 2020
@@ -189,8 +190,8 @@ optuna_timeout = 3600  # seconds
 
 # Cross-validation for tuning (now using Walk-Forward CV)
 cv_folds = 5
-cv_purge = 10
-cv_embargo = 5
+cv_purge = 25
+cv_embargo = 10
 
 # Fixed hyperparameters (if not using Optuna)
 num_leaves = 31
@@ -262,8 +263,8 @@ meta_learner = "logistic_regression"  # Options: logistic_regression, ridge, las
 n_folds = 5
 
 # Purge/embargo for stacking CV
-stacking_purge = 10
-stacking_embargo = 5
+stacking_purge = 25
+stacking_embargo = 10
 
 # Meta-learner regularization
 C = 1.0  # Inverse regularization strength for logistic regression

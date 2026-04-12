@@ -34,15 +34,15 @@ STAGE_ICONS = {
 }
 
 STAGE_COLORS = {
-    "data": "\033[94m",      # Blue
+    "data": "\033[94m",  # Blue
     "features": "\033[96m",  # Cyan
-    "labels": "\033[95m",   # Magenta
-    "split": "\033[93m",    # Yellow
-    "lightgbm": "\033[92m", # Green
-    "lstm": "\033[92m",     # Green
-    "stacking": "\033[94m", # Blue
-    "backtest": "\033[91m", # Red
-    "report": "\033[94m",   # Blue
+    "labels": "\033[95m",  # Magenta
+    "split": "\033[93m",  # Yellow
+    "lightgbm": "\033[92m",  # Green
+    "lstm": "\033[92m",  # Green
+    "stacking": "\033[94m",  # Blue
+    "backtest": "\033[91m",  # Red
+    "report": "\033[94m",  # Blue
 }
 
 RESET = "\033[0m"
@@ -56,7 +56,7 @@ def _log_stage_header(stage_name: str) -> None:
     """Log a visually distinct stage header with color and icon."""
     icon = STAGE_ICONS.get(stage_name, "▶")
     color = STAGE_COLORS.get(stage_name, "")
-    
+
     logger.info("")
     logger.info(f"{color}{BOLD}{'=' * 70}{RESET}")
     logger.info(f"{color}{BOLD} {icon} STAGE {stage_name.upper()}{RESET}")
@@ -129,7 +129,7 @@ def run_thesis_workflow(
         # Run full pipeline
         completed = 0
         skipped = 0
-        
+
         for stage_name, stage_func in stages:
             # Check if stage is enabled in config
             if not _is_stage_enabled(stage_name, config):
@@ -181,7 +181,9 @@ def _run_data_stage(config: Config) -> None:
     output_path = Path(config.data.ohlcv_path)
 
     if config.workflow.force_rerun or not output_path.exists():
-        logger.info(f"  {STAGE_COLORS['data']}▶ Processing raw tick data to OHLCV H1...{RESET}")
+        logger.info(
+            f"  {STAGE_COLORS['data']}▶ Processing raw tick data to OHLCV H1...{RESET}"
+        )
         logger.info(f"    Source: {config.data.raw_data_path}")
         logger.info(f"    Output: {output_path}")
 
@@ -198,7 +200,9 @@ def _run_features_stage(config: Config) -> None:
     output_path = Path(config.features.features_path)
 
     if config.workflow.force_rerun or not output_path.exists():
-        logger.info(f"  {STAGE_COLORS['features']}▶ Generating technical features...{RESET}")
+        logger.info(
+            f"  {STAGE_COLORS['features']}▶ Generating technical features...{RESET}"
+        )
         logger.info(f"    Input: {config.data.ohlcv_path}")
         logger.info(f"    Output: {output_path}")
 
@@ -220,7 +224,9 @@ def _run_labels_stage(config: Config) -> None:
     output_path = Path(config.labels.labels_path)
 
     if config.workflow.force_rerun or not output_path.exists():
-        logger.info(f"  {STAGE_COLORS['labels']}▶ Generating Triple-Barrier labels...{RESET}")
+        logger.info(
+            f"  {STAGE_COLORS['labels']}▶ Generating Triple-Barrier labels...{RESET}"
+        )
         logger.info(f"    Input: {config.features.features_path}")
         logger.info(f"    Output: {output_path}")
         logger.info(
@@ -229,7 +235,9 @@ def _run_labels_stage(config: Config) -> None:
 
         # Check dependencies
         if not Path(config.features.features_path).exists():
-            logger.info(f"  {YELLOW}⚠ Running features stage first (dependency)...{RESET}")
+            logger.info(
+                f"  {YELLOW}⚠ Running features stage first (dependency)...{RESET}"
+            )
             _run_features_stage(config)
 
         generate_labels(config)

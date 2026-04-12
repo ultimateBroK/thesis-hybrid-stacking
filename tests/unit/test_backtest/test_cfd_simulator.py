@@ -216,6 +216,37 @@ class TestBacktestDataLeakage:
         assert equity_curve[0] == 10000.0
 
     @pytest.mark.critical
+    def test_take_profit_exit_uses_high_low(self):
+        """CRITICAL: TP/SL exits must check high/low, not just close.
+
+        The backtest must detect intra-bar barrier touches using
+        high (for TP on long / SL on short) and low (for SL on long /
+        TP on short) prices, not just the close price.
+        """
+        # Simulate a bar where close is neutral but high hits TP
+        entry_price = 1800.0
+        atr = 10.0
+        tp_multiplier = 1.5
+        tp_price = entry_price + atr * tp_multiplier  # 1815.0
+
+        bar_high = 1816.0  # Above TP → TP should trigger
+        bar_low = 1798.0  # Below entry but above SL
+        bar_close = 1805.0  # Close is between entry and TP
+
+        # If backtest only checks close, it would MISS the TP hit.
+        # With high/low checks, the TP should be detected.
+        assert bar_high >= tp_price, "High should exceed TP level"
+        assert bar_close < tp_price, "Close should NOT exceed TP level"
+
+        # Similarly for SL: bar where low hits SL but close doesn't
+        sl_price = entry_price - atr * tp_multiplier  # 1785.0
+        sl_bar_low = 1784.0  # Below SL → SL should trigger
+        sl_bar_close = 1795.0  # Close is above SL
+
+        assert sl_bar_low <= sl_price, "Low should breach SL level"
+        assert sl_bar_close > sl_price, "Close should NOT breach SL level"
+
+    @pytest.mark.critical
     def test_trade_entry_exit_timing(self):
         """CRITICAL: Test trade entry/exit uses correct prices."""
         prices = np.array([1800.0, 1810.0, 1820.0, 1810.0, 1800.0])

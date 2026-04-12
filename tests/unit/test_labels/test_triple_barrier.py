@@ -5,6 +5,7 @@ Critical for correct label generation and trading signal creation.
 
 import pandas as pd
 import numpy as np
+import polars as pl
 import pytest
 
 
@@ -97,6 +98,54 @@ class TestTripleBarrier:
         # Neither barrier should be hit within horizon
         assert prices.max() < 110
         assert prices.min() > 95
+
+    @pytest.mark.critical
+    def test_ambiguous_barrier_returns_hold(self):
+        """CRITICAL: When both TP and SL hit same bar, label must be 0 (Hold).
+
+        The intra-bar price path is unknown — we cannot determine which
+        barrier was touched first.  Assigning Hold prevents inflating
+        performance with unknowable tie-breaking heuristics.
+        """
+        from thesis.labels.triple_barrier import _generate_labels_corrected
+
+        # Build 30 bars: bar at index 5 has high that touches TP AND
+        # low that touches SL simultaneously for the entry at index 0.
+        n = 30
+        close = np.full(n, 100.0)
+        high = np.full(n, 100.5)
+        low = np.full(n, 99.5)
+        atr = np.full(n, 1.0)
+        timestamps = pd.date_range("2020-01-01", periods=n, freq="h")
+
+        # Bar index 1 (the first looked-at bar) has both barriers triggered:
+        #   TP = 100 + 1.5 * 1.0 = 101.5  →  high >= 101.5? No
+        # We need high >= TP and low <= SL.
+        # Let's set: TP=100+1.5*1=101.5, SL=100-1.5*1=98.5
+        # Make bar 1: high=102 >= 101.5 ✓, low=98 <= 98.5 ✓
+        high[1] = 102.0
+        low[1] = 98.0
+
+        df = pl.DataFrame(
+            {
+                "close": close,
+                "high": high,
+                "low": low,
+                "atr_14": atr,
+                "timestamp": timestamps,
+            }
+        )
+
+        result = _generate_labels_corrected(
+            df, atr_tp=1.5, atr_sl=1.5, horizon=20, min_atr=0.0001
+        )
+
+        # First label (index 0) must be Hold (0) because both barriers
+        # were touched in the same bar (bar 1).
+        assert result["labels"][0] == 0, (
+            "Ambiguous TP+SL in same bar must return Hold (0), "
+            f"got {result['labels'][0]}"
+        )
 
     def test_label_alignment_with_features(self, sample_features_df, sample_labels_df):
         """Test that labels align with features by timestamp."""
