@@ -48,10 +48,10 @@ class TestConfigLoader:
             f"Correlation threshold should be 0.90, got {config.features.correlation_threshold}"
         )
 
-    def test_config_labels_horizon_is_20(self, config):
-        """Verify label horizon is 20 bars (Phase 1 implementation)."""
-        assert config.labels.horizon_bars == 20, (
-            f"Horizon should be 20 bars, got {config.labels.horizon_bars}"
+    def test_config_labels_horizon_is_10(self, config):
+        """Verify label horizon is 10 bars (Phase 1 implementation)."""
+        assert config.labels.horizon_bars == 10, (
+            f"Horizon should be 10 bars, got {config.labels.horizon_bars}"
         )
 
     def test_config_symmetric_barriers_1_5x(self, config):
@@ -94,7 +94,7 @@ class TestConfigLoader:
 
     def test_config_labels_section(self, config):
         """Test that labels configuration is loaded correctly."""
-        assert config.labels.horizon_bars == 20  # Updated to 20 per config.toml
+        assert config.labels.horizon_bars == 10  # Updated to 10 per config.toml
         assert config.labels.atr_multiplier_tp == 1.5  # Updated to 1.5× per config.toml
         assert config.labels.atr_multiplier_sl == 1.5  # Updated to 1.5× per config.toml
         assert config.labels.num_classes == 3

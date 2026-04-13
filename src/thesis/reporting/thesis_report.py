@@ -50,6 +50,22 @@ def generate_report(config: Config) -> None:
     except Exception as e:
         logger.warning(f"Confidence histogram failed: {e}")
 
+    # Plotly interactive charts
+    try:
+        _generate_interactive_equity_curve(backtest_data, config)
+    except Exception as e:
+        logger.warning(f"Interactive equity curve failed: {e}")
+
+    try:
+        _generate_interactive_confidence(config)
+    except Exception as e:
+        logger.warning(f"Interactive confidence chart failed: {e}")
+
+    try:
+        _generate_interactive_trades(backtest_data, config)
+    except Exception as e:
+        logger.warning(f"Interactive trades chart failed: {e}")
+
     # Create markdown report
     report_md = _create_markdown_report(backtest_data, config)
 
@@ -114,7 +130,7 @@ def _generate_shap_summary(config: Config) -> None:
 
         # Sample for SHAP (use local RNG to avoid global state mutation)
         n_samples = min(config.reporting.shap_samples, len(X_test))
-        rng = np.random.default_rng(config.workflow.seed)
+        rng = np.random.default_rng(config.workflow.random_seed)
         sample_idx = rng.choice(len(X_test), n_samples, replace=False)
         X_sample = X_test[sample_idx]
 
@@ -159,7 +175,7 @@ def _create_markdown_report(backtest_data: dict, config: Config) -> str:
 
     results_conclusion = _build_results_conclusion(metrics)
 
-    report = f"""# Hybrid Stacking (LSTM + LightGBM) for XAU/USD Trading Signals
+    report = f"""# Hybrid Stacking ({config.models["lstm"].model_type.upper()} + LightGBM) for XAU/USD Trading Signals
 
 ## Bachelor's Thesis Report
 **Student:** Nguyen Duc Hieu (2151061192)  
@@ -173,7 +189,7 @@ def _create_markdown_report(backtest_data: dict, config: Config) -> str:
 
 This thesis implements a **Hybrid Stacking ensemble** combining:
 - **LightGBM** for tabular feature learning
-- **LSTM** for sequential OHLCV patterns
+- **{config.models["lstm"].model_type.upper()}** for sequential OHLCV patterns
 - **Meta-learner** for final prediction aggregation
 
 Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
@@ -218,7 +234,7 @@ Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
 - Hyperparameter tuning: Optuna ({config.models["tree"].optuna_trials} trials)
 - Class balancing: {"Enabled" if config.models["tree"].use_class_weights else "Disabled"}
 
-### LSTM
+### {config.models["lstm"].model_type.upper()}
 - Sequence length: {config.models["lstm"].sequence_length} bars
 - Hidden size: {config.models["lstm"].hidden_size}
 - Layers: {config.models["lstm"].num_layers}
@@ -266,7 +282,7 @@ Target: XAU/USD (Gold/USD) on H1 timeframe with Triple-Barrier labeling.
 
 ## Conclusions
 
-1. **Hybrid stacking** successfully combines LightGBM and LSTM predictions
+1. **Hybrid stacking** successfully combines LightGBM and {config.models["lstm"].model_type.upper()} predictions
 2. **Market regime split** enables evaluation on new paradigm (gold ATH despite high rates)
 3. **Triple-Barrier labeling** provides realistic trade targets
 {results_conclusion}
@@ -334,6 +350,10 @@ def _generate_model_disagreement_analysis(config: Config) -> None:
 
     lgbm_df = pl.read_parquet(lgbm_path)
     lstm_df = pl.read_parquet(lstm_path)
+
+    # Normalize timestamp dtypes for consistent join
+    lgbm_df = lgbm_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
+    lstm_df = lstm_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
     # Align on timestamp
     merged = lgbm_df.join(lstm_df, on="timestamp", how="inner", suffix="_lstm")
@@ -569,3 +589,208 @@ def _generate_confidence_histogram(config: Config) -> None:
     logger.info(f"Saved confidence histogram: {output_path}")
     logger.info(f"  Mean confidence: {confidence.mean():.3f}")
     logger.info(f"  High confidence (>0.8): {(confidence > 0.8).mean() * 100:.1f}%")
+
+
+def _generate_interactive_equity_curve(
+    backtest_data: dict, config: Config
+) -> Path | None:
+    """Generate interactive equity curve with drawdown visualization.
+
+    Args:
+        backtest_data: Backtest results dictionary.
+        config: Configuration object.
+
+    Returns:
+        Path to generated HTML file or None if disabled.
+    """
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError:
+        logger.warning("plotly not available, skipping interactive equity curve")
+        return None
+
+    if not config.reporting.plotly.enabled:
+        return None
+
+    equity = backtest_data.get("equity_curve", [])
+    drawdown = backtest_data.get("drawdown_series", [])
+
+    if not equity:
+        logger.warning("No equity curve data for interactive chart")
+        return None
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+        subplot_titles=("Equity Curve", "Drawdown"),
+        row_heights=[0.7, 0.3],
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            y=equity, mode="lines", name="Equity", line=dict(color="#2ecc71", width=2)
+        ),
+        row=1,
+        col=1,
+    )
+
+    if drawdown:
+        fig.add_trace(
+            go.Scatter(
+                y=drawdown,
+                mode="lines",
+                name="Drawdown %",
+                line=dict(color="#e74c3c", width=1),
+                fill="tozeroy",
+            ),
+            row=2,
+            col=1,
+        )
+
+    fig.update_layout(
+        title="Backtest Performance",
+        hovermode="x unified",
+        showlegend=True,
+        template="plotly_white",
+    )
+
+    reports_dir = Path(config.reporting.report_path).parent
+    output_path = reports_dir / config.reporting.plotly.equity_curve_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(str(output_path))
+
+    logger.info(f"Saved interactive equity curve: {output_path}")
+    return output_path
+
+
+def _generate_interactive_confidence(config: Config) -> Path | None:
+    """Generate interactive prediction confidence chart.
+
+    Args:
+        config: Configuration object.
+
+    Returns:
+        Path to generated HTML file or None if disabled.
+    """
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        logger.warning("plotly not available, skipping interactive confidence chart")
+        return None
+
+    if not config.reporting.plotly.enabled:
+        return None
+
+    preds_path = Path(config.paths.final_predictions)
+    if not preds_path.exists():
+        logger.warning("Final predictions not found for interactive confidence")
+        return None
+
+    preds_df = pl.read_parquet(preds_path)
+    proba_cols = ["pred_proba_class_minus1", "pred_proba_class_0", "pred_proba_class_1"]
+    proba_matrix = preds_df.select(proba_cols).to_numpy()
+    confidence = proba_matrix.max(axis=1)
+    predicted_class = proba_matrix.argmax(axis=1) - 1
+
+    colors = [
+        "#e74c3c" if c == -1 else "#f39c12" if c == 0 else "#27ae60"
+        for c in predicted_class
+    ]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            y=confidence,
+            mode="markers",
+            name="Confidence",
+            marker=dict(color=colors, size=4, opacity=0.6),
+        )
+    )
+    fig.add_hline(
+        y=0.6, line_dash="dash", line_color="red", annotation_text="Threshold (0.6)"
+    )
+    fig.add_hline(
+        y=float(confidence.mean()),
+        line_dash="dash",
+        line_color="green",
+        annotation_text=f"Mean ({confidence.mean():.3f})",
+    )
+
+    fig.update_layout(
+        title="Prediction Confidence Over Time",
+        xaxis_title="Sample Index",
+        yaxis_title="Confidence",
+        template="plotly_white",
+        hovermode="x unified",
+    )
+
+    reports_dir = Path(config.reporting.report_path).parent
+    output_path = reports_dir / config.reporting.plotly.confidence_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(str(output_path))
+
+    logger.info(f"Saved interactive confidence chart: {output_path}")
+    return output_path
+
+
+def _generate_interactive_trades(backtest_data: dict, config: Config) -> Path | None:
+    """Generate interactive trade P&L scatter plot.
+
+    Args:
+        backtest_data: Backtest results dictionary.
+        config: Configuration object.
+
+    Returns:
+        Path to generated HTML file or None if disabled.
+    """
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        logger.warning("plotly not available, skipping interactive trades chart")
+        return None
+
+    if not config.reporting.plotly.enabled:
+        return None
+
+    trades = backtest_data.get("trades", [])
+    if not trades:
+        logger.warning("No trade data for interactive chart")
+        return None
+
+    pnls = [t.get("pnl", 0) for t in trades]
+    colors = ["#27ae60" if p > 0 else "#e74c3c" for p in pnls]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            y=pnls,
+            mode="markers",
+            name="Trade P&L",
+            marker=dict(color=colors, size=6, opacity=0.7),
+            text=[
+                f"Trade {i + 1}<br>P&L: ${p:.2f}<br>Type: {'Win' if p > 0 else 'Loss'}"
+                for i, p in enumerate(pnls)
+            ],
+            hovertemplate="%{text}<extra></extra>",
+        )
+    )
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+
+    fig.update_layout(
+        title="Trade P&L Distribution",
+        xaxis_title="Trade Index",
+        yaxis_title="P&L ($)",
+        template="plotly_white",
+        hovermode="x unified",
+    )
+
+    reports_dir = Path(config.reporting.report_path).parent
+    output_path = reports_dir / config.reporting.plotly.trades_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.write_html(str(output_path))
+
+    logger.info(f"Saved interactive trades chart: {output_path}")
+    return output_path

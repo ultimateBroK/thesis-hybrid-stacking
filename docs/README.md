@@ -1,73 +1,83 @@
-# Project Documentation Guide
+# Documentation Hub
 
-Welcome! This folder contains everything you need to understand and use this thesis project.
-
-## 📚 Documentation Map
-
-Start here based on what you need:
-
-| If you want to... | Read this |
-|-------------------|-----------|
-| Run the project quickly | Quickstart.md |
-| Understand how it works | Architecture.md |
-| Know what features exist | Features.md |
-| Change settings/numbers | Config.md |
-| Read the results | Evaluation.md |
-| See what's done/todo | Todo.md |
-
-## 🎯 Quick Links
-
-- Main code: src/thesis/
-- Config file: config.toml
-- Run command: python main.py
-- Results: results/ folder
-
-## 📖 Reading Order (Recommended)
-
-For beginners:
-1. Quickstart.md - Get it running
-2. Architecture.md - Understand the flow
-3. Evaluation.md - Read your results
-
-For researchers:
-1. Architecture.md - Deep dive
-2. Features.md - What signals are used
-3. Config.md - Tune parameters
-4. Evaluation.md - Interpret results
-
-For developers:
-1. Todo.md - What's implemented
-2. Architecture.md - Code structure
-3. Features.md - Feature engineering
-
-## 🔬 Recent Updates (March 2026)
-
-### Data Leakage Fix
-Fixed LSTM normalization data leakage on March 28, 2026:
-- LSTM now saves training statistics (models/lstm_norm_stats.npz)
-- Test predictions use training stats (not test stats)
-- Returns dropped from 1622% to 1446% (-10.8%)
-
-### Key Finding
-1446% return is not from prediction skill. It results from:
-- Gold's 117% price increase (2024-2026 bull run)
-- Volatility harvesting strategy
-- Always-in-market approach
-- Directional accuracy only 50.6% (barely better than random)
-
-See Evaluation.md for detailed analysis.
-
-## 🎓 Project Info
-
-- Student: Nguyen Duc Hieu (2151061192)
-- Advisor: Hoang Quoc Dung
-- University: Thuy Loi University
-- Topic: Hybrid Stacking (LSTM + LightGBM) for XAU/USD Trading
-
-## 🚀 One-Line Summary
-
-Raw ticks → Features → Labels → Train LGBM + LSTM → Stack → Backtest → Report
+> Welcome to the documentation for **Hybrid Stacking (LSTM + LightGBM) for XAU/USD Trading Signal Prediction**.
 
 ---
 
-All docs use simple English. Examples included!
+## About This Project
+
+This project predicts trading signals for Gold (XAU/USD) on the 1-hour timeframe using a hybrid stacking approach that combines two machine learning models:
+
+- **LightGBM** — finds patterns across technical indicators
+- **LSTM** — finds patterns in price sequences over time
+- **Meta-Learner** — combines both models for a final prediction
+
+**Three signals:** Long (buy), Short (sell), or Hold (wait).
+
+---
+
+## Documentation Sections
+
+| Document | Description | When to Read |
+|----------|-------------|-------------|
+| [**Architecture**](architecture.md) | How the project is built — modules, data flow, design decisions | First — to understand the system |
+| [**Quickstart**](quickstart.md) | Step-by-step guide to install, configure, and run the pipeline | When you want to run it |
+| [**Evaluation**](evaluation.md) | How to interpret results, metrics, and charts | After your first pipeline run |
+| [**Configuration**](configuration.md) | Features overview + detailed parameter tuning guide | When you want to optimize |
+| [**Roadmap**](roadmap.md) | Completed tasks and planned improvements | To see project status |
+| [**Glossary**](glossary.md) | Simple definitions for all technical terms | Anytime you see an unfamiliar term |
+
+---
+
+## Quick Links
+
+### Getting Started
+1. Read [Architecture](architecture.md) to understand the system
+2. Follow [Quickstart](quickstart.md) to run your first pipeline
+3. Check [Evaluation](evaluation.md) to understand the results
+
+### Optimizing Results
+1. Read the **Features** section in [Configuration](configuration.md)
+2. Adjust parameters in `config.toml` using the **Configuration Guide**
+3. Compare runs to find the best settings
+
+### Understanding Terms
+- Open [Glossary](glossary.md) for any technical term you are not sure about
+
+---
+
+## Project Structure
+
+```
+thesis/
+├── config.toml          # All settings
+├── main.py              # CLI entry point
+├── data/
+│   ├── raw/XAUUSD/      # Downloaded tick data
+│   └── processed/       # Generated parquet files
+├── src/thesis/          # Source code
+│   ├── config/          # Configuration loader
+│   ├── data/            # Data processing and splitting
+│   ├── features/        # Technical indicators
+│   ├── labels/          # Triple-Barrier labeling
+│   ├── models/          # LSTM, LightGBM, Stacking
+│   ├── pipeline/        # Stage orchestration
+│   ├── backtest/        # CFD trading simulator
+│   ├── reporting/       # Report generation
+│   └── validation/      # Integrity checks
+├── tests/               # Test suite
+├── results/             # Session-based output
+└── docs/                # This documentation
+```
+
+---
+
+## Additional Resources
+
+| Resource | Location |
+|----------|----------|
+| Data Download Guide | `docs/guide/Download_Guide.md` |
+| Git Commit Guide | `docs/guide/Git_Commit_Guide.md` |
+| Implementation Plan | `docs/planning/implementation_plan.md` |
+| Project Details | `docs/planning/detail.md` |
+| Agent Instructions | `AGENTS.md` (project root) |

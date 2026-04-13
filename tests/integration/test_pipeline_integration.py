@@ -470,8 +470,8 @@ class TestLabelDistributionPipelineIntegration:
 
         # Verify horizon setting
         if config is not None:
-            assert config.labels.horizon_bars == 20, (
-                f"Expected horizon 20 bars, got {config.labels.horizon_bars}"
+            assert config.labels.horizon_bars == 10, (
+                f"Expected horizon 10 bars, got {config.labels.horizon_bars}"
             )
 
         labels = sample_labels_df["label"].to_numpy()
@@ -622,8 +622,8 @@ class TestConfigurationPropagation:
         assert config.labels.atr_multiplier_sl == 1.5, (
             f"Expected SL multiplier 1.5, got {config.labels.atr_multiplier_sl}"
         )
-        assert config.labels.horizon_bars == 20, (
-            f"Expected horizon 20, got {config.labels.horizon_bars}"
+        assert config.labels.horizon_bars == 10, (
+            f"Expected horizon 10, got {config.labels.horizon_bars}"
         )
 
         # Test splitting configuration

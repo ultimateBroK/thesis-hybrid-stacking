@@ -163,6 +163,38 @@ class FeaturesConfig:
 
 
 @dataclass
+class SessionDefinition:
+    """A single market session with UTC hour range and ATR multipliers.
+
+    Attributes:
+        session: Session name (e.g. ``"dead"``, ``"overlap"``).
+        start_utc: Start hour in UTC (0-23).
+        end_utc: End hour in UTC (0-23). ``0`` means midnight wrap.
+        tp_mult: Take-profit ATR multiplier. ``0.0`` forces Hold label.
+        sl_mult: Stop-loss ATR multiplier. ``0.0`` forces Hold label.
+    """
+
+    session: str = ""
+    start_utc: int = 0
+    end_utc: int = 0
+    tp_mult: float = 1.5
+    sl_mult: float = 1.5
+
+
+@dataclass
+class SessionATRConfig:
+    """Session-aware ATR multiplier configuration.
+
+    When ``enabled`` is ``True``, the fixed ``atr_multiplier_tp`` /
+    ``atr_multiplier_sl`` values are overridden per market session.
+    """
+
+    enabled: bool = False
+    summer: list[SessionDefinition] = field(default_factory=list)
+    winter: list[SessionDefinition] = field(default_factory=list)
+
+
+@dataclass
 class LabelsConfig:
     """Triple-Barrier label configuration."""
 
@@ -178,6 +210,8 @@ class LabelsConfig:
         default_factory=lambda: {"-1": "Short", "0": "Hold", "1": "Long"}
     )
     min_atr: float = 0.0001
+    filter_dead_hours_from_train: bool = True
+    session_atr: SessionATRConfig = field(default_factory=SessionATRConfig)
 
 
 @dataclass
@@ -186,6 +220,7 @@ class TreeModelConfig:
 
     model_path: str = "models/lightgbm_model.pkl"
     predictions_path: str = "data/predictions/lightgbm_oof.parquet"
+    oof_predictions_path: str = "data/predictions/lightgbm_oof_train.parquet"
     prediction_type: str = "probabilities"
     use_class_weights: bool = True
     use_downsampling: bool = False
@@ -214,10 +249,12 @@ class TreeModelConfig:
 
 @dataclass
 class LSTMModelConfig:
-    """LSTM model configuration."""
+    """LSTM/GRU model configuration."""
 
+    model_type: str = "gru"  # "gru" or "lstm"
     model_path: str = "models/lstm_model.pt"
     predictions_path: str = "data/predictions/lstm_oof.parquet"
+    oof_predictions_path: str = "data/predictions/lstm_oof_train.parquet"
     sequences_path: str = "data/processed/lstm_sequences.npz"
     sequence_length: int = 120
     step_size: int = 1
@@ -231,7 +268,7 @@ class LSTMModelConfig:
     weight_decay: float = 1e-5
     patience: int = 10
     min_delta: float = 0.001
-    device: str = "cpu"
+    device: str = "auto"
     num_workers: int = 4
     save_best: bool = True
 
@@ -304,6 +341,17 @@ class BacktestConfig:
 
 
 @dataclass
+class PlotlyConfig:
+    """Plotly interactive visualization configuration."""
+
+    enabled: bool = True
+    equity_curve_path: str = "reports/interactive_equity.html"
+    confidence_path: str = "reports/interactive_confidence.html"
+    trades_path: str = "reports/interactive_trades.html"
+    include_annotations: bool = True
+
+
+@dataclass
 class ReportingConfig:
     """Reporting and visualization configuration."""
 
@@ -319,6 +367,7 @@ class ReportingConfig:
     shap_max_display: int = 20
     export_csv: bool = True
     export_excel: bool = False
+    plotly: PlotlyConfig = field(default_factory=PlotlyConfig)
 
 
 @dataclass
@@ -455,7 +504,23 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
         config.features = FeaturesConfig(**raw_config["features"])
 
     if "labels" in raw_config:
-        config.labels = LabelsConfig(**raw_config["labels"])
+        labels_raw = dict(raw_config["labels"])
+        # Extract session_atr separately — nested structures need manual parsing
+        session_atr_raw = labels_raw.pop("session_atr", None)
+        config.labels = LabelsConfig(**labels_raw)
+
+        if session_atr_raw and isinstance(session_atr_raw, dict):
+            summer_defs = [
+                SessionDefinition(**s) for s in session_atr_raw.get("summer", [])
+            ]
+            winter_defs = [
+                SessionDefinition(**s) for s in session_atr_raw.get("winter", [])
+            ]
+            config.labels.session_atr = SessionATRConfig(
+                enabled=session_atr_raw.get("enabled", False),
+                summer=summer_defs,
+                winter=winter_defs,
+            )
 
     if "models" in raw_config:
         models_config = raw_config["models"]
@@ -469,7 +534,11 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
         config.backtest = BacktestConfig(**raw_config["backtest"].get("cfd", {}))
 
     if "reporting" in raw_config:
-        config.reporting = ReportingConfig(**raw_config["reporting"])
+        reporting_raw = dict(raw_config["reporting"])
+        plotly_raw = reporting_raw.pop("plotly", None)
+        config.reporting = ReportingConfig(**reporting_raw)
+        if plotly_raw:
+            config.reporting.plotly = PlotlyConfig(**plotly_raw)
 
     if "workflow" in raw_config:
         config.workflow = WorkflowConfig(**raw_config["workflow"])

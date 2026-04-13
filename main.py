@@ -106,10 +106,14 @@ class ColoredFormatter(logging.Formatter):
     }
 
     def format(self, record):
-        # Add color to levelname
+        # Save original levelname, add color, format, then restore
+        # This prevents ANSI codes from bleeding into file handler output
+        original_levelname = record.levelname
         color = self.LEVEL_COLORS.get(record.levelno, Colors.RESET)
         record.levelname = f"{color}{record.levelname}{Colors.RESET}"
-        return super().format(record)
+        result = super().format(record)
+        record.levelname = original_levelname
+        return result
 
 
 def setup_logging(log_path: str | Path) -> logging.Logger:
@@ -281,10 +285,8 @@ def main() -> int:
     config.workflow.random_seed = args.seed
 
     # Set random seeds for reproducibility across all libraries
-    import numpy as np
     import torch
 
-    np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
@@ -292,7 +294,7 @@ def main() -> int:
         torch.backends.cudnn.benchmark = False
 
     # Initialize session (always creates session folder)
-    session_manager = SessionManager(config)
+    session_manager = SessionManager(config, custom_session_id=args.session_id or None)
     session_manager.update_config_paths(config)
     session_manager.create_config_snapshot()
 

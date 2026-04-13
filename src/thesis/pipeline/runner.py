@@ -6,7 +6,7 @@ Stages:
     3. Label Generation (Triple-Barrier)
     4. Data Splitting (train/val/test with purge/embargo)
     5. LightGBM Model Training
-    6. LSTM Model Training
+    6. LSTM/GRU Model Training
     7. Hybrid Stacking Meta-Learner
     8. Backtesting
     9. Reporting
@@ -27,7 +27,7 @@ STAGE_ICONS = {
     "labels": "🏷️",
     "split": "✂️",
     "lightgbm": "🌳",
-    "lstm": "🧠",
+    "lstm": "🧠",  # LSTM/GRU sequence model
     "stacking": "🥞",
     "backtest": "📈",
     "report": "📄",
@@ -286,11 +286,12 @@ def _run_split_stage(config: Config) -> None:
 
 
 def _run_lightgbm_stage(config: Config) -> None:
-    """Stage 5: Train LightGBM model."""
-    from thesis.models.lightgbm_model import train_lightgbm
+    """Stage 5: Train LightGBM model and generate OOF predictions."""
+    from thesis.models.lightgbm_model import train_lightgbm, generate_lightgbm_oof
 
     model_path = Path(config.models["tree"].model_path)
     predictions_path = Path(config.models["tree"].predictions_path)
+    oof_path = Path(config.models["tree"].oof_predictions_path)
 
     if config.workflow.force_rerun or not model_path.exists():
         logger.info("Training LightGBM model...")
@@ -313,16 +314,26 @@ def _run_lightgbm_stage(config: Config) -> None:
     else:
         logger.info(f"  Using cached LightGBM: {model_path}")
 
+    # Generate OOF predictions for stacking (even if model was cached)
+    if config.workflow.force_rerun or not oof_path.exists():
+        logger.info("Generating LightGBM OOF predictions for stacking...")
+        generate_lightgbm_oof(config)
+        logger.info(f"  Saved OOF predictions: {oof_path}")
+    else:
+        logger.info(f"  Using cached LightGBM OOF: {oof_path}")
+
 
 def _run_lstm_stage(config: Config) -> None:
-    """Stage 6: Train LSTM model."""
-    from thesis.models.lstm_model import train_lstm
+    """Stage 6: Train sequence model (LSTM/GRU) and generate OOF predictions."""
+    from thesis.models.lstm_model import train_lstm, generate_lstm_oof
 
     model_path = Path(config.models["lstm"].model_path)
     predictions_path = Path(config.models["lstm"].predictions_path)
+    oof_path = Path(config.models["lstm"].oof_predictions_path)
+    model_type = config.models["lstm"].model_type.upper()
 
     if config.workflow.force_rerun or not model_path.exists():
-        logger.info("Training LSTM model...")
+        logger.info(f"Training {model_type} model...")
         logger.info(f"  Sequence length: {config.models['lstm'].sequence_length} bars")
         logger.info(f"  Hidden size: {config.models['lstm'].hidden_size}")
         logger.info(f"  Device: {config.models['lstm'].device}")
@@ -336,7 +347,15 @@ def _run_lstm_stage(config: Config) -> None:
         logger.info(f"  Saved model: {model_path}")
         logger.info(f"  Saved predictions: {predictions_path}")
     else:
-        logger.info(f"  Using cached LSTM: {model_path}")
+        logger.info(f"  Using cached {model_type}: {model_path}")
+
+    # Generate OOF predictions for stacking (even if model was cached)
+    if config.workflow.force_rerun or not oof_path.exists():
+        logger.info(f"Generating {model_type} OOF predictions for stacking...")
+        generate_lstm_oof(config)
+        logger.info(f"  Saved OOF predictions: {oof_path}")
+    else:
+        logger.info(f"  Using cached {model_type} OOF: {oof_path}")
 
 
 def _run_stacking_stage(config: Config) -> None:
@@ -349,12 +368,14 @@ def _run_stacking_stage(config: Config) -> None:
     if config.workflow.force_rerun or not model_path.exists():
         logger.info("Training Hybrid Stacking meta-learner...")
         logger.info(f"  Meta-learner: {config.models['stacking'].meta_learner}")
-        logger.info(f"  LightGBM OOF: {config.models['tree'].predictions_path}")
-        logger.info(f"  LSTM OOF: {config.models['lstm'].predictions_path}")
+        logger.info(
+            f"  LightGBM OOF (train): {config.models['tree'].oof_predictions_path}"
+        )
+        logger.info(f"  LSTM OOF (train): {config.models['lstm'].oof_predictions_path}")
 
-        # Check dependencies
-        lgbm_oof = Path(config.models["tree"].predictions_path)
-        lstm_oof = Path(config.models["lstm"].predictions_path)
+        # Check dependencies — OOF predictions from base models
+        lgbm_oof = Path(config.models["tree"].oof_predictions_path)
+        lstm_oof = Path(config.models["lstm"].oof_predictions_path)
 
         if not lgbm_oof.exists():
             logger.info("  Running LightGBM stage first (dependency)...")

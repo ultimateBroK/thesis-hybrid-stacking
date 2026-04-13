@@ -204,14 +204,18 @@ class TestDataLeakagePrevention:
         from thesis.models.cross_validation import SlidingWindowCV
 
         df = sample_features_df
-        
+
         # Add timestamp column if not present
         if "timestamp" not in df.columns:
-            df = df.with_columns(pl.Series("timestamp", pd.date_range("2020-01-01", periods=len(df), freq="h")))
-        
+            df = df.with_columns(
+                pl.Series(
+                    "timestamp", pd.date_range("2020-01-01", periods=len(df), freq="h")
+                )
+            )
+
         cv = SlidingWindowCV(
             train_years=0.01,  # Small for testing (~3-4 days)
-            val_years=0.005,   # ~1-2 days
+            val_years=0.005,  # ~1-2 days
             step_years=0.003,  # Small steps
         )
 
@@ -234,7 +238,11 @@ class TestDataLeakagePrevention:
         from thesis.models.cross_validation import PurgedKFold
 
         df = sample_features_df.clone()
-        df = df.with_columns(pl.Series("timestamp", pd.date_range("2020-01-01", periods=len(df), freq="h")))
+        df = df.with_columns(
+            pl.Series(
+                "timestamp", pd.date_range("2020-01-01", periods=len(df), freq="h")
+            )
+        )
 
         cv = PurgedKFold(
             n_splits=3,
@@ -242,21 +250,116 @@ class TestDataLeakagePrevention:
         )
 
         splits = list(cv.split(df))
-        
+
         # Verify we got the expected number of splits
         assert len(splits) == 3, f"Expected 3 splits, got {len(splits)}"
-        
+
         for i, (train_idx, test_idx) in enumerate(splits):
             # Get timestamps for this split
             timestamps = df["timestamp"].to_numpy()
             test_timestamps = timestamps[test_idx]
-            
+
             # Verify test indices form a contiguous temporal block
             test_sorted = np.sort(test_timestamps)
             # Check that test set is temporally contiguous (no gaps within test set itself)
             assert len(test_idx) > 0, f"Fold {i}: Test set should not be empty"
             assert len(train_idx) > 0, f"Fold {i}: Train set should not be empty"
-            
+
             # Verify no overlap between train and test indices
             overlap = set(train_idx) & set(test_idx)
-            assert len(overlap) == 0, f"Fold {i}: Train and test indices should not overlap"
+            assert len(overlap) == 0, (
+                f"Fold {i}: Train and test indices should not overlap"
+            )
+
+
+class TestCorrelationFiltering:
+    """Tests for train-only correlation filtering in the split stage."""
+
+    def test_drop_correlated_uses_train_only(self):
+        """Verify correlation filtering only uses training data for computation."""
+        from thesis.data.splitting import _drop_correlated_features
+
+        # Create synthetic train/val/test with a perfectly correlated pair
+        n = 100
+        rng = np.random.default_rng(42)
+
+        # Use random features to avoid high correlations among price columns
+        train = pl.DataFrame(
+            {
+                "timestamp": pd.date_range("2020-01-01", periods=n, freq="h"),
+                "label": rng.choice([-1, 0, 1], n),
+                "feat_a": rng.normal(0, 1, n),
+                "feat_b": rng.normal(0, 1, n),
+            }
+        )
+        # feat_c is highly correlated with feat_a in train (but not perfectly)
+        train = train.with_columns(
+            (pl.col("feat_a") * 0.95 + 0.05 * rng.normal(0, 1, n)).alias("feat_c")
+        )
+
+        val = pl.DataFrame(
+            {
+                "timestamp": pd.date_range("2020-01-05", periods=50, freq="h"),
+                "label": rng.choice([-1, 0, 1], 50),
+                "feat_a": rng.normal(0, 1, 50),
+                "feat_b": rng.normal(0, 1, 50),
+                "feat_c": rng.normal(0, 1, 50),  # NOT correlated in val
+            }
+        )
+
+        test = pl.DataFrame(
+            {
+                "timestamp": pd.date_range("2020-01-07", periods=50, freq="h"),
+                "label": rng.choice([-1, 0, 1], 50),
+                "feat_a": rng.normal(0, 1, 50),
+                "feat_b": rng.normal(0, 1, 50),
+                "feat_c": rng.normal(0, 1, 50),  # NOT correlated in test
+            }
+        )
+
+        # Run with high threshold first (should not drop)
+        train_out, val_out, test_out = _drop_correlated_features(
+            train, val, test, threshold=0.999
+        )
+        # All features should remain at very high threshold
+        assert "feat_c" in train_out.columns
+        assert "feat_a" in train_out.columns
+
+        # Run with low threshold (should drop feat_c since it's correlated with feat_a in train)
+        train_out, val_out, test_out = _drop_correlated_features(
+            train, val, test, threshold=0.90
+        )
+        # feat_c should be dropped from ALL splits
+        assert "feat_c" not in train_out.columns
+        assert "feat_c" not in val_out.columns
+        assert "feat_c" not in test_out.columns
+        # feat_a and feat_b should remain
+        assert "feat_a" in train_out.columns
+        assert "feat_b" in train_out.columns
+
+    def test_drop_correlated_preserves_price_cols(self):
+        """Verify price/metadata columns are never dropped."""
+        from thesis.data.splitting import _drop_correlated_features
+
+        rng = np.random.default_rng(42)
+        n = 50
+        base = pl.DataFrame(
+            {
+                "timestamp": pd.date_range("2020-01-01", periods=n, freq="h"),
+                "open": rng.normal(1900, 1, n),
+                "high": rng.normal(1905, 1, n),
+                "low": rng.normal(1895, 1, n),
+                "close": rng.normal(1900, 1, n),
+                "volume": rng.integers(100, 1000, n),
+                "label": rng.choice([-1, 0, 1], n),
+                "tp_price": rng.normal(1910, 1, n),
+                "sl_price": rng.normal(1890, 1, n),
+            }
+        )
+
+        train_out, _, _ = _drop_correlated_features(base, base, base, threshold=0.5)
+
+        for col in ["timestamp", "open", "high", "low", "close", "volume", "label"]:
+            assert col in train_out.columns, (
+                f"Metadata column {col} should not be dropped"
+            )
