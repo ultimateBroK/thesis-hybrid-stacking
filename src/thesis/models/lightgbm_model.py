@@ -334,9 +334,10 @@ def _train_with_optuna(
 
         return score
 
-    # Optuna study with pruning
+    # Optuna study with pruning (seeded sampler for reproducibility)
+    sampler = optuna.samplers.TPESampler(seed=config.workflow.random_seed)
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=2)
-    study = optuna.create_study(direction="maximize", pruner=pruner)
+    study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=cfg.optuna_trials, timeout=cfg.optuna_timeout)
 
     logger.info(f"Best params: {study.best_params}")
@@ -361,63 +362,151 @@ def _train_with_optuna(
     return model
 
 
-def _generate_oof_predictions(
-    model: Any,
-    X_data: np.ndarray,
-    y_data: np.ndarray,
-    config: Config,
-    timestamps: np.ndarray | None = None,
-) -> pl.DataFrame | np.ndarray:
-    """Generate out-of-fold predictions for stacking.
+def generate_lightgbm_oof(config: Config) -> None:
+    """Generate out-of-fold predictions for LightGBM on the training set.
+
+    Uses SlidingWindowCV to split the training data into folds, trains a
+    LightGBM clone on each fold's training portion, and predicts on the
+    fold's validation portion.  The combined fold-validation predictions
+    form the OOF matrix used to train the stacking meta-learner, ensuring
+    no information leaks from the validation or test periods.
 
     Args:
-        model: Trained model used for out-of-fold generation.
-        X_data: Feature matrix.
-        y_data: Target vector.
         config: Loaded application configuration.
-        timestamps: Optional timestamps for aligned tabular output.
-
-    Returns:
-        Polars DataFrame when ``timestamps`` is provided, otherwise a NumPy
-        array of probabilities.
     """
-    from sklearn.model_selection import StratifiedKFold
+    import lightgbm as lgb
+    from thesis.models.cross_validation import create_cv_splitter
 
-    # Simple OOF using cross-validation
-    n_folds = 5
-    kfold = StratifiedKFold(
-        n_splits=n_folds, shuffle=True, random_state=config.workflow.random_seed
+    train_path = Path(config.paths.train_data)
+    if not train_path.exists():
+        raise FileNotFoundError(f"Training data not found: {train_path}")
+
+    logger.info("Loading training data for OOF generation...")
+    train_df = pl.read_parquet(train_path)
+
+    # Load the trained LightGBM model to get its actual hyperparameters
+    model_path = Path(config.models["tree"].model_path)
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Trained LightGBM model not found at {model_path}. "
+            "Run train_lightgbm stage first."
+        )
+    trained_model = joblib.load(model_path)
+    base_params = trained_model.get_params()
+    logger.info(
+        "Using hyperparameters from trained model: "
+        f"{ {k: v for k, v in base_params.items() if not k.startswith('_')} }"
     )
 
-    oof_preds = np.zeros((len(X_data), 3))
+    # Feature columns (same exclusion as train_lightgbm)
+    exclude_cols = {
+        "timestamp",
+        "label",
+        "tp_price",
+        "sl_price",
+        "touched_bar",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "avg_spread",
+        "tick_count",
+    }
+    feature_cols = [c for c in train_df.columns if c not in exclude_cols]
 
-    for train_idx, val_idx in kfold.split(X_data, y_data):
-        X_tr, X_val_fold = X_data[train_idx], X_data[val_idx]
-        y_tr = y_data[train_idx]
+    X_all = train_df.select(feature_cols).to_numpy()
+    y_all = train_df["label"].to_numpy()
+    timestamps_all = train_df["timestamp"].to_numpy()
 
-        model_clone = type(model)(**model.get_params())
-        # Use DataFrame to preserve feature names and avoid warnings
-        if hasattr(model, "feature_names_in_"):
-            X_tr_df = pd.DataFrame(X_tr, columns=model.feature_names_in_)
-            X_val_df = pd.DataFrame(X_val_fold, columns=model.feature_names_in_)
-            model_clone.fit(X_tr_df, y_tr)
-            oof_preds[val_idx] = model_clone.predict_proba(X_val_df)
+    # Class weights (same as main training)
+    class_weights = None
+    if config.models["tree"].use_class_weights:
+        classes = np.unique(y_all)
+        weights = compute_class_weight("balanced", classes=classes, y=y_all)
+        class_weights = {int(cls): float(w) for cls, w in zip(classes, weights)}
+
+    # Create CV splitter from config
+    cv_splitter = create_cv_splitter(config)
+
+    # OOF prediction accumulator
+    oof_preds = np.full((len(X_all), 3), np.nan)
+
+    folds = list(cv_splitter.split(train_df))
+    logger.info(f"Generating LightGBM OOF predictions across {len(folds)} folds...")
+
+    cfg = config.models["tree"]
+
+    for fold_idx, fold in enumerate(folds):
+        if len(fold) == 3:
+            train_idx, val_idx, fold_name = fold
         else:
-            model_clone.fit(X_tr, y_tr)
-            oof_preds[val_idx] = model_clone.predict_proba(X_val_fold)
+            train_idx, val_idx = fold
+            fold_name = f"fold_{fold_idx + 1}"
+        X_fold_train = X_all[train_idx]
+        y_fold_train = y_all[train_idx]
+        X_fold_val = X_all[val_idx]
 
-    # Return DataFrame with timestamps if provided
-    if timestamps is not None:
-        import polars as pl
-
-        return pl.DataFrame(
+        # Clone the trained model's hyperparameters (not config defaults)
+        clone_params = base_params.copy()
+        clone_params.update(
             {
-                "timestamp": timestamps,
-                "true_label": y_data,
-                "pred_proba_class_1": oof_preds[:, 2],  # Long
-                "pred_proba_class_0": oof_preds[:, 1],  # Hold
-                "pred_proba_class_minus1": oof_preds[:, 0],  # Short
+                "class_weight": class_weights,
+                "random_state": config.workflow.random_seed,
+                "n_jobs": config.workflow.n_jobs,
+                "verbose": -1,
             }
         )
+        model_clone = lgb.LGBMClassifier(**clone_params)
 
-    return oof_preds
+        # Use DataFrame to preserve feature names
+        X_fold_train_df = pd.DataFrame(X_fold_train, columns=feature_cols)
+        X_fold_val_df = pd.DataFrame(X_fold_val, columns=feature_cols)
+
+        model_clone.fit(
+            X_fold_train_df,
+            y_fold_train,
+            callbacks=[lgb.early_stopping(cfg.early_stopping_rounds, verbose=False)],
+            eval_set=[(X_fold_val_df, y_all[val_idx])],
+        )
+
+        fold_preds = np.asarray(model_clone.predict_proba(X_fold_val_df))
+
+        oof_preds[val_idx] = fold_preds
+        logger.info(
+            f"  Fold {fold_idx + 1}/{len(folds)} ({fold_name}): "
+            f"{len(train_idx)} train, {len(val_idx)} val"
+        )
+
+    # Remove rows that were never predicted (not covered by any fold)
+    valid_mask = ~np.isnan(oof_preds[:, 0])
+    n_valid = np.sum(valid_mask)
+    n_total = len(oof_preds)
+    logger.info(
+        f"OOF coverage: {n_valid}/{n_total} samples ({n_valid / n_total * 100:.1f}%)"
+    )
+
+    if n_valid == 0:
+        raise ValueError(
+            "No OOF predictions generated — check CV window configuration."
+        )
+
+    # Save OOF predictions
+    valid_timestamps = timestamps_all[valid_mask]
+    valid_labels = y_all[valid_mask]
+    valid_preds = oof_preds[valid_mask]
+
+    oof_df = pl.DataFrame(
+        {
+            "timestamp": valid_timestamps,
+            "true_label": valid_labels,
+            "pred_proba_class_minus1": valid_preds[:, 0],
+            "pred_proba_class_0": valid_preds[:, 1],
+            "pred_proba_class_1": valid_preds[:, 2],
+        }
+    )
+
+    oof_path = Path(config.models["tree"].oof_predictions_path)
+    oof_path.parent.mkdir(parents=True, exist_ok=True)
+    oof_df.write_parquet(oof_path)
+    logger.info(f"Saved LightGBM OOF predictions: {oof_path} ({len(oof_df)} samples)")

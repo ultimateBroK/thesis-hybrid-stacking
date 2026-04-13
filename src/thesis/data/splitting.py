@@ -22,6 +22,7 @@ Purge/Embargo prevents data leakage between splits.
 import logging
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 
 from thesis.config.loader import Config
@@ -93,8 +94,30 @@ def split_data(config: Config) -> None:
             train_df, val_df, test_df, config
         )
 
+    # Filter dead hours from train/val (keep in test for realism)
+    if config.labels.filter_dead_hours_from_train and "dead_hour" in train_df.columns:
+        train_before = len(train_df)
+        val_before = len(val_df)
+
+        train_df = train_df.filter(~pl.col("dead_hour"))
+        val_df = val_df.filter(~pl.col("dead_hour"))
+
+        train_removed = train_before - len(train_df)
+        val_removed = val_before - len(val_df)
+
+        logger.info("Dead-hour filtering (train/val only):")
+        logger.info(
+            f"  Train: removed {train_removed:,} / {train_before:,} "
+            f"({train_removed / train_before * 100:.1f}%)"
+        )
+        logger.info(
+            f"  Val:   removed {val_removed:,} / {val_before:,} "
+            f"({val_removed / val_before * 100:.1f}%)"
+        )
+        logger.info(f"  Test:  kept all {len(test_df):,} bars (including dead hours)")
+
     # Log final sizes
-    logger.info("Final split sizes (after purge/embargo):")
+    logger.info("Final split sizes (after purge/embargo/dead-hour filter):")
     logger.info(f"  Train: {len(train_df):,}")
     logger.info(f"  Val: {len(val_df):,}")
     logger.info(f"  Test: {len(test_df):,}")
@@ -103,6 +126,14 @@ def split_data(config: Config) -> None:
     _log_class_distribution(train_df, "Train")
     _log_class_distribution(val_df, "Val")
     _log_class_distribution(test_df, "Test")
+
+    # Correlation filtering — computed on TRAINING data only, applied to all splits.
+    # This prevents feature selection leakage (test/val structure influencing feature choice).
+    if config.features.drop_high_corr:
+        logger.info("Applying correlation filtering (train-only computation)...")
+        train_df, val_df, test_df = _drop_correlated_features(
+            train_df, val_df, test_df, config.features.correlation_threshold
+        )
 
     # Save splits
     train_path = Path(config.paths.train_data)
@@ -199,3 +230,75 @@ def _log_class_distribution(df: pl.DataFrame, name: str) -> None:
         label, count = row
         pct = count / total * 100
         logger.info(f"    Class {label}: {count:,} ({pct:.1f}%)")
+
+
+def _drop_correlated_features(
+    train_df: pl.DataFrame,
+    val_df: pl.DataFrame,
+    test_df: pl.DataFrame,
+    threshold: float,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Drop highly correlated features using TRAINING data only.
+
+    Computes the correlation matrix on the training split, identifies columns
+    with absolute correlation above *threshold*, and drops the same columns
+    from train, validation, and test to prevent feature selection leakage.
+
+    Args:
+        train_df: Training DataFrame.
+        val_df: Validation DataFrame.
+        test_df: Test DataFrame.
+        threshold: Absolute correlation threshold for removal.
+
+    Returns:
+        Tuple of (train_df, val_df, test_df) with correlated columns dropped.
+    """
+    # Identify feature columns (exclude metadata and price columns)
+    exclude_cols = {
+        "timestamp",
+        "label",
+        "tp_price",
+        "sl_price",
+        "touched_bar",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "avg_spread",
+        "tick_count",
+        "dead_hour",
+    }
+    feature_cols = [c for c in train_df.columns if c not in exclude_cols]
+
+    if len(feature_cols) < 2:
+        return train_df, val_df, test_df
+
+    # Compute correlation on TRAINING data only
+    train_pd = train_df.select(feature_cols).to_pandas()
+    corr = train_pd.corr().abs()
+
+    # Upper triangle to avoid duplicate pairs
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+
+    # Find features to drop
+    to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
+
+    if not to_drop:
+        logger.info("  No highly correlated features found.")
+        return train_df, val_df, test_df
+
+    logger.info(
+        f"  Dropping {len(to_drop)} highly correlated features "
+        f"(threshold={threshold}): {to_drop[:10]}{'...' if len(to_drop) > 10 else ''}"
+    )
+
+    # Drop from all splits
+    train_df = train_df.drop(to_drop)
+    val_df = val_df.drop(to_drop)
+    test_df = test_df.drop(to_drop)
+
+    remaining = [c for c in feature_cols if c not in to_drop]
+    logger.info(f"  Remaining features: {len(remaining)}")
+
+    return train_df, val_df, test_df

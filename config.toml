@@ -75,7 +75,7 @@ test_start = "2024-01-01"
 test_end = "2026-03-31 23:59:59"
 
 # Purge and embargo to prevent leakage
-purge_bars = 25  # Must be >= horizon_bars (20) to prevent label leakage
+purge_bars = 25  # Must be >= horizon_bars (10) to prevent label leakage
 embargo_bars = 10  # No evaluation on embargo bars
 
 # Walk-Forward CV configuration for LightGBM hyperparameter tuning
@@ -147,8 +147,8 @@ correlation_threshold = 0.90    # Threshold for removing highly correlated featu
 labels_path = "data/processed/labels.parquet"
 
 # Triple-Barrier parameters
-atr_multiplier_tp = 1.5   # Take-profit = Close + 1.5 * ATR
-atr_multiplier_sl = 1.5   # Stop-loss = Close - 1.5 * ATR
+atr_multiplier_tp = 1.5   # Take-profit = Close + 1.5 * ATR (symmetric barriers)
+atr_multiplier_sl = 1.5   # Stop-loss = Close - 1.5 * ATR (symmetric barriers)
 
 # Alternative: fixed pips (if ATR not available)
 use_fixed_pips = false
@@ -156,7 +156,7 @@ tp_pips = 20
 sl_pips = 10
 
 # Time horizon (bars)
-horizon_bars = 20         # Bars to wait for barrier touch before neutral label
+horizon_bars = 10         # Bars to wait for barrier touch (10h ≈ 1.5 sessions)
 
 # Classes: +1 (Long), 0 (Hold/No trade), -1 (Short)
 num_classes = 3
@@ -167,6 +167,108 @@ class_labels = { "-1" = "Short", "0" = "Hold", "1" = "Long" }
 # Minimum ATR threshold (to avoid division by zero or extreme values)
 min_atr = 0.0001  # 0.01 pips
 
+# Dead hour filtering for train/val sets
+filter_dead_hours_from_train = true  # Remove dead-hour bars from train/val; keep in test
+
+# Session-aware ATR multipliers
+# When enabled, overrides fixed atr_multiplier_tp/sl per market session.
+# tp_mult = 0.0 → forces Hold label (dead hour / low-liquidity period).
+# Summer = US DST active (2nd Sunday March → 1st Sunday November)
+# Winter = US standard time
+[labels.session_atr]
+enabled = true
+
+# Summer sessions (DST active, NY = UTC-4)
+[[labels.session_atr.summer]]
+session = "dead"
+start_utc = 20
+end_utc = 0
+tp_mult = 0.0
+sl_mult = 0.0
+
+[[labels.session_atr.summer]]
+session = "early_asia"
+start_utc = 0
+end_utc = 1
+tp_mult = 1.5
+sl_mult = 1.5
+
+[[labels.session_atr.summer]]
+session = "active_asia"
+start_utc = 1
+end_utc = 6
+tp_mult = 1.5
+sl_mult = 1.5
+
+[[labels.session_atr.summer]]
+session = "europe"
+start_utc = 6
+end_utc = 12
+tp_mult = 1.8
+sl_mult = 1.8
+
+[[labels.session_atr.summer]]
+session = "overlap"
+start_utc = 12
+end_utc = 16
+tp_mult = 2.0
+sl_mult = 2.0
+
+[[labels.session_atr.summer]]
+session = "late_ny"
+start_utc = 16
+end_utc = 20
+tp_mult = 1.5
+sl_mult = 1.5
+
+# Winter sessions (standard time, NY = UTC-5, hours shift +1)
+[[labels.session_atr.winter]]
+session = "dead"
+start_utc = 21
+end_utc = 0
+tp_mult = 0.0
+sl_mult = 0.0
+
+[[labels.session_atr.winter]]
+session = "early_asia"
+start_utc = 0
+end_utc = 2
+tp_mult = 1.5
+sl_mult = 1.5
+
+[[labels.session_atr.winter]]
+session = "active_asia"
+start_utc = 2
+end_utc = 7
+tp_mult = 1.5
+sl_mult = 1.5
+
+[[labels.session_atr.winter]]
+session = "europe"
+start_utc = 7
+end_utc = 13
+tp_mult = 1.8
+sl_mult = 1.8
+
+[[labels.session_atr.winter]]
+session = "overlap"
+start_utc = 13
+end_utc = 17
+tp_mult = 2.0
+sl_mult = 2.0
+
+[[labels.session_atr.winter]]
+session = "late_ny"
+start_utc = 17
+end_utc = 21
+tp_mult = 1.5
+sl_mult = 1.5
+
+# NOTE: Shanghai Gold Exchange (SGE) premium feature is a future enhancement.
+# SGE premium over LBMA spot is a strong bullish signal when Chinese demand
+# exceeds supply, but requires a separate data source not available via Dukascopy.
+# Implementation path: add SGE data loader, merge by timestamp, add as feature.
+
 # =============================================================================
 # MODELS - LIGHTGBM (Tree-based)
 # =============================================================================
@@ -174,6 +276,7 @@ min_atr = 0.0001  # 0.01 pips
 [models.tree]
 model_path = "models/lightgbm_model.pkl"
 predictions_path = "data/predictions/lightgbm_oof.parquet"
+oof_predictions_path = "data/predictions/lightgbm_oof_train.parquet"
 
 # Target encoding
 prediction_type = "probabilities"  # Output probabilities for stacking
@@ -184,7 +287,7 @@ use_downsampling = false
 downsampling_ratio = 0.5
 
 # Hyperparameter tuning
-use_optuna = true
+use_optuna = false
 optuna_trials = 100  # Number of trials for hyperparameter search
 optuna_timeout = 3600  # seconds
 
@@ -194,16 +297,16 @@ cv_purge = 25
 cv_embargo = 10
 
 # Fixed hyperparameters (if not using Optuna)
-num_leaves = 31
-max_depth = -1
-learning_rate = 0.05
-n_estimators = 500
-min_child_samples = 20
-subsample = 0.8
+num_leaves = 92
+max_depth = 6
+learning_rate = 0.02022751518013805
+n_estimators = 198
+min_child_samples = 100
+subsample = 0.7896204887964816
 subsample_freq = 5
-colsample_bytree = 0.8
-reg_alpha = 0.0
-reg_lambda = 0.0
+colsample_bytree = 0.6881843289197725
+reg_alpha = 0.025048568759410007
+reg_lambda = 4.597806203394689
 
 # Early stopping
 early_stopping_rounds = 50
@@ -213,12 +316,13 @@ compute_importance = true
 importance_type = "gain"
 
 # =============================================================================
-# MODELS - LSTM (Sequential)
+# MODELS - LSTM/GRU (Sequential)
 # =============================================================================
 
 [models.lstm]
 model_path = "models/lstm_model.pt"
 predictions_path = "data/predictions/lstm_oof.parquet"
+oof_predictions_path = "data/predictions/lstm_oof_train.parquet"
 sequences_path = "data/processed/lstm_sequences.npz"
 
 # Sequence parameters
@@ -226,8 +330,9 @@ sequence_length = 120  # 120 bars = 5 trading days
 step_size = 1  # Overlapping sequences with step=1
 
 # Architecture
-hidden_size = 128    # LSTM hidden state dimension
-num_layers = 2       # Number of LSTM layers
+model_type = "gru"  # "gru" (default, faster) or "lstm"
+hidden_size = 128    # RNN hidden state dimension
+num_layers = 2       # Number of RNN layers
 dropout = 0.3
 bidirectional = false
 
@@ -241,8 +346,8 @@ weight_decay = 1e-5
 patience = 10       # Epochs to wait before stopping if no improvement
 min_delta = 0.001   # Minimum validation loss improvement required
 
-# Device (CPU only)
-device = "cpu"
+# Device ("auto" detects GPU, "cpu" forces CPU)
+device = "auto"
 num_workers = 4
 
 # Save best model
@@ -349,6 +454,14 @@ shap_max_display = 20  # Top features to display
 export_csv = true
 export_excel = false
 
+# Plotly interactive charts
+[reporting.plotly]
+enabled = true
+equity_curve_path = "reports/interactive_equity.html"
+confidence_path = "reports/interactive_confidence.html"
+trades_path = "reports/interactive_trades.html"
+include_annotations = true
+
 # =============================================================================
 # WORKFLOW
 # =============================================================================
@@ -372,7 +485,7 @@ force_rerun = false
 n_jobs = -1  # Use all available CPU cores
 
 # Random seed for reproducibility
-random_seed = 42
+random_seed = 2024
 
 # =============================================================================
 # PATHS (Session-Aware Output Structure)

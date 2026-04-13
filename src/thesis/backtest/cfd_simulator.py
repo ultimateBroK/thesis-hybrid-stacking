@@ -47,6 +47,10 @@ def run_backtest(config: Config) -> None:
     # Load predictions (stacking output)
     preds_df = pl.read_parquet(preds_path)
 
+    # Normalize timestamp dtypes for consistent join (ms+tz vs μs mismatch)
+    test_df = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
+    preds_df = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
+
     # Merge predictions with OHLCV
     if len(preds_df) != len(test_df):
         logger.warning(

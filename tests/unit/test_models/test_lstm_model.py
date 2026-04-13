@@ -1,4 +1,4 @@
-"""Tests for LSTM model."""
+"""Tests for sequence model (LSTM/GRU)."""
 
 import numpy as np
 import polars as pl
@@ -13,76 +13,116 @@ except ImportError:
     HAS_TORCH = False
 
 try:
-    from thesis.models.lstm_model import LSTMClassifier, train_lstm, _create_sequences
+    from thesis.models.lstm_model import (
+        SequenceClassifier,
+        train_lstm,
+        _create_sequences,
+        _resolve_device,
+    )
 
-    HAS_LSTM = True
+    HAS_MODEL = True
 except ImportError:
-    HAS_LSTM = False
+    HAS_MODEL = False
 
 
-@pytest.mark.skipif(not HAS_LSTM, reason="LSTM module not available")
-class TestLSTMClassifier:
-    """Test cases for LSTMClassifier."""
+# Backward-compatible alias for legacy test names
+if HAS_MODEL:
+    LSTMClassifier = SequenceClassifier
 
-    def test_model_initialization(self):
-        """Test LSTM model can be initialized."""
-        input_size = 20
-        hidden_size = 64
-        num_layers = 1
-        num_classes = 3
 
-        model = LSTMClassifier(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            num_classes=num_classes,
+@pytest.mark.skipif(not HAS_MODEL, reason="Sequence model module not available")
+class TestSequenceClassifier:
+    """Test cases for SequenceClassifier (LSTM and GRU)."""
+
+    def test_gru_model_initialization(self):
+        """Test GRU model can be initialized."""
+        model = SequenceClassifier(
+            input_size=20,
+            hidden_size=64,
+            num_layers=1,
+            num_classes=3,
             dropout=0.2,
             bidirectional=False,
+            model_type="gru",
         )
 
         assert model is not None
-        assert model.hidden_size == hidden_size
-        assert model.num_layers == num_layers
+        assert model.hidden_size == 64
+        assert model.num_layers == 1
+        assert model.model_type == "gru"
 
-    @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
-    def test_forward_pass_shape(self):
-        """Test model output shapes."""
-        input_size = 10
-        hidden_size = 32
-        num_layers = 1
-        num_classes = 3
-
-        model = LSTMClassifier(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            num_classes=num_classes,
-            dropout=0.1,
+    def test_lstm_model_initialization(self):
+        """Test LSTM model can be initialized."""
+        model = SequenceClassifier(
+            input_size=20,
+            hidden_size=64,
+            num_layers=1,
+            num_classes=3,
+            dropout=0.2,
             bidirectional=False,
+            model_type="lstm",
         )
-        model.eval()
 
-        # Create dummy input: (batch_size, seq_len, features)
-        batch_size = 4
-        seq_len = 20
-        x = torch.randn(batch_size, seq_len, input_size)
-
-        with torch.no_grad():
-            output = model(x)
-
-        # Output should be (batch_size, num_classes)
-        assert output.shape == (batch_size, num_classes)
+        assert model is not None
+        assert model.model_type == "lstm"
 
     @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
-    def test_model_train_mode(self):
-        """Test model can switch between train/eval modes."""
-        model = LSTMClassifier(
+    def test_gru_forward_pass_shape(self):
+        """Test GRU model output shapes."""
+        model = SequenceClassifier(
             input_size=10,
             hidden_size=32,
             num_layers=1,
             num_classes=3,
             dropout=0.1,
             bidirectional=False,
+            model_type="gru",
+        )
+        model.eval()
+
+        batch_size = 4
+        seq_len = 20
+        x = torch.randn(batch_size, seq_len, 10)
+
+        with torch.no_grad():
+            output = model(x)
+
+        assert output.shape == (batch_size, 3)
+
+    @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
+    def test_lstm_forward_pass_shape(self):
+        """Test LSTM model output shapes."""
+        model = SequenceClassifier(
+            input_size=10,
+            hidden_size=32,
+            num_layers=1,
+            num_classes=3,
+            dropout=0.1,
+            bidirectional=False,
+            model_type="lstm",
+        )
+        model.eval()
+
+        batch_size = 4
+        seq_len = 20
+        x = torch.randn(batch_size, seq_len, 10)
+
+        with torch.no_grad():
+            output = model(x)
+
+        assert output.shape == (batch_size, 3)
+
+    @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
+    def test_model_train_mode(self):
+        """Test model can switch between train/eval modes."""
+        model = SequenceClassifier(
+            input_size=10,
+            hidden_size=32,
+            num_layers=1,
+            num_classes=3,
+            dropout=0.1,
+            bidirectional=False,
+            model_type="gru",
         )
 
         model.train()
@@ -93,68 +133,82 @@ class TestLSTMClassifier:
 
     @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
     def test_bidirectional_output_shape(self):
-        """Test bidirectional LSTM output shape."""
-        input_size = 10
-        hidden_size = 32
-        num_layers = 1
-        num_classes = 3
-
-        model = LSTMClassifier(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            num_classes=num_classes,
+        """Test bidirectional model output shape."""
+        model = SequenceClassifier(
+            input_size=10,
+            hidden_size=32,
+            num_layers=1,
+            num_classes=3,
             dropout=0.1,
             bidirectional=True,
+            model_type="gru",
         )
         model.eval()
 
         batch_size = 4
         seq_len = 20
-        x = torch.randn(batch_size, seq_len, input_size)
+        x = torch.randn(batch_size, seq_len, 10)
 
         with torch.no_grad():
             output = model(x)
 
-        assert output.shape == (batch_size, num_classes)
+        assert output.shape == (batch_size, 3)
+
+    @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
+    def test_model_type_switches_architecture(self):
+        """Test that model_type parameter switches between GRU and LSTM."""
+        gru_model = SequenceClassifier(
+            input_size=10,
+            hidden_size=32,
+            num_layers=1,
+            num_classes=3,
+            dropout=0.1,
+            bidirectional=False,
+            model_type="gru",
+        )
+        lstm_model = SequenceClassifier(
+            input_size=10,
+            hidden_size=32,
+            num_layers=1,
+            num_classes=3,
+            dropout=0.1,
+            bidirectional=False,
+            model_type="lstm",
+        )
+
+        assert isinstance(gru_model.rnn, nn.GRU)
+        assert isinstance(lstm_model.rnn, nn.LSTM)
 
 
 @pytest.mark.skipif(
-    not (HAS_LSTM and HAS_TORCH), reason="LSTM or PyTorch not available"
+    not (HAS_MODEL and HAS_TORCH), reason="Model or PyTorch not available"
 )
-class TestLSTMTraining:
-    """Tests for LSTM training process."""
+class TestSequenceTraining:
+    """Tests for sequence model training process."""
 
     @pytest.mark.slow
-    def test_training_with_synthetic_data(self):
-        """Test LSTM can be trained on synthetic sequences."""
-        # Create small model
-        input_size = 5
-        hidden_size = 16
-        num_layers = 1
-        num_classes = 3
-
-        model = LSTMClassifier(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            num_classes=num_classes,
+    def test_gru_training_with_synthetic_data(self):
+        """Test GRU can be trained on synthetic sequences."""
+        model = SequenceClassifier(
+            input_size=5,
+            hidden_size=16,
+            num_layers=1,
+            num_classes=3,
             dropout=0.1,
             bidirectional=False,
+            model_type="gru",
         )
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
         criterion = nn.CrossEntropyLoss()
 
-        # Generate synthetic training data
         np.random.seed(42)
         n_samples = 50
         seq_len = 10
 
-        X = torch.randn(n_samples, seq_len, input_size)
-        y = torch.randint(0, num_classes, (n_samples,))
+        X = torch.randn(n_samples, seq_len, 5)
+        y = torch.randint(0, 3, (n_samples,))
 
-        # Train for a few epochs
         model.train()
         initial_loss = None
 
@@ -170,18 +224,53 @@ class TestLSTMTraining:
             optimizer.step()
 
         final_loss = loss.item()
-
-        # Loss should generally decrease
         assert final_loss < initial_loss * 1.5
 
 
-@pytest.mark.skipif(not HAS_LSTM, reason="LSTM module not available")
+@pytest.mark.skipif(not HAS_MODEL, reason="Model module not available")
+class TestDeviceResolution:
+    """Tests for _resolve_device() helper."""
+
+    def test_resolve_device_auto(self):
+        """Test device resolution with 'auto' setting."""
+        device = _resolve_device("auto")
+        assert isinstance(device, torch.device)
+        assert device.type in ["cpu", "cuda"]
+
+    def test_resolve_device_explicit_cpu(self):
+        """Test explicit CPU device setting."""
+        device = _resolve_device("cpu")
+        assert device.type == "cpu"
+
+    @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
+    def test_prediction_consistency(self):
+        """Test model produces consistent predictions in eval mode."""
+        model = SequenceClassifier(
+            input_size=5,
+            hidden_size=16,
+            num_layers=1,
+            num_classes=3,
+            dropout=0.0,
+            bidirectional=False,
+            model_type="gru",
+        )
+        model.eval()
+
+        x = torch.randn(1, 10, 5)
+
+        with torch.no_grad():
+            pred1 = model(x)
+            pred2 = model(x)
+
+        assert torch.allclose(pred1, pred2, rtol=1e-5)
+
+
+@pytest.mark.skipif(not HAS_MODEL, reason="Model module not available")
 class TestSequenceCreation:
     """Tests for sequence creation."""
 
     def test_create_sequences(self):
         """Test sequence creation from data."""
-        # Create synthetic data instead of requiring parquet file
         np.random.seed(42)
         n = 100
 
@@ -196,31 +285,24 @@ class TestSequenceCreation:
             }
         )
 
-        # Select feature columns
         feature_cols = ["open", "high", "low", "close", "volume"]
-
-        # Try to create sequences
         seq_length = 20
+
         X, y, means, stds = _create_sequences(df, feature_cols, seq_length)
 
         assert X is not None
         assert len(X) > 0
-        assert X.shape[1:] == (
-            seq_length,
-            len(feature_cols),
-        )  # (n_seqs, seq_len, n_features)
+        assert X.shape[1:] == (seq_length, len(feature_cols))
         assert len(y) == len(X)
-        assert y.min() >= 0 and y.max() <= 2  # Labels remapped to 0,1,2
+        assert y.min() >= 0 and y.max() <= 2
 
     @pytest.mark.critical
     def test_sequence_temporal_order(self):
         """CRITICAL: Test sequences maintain temporal order."""
-        # Create data with clear temporal pattern
         n_samples = 100
         features = np.arange(n_samples).reshape(-1, 1).astype(float)
-        labels = np.zeros(n_samples)  # Dummy labels
+        labels = np.zeros(n_samples)
 
-        # Create a simple DataFrame
         df = pl.DataFrame(
             {
                 "open": features.flatten(),
@@ -238,9 +320,7 @@ class TestSequenceCreation:
         try:
             X, y, _, _ = _create_sequences(df, feature_cols, seq_len)
 
-            # Verify temporal ordering
             for seq in X:
-                # Sequence should be monotonically increasing
                 assert np.all(np.diff(seq[:, 0]) > 0)
         except Exception as e:
             pytest.skip(f"Sequence test failed: {e}")
@@ -248,26 +328,21 @@ class TestSequenceCreation:
     @pytest.mark.critical
     def test_no_test_data_in_train_sequences(self):
         """CRITICAL: Verify test data never appears in training sequences."""
-        # Simulate train/test split
         n_samples = 500
         train_end = 400
         test_start = 405
-
         seq_len = 20
 
-        # Generate training sequences
         train_sequences = []
         for i in range(0, train_end - seq_len + 1):
             seq_indices = list(range(i, i + seq_len))
             train_sequences.append(seq_indices)
 
-        # Generate test sequences
         test_sequences = []
         for i in range(test_start, n_samples - seq_len + 1):
             seq_indices = list(range(i, i + seq_len))
             test_sequences.append(seq_indices)
 
-        # Verify no overlap
         all_train_indices = set()
         for seq in train_sequences:
             all_train_indices.update(seq)
@@ -283,20 +358,17 @@ class TestSequenceCreation:
 
 
 @pytest.mark.skipif(
-    not (HAS_LSTM and HAS_TORCH), reason="LSTM or PyTorch not available"
+    not (HAS_MODEL and HAS_TORCH), reason="Model or PyTorch not available"
 )
-class TestLSTMDataLeakage:
+class TestDataLeakage:
     """CRITICAL: Data leakage prevention tests."""
 
     @pytest.mark.critical
     def test_normalization_window_temporal_integrity(self):
         """CRITICAL: Verify normalization uses only past data."""
         np.random.seed(42)
-
-        # Create sample data
         data = np.random.randn(100, 3)
 
-        # Expanding window normalization (correct)
         expanding_norm = np.zeros_like(data)
         for t in range(len(data)):
             if t == 0:
@@ -307,17 +379,11 @@ class TestLSTMDataLeakage:
                 std = window.std(axis=0) + 1e-8
                 expanding_norm[t] = (data[t] - mean) / std
 
-        # Verify no NaNs
         assert not np.isnan(expanding_norm).any()
 
     @pytest.mark.critical
     def test_val_uses_train_normalization_stats(self):
-        """CRITICAL: Validation sequences must use train-only stats.
-
-        Prevents lookahead bias where val data is normalized using
-        its own future mean/std.  The _create_sequences function
-        accepts norm_stats=(means, stds) from the training set.
-        """
+        """CRITICAL: Validation sequences must use train-only stats."""
         np.random.seed(42)
         n = 100
 
@@ -334,7 +400,7 @@ class TestLSTMDataLeakage:
 
         val_df = pl.DataFrame(
             {
-                "open": np.random.randn(n) + 20,  # Different distribution
+                "open": np.random.randn(n) + 20,
                 "high": np.random.randn(n) + 21,
                 "low": np.random.randn(n) + 19,
                 "close": np.random.randn(n) + 20,
@@ -346,12 +412,10 @@ class TestLSTMDataLeakage:
         feature_cols = ["open", "high", "low", "close", "volume"]
         seq_len = 10
 
-        # Train computes its own stats
         X_train, y_train, train_means, train_stds = _create_sequences(
             train_df, feature_cols, seq_len
         )
 
-        # Val uses train stats (no lookahead)
         X_val_own, _, val_own_means, _ = _create_sequences(
             val_df, feature_cols, seq_len
         )
@@ -359,17 +423,12 @@ class TestLSTMDataLeakage:
             val_df, feature_cols, seq_len, norm_stats=(train_means, train_stds)
         )
 
-        # Val with own stats would produce different normalization
-        # than val with train stats (because distributions differ)
         assert not np.allclose(X_val_own, X_val_correct), (
             "Val normalization must differ when using train stats vs own stats"
         )
 
-        # Verify that the train stats are actually used
-        # X_val_correct should be normalized using train_means/train_stds
         raw_val = val_df.select(feature_cols).to_numpy()
         expected_normalized = (raw_val - train_means) / train_stds
-        # Check that the first sequence's last element matches
         expected_last = expected_normalized[seq_len - 1]
         actual_last = X_val_correct[0, -1, :]
         np.testing.assert_allclose(actual_last, expected_last, rtol=1e-5)
@@ -381,37 +440,10 @@ class TestLSTMDataLeakage:
         train_len = 700
         gap = 50
         test_start = train_len + gap
-
         seq_len = 30
         horizon = 1
 
-        # Verify gap
         max_train_seq_end = train_len - horizon
         min_test_seq_start = test_start
 
-        actual_gap = min_test_seq_start - max_train_seq_end
         assert max_train_seq_end < min_test_seq_start
-
-    @pytest.mark.slow
-    @pytest.mark.skipif(not HAS_TORCH, reason="PyTorch not available")
-    def test_prediction_consistency(self):
-        """Test model produces consistent predictions in eval mode."""
-        model = LSTMClassifier(
-            input_size=5,
-            hidden_size=16,
-            num_layers=1,
-            num_classes=3,
-            dropout=0.0,
-            bidirectional=False,
-        )
-        model.eval()
-
-        # Create test input
-        x = torch.randn(1, 10, 5)
-
-        # Multiple predictions should be identical
-        with torch.no_grad():
-            pred1 = model(x)
-            pred2 = model(x)
-
-        assert torch.allclose(pred1, pred2, rtol=1e-5)

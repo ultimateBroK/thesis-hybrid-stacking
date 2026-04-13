@@ -13,10 +13,10 @@
 
 ## Tổng quan
 
-Xây dựng pipeline end-to-end dự báo tín hiệu giao dịch **CFD Vàng (XAU/USD)** trên khung H1 bằng kiến trúc **Hybrid Stacking (LSTM + LightGBM)**. Hai mô hình nền dự báo độc lập; mô hình tầng trên học cách kết hợp xác suất đầu ra để phân loại 3 nhãn: **mua (+1), trung tính (0), bán (-1)**.
+Xây dựng pipeline end-to-end dự báo tín hiệu giao dịch **CFD Vàng (XAU/USD)** trên khung H1 bằng kiến trúc **Hybrid Stacking (GRU + LightGBM)**. Hai mô hình nền dự báo độc lập; mô hình tầng trên học cách kết hợp xác suất đầu ra để phân loại 3 nhãn: **mua (+1), trung tính (0), bán (-1)**.
 
 ```
-Tầng dưới: LSTM (chuỗi OHLCV 120 nến)  ────┐
+Tầng dưới: GRU/LSTM (chuỗi OHLCV 120 nến) ─┐
                                            ├─> Xác suất 3 lớp ─┐
 Tầng dưới: LightGBM (đặc trưng kỹ thuật) ──┘                   ├─> Tầng trên → 3 nhãn
                                                                └─> OOF theo thời gian + Purging/Embargo
@@ -31,7 +31,7 @@ Tầng dưới: LightGBM (đặc trưng kỹ thuật) ──┘                 
 3. Chia tập theo thời gian (không xáo trộn): Train (2018–2022) / Val (2023) / OOS (2024–03/2026)
 4. Ngăn rò rỉ dữ liệu bằng Purging + Embargo
 5. Xây dựng 20+ đặc trưng kỹ thuật + định lượng bằng Feature Importance / SHAP
-6. Huấn luyện mô hình LSTM nền (chuỗi 120 nến OHLCV)
+6. Huấn luyện mô hình GRU/LSTM nền (chuỗi 120 nến OHLCV)
 7. Huấn luyện mô hình LightGBM nền (Optuna tuning, xử lý mất cân bằng)
 8. Xây dựng Hybrid Stacking với meta-learner
 9. Giải thích mô hình (SHAP) + Backtest một lần trên OOS
@@ -234,7 +234,7 @@ Override qua biến môi trường: `THESIS_<SECTION>__<KEY>` (ví dụ `THESIS_
 | Thành phần | Metric / Output |
 |-----------|-----------------|
 | LightGBM | F1 Macro, Accuracy, Feature Importance |
-| LSTM | Training history, Probabilities 3 lớp |
+| LSTM/GRU | Training history, Probabilities 3 lớp |
 | Hybrid Stacking | F1 Macro cao hơn riêng lẻ, SHAP analysis |
 | Backtest | Win rate, Total R-multiples, Max Drawdown, Profit Factor, Sharpe, Sortino, Calmar |
 
@@ -264,12 +264,32 @@ Override qua biến môi trường: `THESIS_<SECTION>__<KEY>` (ví dụ `THESIS_
 | Dung lượng | 10GB+ |
 
 ### Thư viện chính
-- **PyTorch** — LSTM training
+- **PyTorch** — LSTM/GRU training
 - **LightGBM** — Gradient Boosting baseline
 - **Optuna** — Hyperparameter tuning
 - **SHAP** — Model interpretability
 - **Polars** — Xử lý dữ liệu nhanh
 - **TA-Lib** — Technical indicators
+- **Plotly** — Interactive visualizations
+
+### GPU Acceleration (ROCm — AMD)
+
+Pipeline hỗ trợ tự động phát hiện GPU qua cấu hình `device = "auto"`.
+
+**AMD Radeon 890M (ROCm — thử nghiệm):**
+
+```bash
+# Cài PyTorch ROCm (không dùng pixi cho pytorch)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2
+
+# Có thể cần set biến môi trường cho gfx1150
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+# Kiểm tra
+python -c "import torch; print(f'GPU: {torch.cuda.is_available()}')"
+```
+
+> **Lưu ý:** Hỗ trợ gfx1150 (RDNA 3.5) trong ROCm 6.x vẫn ở giai đoạn thử nghiệm. Nếu GPU không được nhận diện, pipeline tự động dùng CPU.
 
 ---
 
