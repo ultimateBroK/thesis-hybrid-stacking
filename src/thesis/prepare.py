@@ -1,0 +1,152 @@
+"""Data preparation — aggregate raw tick data to OHLCV bars.
+
+Reads monthly tick parquet files from data/raw/XAUUSD/, computes mid-price
+OHLCV bars at the configured timeframe, and saves to data/processed/ohlcv.parquet.
+
+Memory-efficient: aggregates each monthly file independently, then concats
+only the small OHLCV results (~56K rows for 8 years of 1H bars).
+"""
+
+import logging
+from pathlib import Path
+
+import polars as pl
+
+from thesis.config import Config
+
+logger = logging.getLogger("thesis.prepare")
+
+
+def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
+    """Aggregate a single tick file to OHLCV bars.
+
+    Args:
+        file_path: Path to monthly tick parquet file.
+        group_ms: Bar size in milliseconds.
+
+    Returns:
+        Small DataFrame with OHLCV columns for this month.
+    """
+    ticks = pl.read_parquet(
+        file_path,
+        columns=["timestamp", "bid", "ask", "ask_volume", "bid_volume"],
+    )
+
+    # Compute mid-price and total volume
+    ticks = ticks.with_columns(
+        [
+            ((pl.col("ask") + pl.col("bid")) / 2.0).alias("mid"),
+            (pl.col("ask_volume") + pl.col("bid_volume")).alias("volume"),
+        ]
+    )
+
+    # Filter out corrupted timestamps (year must be 2000-2100)
+    ticks = ticks.filter(
+        (pl.col("timestamp").dt.year() >= 2000)
+        & (pl.col("timestamp").dt.year() <= 2100)
+    )
+
+    # Floor timestamps to bar boundaries
+    ts_ms = ticks["timestamp"].dt.timestamp("ms")
+    bar_group = (ts_ms // group_ms) * group_ms
+
+    ticks = ticks.with_columns(
+        [
+            bar_group.cast(pl.Datetime("ms")).alias("bar_time"),
+        ]
+    )
+
+    # Aggregate to OHLCV
+    ohlcv = (
+        ticks.group_by("bar_time", maintain_order=True)
+        .agg(
+            [
+                pl.col("mid").first().alias("open"),
+                pl.col("mid").max().alias("high"),
+                pl.col("mid").min().alias("low"),
+                pl.col("mid").last().alias("close"),
+                pl.col("volume").sum().alias("volume"),
+                pl.col("mid").count().alias("tick_count"),
+                ((pl.col("ask") - pl.col("bid")).mean()).alias("avg_spread"),
+            ]
+        )
+        .rename({"bar_time": "timestamp"})
+    )
+
+    return ohlcv
+
+
+def prepare_data(config: Config) -> None:
+    """Convert raw tick data to OHLCV bars.
+
+    Args:
+        config: Loaded application configuration.
+
+    Raises:
+        FileNotFoundError: If raw data directory is empty or missing.
+    """
+    raw_dir = Path(config.paths.data_raw)
+    ohlcv_path = Path(config.paths.ohlcv)
+
+    if not raw_dir.exists():
+        if ohlcv_path.exists():
+            logger.warning(
+                "Raw data dir missing (%s) but OHLCV exists (%s) — skipping prepare.",
+                raw_dir,
+                ohlcv_path,
+            )
+            return
+        raise FileNotFoundError(f"Raw data directory not found: {raw_dir}")
+
+    parquet_files = sorted(raw_dir.glob("*.parquet"))
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files in {raw_dir}")
+
+    logger.info("Found %d tick files in %s", len(parquet_files), raw_dir)
+
+    # Determine timeframe in milliseconds for grouping
+    tf = config.data.timeframe.upper()
+    if tf.endswith("H"):
+        group_ms = int(tf[:-1]) * 3_600_000
+    elif tf.endswith("MIN") or tf.endswith("M"):
+        minutes = int(tf.replace("MIN", "").replace("M", ""))
+        group_ms = minutes * 60_000
+    elif tf in ("D", "1D"):
+        group_ms = 86_400_000
+    else:
+        raise ValueError(f"Unsupported timeframe: {tf}")
+
+    # Aggregate each monthly file separately — memory-efficient
+    monthly_bars: list[pl.DataFrame] = []
+    for f in parquet_files:
+        logger.info("  Processing %s", f.name)
+        bars = _aggregate_file(f, group_ms)
+        monthly_bars.append(bars)
+
+    # Concat small OHLCV DataFrames (tiny compared to ticks)
+    ohlcv = pl.concat(monthly_bars, how="vertical").sort("timestamp")
+
+    # Remove duplicate bar timestamps (boundary overlap between months)
+    ohlcv = ohlcv.unique(subset=["timestamp"], keep="first").sort("timestamp")
+
+    # Filter out bars with corrupted timestamps (year outside 2000-2100)
+    n_before = len(ohlcv)
+    ohlcv = ohlcv.filter(
+        (pl.col("timestamp").dt.year() >= 2000)
+        & (pl.col("timestamp").dt.year() <= 2100)
+    )
+    n_after = len(ohlcv)
+    if n_before != n_after:
+        logger.warning("Dropped %d bars with corrupted timestamps", n_before - n_after)
+
+    logger.info("OHLCV bars: %d (timeframe=%s)", len(ohlcv), config.data.timeframe)
+    logger.info(
+        "Date range: %s to %s",
+        ohlcv["timestamp"].min(),
+        ohlcv["timestamp"].max(),
+    )
+
+    # Save
+    ohlcv_path.parent.mkdir(parents=True, exist_ok=True)
+    ohlcv.write_parquet(ohlcv_path)
+    logger.info("Saved OHLCV: %s", ohlcv_path)

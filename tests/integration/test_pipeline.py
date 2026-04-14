@@ -1,311 +1,358 @@
-"""Integration tests for complete pipeline."""
+"""Integration tests for pipeline module.
+
+Tests pipeline stage ordering, caching, and --force flag.
+"""
+
+import sys
+import tempfile
+from pathlib import Path
 
 import numpy as np
+import polars as pl
 import pytest
 
-try:
-    from thesis.config.loader import load_config
-    HAS_CONFIG = True
-except ImportError:
-    HAS_CONFIG = False
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-try:
-    import lightgbm as lgb
-    HAS_LIGHTGBM = True
-except ImportError:
-    HAS_LIGHTGBM = False
+from thesis.config import Config
+from thesis.pipeline import run_pipeline
+from thesis.features import generate_features
+from thesis.labels import generate_labels
 
 
-class TestPipelineEndToEnd:
-    """End-to-end pipeline integration tests."""
+def create_synthetic_ohlcv(
+    n_rows: int = 500, start_date: str = "2020-01-01"
+) -> pl.DataFrame:
+    """Create synthetic OHLCV data for testing."""
+    np.random.seed(42)
+    base_price = 1800.0
 
-    def test_data_loading_to_predictions(self, raw_ohlcv_data, sample_features_df):
-        """Test full pipeline from data loading to predictions."""
-        # 1. Verify data loaded
-        assert len(raw_ohlcv_data) > 0
-        assert "close" in raw_ohlcv_data.columns
-        
-        # 2. Verify features exist
-        if sample_features_df is not None:
-            assert len(sample_features_df) > 0
-            # 3. Verify temporal alignment
-            assert len(sample_features_df) <= len(raw_ohlcv_data)
+    timestamps = pl.datetime_range(
+        start=pl.datetime(2020, 1, 1, 0),
+        end=pl.datetime(2020, 1, 1, 0) + pl.duration(hours=n_rows - 1),
+        interval="1h",
+        eager=True,
+    )
 
-    def test_train_val_test_splitting(self, train_data, val_data, test_data):
-        """Test train/val/test data splitting integration."""
-        # Verify all splits loaded
-        assert len(train_data) > 0
-        assert len(val_data) > 0
-        assert len(test_data) > 0
-        
-        # Verify temporal ordering
-        if "timestamp" in train_data.columns:
-            train_max = train_data["timestamp"].max()
-            val_min = val_data["timestamp"].min()
-            val_max = val_data["timestamp"].max()
-            test_min = test_data["timestamp"].min()
-            
-            # Should have temporal ordering
-            if train_max is not None and val_min is not None:
-                assert train_max < val_min or train_max == val_min
-            if val_max is not None and test_min is not None:
-                assert val_max < test_min or val_max == test_min
+    returns = np.random.normal(0, 0.001, n_rows)
+    closes = base_price * np.exp(np.cumsum(returns))
+    opens = closes * (1 + np.random.normal(0, 0.0005, n_rows))
+    highs = np.maximum(opens, closes) * (1 + np.abs(np.random.normal(0, 0.001, n_rows)))
+    lows = np.minimum(opens, closes) * (1 - np.abs(np.random.normal(0, 0.001, n_rows)))
+    volumes = np.random.randint(1000, 10000, n_rows).astype(float)
 
-    @pytest.mark.critical
-    def test_no_data_leakage_between_splits(self, train_data, val_data, test_data):
-        """CRITICAL: Verify no data leakage between splits."""
-        # Check for overlapping timestamps
-        if "timestamp" in train_data.columns:
-            train_times = set(train_data["timestamp"].to_list())
-            val_times = set(val_data["timestamp"].to_list())
-            test_times = set(test_data["timestamp"].to_list())
-            
-            # No overlap between train and val
-            train_val_overlap = train_times & val_times
-            assert len(train_val_overlap) == 0, \
-                f"Data leakage: {len(train_val_overlap)} timestamps in both train and val"
-            
-            # No overlap between val and test
-            val_test_overlap = val_times & test_times
-            assert len(val_test_overlap) == 0, \
-                f"Data leakage: {len(val_test_overlap)} timestamps in both val and test"
-
-    @pytest.mark.slow
-    @pytest.mark.critical
-    @pytest.mark.skipif(not (HAS_LIGHTGBM and HAS_CONFIG), reason="LightGBM or config not available")
-    def test_model_training_inference_pipeline(self, sample_features_df, sample_labels_df):
-        """CRITICAL: Test full model training and inference pipeline."""
-        if sample_features_df is None or sample_labels_df is None:
-            pytest.skip("Missing features or labels")
-        
-        # Prepare data
-        n_samples = min(200, len(sample_features_df), len(sample_labels_df))
-        X = sample_features_df.head(n_samples).to_pandas()
-        y = sample_labels_df.head(n_samples).to_pandas()["label"].values
-        
-        # Select only numeric columns for ML (exclude timestamp)
-        X = X.select_dtypes(include=[np.number])
-        
-        # Clean data
-        mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
-        X = X[mask]
-        y = y[mask].astype(int)
-        
-        # Convert labels from (-1, 0, 1) to (0, 1, 2) for LightGBM
-        y = y + 1  # -1 -> 0, 0 -> 1, 1 -> 2
-        
-        if len(X) < 50:
-            pytest.skip("Insufficient clean data")
-        
-        # Split: first 80% train, last 20% test
-        split_idx = int(0.8 * len(X))
-        X_train, X_test = X[:split_idx], X[split_idx:]
-        y_train, y_test = y[:split_idx], y[split_idx:]
-        
-        # Train LightGBM model
-        train_data = lgb.Dataset(X_train, label=y_train)
-        params = {
-            'objective': 'multiclass',
-            'num_class': 3,
-            'metric': 'multi_logloss',
-            'verbose': -1,
-            'boosting_type': 'gbdt',
-            'num_leaves': 10,
-            'learning_rate': 0.1
+    return pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": volumes,
         }
-        model = lgb.train(params, train_data, num_boost_round=30)
-        
-        # Make predictions
-        predictions = model.predict(X_test)
-        
-        # Verify outputs
-        assert predictions.shape == (len(X_test), 3)
-        assert np.allclose(predictions.sum(axis=1), 1.0, rtol=1e-4)
-
-    def test_feature_label_alignment(self, sample_features_df, sample_labels_df):
-        """Test features and labels are temporally aligned."""
-        if sample_features_df is None or sample_labels_df is None:
-            pytest.skip("Missing data")
-        
-        # Get aligned subset
-        min_len = min(len(sample_features_df), len(sample_labels_df))
-        
-        features_subset = sample_features_df.head(min_len)
-        labels_subset = sample_labels_df.head(min_len)
-        
-        # Check alignment
-        assert len(features_subset) == len(labels_subset)
-        
-        # If timestamps present, verify exact alignment
-        if "timestamp" in features_subset.columns and "timestamp" in labels_subset.columns:
-            feat_times = features_subset["timestamp"].to_list()
-            label_times = labels_subset["timestamp"].to_list()
-            
-            # Should be aligned
-            assert feat_times == label_times, "Features and labels not temporally aligned"
-
-    @pytest.mark.critical
-    def test_temporal_normalization_integrity(self, sample_features_df):
-        """CRITICAL: Test temporal normalization in full pipeline."""
-        if sample_features_df is None:
-            pytest.skip("No features data")
-        
-        # Get a feature column (skip timestamp if present)
-        feature_cols = [c for c in sample_features_df.columns if c != "timestamp"]
-        if len(feature_cols) == 0:
-            pytest.skip("No feature columns")
-        
-        feature_col = feature_cols[0]
-        values = sample_features_df[feature_col].to_numpy()
-        
-        # Check no future-looking normalization artifacts
-        assert np.all(np.isfinite(values)), "Features contain non-finite values"
+    )
 
 
-class TestDataQuality:
-    """Data quality integration tests."""
-
-    @pytest.mark.critical
-    def test_no_duplicate_timestamps(self, raw_ohlcv_data):
-        """CRITICAL: Verify no duplicate timestamps in data."""
-        if "timestamp" not in raw_ohlcv_data.columns:
-            pytest.skip("No timestamp column")
-        
-        timestamps = raw_ohlcv_data["timestamp"].to_list()
-        unique_timestamps = set(timestamps)
-        
-        assert len(timestamps) == len(unique_timestamps), \
-            f"Found {len(timestamps) - len(unique_timestamps)} duplicate timestamps"
-
-    def test_data_completeness(self, raw_ohlcv_data):
-        """Test data completeness for OHLCV."""
-        required_cols = ["open", "high", "low", "close", "volume"]
-        
-        for col in required_cols:
-            assert col in raw_ohlcv_data.columns, f"Missing column: {col}"
-            
-            # Check for NaN values
-            col_data = raw_ohlcv_data[col].to_numpy()
-            nan_count = np.isnan(col_data).sum()
-            
-            # Allow small percentage of NaN (e.g., at start of indicators)
-            nan_pct = nan_count / len(col_data) * 100
-            assert nan_pct < 5.0, f"Column {col} has {nan_pct:.1f}% NaN values"
-
-    def test_price_consistency(self, raw_ohlcv_data):
-        """Test OHLC price consistency."""
-        ohlc = raw_ohlcv_data[["open", "high", "low", "close"]].to_numpy()
-        
-        # High >= Low
-        assert np.all(ohlc[:, 1] >= ohlc[:, 2] - 1e-8), "High < Low found"
-        
-        # High >= Open and Close (mostly)
-        high_consistent = np.all(
-            (ohlc[:, 1] >= ohlc[:, 0] - 1e-6) & (ohlc[:, 1] >= ohlc[:, 3] - 1e-6)
-        )
-        assert high_consistent, "High not highest"
-        
-        # Low <= Open and Close (mostly)
-        low_consistent = np.all(
-            (ohlc[:, 2] <= ohlc[:, 0] + 1e-6) & (ohlc[:, 2] <= ohlc[:, 3] + 1e-6)
-        )
-        assert low_consistent, "Low not lowest"
-
-    @pytest.mark.critical
-    def test_label_distribution(self, sample_labels_df):
-        """CRITICAL: Test label distribution is reasonable."""
-        if sample_labels_df is None:
-            pytest.skip("No labels data")
-        
-        labels = sample_labels_df["label"].to_numpy()
-        
-        # Check all labels valid
-        assert np.all(np.isin(labels, [-1, 0, 1])), "Invalid labels found"
-        
-        # Check distribution not too imbalanced
-        unique, counts = np.unique(labels, return_counts=True)
-        total = len(labels)
-        
-        for label, count in zip(unique, counts):
-            pct = count / total * 100
-            # Each label should be at least 5% of data
-            assert pct >= 5.0, f"Label {label} only {pct:.1f}% of data"
+@pytest.fixture
+def temp_pipeline_dir():
+    """Create a temporary directory for pipeline testing."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
 
 
-class TestModelIntegration:
-    """Model integration tests."""
+@pytest.fixture
+def pipeline_config(temp_pipeline_dir: Path) -> Config:
+    """Create a config for pipeline testing."""
+    config = Config()
 
-    @pytest.mark.slow
-    @pytest.mark.skipif(not (HAS_LIGHTGBM and HAS_CONFIG), reason="LightGBM or config not available")
-    def test_lightgbm_full_pipeline(self, sample_features_df, sample_labels_df):
-        """Test LightGBM model end-to-end."""
-        if sample_features_df is None or sample_labels_df is None:
-            pytest.skip("Missing data")
-        
-        # Prepare data
-        n_samples = min(150, len(sample_features_df), len(sample_labels_df))
-        X = sample_features_df.head(n_samples).to_pandas()
-        y = sample_labels_df.head(n_samples).to_pandas()["label"].values
-        
-        # Select only numeric columns for ML (exclude timestamp)
-        X = X.select_dtypes(include=[np.number])
-        
-        # Clean
-        mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
-        X_clean = X[mask]
-        y_clean = y[mask].astype(int)
-        
-        # Convert labels from (-1, 0, 1) to (0, 1, 2) for LightGBM
-        y_clean = y_clean + 1  # -1 -> 0, 0 -> 1, 1 -> 2
-        
-        if len(X_clean) < 40:
-            pytest.skip("Insufficient clean data")
-        
-        # Split temporally
-        split_idx = int(0.8 * len(X_clean))
-        X_train, X_test = X_clean[:split_idx], X_clean[split_idx:]
-        y_train, y_test = y_clean[:split_idx], y_clean[split_idx:]
-        
-        # Train
-        train_data = lgb.Dataset(X_train, label=y_train)
-        params = {'objective': 'multiclass', 'num_class': 3, 'verbose': -1}
-        model = lgb.train(params, train_data, num_boost_round=20)
-        
-        # Predict
-        predictions = model.predict(X_test)
-        pred_classes = np.argmax(predictions, axis=1)
-        
-        # Verify
-        assert len(pred_classes) == len(X_test)
-        
-        # Accuracy should be reasonable (above random for 3-class: 33%)
-        acc = np.mean(pred_classes == y_test)
-        assert acc > 0.25, f"Accuracy {acc:.2f} too low"
+    # Set paths to temp directory
+    config.paths.data_raw = str(temp_pipeline_dir / "data" / "raw" / "XAUUSD")
+    config.paths.data_processed = str(temp_pipeline_dir / "data" / "processed")
+    config.paths.ohlcv = str(temp_pipeline_dir / "data" / "processed" / "ohlcv.parquet")
+    config.paths.features = str(
+        temp_pipeline_dir / "data" / "processed" / "features.parquet"
+    )
+    config.paths.labels = str(
+        temp_pipeline_dir / "data" / "processed" / "labels.parquet"
+    )
+    config.paths.train_data = str(
+        temp_pipeline_dir / "data" / "processed" / "train.parquet"
+    )
+    config.paths.val_data = str(
+        temp_pipeline_dir / "data" / "processed" / "val.parquet"
+    )
+    config.paths.test_data = str(
+        temp_pipeline_dir / "data" / "processed" / "test.parquet"
+    )
+    config.paths.model = str(temp_pipeline_dir / "models" / "lightgbm_model.pkl")
+    config.paths.gru_model = str(temp_pipeline_dir / "models" / "gru_model.pt")
+    config.paths.predictions = str(
+        temp_pipeline_dir / "data" / "predictions" / "final_predictions.parquet"
+    )
+    config.paths.backtest_results = str(
+        temp_pipeline_dir / "results" / "backtest_results.json"
+    )
+    config.paths.report = str(temp_pipeline_dir / "results" / "thesis_report.md")
 
-    @pytest.mark.critical
-    def test_cross_validation_no_leakage(self, sample_features_df):
-        """CRITICAL: Test CV doesn't leak data between folds."""
-        if sample_features_df is None:
-            pytest.skip("No features data")
-        
-        # Manual temporal CV
-        X = sample_features_df.head(200).to_pandas()
-        y = np.random.randint(0, 3, len(X))
-        
-        # 3-fold temporal split
-        fold_size = len(X) // 3
-        
-        for fold in range(3):
-            train_end = (fold + 1) * fold_size
-            test_start = train_end + 10  # 10-sample gap
-            test_end = min(test_start + fold_size, len(X))
-            
-            if test_start < len(X):
-                train_idx = list(range(0, train_end))
-                test_idx = list(range(test_start, test_end))
-                
-                # No overlap
-                assert len(set(train_idx) & set(test_idx)) == 0
-                
-                # Temporal ordering
-                assert max(train_idx) < min(test_idx)
+    # Adjust date ranges for synthetic data (500 hours = ~21 days starting 2020-01-01)
+    # Split: 60% train, 20% val, 20% test
+    config.splitting.train_start = "2020-01-01"
+    config.splitting.train_end = "2020-01-13 23:59:59"  # ~300 hours
+    config.splitting.val_start = "2020-01-14"
+    config.splitting.val_end = "2020-01-18 23:59:59"  # ~100 hours
+    config.splitting.test_start = "2020-01-19"
+    config.splitting.test_end = "2020-01-31 23:59:59"  # ~100 hours
+    config.splitting.purge_bars = 5  # Small purge for testing
+    config.splitting.embargo_bars = 2
+
+    # Use smaller model for speed
+    config.model.n_estimators = 5
+    config.model.num_leaves = 4
+    config.model.max_depth = 3
+    config.model.use_optuna = False
+
+    # Enable all stages
+    config.workflow.run_feature_engineering = True
+    config.workflow.run_label_generation = True
+    config.workflow.run_data_splitting = True
+    config.workflow.run_model_training = True
+    config.workflow.run_backtest = True
+    config.workflow.run_reporting = True
+    config.workflow.force_rerun = False
+
+    return config
+
+
+def setup_ohlcv_data(config: Config, n_rows: int = 500) -> None:
+    """Set up synthetic OHLCV data for testing."""
+    ohlcv_path = Path(config.paths.ohlcv)
+    ohlcv_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = create_synthetic_ohlcv(n_rows=n_rows)
+    df.write_parquet(ohlcv_path)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_stage_ordering(pipeline_config: Config) -> None:
+    """Test pipeline stage ordering (features needs OHLCV, labels needs features, etc.)."""
+    # Create OHLCV data
+    setup_ohlcv_data(pipeline_config, n_rows=500)
+
+    # Run features stage
+    pipeline_config.workflow.run_label_generation = False
+    pipeline_config.workflow.run_data_splitting = False
+    pipeline_config.workflow.run_model_training = False
+    pipeline_config.workflow.run_backtest = False
+    pipeline_config.workflow.run_reporting = False
+
+    run_pipeline(pipeline_config)
+
+    # Features should exist
+    assert Path(pipeline_config.paths.features).exists(), "Features should be created"
+
+    # Now run labels (requires features)
+    pipeline_config.workflow.run_feature_engineering = False
+    pipeline_config.workflow.run_label_generation = True
+
+    run_pipeline(pipeline_config)
+
+    # Labels should exist
+    assert Path(pipeline_config.paths.labels).exists(), "Labels should be created"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_respects_cache(pipeline_config: Config) -> None:
+    """Test that pipeline respects cache (skip existing outputs)."""
+    # Create OHLCV data
+    setup_ohlcv_data(pipeline_config, n_rows=500)
+
+    # Run features once
+    pipeline_config.workflow.run_label_generation = False
+    pipeline_config.workflow.run_data_splitting = False
+    pipeline_config.workflow.run_model_training = False
+    pipeline_config.workflow.run_backtest = False
+    pipeline_config.workflow.run_reporting = False
+
+    run_pipeline(pipeline_config)
+
+    features_path = Path(pipeline_config.paths.features)
+    assert features_path.exists()
+
+    # Get modification time
+    first_mtime = features_path.stat().st_mtime
+
+    # Run again without force - should skip
+    run_pipeline(pipeline_config)
+
+    # Modification time should be unchanged
+    second_mtime = features_path.stat().st_mtime
+    assert second_mtime == first_mtime, (
+        "Features should not be regenerated without force"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_force_overwrites(pipeline_config: Config) -> None:
+    """Test --force flag overwrites existing outputs."""
+    # Create OHLCV data
+    setup_ohlcv_data(pipeline_config, n_rows=500)
+
+    # Run features once
+    pipeline_config.workflow.run_label_generation = False
+    pipeline_config.workflow.run_data_splitting = False
+    pipeline_config.workflow.run_model_training = False
+    pipeline_config.workflow.run_backtest = False
+    pipeline_config.workflow.run_reporting = False
+
+    run_pipeline(pipeline_config)
+
+    features_path = Path(pipeline_config.paths.features)
+    assert features_path.exists()
+
+    # Get modification time
+    first_mtime = features_path.stat().st_mtime
+
+    # Run again with force
+    pipeline_config.workflow.force_rerun = True
+    run_pipeline(pipeline_config)
+
+    # Modification time should change
+    second_mtime = features_path.stat().st_mtime
+    assert second_mtime > first_mtime, "Features should be regenerated with force"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_disabled_stages_skipped(pipeline_config: Config) -> None:
+    """Test that disabled stages are skipped."""
+    # Create OHLCV data
+    setup_ohlcv_data(pipeline_config, n_rows=500)
+
+    # Disable all stages except features
+    pipeline_config.workflow.run_feature_engineering = True
+    pipeline_config.workflow.run_label_generation = False
+    pipeline_config.workflow.run_data_splitting = False
+    pipeline_config.workflow.run_model_training = False
+    pipeline_config.workflow.run_backtest = False
+    pipeline_config.workflow.run_reporting = False
+
+    run_pipeline(pipeline_config)
+
+    # Only features should exist
+    assert Path(pipeline_config.paths.features).exists()
+    assert not Path(pipeline_config.paths.labels).exists()
+    assert not Path(pipeline_config.paths.train_data).exists()
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_split_data_stage(pipeline_config: Config) -> None:
+    """Test that split data stage produces train/val/test files."""
+    # Create full pipeline through labels
+    setup_ohlcv_data(pipeline_config, n_rows=500)
+
+    # Run features and labels first
+    generate_features(pipeline_config)
+    generate_labels(pipeline_config)
+
+    # Now run split
+    pipeline_config.workflow.run_feature_engineering = False
+    pipeline_config.workflow.run_label_generation = False
+    pipeline_config.workflow.run_data_splitting = True
+    pipeline_config.workflow.run_model_training = False
+    pipeline_config.workflow.run_backtest = False
+    pipeline_config.workflow.run_reporting = False
+
+    run_pipeline(pipeline_config)
+
+    # All split files should exist
+    assert Path(pipeline_config.paths.train_data).exists()
+    assert Path(pipeline_config.paths.val_data).exists()
+    assert Path(pipeline_config.paths.test_data).exists()
+
+    # Check that splits are non-empty
+    train_df = pl.read_parquet(pipeline_config.paths.train_data)
+    val_df = pl.read_parquet(pipeline_config.paths.val_data)
+    test_df = pl.read_parquet(pipeline_config.paths.test_data)
+
+    assert len(train_df) > 0
+    assert len(val_df) > 0
+    assert len(test_df) > 0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_end_to_end_smoke(pipeline_config: Config) -> None:
+    """Smoke test: full pipeline runs without errors."""
+    # Create OHLCV data with more rows to cover all date ranges
+    n_rows = 1000  # ~42 days of hourly data
+    setup_ohlcv_data(pipeline_config, n_rows=n_rows)
+
+    # Adjust date ranges to match synthetic data (starting 2020-01-01)
+    # Split: 50% train (~21 days), 25% val (~10 days), 25% test (~10 days)
+    pipeline_config.splitting.train_start = "2020-01-01"
+    pipeline_config.splitting.train_end = "2020-01-21 23:59:59"
+    pipeline_config.splitting.val_start = "2020-01-22"
+    pipeline_config.splitting.val_end = "2020-02-01 23:59:59"
+    pipeline_config.splitting.test_start = "2020-02-02"
+    pipeline_config.splitting.test_end = "2020-02-15 23:59:59"
+    pipeline_config.splitting.purge_bars = 2  # Small purge for testing
+
+    # Run full pipeline with minimal model
+    pipeline_config.model.n_estimators = 3
+    pipeline_config.model.num_leaves = 3
+    pipeline_config.gru.epochs = 2  # Minimal GRU training for speed
+    pipeline_config.gru.patience = 1
+
+    # Enable all stages
+    pipeline_config.workflow.run_feature_engineering = True
+    pipeline_config.workflow.run_label_generation = True
+    pipeline_config.workflow.run_data_splitting = True
+    pipeline_config.workflow.run_model_training = True
+    pipeline_config.workflow.run_backtest = True
+    pipeline_config.workflow.run_reporting = True
+
+    # Should not raise any exception
+    run_pipeline(pipeline_config)
+
+    # Check that outputs exist
+    assert Path(pipeline_config.paths.features).exists()
+    assert Path(pipeline_config.paths.labels).exists()
+    assert Path(pipeline_config.paths.train_data).exists()
+    assert Path(pipeline_config.paths.backtest_results).exists()
+    assert Path(pipeline_config.paths.report).exists()
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_stage_dependencies(pipeline_config: Config) -> None:
+    """Test that stages fail gracefully when dependencies are missing."""
+    # Try to run labels without features
+    setup_ohlcv_data(pipeline_config, n_rows=100)
+
+    pipeline_config.workflow.run_feature_engineering = False
+    pipeline_config.workflow.run_label_generation = True
+
+    # Should raise FileNotFoundError because features don't exist
+    with pytest.raises(FileNotFoundError):
+        run_pipeline(pipeline_config)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_pipeline_split_without_labels_fails(pipeline_config: Config) -> None:
+    """Test that split stage fails without labels."""
+    setup_ohlcv_data(pipeline_config, n_rows=100)
+
+    # Create features but not labels
+    generate_features(pipeline_config)
+
+    pipeline_config.workflow.run_feature_engineering = False
+    pipeline_config.workflow.run_label_generation = False
+    pipeline_config.workflow.run_data_splitting = True
+
+    # Should raise FileNotFoundError because labels don't exist
+    with pytest.raises(FileNotFoundError):
+        run_pipeline(pipeline_config)

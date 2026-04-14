@@ -97,6 +97,22 @@ htmlcov/
 *.swp
 *~
 
+# Scratch / exploration scripts at project root
+/test_*.py
+
+# Diagnostic / review artifacts
+*_DIAGNOSTIC_REPORT.md
+review_verdict.md
+
+# Root-level notebooks (use notebooks/ dir)
+/*.ipynb
+
+# Root-level logs
+pipeline.log
+
+# Root-level data download (moved to scripts/)
+/data_download.py
+
 # OS files
 .DS_Store
 Thumbs.db

@@ -1,541 +1,129 @@
-# Hybrid Stacking (LSTM + LightGBM) - XAU/USD H1 Trading Signals
-# Bachelor's Thesis Configuration
-# Student: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung
-
-[metadata]
-project = "xauusd-hybrid-stacking"
-version = "0.1.0"
-author = "Nguyen Duc Hieu"
-student_id = "2151061192"
-advisor = "Hoang Quoc Dung"
-description = "Hybrid Stacking (LSTM + LightGBM) for XAU/USD H1 Trading Signal Prediction"
+# Hybrid Stacking (LightGBM) — XAU/USD H1 Trading Signals
+# Bachelor's Thesis: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung
 
 # =============================================================================
-# DATA CONFIGURATION
+# DATA
 # =============================================================================
-
 [data]
-# Source data (Dukascopy tick data)
-raw_data_path = "data/raw/XAUUSD"
-ohlcv_path = "data/processed/ohlcv.parquet"
-
-# Timeframe
-timeframe = "1H"  # H1 candles
-timeframe_minutes = 60
-
-# Timezone (DST-aware)
+symbol = "XAUUSD"
+timeframe = "1H"
 market_tz = "America/New_York"
-day_roll_hour = 17  # New York close at 17:00
-
-# Date range (entire dataset: 2018-01-01 to 2026-03)
 start_date = "2018-01-01"
 end_date = "2026-03-31"
-
-# Asset parameters
-tick_size = 0.01  # Minimum price movement
-contract_size = 100  # Standard lot = 100 oz
-
-# Download configuration (Dukascopy tick data)
-symbol = "XAUUSD"                  # Symbol to download
-asset_class = "fx"                 # Asset class: "fx" or "crypto"
-download_concurrency = 20           # Parallel download threads
-download_force = false             # Force re-verify existing months
-download_skip_current_month = false  # Skip checking/repairing current month
+tick_size = 0.01
+contract_size = 100
+symbol_download = "XAUUSD"
+asset_class = "fx"
+download_concurrency = 20
 
 # =============================================================================
-# DATA SPLITTING (Updated Scheme - Market Regime Based with Walk-Forward CV)
+# SPLITTING
 # =============================================================================
-#
-# Train (60%): 2018-2022 - Extended foundation period covering:
-#   - Trade War (2018-2019)
-#   - COVID-19 shock (2020)
-#   - Recovery + inflation (2021)
-#   - Russia-Ukraine conflict start + Fed hikes begin (2022)
-#
-# Validation (15%): 2023 - High-rate + Gold ATH regime:
-#   - Fed maintains high rates
-#   - Gold breaks traditional inverse relationship with rates
-#   - First ATH waves appear
-#
-# Test (25%): 2024-03/2026 - Newest regime (Out-of-Sample):
-#   - US Election 2024
-#   - Multiple ATH breaks
-#   - Geopolitical tensions
-#   - Real test for overfitting
-#
-
 [splitting]
 train_start = "2018-01-01"
-train_end = "2022-12-31 23:59:59"
-
-val_start = "2023-01-01"
+train_end = "2022-12-31 23:59:59"    # 5 years: diverse market regimes
+val_start = "2023-01-01"              # 1 year: transition period
 val_end = "2023-12-31 23:59:59"
-
-test_start = "2024-01-01"
+test_start = "2024-01-01"             # OOS: gold bull run $2000→$3000+
 test_end = "2026-03-31 23:59:59"
-
-# Purge and embargo to prevent leakage
-purge_bars = 25  # Must be >= horizon_bars (10) to prevent label leakage
-embargo_bars = 10  # No evaluation on embargo bars
-
-# Walk-Forward CV configuration for LightGBM hyperparameter tuning
-walk_forward_window_type = "sliding"  # Options: "sliding" or "expanding"
-walk_forward_train_years = 2  # Training window size in years
-walk_forward_val_years = 1    # Validation window size in years
-walk_forward_step_years = 1 # Step size between windows
-use_walk_forward_cv = true  # Enable Walk-Forward CV for LightGBM tuning
-
-# Auto-generated windows (based on train period 2018-2022):
-# Window 1: Train 2018-2019 | Val 2020
-# Window 2: Train 2019-2020 | Val 2021
-# Window 3: Train 2020-2021 | Val 2022
-# Window 4: Train 2021-2022 | Val 2023 (final tuning window)
+purge_bars = 25
+embargo_bars = 50                     # ~2 days — covers 24-bar label horizon
 
 # =============================================================================
-# FEATURE ENGINEERING
+# FEATURES
 # =============================================================================
-
 [features]
-features_path = "data/processed/features.parquet"
-feature_list_path = "data/processed/feature_list.json"
-
-# Technical indicators
-use_technical = true
-use_pivots = true
-use_session = true
-use_spread = true
-
-# EMA periods - Fibonacci numbers commonly used for Gold technical analysis
-ema_periods = [34, 89]
-
-# RSI
 rsi_period = 14
-
-# MACD
+atr_period = 14
 macd_fast = 12
 macd_slow = 26
 macd_signal = 9
-
-# ATR (for volatility features and Triple-Barrier)
-atr_period = 14
-
-# Pivot points (previous day's H, L, C)
-pivot_lookback = 1
-
-# Session encoding (Asia, London, NY AM, NY PM)
-session_hours = [
-    [0, 8],    # Asia: 00:00-08:00 NY
-    [8, 17],   # London: 08:00-17:00 NY (includes NY AM)
-    [17, 21],  # NY PM: 17:00-21:00 NY
-]
-
-# LAG features (OHLCV lags for non-sequential models)
-lag_periods = [1, 2, 3, 5, 10]
-
-# Target spread calculation
-spread_multiplier = 0.5  # Multiplier for spread-based features
-
-# Feature selection
-drop_high_corr = true
-correlation_threshold = 0.90    # Threshold for removing highly correlated features
+correlation_threshold = 0.90
 
 # =============================================================================
-# TRIPLE-BARRIER LABELS
+# LABELS — Triple Barrier
 # =============================================================================
-
 [labels]
-labels_path = "data/processed/labels.parquet"
-
-# Triple-Barrier parameters
-atr_multiplier_tp = 1.5   # Take-profit = Close + 1.5 * ATR (symmetric barriers)
-atr_multiplier_sl = 1.5   # Stop-loss = Close - 1.5 * ATR (symmetric barriers)
-
-# Alternative: fixed pips (if ATR not available)
-use_fixed_pips = false
-tp_pips = 20
-sl_pips = 10
-
-# Time horizon (bars)
-horizon_bars = 10         # Bars to wait for barrier touch (10h ≈ 1.5 sessions)
-
-# Classes: +1 (Long), 0 (Hold/No trade), -1 (Short)
+atr_multiplier = 1.5
+horizon_bars = 10
 num_classes = 3
-
-# Label mapping
-class_labels = { "-1" = "Short", "0" = "Hold", "1" = "Long" }
-
-# Minimum ATR threshold (to avoid division by zero or extreme values)
-min_atr = 0.0001  # 0.01 pips
-
-# Dead hour filtering for train/val sets
-filter_dead_hours_from_train = true  # Remove dead-hour bars from train/val; keep in test
-
-# Session-aware ATR multipliers
-# When enabled, overrides fixed atr_multiplier_tp/sl per market session.
-# tp_mult = 0.0 → forces Hold label (dead hour / low-liquidity period).
-# Summer = US DST active (2nd Sunday March → 1st Sunday November)
-# Winter = US standard time
-[labels.session_atr]
-enabled = true
-
-# Summer sessions (DST active, NY = UTC-4)
-[[labels.session_atr.summer]]
-session = "dead"
-start_utc = 20
-end_utc = 0
-tp_mult = 0.0
-sl_mult = 0.0
-
-[[labels.session_atr.summer]]
-session = "early_asia"
-start_utc = 0
-end_utc = 1
-tp_mult = 1.5
-sl_mult = 1.5
-
-[[labels.session_atr.summer]]
-session = "active_asia"
-start_utc = 1
-end_utc = 6
-tp_mult = 1.5
-sl_mult = 1.5
-
-[[labels.session_atr.summer]]
-session = "europe"
-start_utc = 6
-end_utc = 12
-tp_mult = 1.8
-sl_mult = 1.8
-
-[[labels.session_atr.summer]]
-session = "overlap"
-start_utc = 12
-end_utc = 16
-tp_mult = 2.0
-sl_mult = 2.0
-
-[[labels.session_atr.summer]]
-session = "late_ny"
-start_utc = 16
-end_utc = 20
-tp_mult = 1.5
-sl_mult = 1.5
-
-# Winter sessions (standard time, NY = UTC-5, hours shift +1)
-[[labels.session_atr.winter]]
-session = "dead"
-start_utc = 21
-end_utc = 0
-tp_mult = 0.0
-sl_mult = 0.0
-
-[[labels.session_atr.winter]]
-session = "early_asia"
-start_utc = 0
-end_utc = 2
-tp_mult = 1.5
-sl_mult = 1.5
-
-[[labels.session_atr.winter]]
-session = "active_asia"
-start_utc = 2
-end_utc = 7
-tp_mult = 1.5
-sl_mult = 1.5
-
-[[labels.session_atr.winter]]
-session = "europe"
-start_utc = 7
-end_utc = 13
-tp_mult = 1.8
-sl_mult = 1.8
-
-[[labels.session_atr.winter]]
-session = "overlap"
-start_utc = 13
-end_utc = 17
-tp_mult = 2.0
-sl_mult = 2.0
-
-[[labels.session_atr.winter]]
-session = "late_ny"
-start_utc = 17
-end_utc = 21
-tp_mult = 1.5
-sl_mult = 1.5
-
-# NOTE: Shanghai Gold Exchange (SGE) premium feature is a future enhancement.
-# SGE premium over LBMA spot is a strong bullish signal when Chinese demand
-# exceeds supply, but requires a separate data source not available via Dukascopy.
-# Implementation path: add SGE data loader, merge by timestamp, add as feature.
+min_atr = 0.0001
 
 # =============================================================================
-# MODELS - LIGHTGBM (Tree-based)
+# MODEL — LightGBM (receives GRU hidden states + static features)
 # =============================================================================
-
-[models.tree]
-model_path = "models/lightgbm_model.pkl"
-predictions_path = "data/predictions/lightgbm_oof.parquet"
-oof_predictions_path = "data/predictions/lightgbm_oof_train.parquet"
-
-# Target encoding
-prediction_type = "probabilities"  # Output probabilities for stacking
-
-# Class imbalance handling
-use_class_weights = true
-use_downsampling = false
-downsampling_ratio = 0.5
-
-# Hyperparameter tuning
+[model]
 use_optuna = false
-optuna_trials = 100  # Number of trials for hyperparameter search
-optuna_timeout = 3600  # seconds
-
-# Cross-validation for tuning (now using Walk-Forward CV)
-cv_folds = 5
-cv_purge = 25
-cv_embargo = 10
-
-# Fixed hyperparameters (if not using Optuna)
-num_leaves = 92
-max_depth = 6
-learning_rate = 0.02022751518013805
-n_estimators = 198
-min_child_samples = 100
-subsample = 0.7896204887964816
+optuna_trials = 50
+optuna_timeout = 3600
+num_leaves = 48
+max_depth = 5
+learning_rate = 0.03
+n_estimators = 150
+min_child_samples = 150
+subsample = 0.70
 subsample_freq = 5
-colsample_bytree = 0.6881843289197725
-reg_alpha = 0.025048568759410007
-reg_lambda = 4.597806203394689
-
-# Early stopping
-early_stopping_rounds = 50
-
-# Feature importance
-compute_importance = true
-importance_type = "gain"
+feature_fraction = 0.60
+reg_alpha = 0.1
+reg_lambda = 5.0
+early_stopping_rounds = 30
 
 # =============================================================================
-# MODELS - LSTM/GRU (Sequential)
+# BACKTEST — via backtesting.py
 # =============================================================================
+[backtest]
+initial_capital = 10000.0
+leverage = 30                       # 30:1 — affordable for 1 lot with $10k
+spread_ticks = 30                   # 30 ticks = $0.30 (realistic XAUUSD ECN spread)
+slippage_ticks = 3                  # 3 ticks = $0.03 per side (absorbed into spread)
+commission_per_lot = 10.0           # Round-trip commission per lot
+atr_stop_multiplier = 0.75          # ATR multiplier for stop-loss distance
+lots_per_trade = 1.0                # Fixed 1 lot per trade (100 oz XAUUSD)
+confidence_threshold = 0.70         # Min predicted probability to trade (0 = disabled)
 
-[models.lstm]
-model_path = "models/lstm_model.pt"
-predictions_path = "data/predictions/lstm_oof.parquet"
-oof_predictions_path = "data/predictions/lstm_oof_train.parquet"
-sequences_path = "data/processed/lstm_sequences.npz"
-
-# Sequence parameters
-sequence_length = 120  # 120 bars = 5 trading days
-step_size = 1  # Overlapping sequences with step=1
-
-# Architecture
-model_type = "gru"  # "gru" (default, faster) or "lstm"
-hidden_size = 128    # RNN hidden state dimension
-num_layers = 2       # Number of RNN layers
-dropout = 0.3
-bidirectional = false
-
-# Training
-batch_size = 128    # Mini-batch size for gradient descent
-epochs = 50         # Maximum training epochs
+# =============================================================================
+# GRU — Feature Extractor
+# =============================================================================
+[gru]
+input_size = 4        # log_returns + rsi_14 + atr_14 + macd_hist
+hidden_size = 64
+num_layers = 2
+sequence_length = 24
+dropout = 0.4
 learning_rate = 0.001
-weight_decay = 1e-5
-
-# Early stopping
-patience = 10       # Epochs to wait before stopping if no improvement
-min_delta = 0.001   # Minimum validation loss improvement required
-
-# Device ("auto" detects GPU, "cpu" forces CPU)
-device = "auto"
-num_workers = 4
-
-# Save best model
-save_best = true
-
-# =============================================================================
-# MODELS - HYBRID STACKING (Meta-learner)
-# =============================================================================
-
-[models.stacking]
-model_path = "models/stacking_meta_learner.pkl"
-meta_predictions_path = "data/predictions/stacking_predictions.parquet"
-
-# Meta-learner type
-meta_learner = "logistic_regression"  # Options: logistic_regression, ridge, lasso, elastic_net, lightgbm
-
-# OOF (out-of-fold) predictions
-n_folds = 5
-
-# Purge/embargo for stacking CV
-stacking_purge = 25
-stacking_embargo = 10
-
-# Meta-learner regularization
-C = 1.0  # Inverse regularization strength for logistic regression
-alpha = 1.0  # Regularization for ridge/lasso
-l1_ratio = 0.5  # For elastic_net
-
-# LightGBM meta-learner params (when meta_learner = "lightgbm")
-n_estimators = 100
-learning_rate = 0.1
-
-# Probability calibration
-calibrate_probabilities = true
-calibration_method = "isotonic"  # Options: isotonic, sigmoid (Platt scaling)
-
-# =============================================================================
-# BACKTESTING (CFD Simulation)
-# =============================================================================
-
-[backtest.cfd]
-backtest_results_path = "results/backtest_results.json"
-
-# Trading costs
-spread_pips = 2.0  # Typical spread for XAU/USD on H1
-slippage_pips = 1.0  # Slippage assumption
-commission_per_lot = 0.0  # Many brokers offer commission-free gold
-swap_long = -10.0  # Swap for long positions (annualized %)
-swap_short = 5.0   # Swap for short positions (annualized %)
-
-# Account parameters
-initial_capital = 100000.0  # USD
-currency = "USD"
-leverage = 50  # 1:50 leverage (reduced from 100 for more realistic simulation)
-max_positions = 1  # Only 1 position at a time
-
-# Risk management
-risk_per_trade = 0.01  # 1% risk per trade
-position_size_method = "fixed_fractional"  # Options: fixed_fractional, kelly, optimal_f
-
-# NEW: Additional risk controls
-max_hold_bars = 100  # Maximum bars to hold a position (prevents indefinite holds)
-use_trailing_stop = true  # Enable trailing stop loss
-trailing_stop_atr_multiplier = 1.0  # Trailing stop distance = 1.0 * ATR
-max_daily_loss_pct = 0.05  # Stop trading after 5% daily loss
-max_consecutive_losses = 5  # Pause after 5 consecutive losses
-
-# Stop-out
-margin_call_level = 0.5  # 50% margin level
-stop_out_level = 0.2  # 20% margin level
-
-# Trading hours filter (avoid major events, weekends)
-trade_sunday = false  # No trading Sunday NY open
-trade_friday_close = false  # Close positions before Friday NY close (avoid weekend gap)
-friday_close_hour = 21  # Friday 21:00 NY
-
-# Evaluation
-metrics = ["sharpe", "sortino", "max_drawdown", "calmar", "win_rate", "profit_factor", "avg_trade", "total_return"]
-
-# One OOS evaluation only (to prevent overfitting)
-single_oos_run = true
-
-# =============================================================================
-# REPORTING
-# =============================================================================
-
-[reporting]
-report_path = "results/thesis_report.md"
-report_json_path = "results/thesis_report.json"
-shap_summary_path = "results/shap_summary.png"
-feature_importance_path = "results/feature_importance.png"
-
-# Plots
-plot_predictions = true
-plot_backtest_equity = true
-plot_drawdown = true
-plot_trade_distribution = true
-
-# SHAP parameters
-shap_samples = 1000  # Number of samples for SHAP analysis
-shap_max_display = 20  # Top features to display
-
-# Export formats
-export_csv = true
-export_excel = false
-
-# Plotly interactive charts
-[reporting.plotly]
-enabled = true
-equity_curve_path = "reports/interactive_equity.html"
-confidence_path = "reports/interactive_confidence.html"
-trades_path = "reports/interactive_trades.html"
-include_annotations = true
+batch_size = 64
+epochs = 30
+patience = 10
 
 # =============================================================================
 # WORKFLOW
 # =============================================================================
-
 [workflow]
-# Stage execution
 run_data_pipeline = true
 run_feature_engineering = true
 run_label_generation = true
 run_data_splitting = true
-run_lightgbm = true
-run_lstm = true
-run_stacking = true
+run_model_training = true
 run_backtest = true
 run_reporting = true
-
-# Force re-run (ignore cache)
 force_rerun = false
-
-# Parallel processing
-n_jobs = -1  # Use all available CPU cores
-
-# Random seed for reproducibility
 random_seed = 2024
+n_jobs = -1
 
 # =============================================================================
-# PATHS (Session-Aware Output Structure)
+# PATHS
 # =============================================================================
-#
-# SESSION-BASED OUTPUT:
-# By default, each pipeline run creates an isolated session folder:
-#   results/XAUUSD_H1_20250331_110145/
-#   ├── models/      (session-specific models)
-#   ├── predictions/ (session-specific predictions)
-#   ├── reports/     (session-specific reports)
-#   ├── backtest/    (session-specific backtest results)
-#   └── logs/        (session logs)
-#
-# GLOBAL CACHE (shared across sessions):
-#   data/processed/  (features, labels, train/val/test splits)
-#   data/raw/        (downloaded OHLCV data)
-#
-# The "results/latest" symlink always points to the most recent session.
-
 [paths]
-# Session configuration (enabled by default)
-use_sessions = true           # Enable session-based output
-session_id = ""             # Auto-generated if empty: {SYMBOL}_{TIMEFRAME}_{YYYYMMDD}_{HHMMSS}
-# session_id = "experiment_1"  # Example: use custom session ID
-
-# Input/Output directories
 data_raw = "data/raw/XAUUSD"
 data_processed = "data/processed"
-
-# Artifact files
 ohlcv = "data/processed/ohlcv.parquet"
 features = "data/processed/features.parquet"
 labels = "data/processed/labels.parquet"
-
-# Split datasets (global cache - shared across sessions)
 train_data = "data/processed/train.parquet"
 val_data = "data/processed/val.parquet"
 test_data = "data/processed/test.parquet"
-
-# Models (session-aware when use_sessions=true)
-lgbm_model = "models/lightgbm_model.pkl"
-lstm_model = "models/lstm_model.pt"
-stacking_model = "models/stacking_meta_learner.pkl"
-
-# Predictions (session-aware when use_sessions=true)
-lgbm_oof = "data/predictions/lightgbm_oof.parquet"
-lstm_oof = "data/predictions/lstm_oof.parquet"
-final_predictions = "data/predictions/final_predictions.parquet"
-
-# Results (session-aware when use_sessions=true)
+model = "models/lightgbm_model.pkl"
+gru_model = "models/gru_model.pt"
+predictions = "data/predictions/final_predictions.parquet"
 backtest_results = "results/backtest_results.json"
-final_report = "results/thesis_report.md"
+report = "results/thesis_report.md"

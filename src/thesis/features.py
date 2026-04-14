@@ -1,0 +1,286 @@
+"""Feature engineering — 11 core technical indicators, Polars-native.
+
+No ta-lib, no pandas. All indicators are Polars expressions applied to an OHLCV DataFrame.
+
+Features produced:
+    - rsi_14: Relative Strength Index
+    - atr_14: Average True Range
+    - macd_hist: MACD histogram
+    - atr_ratio: ATR(5) / ATR(20) — volatility regime
+    - price_dist_ratio: (Close - EMA89) / ATR14 — normalized trend distance
+    - pivot_position: (Close - S1) / (R1 - S1) — bounded [0,1]
+    - atr_percentile: rolling rank of ATR14 over 50 bars
+    - sess_asia: Asian session (America/New_York timezone, DST-aware)
+    - sess_london: London AM session
+    - sess_overlap: London-NY overlap
+    - sess_ny_pm: NY afternoon session
+"""
+
+import json
+import logging
+from pathlib import Path
+
+import polars as pl
+
+from thesis.config import Config
+
+logger = logging.getLogger("thesis.features")
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def generate_features(config: Config) -> None:
+    """Build and persist feature-enriched bars.
+
+    Reads OHLCV parquet, computes technical indicators, writes features
+    parquet and a sidecar feature-list JSON.
+
+    Args:
+        config: Loaded application configuration.
+    """
+    ohlcv_path = Path(config.paths.ohlcv)
+    if not ohlcv_path.exists():
+        raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
+
+    logger.info("Loading OHLCV: %s", ohlcv_path)
+    df = pl.read_parquet(ohlcv_path)
+    logger.info("Input bars: %d", len(df))
+
+    # --- Core indicators ---
+    df = _add_rsi(df, config)
+    df = _add_atr(df, config)
+    df = _add_macd(df, config)
+
+    # --- New normalized features ---
+    df = _add_new_features(df, config)
+
+    # Fill NaN from warm-up periods
+    df = df.fill_null(strategy="forward")
+    df = df.fill_null(0.0)
+
+    # Persist
+    out_path = Path(config.paths.features)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(out_path)
+
+    feature_cols = sorted(c for c in df.columns if c not in _EXCLUDE_COLS)
+    _save_feature_list(out_path, feature_cols)
+
+    logger.info(
+        "Features saved: %s (%d columns, %d rows)", out_path, len(df.columns), len(df)
+    )
+    logger.info("Feature columns (%d): %s", len(feature_cols), feature_cols)
+
+
+# ---------------------------------------------------------------------------
+# Column sets
+# ---------------------------------------------------------------------------
+
+_EXCLUDE_COLS = frozenset(
+    [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "avg_spread",
+        "tick_count",
+        "label",
+        "tp_price",
+        "sl_price",
+        "touched_bar",
+        "open_right",  # Label-derived
+        "high_right",  # Label-derived
+        "low_right",  # Label-derived
+        "close_right",  # Label-derived
+    ]
+)
+
+
+# ---------------------------------------------------------------------------
+# Indicator helpers (all Polars-native)
+# ---------------------------------------------------------------------------
+
+
+def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add RSI (Wilder's smoothing)."""
+    p = config.features.rsi_period
+    delta = pl.col("close").diff()
+    gain = delta.clip(lower_bound=0.0)
+    loss = (-delta).clip(lower_bound=0.0)
+    avg_gain = gain.ewm_mean(alpha=1.0 / p, adjust=False)
+    avg_loss = loss.ewm_mean(alpha=1.0 / p, adjust=False)
+    rs = avg_gain / (avg_loss + 1e-10)
+    return df.with_columns((100.0 - 100.0 / (1.0 + rs)).alias(f"rsi_{p}"))
+
+
+def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add Average True Range."""
+    p = config.features.atr_period
+    atr = _compute_atr_expr(p)
+    return df.with_columns(atr.alias(f"atr_{p}"))
+
+
+def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add MACD histogram only."""
+    fast = config.features.macd_fast
+    slow = config.features.macd_slow
+    sig = config.features.macd_signal
+    ema_fast = pl.col("close").ewm_mean(span=fast, adjust=False)
+    ema_slow = pl.col("close").ewm_mean(span=slow, adjust=False)
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm_mean(span=sig, adjust=False)
+    return df.with_columns(
+        (macd_line - signal_line).alias("macd_hist"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# ATR expression helper
+# ---------------------------------------------------------------------------
+
+
+def _compute_atr_expr(period: int) -> pl.Expr:
+    """Return Polars expression for ATR with given period."""
+    tr = pl.max_horizontal(
+        [
+            (pl.col("high") - pl.col("low")),
+            (pl.col("high") - pl.col("close").shift(1)).abs(),
+            (pl.col("low") - pl.col("close").shift(1)).abs(),
+        ]
+    )
+    return tr.ewm_mean(alpha=1.0 / period, adjust=False)
+
+
+# ---------------------------------------------------------------------------
+# New normalized features
+# ---------------------------------------------------------------------------
+
+
+def _add_new_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add normalized feature set: atr_ratio, price_dist_ratio, pivot_position, sessions, atr_percentile."""
+    p = config.features.atr_period
+
+    # ATR Ratio: ATR(5) / ATR(20) — volatility regime
+    atr_5 = _compute_atr_expr(5)
+    atr_20 = _compute_atr_expr(20)
+    df = df.with_columns((atr_5 / (atr_20 + 1e-10)).alias("atr_ratio"))
+
+    # Price Distance Ratio: (Close - EMA89) / ATR14 — normalized trend distance
+    ema_89 = pl.col("close").ewm_mean(span=89, adjust=False)
+    df = df.with_columns(
+        ((pl.col("close") - ema_89) / (pl.col(f"atr_{p}") + 1e-10)).alias(
+            "price_dist_ratio"
+        )
+    )
+
+    # Pivot Position: (Close - S1) / (R1 - S1) — bounded [0,1]
+    df = _add_pivot_position(df)
+
+    # Session encoding in America/New_York timezone (DST-aware)
+    df = _add_ny_session_dummies(df)
+
+    # ATR Percentile: normalized rolling rank of ATR14 over 50 bars → [0, 1]
+    df = df.with_columns(
+        (
+            pl.col(f"atr_{p}").rolling_rank(window_size=50, method="average") / 50.0
+        ).alias("atr_percentile")
+    )
+
+    return df
+
+
+def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
+    """Add pivot_position: (Close - S1) / (R1 - S1) clipped to [0,1]."""
+    ts = pl.col("timestamp")
+    daily = (
+        df.group_by(ts.dt.truncate("1d"))
+        .agg(
+            [
+                pl.col("high").max().alias("day_high"),
+                pl.col("low").min().alias("day_low"),
+                pl.col("close").last().alias("day_close"),
+            ]
+        )
+        .sort("timestamp")
+    )
+
+    pivot = (daily["day_high"] + daily["day_low"] + daily["day_close"]) / 3.0
+    r1 = 2.0 * pivot - daily["day_low"]
+    s1 = 2.0 * pivot - daily["day_high"]
+
+    daily = daily.with_columns(
+        [
+            pivot.alias("pivot"),
+            r1.alias("r1"),
+            s1.alias("s1"),
+        ]
+    ).select(["timestamp", "pivot", "r1", "s1"])
+
+    # Shift by 1 day — use *previous* day's pivots (no look-ahead)
+    daily = daily.with_columns(
+        [
+            pl.col("pivot").shift(1).alias("prev_pivot"),
+            pl.col("r1").shift(1).alias("prev_r1"),
+            pl.col("s1").shift(1).alias("prev_s1"),
+        ]
+    ).select(["timestamp", "prev_pivot", "prev_r1", "prev_s1"])
+
+    df = df.with_columns(ts.dt.truncate("1d").alias("_date"))
+    daily = daily.rename({"timestamp": "_date"})
+
+    df = df.join(daily, on="_date", how="left").drop("_date")
+
+    # Pivot position: bounded [0, 1]
+    close = pl.col("close")
+    df = df.with_columns(
+        ((close - pl.col("prev_s1")) / (pl.col("prev_r1") - pl.col("prev_s1") + 1e-10))
+        .clip(0.0, 1.0)
+        .alias("pivot_position")
+    ).drop(["prev_pivot", "prev_r1", "prev_s1"])
+
+    return df
+
+
+def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
+    """Add 4 session flags using America/New_York timezone (DST-aware).
+
+    Sessions (in NY time):
+        Asia    = 18:00-01:59  (Tokyo/Sydney)
+        London  = 03:00-07:59  (London AM open)
+        Overlap = 08:00-11:59  (London + NY — highest gold volume)
+        NY PM   = 12:00-17:59  (NY afternoon, US data releases)
+    """
+    # Handle naive timestamps by adding UTC first
+    ts = pl.col("timestamp")
+    if df["timestamp"].dtype.time_zone is None:
+        ts = ts.dt.replace_time_zone("UTC")
+
+    ny_hour = ts.dt.convert_time_zone("America/New_York").dt.hour()
+
+    return df.with_columns(
+        [
+            (ny_hour.is_in(list(range(18, 24))) | ny_hour.is_in(list(range(0, 2))))
+            .cast(pl.Int8)
+            .alias("sess_asia"),
+            ny_hour.is_in(list(range(3, 8))).cast(pl.Int8).alias("sess_london"),
+            ny_hour.is_in(list(range(8, 12))).cast(pl.Int8).alias("sess_overlap"),
+            ny_hour.is_in(list(range(12, 18))).cast(pl.Int8).alias("sess_ny_pm"),
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Feature list sidecar
+# ---------------------------------------------------------------------------
+
+
+def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
+    """Write a JSON sidecar listing the feature column names."""
+    list_path = features_path.with_suffix(".feature_list.json")
+    with open(list_path, "w") as f:
+        json.dump(feature_cols, f, indent=2)

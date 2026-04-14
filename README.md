@@ -1,3 +1,136 @@
+# Hybrid GRU + LightGBM
+
+### XAU/USD Trading Signal Prediction
+
+[![Python 3.13](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
+[![Pixi](https://img.shields.io/badge/Pixi-Package%20Manager-orange.svg)](https://pixi.sh/)
+[![LightGBM](https://img.shields.io/badge/LightGBM-4.6-green.svg)](https://lightgbm.readthedocs.io/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.10-red.svg)](https://pytorch.org/)
+
+**Machine-learning pipeline for gold (XAU/USD) trading signal prediction**
+using a hybrid GRU + LightGBM architecture.
+
+Bachelor's thesis — Thuy Loi University
+
+---
+
+## Documentation
+
+| Document | Description |
+|:---------|:------------|
+| 📐 [Architecture](docs/ARCHITECTURE.md) | High-level overview — pipeline stages, hybrid model design, data flow |
+| 🚀 [Quickstart](docs/QUICKSTART.md) | Step-by-step guide to install, run, and view results |
+| 📊 [Evaluation](docs/EVALUATION.md) | How to read your results — metrics explained in plain language |
+| 📋 [Roadmap](docs/ROADMAP.md) | Completed features vs. pending items |
+| ⚙️ [Features & Configuration](docs/CONFIGURATION.md) | What the model sees and how to tune every parameter |
+| 📖 [Glossary](docs/GLOSSARY.md) | Plain-English definitions for all technical terms |
+
+### Where to start?
+
+| You are... | Read this |
+|------------|-----------|
+| New to the project | [Architecture](docs/ARCHITECTURE.md) → [Quickstart](docs/QUICKSTART.md) → [Evaluation](docs/EVALUATION.md) |
+| Looking to improve results | [Configuration](docs/CONFIGURATION.md) — read the **Features** section first |
+| Confused by a term | [Glossary](docs/GLOSSARY.md) |
+
+---
+
+## Quick Start
+
+```bash
+pixi install          # Install dependencies
+pixi run data         # Download XAU/USD data
+pixi run workflow     # Run the full pipeline
+```
+
+Results are saved to `results/XAUUSD_1H_<timestamp>/`.
+
+---
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A["Raw Ticks"] --> B["Prepare<br/>OHLCV"]
+    B --> C["Features<br/>11 indicators"]
+    C --> D["Labels<br/>Triple Barrier"]
+    D --> E["Split<br/>Train/Val/Test"]
+    E --> F["GRU<br/>64 hidden"]
+    E --> G["Static<br/>11 features"]
+    F --> H["LightGBM<br/>75 features"]
+    G --> H
+    H --> I["Backtest<br/>CFD Sim"]
+    H --> J["Report<br/>Charts"]
+```
+
+The hybrid model works in two steps:
+
+1. **GRU** reads 24 hours of price history and outputs a **64-number summary** of temporal patterns.
+2. **LightGBM** combines those 64 numbers with **11 technical indicators** (75 features total) and predicts: **Long**, **Flat**, or **Short**.
+
+---
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `pixi run workflow` | Run full pipeline (cached) |
+| `pixi run force` | Force re-run all stages |
+| `pixi run ablation` | Pipeline + model comparison study |
+| `pixi run test` | Run tests with coverage |
+| `pixi run lint` | Check code style |
+| `pixi run format` | Auto-format code |
+
+---
+
+## Project at a Glance
+
+| Detail | Value |
+|--------|-------|
+| Asset | XAU/USD (Gold / US Dollar) |
+| Timeframe | 1 hour (H1) |
+| Data range | January 2018 – March 2026 |
+| Model | GRU (64-dim) → LightGBM (75 features) |
+| Features | 11 technical indicators + 64 GRU hidden states |
+| Labels | Triple Barrier (Long / Flat / Short) |
+| Backtest | CFD with spread, commission, leverage, risk management |
+| Python | 3.13 (Pixi) |
+
+---
+
+## Project Structure
+
+```
+thesis/
+├── config.toml              # All settings in one file
+├── main.py                  # Entry point (CLI)
+├── src/thesis/              # Source code
+│   ├── config.py            # Loads config.toml
+│   ├── prepare.py           # Tick data → OHLCV bars
+│   ├── features.py          # 11 technical indicators
+│   ├── labels.py            # Triple Barrier labels
+│   ├── data.py              # Train/val/test splitting
+│   ├── gru_model.py         # GRU neural network
+│   ├── model.py             # Hybrid training (GRU + LightGBM)
+│   ├── pipeline.py          # Orchestrates all stages
+│   ├── backtest.py          # CFD trading simulator
+│   ├── ablation.py          # Compare model variants
+│   ├── report.py            # Markdown report generator
+│   └── visualize.py         # 13 charts
+├── tests/                   # Test suite
+├── data/raw/XAUUSD/         # Raw tick data
+├── data/processed/          # Generated parquet files
+├── results/                 # Session-based outputs
+└── docs/                    # Documentation
+```
+
+---
+
+## Tài liệu luận văn (Tiếng Việt)
+
+<details>
+<summary>📄 Nhấn để mở tài liệu luận văn tiếng Việt</summary>
+
 # Ứng dụng mô hình Hybrid Stacking dự báo tín hiệu giao dịch CFD Vàng (XAU/USD)
 
 > Đồ án tốt nghiệp — Trường Đại học Thuỷ Lợi, Khoa Công nghệ Thông tin
@@ -13,16 +146,14 @@
 
 ## Tổng quan
 
-Xây dựng pipeline end-to-end dự báo tín hiệu giao dịch **CFD Vàng (XAU/USD)** trên khung H1 bằng kiến trúc **Hybrid Stacking (GRU + LightGBM)**. Hai mô hình nền dự báo độc lập; mô hình tầng trên học cách kết hợp xác suất đầu ra để phân loại 3 nhãn: **mua (+1), trung tính (0), bán (-1)**.
+Xây dựng pipeline end-to-end dự báo tín hiệu giao dịch **CFD Vàng (XAU/USD)** trên khung H1 bằng kiến trúc **Hybrid Stacking (GRU + LightGBM)**.
 
+```mermaid
+flowchart LR
+    GRU["GRU<br/>(chuỗi 24 nến)"] -->|"64 hidden"| Stack
+    LGB["LightGBM<br/>(11 features)"] -->|"xác suất"| Stack
+    Stack["Hybrid Model"] --> Pred["3 nhãn<br/>Mua / Trung tính / Bán"]
 ```
-Tầng dưới: GRU/LSTM (chuỗi OHLCV 120 nến) ─┐
-                                           ├─> Xác suất 3 lớp ─┐
-Tầng dưới: LightGBM (đặc trưng kỹ thuật) ──┘                   ├─> Tầng trên → 3 nhãn
-                                                               └─> OOF theo thời gian + Purging/Embargo
-```
-
----
 
 ## Mục tiêu chính
 
@@ -30,229 +161,45 @@ Tầng dưới: LightGBM (đặc trưng kỹ thuật) ──┘                 
 2. Làm sạch dữ liệu: lọc nến bất thường, bỏ cuối tuần, xử lý gap phiên
 3. Chia tập theo thời gian (không xáo trộn): Train (2018–2022) / Val (2023) / OOS (2024–03/2026)
 4. Ngăn rò rỉ dữ liệu bằng Purging + Embargo
-5. Xây dựng 20+ đặc trưng kỹ thuật + định lượng bằng Feature Importance / SHAP
-6. Huấn luyện mô hình GRU/LSTM nền (chuỗi 120 nến OHLCV)
-7. Huấn luyện mô hình LightGBM nền (Optuna tuning, xử lý mất cân bằng)
-8. Xây dựng Hybrid Stacking với meta-learner
-9. Giải thích mô hình (SHAP) + Backtest một lần trên OOS
-
----
-
-## Kiến trúc pipeline
-
-```
-Raw Tick Data (Dukascopy)
-        │
-        ▼
-  OHLCV H1 (gộp tick → nến)
-        │
-        ▼
-  Làm sạch & Lọc nhiễu (ATR spike filter, bỏ cuối tuần, DST-aware day roll)
-        │
-        ▼
-  Feature Engineering (EMA, RSI, MACD, ATR, Pivot, Spread, Session)
-        │
-        ▼
-  Gán nhãn Triple Barrier (TP=1.5×ATR, SL=1.5×ATR, h=20)
-        │
-        ▼
-  Chia tập theo thời gian + Purging + Embargo (25 nến)
-        │
-        ├──────────────────┬──────────────────┐
-        ▼                  ▼                  ▼
-  LSTM (120-bar OHLCV)  LightGBM (features)    │
-        │                  │                  │
-        └──── Xác suất ────┘                  │
-                    │                         │
-                    ▼                         │
-            Meta-Learner (Stacking)           │
-                    │                         │
-                    ▼                         │
-            Dự báo 3 nhãn                     │
-                    │                         │
-                    ▼                         │
-            Backtest OOS ◄────────────────────┘
-                    │
-                    ▼
-            Báo cáo + Figures
-```
-
----
-
-## Cấu trúc dự án
-
-```
-thesis/
-├── main.py                     # Entry point → thesis.pipeline.runner.run_thesis_workflow()
-├── config.toml                 # Cấu hình trung tâm (override qua env THESIS_*)
-├── src/
-│   └── thesis/
-│       ├── __init__.py
-│       ├── config/             # Config loader (TOML + env override)
-│       ├── data/               # Load/validate/cache OHLCV, splits
-│       ├── features/           # Feature engineering (EMA, RSI, MACD, ATR, Pivot, Spread, Session)
-│       ├── labels/             # Triple Barrier labeling
-│       ├── splitting/          # Time-based split + Purging + Embargo
-│       ├── models/
-│       │   ├── baseline/       # LightGBM (Optuna tuning, class weighting)
-│       │   ├── lstm/           # PyTorch LSTM (CPU-first)
-│       │   └── stacking/       # Hybrid Stacking meta-learner
-│       ├── backtest/           # CFD backtest engine (costs, sizing, executor, metrics)
-│       ├── reporting/          # Markdown/JSON reports + figure generation
-│       └── pipeline/           # Workflow runner (stage orchestration)
-├── figures/                    # Output figures (11+ charts)
-├── data/
-│   └── raw/XAUUSD/             # Dữ liệu CFD Vàng H1 (01/2018–03/2026)
-├── docs/
-│   └── thesis_proposal_summary.md
-└── README.md
-```
-
----
-
-## Cấu hình trung tâm (`config.toml`)
-
-| Nhóm | Tham số chính | Mô tả |
-|------|--------------|-------|
-| **data** | `market_tz`, `day_roll_hour`, `timeframe` | Timezone thị trường, giờ chuyển ngày (DST-aware), khung thời gian |
-| **features** | Danh sách indicator + params | EMA(34,89), RSI(14), MACD(12,26,9), ATR(14), Pivot, Spread, Session |
-| **labels** | `tp_atr_mult`, `sl_atr_mult`, `horizon`, `atr_coeff` | Triple Barrier: TP=1.5×ATR, SL=1.5×ATR, h=20 |
-| **splitting** | `train_end`, `val_end`, `purge_bars`, `embargo_bars` | Mốc chia tập + số nến purge/embargo |
-| **models.tree** | LightGBM params, Optuna settings | `num_leaves`, `learning_rate`, `n_estimators`, class weighting |
-| **models.lstm** | Sequence length, hidden size, layers, dropout, epochs | `seq_len=120`, early stopping |
-| **models.stacking** | Meta-learner type, CV folds | OOF generation theo thời gian |
-| **backtest.cfd** | `spread`, `slippage`, `commission`, `leverage`, `swap_rate` | Chi phí giao dịch thực tế |
-| **reporting** | Output formats, figure list | Markdown/JSON, 11+ figures |
-| **workflow** | `seed`, `cache_dir`, `reuse_base_models` | Reproducibility + cache strategy |
-| **paths** | `data_dir`, `artifact_dir`, `figure_dir` | Vị trí lưu artifacts |
-
-Override qua biến môi trường: `THESIS_<SECTION>__<KEY>` (ví dụ `THESIS_LABELS__HORIZON=15`).
-
----
-
-## Dữ liệu & Artifacts
-
-### Dữ liệu đầu vào
-- **Nguồn:** Dukascopy tick data → gộp thành OHLCV H1
-- **Dải thời gian:** 01/2018 – 03/2026
-- **Số nến sau làm sạch:** ~48.000 – 52.000
-
-### Artifacts tạo ra trong pipeline
-
-| Artifact | Stage tạo | Stage tiêu thụ | Định dạng | Vị trí (Session-based) |
-|----------|----------|---------------|-----------|------------------------|
-| `ohlcv.parquet` | Data preparation | Features, Labels | Parquet | `data/processed/` (global cache) |
-| `features.parquet` | Feature engineering | Labels, Models | Parquet | `data/processed/` (global cache) |
-| `labels.parquet` | Labeling | Splitting, Models | Parquet | `data/processed/` (global cache) |
-| `train.parquet` / `val.parquet` / `test.parquet` | Splitting | Models | Parquet | `data/processed/` (global cache) |
-| `lightgbm_model.pkl` | Baseline training | Stacking | Pickle | `results/{session}/models/` |
-| `lstm_model.pt` | LSTM training | Stacking | PyTorch | `results/{session}/models/` |
-| `stacking_meta_learner.pkl` | Stacking training | Backtest, Reporting | Pickle | `results/{session}/models/` |
-| `predictions.parquet` | Stacking / Inference | Backtest, Reporting | Parquet | `results/{session}/predictions/` |
-| `backtest_results.json` | Backtest | Reporting | JSON | `results/{session}/backtest/` |
-| `thesis_report.md` / `thesis_report.json` | Reporting | — | Markdown/JSON | `results/{session}/reports/` |
-| `figures/*.png` | Reporting | — | PNG | `results/{session}/reports/` |
-| `pipeline.log` | All stages | Debugging | Text | `results/{session}/logs/` |
-
-> **Lưu ý:** Mỗi lần chạy pipeline tạo một **session** riêng biệt trong `results/XAUUSD_H1_YYYYMMDD_HHMMSS/`.  
-> Symlink `results/latest/` luôn trỏ đến session mới nhất để dễ truy cập.
-
-### Cơ chế cache
-- Mỗi stage kiểm tra artifact đầu ra đã tồn tại chưa
-- Nếu thiếu artifact → tự chạy stage phụ thuộc (ví dụ: thiếu splits → chạy prepare-data)
-- `reuse_base_models=true` → stacking tái dùng baseline/LSTM đã huấn luyện
-
----
-
-## Rủi ro kỹ thuật & Checklist
-
-### 1. Data Leakage (rò rỉ dữ liệu)
-- [ ] Split boundaries: train/val/test không xáo trộn theo thời gian
-- [ ] Purging: loại mẫu ở vùng giao thoa khi gán nhãn (h=20)
-- [ ] Embargo: chèn khoảng trống 10–25 nến giữa các tập
-- [ ] Feature lookahead: đặc trưng chỉ dùng dữ liệu quá khứ (EMA, RSI, MACD...)
-- [ ] LSTM window: kiểm tra cửa sổ 120 nến ở ranh giới tập
-
-### 2. Timezone & Day Roll
-- [ ] Timestamp chuẩn hóa UTC
-- [ ] Trading day neo theo `market_tz` (America/New_York) với `day_roll_hour=17:00`
-- [ ] Xử lý DST transition đúng cách (không chỉ dùng UTC)
-- [ ] Session features (London/New York/Tokyo) tính theo timezone thị trường
-
-### 3. Class Imbalance
-- [ ] Kiểm tra phân phối 3 lớp (+1, 0, -1)
-- [ ] Lớp 0 (trung tính) thường chiếm đa số → downsampling hoặc class weighting
-- [ ] Đánh giá bằng F1 Macro (không chỉ accuracy)
-- [ ] Theo dõi chỉ số từng lớp riêng biệt
-
-### 4. Backtest Realism (giả định CFD)
-- [ ] Spread: chênh lệch Bid-Ask
-- [ ] Slippage: trượt giá khi khớp lệnh
-- [ ] Commission: phí giao dịch
-- [ ] Leverage: đòn bẩy
-- [ ] Swap rate: phí qua đêm
-- [ ] Margin stop-out: gọi vốn bổ sung
-
-### 5. Reproducibility
-- [ ] Seed cố định (config `workflow.seed`)
-- [ ] Version pinning (requirements.txt / pyproject.toml)
-- [ ] Chỉ backtest 1 lần trên OOS (không tuning trên test set)
-
----
+5. Xây dựng đặc trưng kỹ thuật + định lượng bằng Feature Importance / SHAP
+6. Huấn luyện mô hình GRU nền + LightGBM nền
+7. Xây dựng Hybrid Stacking
+8. Giải thích mô hình (SHAP) + Backtest trên OOS
 
 ## Đặc trưng kỹ thuật
 
-| Nhóm | Đặc trưng | Mô tả | Câu hỏi thị trường |
-|------|-----------|-------|---------------------|
-| Xu hướng | EMA(34, 89) | Hướng giá | Giá đang tăng hay giảm? |
-| Động lượng | RSI(14) | Sức mạnh nhịp | Đà tăng/giảm mạnh hay yếu? |
-| Biến động | ATR(14) | Độ dao động | Thị trường rộng hay hẹp biên? |
-| Sức mạnh xu hướng | MACD(12, 26, 9) | Xác nhận xu hướng | Xu hướng còn mạnh không? |
-| Phiên giao dịch | Session hour (DST-aware) | Hành vi theo phiên | Giá khác nhau theo phiên? |
-| Hỗ trợ/Kháng cự | Pivot Points | Vùng giá quan trọng | Gần vùng quan trọng không? |
-| Vi cấu trúc | Spread (Bid-Ask) | Điều kiện khớp lệnh | Chi phí vào lệnh? |
-
----
+| Nhóm | Đặc trưng | Câu hỏi thị trường |
+|------|-----------|---------------------|
+| Xu hướng | EMA, price_dist_ratio | Giá đang tăng hay giảm? |
+| Động lượng | RSI(14) | Đà tăng/giảm mạnh hay yếu? |
+| Biến động | ATR(14), atr_ratio, atr_percentile | Thị trường rộng hay hẹp biên? |
+| Sức mạnh xu hướng | MACD(12, 26, 9) | Xu hướng còn mạnh không? |
+| Phiên giao dịch | Session (DST-aware) | Giá khác nhau theo phiên? |
+| Hỗ trợ/Kháng cự | Pivot Position | Gần vùng quan trọng không? |
 
 ## Chiến lược gán nhãn (Triple Barrier)
 
 | Nhãn | Điều kiện | Ý nghĩa |
 |------|-----------|---------|
-| **+1** | Giá chạm TP trước SL trong cửa sổ h | **Mua** |
-| **0** | Không chạm TP/SL đến hết h | **Trung tính** |
-| **-1** | Giá chạm SL trước TP trong cửa sổ h | **Bán** |
+| **+1** | Giá chạm TP trước SL | **Mua** |
+| **0** | Không chạm TP/SL đến hết horizon | **Trung tính** |
+| **-1** | Giá chạm SL trước TP | **Bán** |
 
 - **Take Profit:** `Close[t] + 1.5 × ATR`
 - **Stop Loss:** `Close[t] - 1.5 × ATR`
-- **Horizon:** h = 20 nến
-- **Tỷ lệ R:R:** 1:1 (đối xứng)
-
----
-
-## Kết quả dự kiến
-
-| Thành phần | Metric / Output |
-|-----------|-----------------|
-| LightGBM | F1 Macro, Accuracy, Feature Importance |
-| LSTM/GRU | Training history, Probabilities 3 lớp |
-| Hybrid Stacking | F1 Macro cao hơn riêng lẻ, SHAP analysis |
-| Backtest | Win rate, Total R-multiples, Max Drawdown, Profit Factor, Sharpe, Sortino, Calmar |
-
----
+- **Horizon:** h = 10 nến
 
 ## Tiến độ thực hiện
 
-| Tuần | Thời gian | Nội dung | Kết quả |
-|------|-----------|----------|---------|
-| 1 | 23/03 – 29/03 | Xác định yêu cầu, tìm tài liệu | Đề cương kỹ thuật + lịch |
-| 2 | 30/03 – 02/04 | Tải & chuẩn hóa + làm sạch dữ liệu | Dữ liệu sạch + báo cáo chất lượng |
-| 3 | 03/04 – 07/04 | Tính chỉ báo, gán nhãn, chia tập | Dữ liệu sẵn sàng huấn luyện |
-| 4 | 08/04 – 12/04 | Huấn luyện LightGBM | Mô hình + kết quả ban đầu |
-| 5 | 13/04 – 20/04 | Huấn luyện LSTM + Stacking | Hybrid Stacking hoàn chỉnh |
-| 6 | 21/04 – 30/04 | So sánh mô hình, backtest, SHAP | Số liệu đầy đủ + biểu đồ |
-| 7–10 | 01/05 – 28/06 | Viết báo cáo + chuẩn bị thuyết trình | Báo cáo cuối + slide |
-
----
+| Tuần | Nội dung | Kết quả |
+|------|----------|---------|
+| 1 | Xác định yêu cầu, tìm tài liệu | Đề cương kỹ thuật |
+| 2 | Tải & chuẩn hóa dữ liệu | Dữ liệu sạch |
+| 3 | Tính chỉ báo, gán nhãn, chia tập | Dữ liệu sẵn sàng |
+| 4 | Huấn luyện LightGBM | Mô hình + kết quả ban đầu |
+| 5 | Huấn luyện GRU + Hybrid | Hybrid hoàn chỉnh |
+| 6 | So sánh mô hình, backtest, SHAP | Số liệu đầy đủ |
+| 7–10 | Viết báo cáo + thuyết trình | Báo cáo cuối + slide |
 
 ## Yêu cầu hệ thống
 
@@ -260,53 +207,17 @@ Override qua biến môi trường: `THESIS_<SECTION>__<KEY>` (ví dụ `THESIS_
 |---------|----------|
 | Python | 3.13+ |
 | RAM | 8GB+ |
-| GPU | Tùy chọn (tăng tốc LSTM) |
+| GPU | Tùy chọn |
 | Dung lượng | 10GB+ |
-
-### Thư viện chính
-- **PyTorch** — LSTM/GRU training
-- **LightGBM** — Gradient Boosting baseline
-- **Optuna** — Hyperparameter tuning
-- **SHAP** — Model interpretability
-- **Polars** — Xử lý dữ liệu nhanh
-- **TA-Lib** — Technical indicators
-- **Plotly** — Interactive visualizations
-
-### GPU Acceleration (ROCm — AMD)
-
-Pipeline hỗ trợ tự động phát hiện GPU qua cấu hình `device = "auto"`.
-
-**AMD Radeon 890M (ROCm — thử nghiệm):**
-
-```bash
-# Cài PyTorch ROCm (không dùng pixi cho pytorch)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2
-
-# Có thể cần set biến môi trường cho gfx1150
-export HSA_OVERRIDE_GFX_VERSION=11.0.0
-
-# Kiểm tra
-python -c "import torch; print(f'GPU: {torch.cuda.is_available()}')"
-```
-
-> **Lưu ý:** Hỗ trợ gfx1150 (RDNA 3.5) trong ROCm 6.x vẫn ở giai đoạn thử nghiệm. Nếu GPU không được nhận diện, pipeline tự động dùng CPU.
-
----
 
 ## Hướng phát triển
 
-1. **Ensemble nâng cao:** Weighted voting, Stacking với meta-learner phức tạp hơn
-2. **Thêm đặc trưng:** Sentiment analysis, chỉ số vĩ mô (CPI, NFP, lãi suất), Order flow, COT data
-3. **Quản lý rủi ro:** Dynamic position sizing, tối ưu danh mục, VaR-based limits
-4. **Hệ thống real-time:** WebSocket data, streaming prediction, auto-trading
-5. **Đa tài sản:** EUR/USD, GBP/USD, XAG/USD
-
----
-
-## Tài liệu tham khảo
-
-Xem đầy đủ danh sách 60+ tài liệu tại [`docs/thesis_proposal_summary.md`](docs/thesis_proposal_summary.md).
-
----
+1. Ensemble nâng cao, weighted voting
+2. Sentiment analysis, chỉ số vĩ mô
+3. Dynamic position sizing, VaR-based limits
+4. Real-time WebSocket prediction
+5. Đa tài sản: EUR/USD, GBP/USD, XAG/USD
 
 *Cập nhật lần cuối: Tháng 4/2026*
+
+</details>

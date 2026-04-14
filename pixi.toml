@@ -6,15 +6,31 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [tasks]
-data = "python data_download.py --symbol XAUUSD --start-year 2026 --start-month 3"
+# Data ingestion
+data = "python data_download.py --symbol XAUUSD --start-year 2018"
+
+# Pipeline execution
 workflow = "python main.py"
 force = "python main.py --force"
-clean-cache = "rm -f data/processed/train.parquet data/processed/val.parquet data/processed/test.parquet data/processed/labels.parquet"
-clean-all = "rm -f data/processed/*.parquet && rm -rf models/*"
+ablation = "python main.py --ablation"
+
+# Cleanup
+clean-cache = "rm -f data/processed/*.parquet"
+clean-all = "rm -f data/processed/*.parquet && rm -rf models/* results/*"
+
+# Code quality
 lint = "ruff check src/"
 format = "ruff format src/"
-test = "pytest tests/ -W ignore::_pytest.warning_types.PytestUnknownMarkWarning"
-dashboard = "python -c 'from scripts.dashboard import main; main()'"
+pre-commit = "ruff check src/ && ruff format src/ && pytest tests/ -v -m 'not slow'"
+
+# Testing
+test = "pytest tests/ -v --cov=src/thesis --cov-fail-under=70"
+test-unit = "pytest tests/unit/ -v -m unit"
+test-integration = "pytest tests/integration/ -v -m integration"
+test-fast = "pytest tests/ -v -m 'not slow'"
+
+# Dashboard
+dashboard = "python scripts/dashboard.py"
 
 [dependencies]
 python = ">=3.13,<3.14"
@@ -23,30 +39,19 @@ polars = ">=1.39.3,<2"
 numpy = ">=2.4.3,<3"
 pandas = ">=3.0.1,<4"
 matplotlib = ">=3.10.8,<4"
-seaborn = ">=0.13.2,<0.14"
 lightgbm = ">=4.6.0,<5"
 optuna = ">=4.8.0,<5"
-jupyterlab = ">=4.5.6,<5"
-ta-lib = ">=0.6.4,<0.7"
 pyarrow = ">=23.0.1,<24"
-jupyter = ">=1.1.1,<2"
-ipykernel = ">=7.2.0,<8"
 tqdm = ">=4.67.3,<5"
-pip = ">=26.0.1,<27"
 shap = ">=0.51.0,<0.52"
 ruff = ">=0.15.7,<0.16"
 pytest = ">=8.0.0,<9"
-vulture = ">=2.16,<3"
-textual = ">=8.1.1,<9"
-aiohttp = ">=3.13.4,<4"
-plotly = ">=6.6.0,<7"
+joblib = ">=1.4.0,<2"
+pytest-cov = ">=7.1.0,<8"
+ipykernel = ">=7.2.0,<8"
+jupyter = ">=1.1.1,<2"
+aiohttp = ">=3.13.5,<4"
+pytorch = ">=2.10.0,<3"
 
 [pypi-dependencies]
-pycparser = "==2.22"
-torch = ">=2.10.0, <3"
-torchvision = ">=0.25.0, <0.26"
-torchaudio = ">=2.11.0, <3"
-
-[pypi-options]
-extra-index-urls = ["https://download.pytorch.org/whl/rocm7.2"]
-index-strategy = "unsafe-best-match"
+backtesting = ">=0.6.5, <0.7"
