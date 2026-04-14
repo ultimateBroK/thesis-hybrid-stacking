@@ -41,9 +41,9 @@ Here is every metric the backtest calculates, explained in plain language.
 
 | Metric | What It Means |
 |--------|--------------|
-| **total_trades** | How many trades the model took in the test period. More trades = more data to evaluate, but also more costs. |
-| **long_trades** | Trades where the model bet the price would go **up**. |
-| **short_trades** | Trades where the model bet the price would go **down**. |
+| **num_trades** | How many trades the model took in the test period. More trades = more data to evaluate, but also more costs. |
+| **exposure_time_pct** | What percentage of the time the strategy was in a position. |
+| **avg_trade_duration** | How long the average trade lasts (hours). |
 
 > **A healthy model** has a reasonable number of trades (not too few, not too many). If your model trades only 5 times in 2 years, that is too few to be statistically meaningful.
 
@@ -67,12 +67,11 @@ Here is every metric the backtest calculates, explained in plain language.
 
 | Metric | What It Means | Good Range |
 |--------|--------------|------------|
-| **total_pnl** | Total profit or loss in dollars. Positive = profit. | Any positive number |
-| **total_return_pct** | Total percentage return on the starting capital. | Above 5% per test period |
+| **return_pct** | Total percentage return on the starting capital. | Above 5% per test period |
 | **profit_factor** | How much money you made vs. how much you lost. | Above 1.5 is decent, above 2.0 is good |
-| **avg_win** | Average profit per winning trade (in dollars). | Should be larger than avg_loss |
-| **avg_loss** | Average loss per losing trade (in dollars). | Should be smaller than avg_win |
-| **expectancy** | Average dollar amount you expect to make per trade. | Positive = good |
+| **equity_final** | Final account balance. | Above initial_capital |
+| **commissions** | Total commission paid across all trades. | Should not exceed total PnL |
+| **expectancy_pct** | Average return you expect per trade. | Positive = good |
 
 #### Profit Factor — The Most Important Metric
 
@@ -100,7 +99,8 @@ Profit Factor = Total Wins ($) / Total Losses ($)
 | **sharpe_ratio** | Risk-adjusted return. Higher = better returns per unit of risk. | Above 1.0 is decent, above 2.0 is very good |
 | **sortino_ratio** | Like Sharpe, but only counts **downside** risk. | Above 1.5 is good |
 | **calmar_ratio** | Return divided by max drawdown. | Above 1.0 is reasonable |
-| **max_consecutive_losses** | The longest losing streak. | Below 10 is manageable |
+| **sqn** | System Quality Number. Measures trade distribution quality. | Above 1.5 is good |
+| **kelly_criterion** | Optimal fraction of capital to risk per trade. | Positive = edge exists |
 
 #### Sharpe Ratio — The Gold Standard
 
@@ -138,16 +138,17 @@ If your account grew to $120,000 and then dropped to $96,000, your max drawdown 
 
 | Metric | What It Means |
 |--------|--------------|
-| **recovery_factor** | Total return divided by max drawdown. Higher = the model recovers quickly from losses. |
-| **avg_trade_duration_bars** | How many hours (bars) the average trade lasts. |
-| **initial_capital** | Starting money ($100,000 by default). |
-| **final_equity** | How much money is left at the end. |
+| **buy_&_hold_return_pct** | How much you'd make just buying and holding gold. Benchmark. |
+| **alpha_pct** | Excess return over buy & hold. Positive = model adds value. |
+| **beta** | Correlation with buy & hold. Lower = more independent strategy. |
+| **volatility_ann_pct** | Annualized volatility of returns. Lower = smoother equity. |
+| **cagr_pct** | Compound annual growth rate. |
 
 ---
 
 ## Reading the Charts
 
-The project generates **13 charts** organized into three categories.
+The project generates **7 charts** in the session folder, plus an interactive Bokeh chart.
 
 ### Data Charts (`charts/data/`)
 
@@ -166,15 +167,13 @@ The project generates **13 charts** organized into three categories.
 | `confidence_distribution.png` | Good models show high confidence for correct predictions and low confidence for wrong ones. |
 | `feature_importance.png` | Shows which features matter most. GRU features (purple) vs. static features (blue). |
 
-### Backtest Charts (`charts/backtest/`)
+### Backtest Charts (`backtest/`)
 
 | Chart | What to Look For |
 |-------|-----------------|
-| `equity_drawdown.png` | The equity line should go up over time. The drawdown area below should be small. |
-| `pnl_histogram.png` | A slight positive skew (more green bars to the right) is what you want. |
-| `monthly_returns.png` | Consistent green months are ideal. Many red months = unreliable. |
-| `rolling_sharpe.png` | Should stay above 0 most of the time. Wild swings = unstable strategy. |
-| `duration_vs_pnl.png` | Check if longer trades make more money or if short trades are better. |
+| `backtest_chart.html` | Interactive Bokeh chart with equity, drawdown, and trade markers. Resampled to 2h for performance. |
+| `equity_curve.png` | Static equity curve by trade number. Should trend upward over time. |
+| `feature_importance.png` | Top 20 features — bar chart showing GRU vs static importance. |
 
 ---
 
@@ -253,8 +252,9 @@ Look at `ablation_results.json`:
 | Win rate above 80% | Very likely overfitting |
 | Max drawdown above 40% | Risk management is failing |
 | Huge gap between train and test performance | Data leakage or overfitting |
-| All predictions are "Flat" | Model is too conservative — lower min_confidence |
+| All predictions are "Flat" | Model is too conservative — check class balance in training data |
 | Backtest return is negative but model accuracy is high | Costs (spread, commission) are eating all the profit |
+| 0 trades in backtest | Position size too large for available margin — reduce lots_per_trade or increase leverage |
 
 ---
 

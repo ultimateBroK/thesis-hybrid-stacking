@@ -52,6 +52,7 @@ ipykernel = ">=7.2.0,<8"
 jupyter = ">=1.1.1,<2"
 aiohttp = ">=3.13.5,<4"
 pytorch = ">=2.10.0,<3"
+bokeh = ">=3.9.0,<4"
 
 [pypi-dependencies]
 backtesting = ">=0.6.5, <0.7"

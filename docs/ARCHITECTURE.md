@@ -70,7 +70,7 @@ flowchart TD
 | 3 | **Labels** | Generate buy/sell/hold labels using the Triple Barrier method | `features.parquet` | `labels.parquet` |
 | 4 | **Split** | Split data into train, validation, and test sets with anti-leakage protection | `labels.parquet` | `train/val/test.parquet` |
 | 5 | **Train** | Train GRU, then train LightGBM on combined features | Split parquets | Model files + predictions |
-| 6 | **Backtest** | Simulate real CFD trading with costs, spreads, and risk management | Test data + predictions | `backtest_results.json` |
+| 6 | **Backtest** | Simulate CFD trading with spread, commission, and ATR stop-loss via `backtesting.py` | Test data + predictions | `backtest_results.json` |
 | 7 | **Report** | Generate charts and a summary markdown report | All outputs | Charts + `thesis_report.md` |
 
 ---
@@ -100,7 +100,7 @@ flowchart LR
     style HS fill:#7C3AED,color:#fff
 ```
 
-- **Input:** A sliding window of 24 hours of past data (log returns + RSI).
+- **Input:** A sliding window of 24 hours of past data (log returns + RSI + ATR + MACD histogram).
 - **Output:** A 64-number vector (called "hidden states") that summarizes the temporal pattern.
 
 ### Step 2: LightGBM Decision Maker
@@ -150,7 +150,8 @@ flowchart LR
 | **Correlation filtering on train only** | Prevents data leakage from test set |
 | **Purge and embargo at splits** | Prevents label leakage at train/test boundaries |
 | **Triple Barrier labeling** | Realistic profit targets with a time limit |
-| **CFD backtest with real costs** | Results are closer to real trading conditions |
+| **backtesting.py for CFD simulation** | Battle-tested library with native margin, spread, commission |
+| **Fixed lot position sizing** | Prevents runaway sizing with leverage |
 
 ---
 
@@ -171,14 +172,13 @@ thesis/
 │   ├── gru_model.py         # GRU neural network
 │   ├── model.py             # Hybrid training (GRU + LightGBM)
 │   ├── pipeline.py          # Orchestrates all stages
-│   ├── backtest.py          # CFD trading simulator
+│   ├── backtest.py          # CFD backtest via backtesting.py
 │   ├── ablation.py          # Compare model variants
 │   ├── report.py            # Markdown report generator
-│   └── visualize.py         # 13 charts
+│   └── visualize.py         # Data & model charts
 │
 ├── tests/                   # Test suite
 │   ├── conftest.py
-│   ├── test_config.py
 │   ├── unit/                # Unit tests per module
 │   └── integration/         # End-to-end tests
 │
@@ -187,13 +187,13 @@ thesis/
 │   └── processed/           # Generated parquet files
 │
 ├── results/                 # Session-based outputs
-│   └── {TIMESTAMP}/
+│   └── {SYMBOL}_{TF}_{TIMESTAMP}/
 │       ├── config/          # Config snapshot
-│       ├── models/          # Saved models
+│       ├── models/          # Saved models (LightGBM + GRU)
 │       ├── predictions/     # Predictions (parquet)
 │       ├── reports/         # Report + charts
-│       ├── backtest/        # Trading results
-│       └── logs/            # Pipeline log
+│       ├── backtest/        # Trading results + Bokeh chart
+│       └── logs/            # Pipeline log (ANSI-stripped)
 │
 └── docs/                    # Documentation (you are here)
 ```
@@ -209,10 +209,10 @@ flowchart TD
     T0["Raw Ticks<br/><i>millions of rows</i>"] -->|"prepare_data()"| T1["OHLCV<br/><i>~55,000 rows (2018-2026)</i>"]
     T1 -->|"generate_features()"| T2["Features<br/><i>+ 11 technical indicators</i>"]
     T2 -->|"generate_labels()"| T3["Labels<br/><i>+ buy/sell/hold + TP/SL prices</i>"]
-    T3 -->|"split_data()"| T4["Train ~35K | Val ~8.5K | Test ~11K"]
+    T3 -->|"split_data()"| T4["Train ~35K | Val ~8K | Test ~19K"]
     T4 -->|"train_model()"| T5["GRU → 64-dim hidden states<br/>LightGBM → 75-dim hybrid<br/>Test predictions"]
     T5 -->|"run_backtest()"| T6["Backtest<br/><i>trades, PnL, metrics</i>"]
-    T6 -->|"generate_report()"| T7["Report<br/><i>markdown + 13 charts</i>"]
+    T6 -->|"generate_report()"| T7["Report<br/><i>markdown + charts</i>"]
 
     style T0 fill:#6B7280,color:#fff
     style T5 fill:#7C3AED,color:#fff
@@ -229,9 +229,9 @@ This project uses **three layers** of protection:
 ```mermaid
 flowchart LR
     TR["Train<br/>2018-2022"] -->|"25 bars<br/>purge"| P1[" "]
-    P1 -->|"10 bars<br/>embargo"| VA["Val<br/>2023"]
+    P1 -->|"50 bars<br/>embargo"| VA["Val<br/>2023"]
     VA -->|"25 bars<br/>purge"| P2[" "]
-    P2 -->|"10 bars<br/>embargo"| TE["Test<br/>2024-2026"]
+    P2 -->|"50 bars<br/>embargo"| TE["Test<br/>2024-2026"]
 
     style P1 fill:#DC2626,color:#fff
     style P2 fill:#DC2626,color:#fff
@@ -241,7 +241,7 @@ flowchart LR
 ```
 
 1. **Purge** — Removes 25 bars at each split boundary to prevent overlap.
-2. **Embargo** — Adds 10 extra bars of gap after each boundary.
+2. **Embargo** — Adds 50 extra bars of gap after each boundary (~2 days, covers the 10-bar label horizon).
 3. **Correlation filtering on train only** — Feature selection uses only training data.
 
 ---
@@ -258,7 +258,7 @@ flowchart TD
     SESSION --> MOD["models/<br/>lightgbm_model.pkl<br/>gru_model.pt"]
     SESSION --> PRED["predictions/<br/>final_predictions.parquet"]
     SESSION --> REP["reports/<br/>thesis_report.md<br/>charts/"]
-    SESSION --> BT["backtest/<br/>backtest_results.json"]
+    SESSION --> BT["backtest/<br/>backtest_results.json<br/>backtest_chart.html"]
     SESSION --> LOG["logs/<br/>pipeline.log"]
 
     style SESSION fill:#2563EB,color:#fff
@@ -267,4 +267,4 @@ flowchart TD
 This means:
 - Old results are never overwritten.
 - You can compare different parameter settings.
-- Each session has its own log, config snapshot, and all outputs.
+- Each session has its own log (ANSI-stripped for clean file output), config snapshot, and all outputs.

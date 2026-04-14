@@ -14,6 +14,8 @@ flowchart LR
     subgraph GRU_INPUT["GRU Input (per bar)"]
         LR["log_returns"]
         RSI["rsi_14"]
+        ATR["atr_14"]
+        MACD["macd_hist"]
     end
 
     subgraph GRU_SEQ["24-bar window"]
@@ -75,12 +77,14 @@ These are calculated directly from price data. Each bar (1 hour) has these 11 va
 ### GRU Features (64 hidden states)
 
 The GRU reads a sliding window of **24 consecutive bars** and produces a **64-number summary**.
-Its input is only two features per bar:
+Its input is four features per bar:
 
 | # | Feature | What It Is |
 |---|---------|-----------|
 | 1 | **log_returns** | Percentage change in price from one bar to the next |
 | 2 | **rsi_14** | The same RSI used as a static feature |
+| 3 | **atr_14** | Average True Range — volatility measure |
+| 4 | **macd_hist** | MACD histogram — momentum measure |
 
 The GRU's 64 hidden states capture **temporal patterns** — like trends, reversals, and cycles — that individual indicators cannot see.
 
@@ -102,27 +106,26 @@ All settings are in **`config.toml`**. This guide explains every section.
 
 ```mermaid
 flowchart TD
-    subgraph HIGH["High Impact 🔴"]
-        CONF["min_confidence<br/>(backtest)"]
+    subgraph HIGH["High Impact"]
         ATR_M["atr_multiplier<br/>(labels)"]
         HORIZON["horizon_bars<br/>(labels)"]
     end
 
-    subgraph MED["Medium Impact 🟡"]
+    subgraph MED["Medium Impact"]
         LGBM_P["LightGBM params<br/>(model)"]
         GRU_P["GRU params<br/>(gru)"]
         USE_OPT["use_optuna<br/>(model)"]
     end
 
-    subgraph LOW["Low Impact 🟢"]
+    subgraph LOW["Low Impact"]
         DATA_P["Date ranges<br/>(data/splitting)"]
         RSI_P["Indicator periods<br/>(features)"]
         PATHS["File paths<br/>(paths)"]
     end
 
-    style HIGH fill:#FEE2E2
-    style MED fill:#FEF3C7
-    style LOW fill:#DCFCE7
+    style HIGH fill:#FEE2E2,stroke:#DC2626,color:#000
+    style MED fill:#FEF3C7,stroke:#D97706,color:#000
+    style LOW fill:#DCFCE7,stroke:#059669,color:#000
 ```
 
 ---
@@ -159,7 +162,7 @@ val_end = "2023-12-31 23:59:59"
 test_start = "2024-01-01"
 test_end = "2026-03-31 23:59:59"
 purge_bars = 25
-embargo_bars = 10
+embargo_bars = 50
 ```
 
 ```mermaid
@@ -175,7 +178,7 @@ gantt
     25-bar gap :2023-01, 1h
 
     section Embargo
-    10-bar gap :2023-01, 1h
+    50-bar gap :2023-01, 3h
 
     section Validation
     Validation data :2023-01, 2023-12
@@ -184,7 +187,7 @@ gantt
     25-bar gap :2024-01, 1h
 
     section Embargo
-    10-bar gap :2024-01, 1h
+    50-bar gap :2024-01, 3h
 
     section Test
     Test data (OOS) :2024-01, 2026-03
@@ -192,9 +195,9 @@ gantt
 
 | Parameter | What to Change | Effect |
 |-----------|---------------|--------|
-| Date ranges | Shift the boundaries | More training data = better model, but less test data = less reliable evaluation. |
+| Date ranges | Shift the boundaries | More training data = better model, but less test data = less reliable evaluation. Current: 5yr train, 1yr val, ~2yr test. |
 | `purge_bars` | Increase for more safety | Removes more data at split boundaries to prevent leakage. Default 25 = 25 hours gap. |
-| `embargo_bars` | Increase for more safety | Extra gap after purge. Default 10 = 10 hours additional gap. |
+| `embargo_bars` | Increase for more safety | Extra gap after purge. Default 50 = ~2 days additional gap (covers 10-bar label horizon). |
 
 > **Tip:** Never make the test period too short. At least 6 months of data is recommended for a meaningful backtest.
 
@@ -233,9 +236,9 @@ min_atr = 0.0001
 
 ```mermaid
 flowchart TD
-    ENTRY["Entry Price"] -->|"atr_multiplier × ATR"| TP["Take Profit ☝️"]
-    ENTRY -->|"atr_multiplier × ATR"| SL["Stop Loss 👇"]
-    ENTRY -->|"horizon_bars"| TIME["Time Limit ⏰"]
+    ENTRY["Entry Price"] -->|"atr_multiplier × ATR"| TP["Take Profit"]
+    ENTRY -->|"atr_multiplier × ATR"| SL["Stop Loss"]
+    ENTRY -->|"horizon_bars"| TIME["Time Limit"]
 
     TP --> |"Hit first"| LONG["Label: +1 (Long)"]
     SL --> |"Hit first"| SHORT["Label: -1 (Short)"]
@@ -262,17 +265,17 @@ flowchart TD
 [model]
 use_optuna = false
 optuna_trials = 50
-num_leaves = 92
-max_depth = 6
-learning_rate = 0.02
-n_estimators = 198
-min_child_samples = 100
-subsample = 0.79
+num_leaves = 48
+max_depth = 5
+learning_rate = 0.03
+n_estimators = 150
+min_child_samples = 150
+subsample = 0.70
 subsample_freq = 5
-feature_fraction = 0.69
-reg_alpha = 0.025
-reg_lambda = 4.6
-early_stopping_rounds = 50
+feature_fraction = 0.60
+reg_alpha = 0.1
+reg_lambda = 5.0
+early_stopping_rounds = 30
 ```
 
 | Parameter | What It Does | What to Try |
@@ -296,19 +299,20 @@ early_stopping_rounds = 50
 
 ```toml
 [gru]
-input_size = 2
+input_size = 4        # log_returns + rsi_14 + atr_14 + macd_hist
 hidden_size = 64
 num_layers = 2
 sequence_length = 24
-dropout = 0.3
+dropout = 0.4
 learning_rate = 0.001
 batch_size = 64
-epochs = 50
+epochs = 30
 patience = 10
 ```
 
 | Parameter | What It Does | What to Try |
 |-----------|-------------|------------|
+| `input_size` | Number of features per bar fed to GRU | Must match GRU input columns (4: log_returns, rsi_14, atr_14, macd_hist). |
 | `hidden_size` | Size of the GRU's internal memory | Larger = more capacity (64 or 128). Smaller = faster training. |
 | `num_layers` | Number of stacked GRU layers | 1-3 is typical. More layers = deeper patterns but slower. |
 | `sequence_length` | How many past bars the GRU looks at | 12-48 is reasonable. More = longer memory but more computation. |
@@ -324,32 +328,26 @@ patience = 10
 
 ```toml
 [backtest]
-initial_capital = 100000.0
-leverage = 100
-risk_per_trade = 0.01
-spread_pips = 2.0
-commission_per_lot = 7.0
-margin_call_level = 0.5
-stop_out_level = 0.2
-min_confidence = 0.686
-min_hold_bars = 3
-atr_stop_multiplier = 1.5
+initial_capital = 10000.0
+leverage = 30                       # 30:1 — affordable for 1 lot with $10k
+spread_ticks = 30                   # 30 ticks = $0.30 (realistic XAUUSD ECN spread)
+slippage_ticks = 3                  # 3 ticks = $0.03 per side (absorbed into spread)
+commission_per_lot = 10.0           # Round-trip commission per lot
+atr_stop_multiplier = 0.75          # ATR multiplier for stop-loss distance
+lots_per_trade = 1.0                # Fixed 1 lot per trade (100 oz XAUUSD)
 ```
 
 | Parameter | What It Does | What to Try |
 |-----------|-------------|------------|
 | `initial_capital` | Starting money | Change to test different account sizes. Does not affect the model. |
-| `leverage` | How much borrowed money you use | 100 = 1:100 leverage. Lower (e.g., 50) = less risk but smaller returns. |
-| `risk_per_trade` | What fraction of capital to risk per trade | 0.01 = 1%. Lower = safer. Higher = more aggressive. |
-| `spread_pips` | Broker's spread cost | 2.0 is typical for XAU/USD. Higher = more realistic for retail brokers. |
-| `commission_per_lot` | Commission per standard lot round-trip | $7 is typical. Higher = more conservative. |
-| `min_confidence` | Minimum prediction confidence to take a trade | **This is the most sensitive parameter.** Lower = more trades but more mistakes. Higher = fewer but better trades. Try 0.60-0.80. |
-| `min_hold_bars` | Minimum hours before exiting a trade | Prevents whipsaw. 3 = at least 3 hours. |
+| `leverage` | How much borrowed money you use | 30 = 1:30 leverage. Higher = more amplification (and risk). |
+| `spread_ticks` | Broker's spread in ticks | 30 ticks = $0.30 for XAU/USD. Higher = more conservative. |
+| `slippage_ticks` | Expected slippage in ticks | Absorbed into spread. Higher = more conservative. |
+| `commission_per_lot` | Commission per standard lot round-trip | $10 is typical. Higher = more conservative. |
 | `atr_stop_multiplier` | Stop-loss distance as a multiple of ATR | Higher = wider stop (more room). Lower = tighter stop (cut losses faster). |
+| `lots_per_trade` | Fixed position size per trade | 1.0 = 1 lot (100 oz). Keeps sizing constant to prevent runaway. |
 
-> **Most impactful parameter:** `min_confidence`. This single knob controls how selective the model is. Start at 0.70 and adjust:
-> - Too few trades? Lower it to 0.60-0.65.
-> - Too many bad trades? Raise it to 0.75-0.80.
+> **Important:** Position sizing is fixed (`lots_per_trade × contract_size`). This prevents the "runaway sizing" problem where compounding equity with leverage creates unrealistic position sizes.
 
 ---
 
@@ -403,8 +401,8 @@ If you are new to machine learning and do not know where to start, follow this o
 ```mermaid
 flowchart TD
     S1["Step 1<br/>Run with defaults<br/>Note the metrics"] --> S2
-    S2["Step 2<br/>Adjust min_confidence<br/>Try 0.60, 0.65, 0.70, 0.75, 0.80"] --> S3
-    S3["Step 3<br/>Adjust atr_multiplier<br/>Try 1.0, 1.5, 2.0, 2.5"] --> S4
+    S2["Step 2<br/>Adjust atr_multiplier<br/>Try 1.0, 1.5, 2.0, 2.5"] --> S3
+    S3["Step 3<br/>Adjust atr_stop_multiplier<br/>Try 0.5, 0.75, 1.0, 1.5"] --> S4
     S4["Step 4<br/>Enable Optuna<br/>use_optuna = true"] --> S5
     S5["Step 5<br/>Adjust GRU<br/>Try sequence_length 12, 24, 36, 48"] --> S6
     S6["Step 6<br/>Run ablation<br/>Confirm hybrid is best"]
@@ -416,11 +414,11 @@ flowchart TD
 ### Step 1: Run with Defaults
 Run the pipeline once with default settings. Note the metrics.
 
-### Step 2: Adjust Confidence Threshold
-Change `min_confidence` in `[backtest]`. Try 0.60, 0.65, 0.70, 0.75, 0.80. See which gives the best Sharpe ratio.
-
-### Step 3: Adjust Label Parameters
+### Step 2: Adjust Label Parameters
 Try different `atr_multiplier` values (1.0, 1.5, 2.0, 2.5). This changes the trading style.
+
+### Step 3: Adjust Stop-Loss Distance
+Change `atr_stop_multiplier` in `[backtest]`. Try 0.5, 0.75, 1.0, 1.5.
 
 ### Step 4: Use Optuna
 Set `use_optuna = true` in `[model]`. This automatically finds the best LightGBM parameters.
@@ -440,5 +438,6 @@ These settings are carefully chosen and rarely need adjustment:
 - `market_tz` — Session calculations depend on this.
 - `purge_bars` / `embargo_bars` — Lowering these risks data leakage.
 - `num_classes` — Must be 3 (Long, Flat, Short).
-- `input_size` — Must match the number of GRU input features (2).
+- `input_size` — Must match the number of GRU input features (4).
 - `correlation_threshold` — Values above 0.95 let too many redundant features through.
+- `lots_per_trade` — Changing this affects margin requirements; ensure leverage supports the lot size.

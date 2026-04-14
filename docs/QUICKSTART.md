@@ -127,9 +127,10 @@ results/XAUUSD_1H_YYYYMMDD_HHMMSS/
 |------|-----------------|
 | `reports/thesis_report.md` | Full written report with metrics and charts |
 | `backtest/backtest_results.json` | Trading metrics (win rate, return, Sharpe, etc.) |
-| `reports/charts/` | All 13 visualization charts |
+| `backtest/backtest_chart.html` | Interactive Bokeh equity chart |
+| `reports/charts/` | All visualization charts (7 charts) |
 | `config/config_snapshot.toml` | The exact config used for this run |
-| `logs/pipeline.log` | Detailed execution log |
+| `logs/pipeline.log` | Detailed execution log (ANSI-stripped) |
 
 ### Quick Look at Results
 

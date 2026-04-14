@@ -23,16 +23,15 @@
 
 ### Evaluation
 
-- [x] **CFD backtest simulator** — Realistic costs (spread, commission, leverage), risk management
-- [x] **Comprehensive metrics** — 20+ trading metrics (Sharpe, Sortino, Calmar, drawdown, etc.)
-- [x] **Ablation study** — Comparison of LightGBM-only, GRU-only, and Combined variants
-- [x] **Confidence gating** — Only trade when prediction confidence exceeds threshold
+- [x] **CFD backtest** — via `backtesting.py` with native margin, spread, commission, ATR stop-loss
+- [x] **Fixed lot position sizing** — Prevents runaway sizing with leverage
+- [x] **Comprehensive metrics** — 20+ trading metrics (Sharpe, Sortino, Calmar, SQN, drawdown, etc.)
+- [x] **Interactive Bokeh chart** — HTML chart with equity, drawdown, and trade markers
 
 ### Visualization
 
 - [x] **Data charts** — Price series, label distribution, feature correlation, feature distributions
 - [x] **Model charts** — Confusion matrix, confidence distribution, feature importance
-- [x] **Backtest charts** — Equity/drawdown, PnL histogram, monthly returns, rolling Sharpe, duration vs PnL
 - [x] **Thesis report** — Auto-generated markdown report with all metrics and charts
 
 ### Infrastructure
