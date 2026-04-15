@@ -129,3 +129,7 @@ AGENTS.md
 
 codedb.snapshot
 .weave/
+coverage/
+htmlcov/
+.tox/
+coverage.xml

@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.config import Config
-from thesis.model import _compute_class_weights
+from thesis.hybrid.lgbm import _compute_class_weights
 
 
 @pytest.fixture

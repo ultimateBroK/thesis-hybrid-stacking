@@ -4,14 +4,14 @@ import logging
 from pathlib import Path
 
 from thesis.config import Config
-from thesis.prepare import prepare_data
+from thesis.agg import prepare_data
 from thesis.features import generate_features
-from thesis.labels import generate_labels
-from thesis.data import split_data
-from thesis.model import train_model
+from thesis.labeling import generate_labels
+from thesis.splitting import split_data
+from thesis.hybrid import train_model
 from thesis.backtest import run_backtest
 from thesis.report import generate_report
-from thesis.visualize import generate_all_charts
+from thesis.plots import generate_all_charts
 
 logger = logging.getLogger("thesis.pipeline")
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from thesis.config import load_config, Config, ModelConfig
+from thesis.config import load_config, Config, LGBMConfig, ModelConfig
 
 
 def test_load_config_default():
@@ -30,7 +30,7 @@ def test_config_sections_exist():
 def test_model_config_flat():
     cfg = load_config(Path(__file__).parent.parent / "config.toml")
     # Model config is a flat dataclass, not a dict
-    assert isinstance(cfg.model, ModelConfig)
+    assert isinstance(cfg.model, LGBMConfig)
     assert cfg.model.num_leaves > 0
     assert cfg.model.learning_rate > 0
 

@@ -24,53 +24,15 @@ import numpy as np
 import polars as pl
 
 from thesis.config import Config
-from thesis.gru_model import (
+from thesis.gru import (
     extract_hidden_states,
     prepare_sequences,
     train_gru,
 )
 
+from thesis.hybrid.lgbm import _EXCLUDE_COLS, _wrap_np, _compute_class_weights
+
 logger = logging.getLogger("thesis.ablation")
-
-# Same exclude set as model.py — label-derived + raw price + GRU-input columns
-_EXCLUDE_COLS = frozenset(
-    [
-        "timestamp",
-        "label",
-        "tp_price",
-        "sl_price",
-        "touched_bar",
-        "open_right",
-        "high_right",
-        "low_right",
-        "close_right",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "avg_spread",
-        "tick_count",
-        "dead_hour",
-        "log_returns",
-    ]
-)
-
-
-def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
-    """Wrap numpy array in DataFrame to preserve feature names for LightGBM."""
-    import pandas as pd
-
-    return pd.DataFrame(X, columns=feature_cols)
-
-
-def _compute_class_weights(y: np.ndarray) -> dict[int, float]:
-    """Compute balanced class weights."""
-    from sklearn.utils.class_weight import compute_class_weight
-
-    classes = np.unique(y)
-    weights = compute_class_weight("balanced", classes=classes, y=y)
-    return {int(c): float(w) for c, w in zip(classes, weights)}
 
 
 def _train_lgbm(

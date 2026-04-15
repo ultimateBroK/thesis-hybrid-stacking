@@ -68,7 +68,7 @@ class LabelsConfig:
 
 
 @dataclass
-class ModelConfig:
+class LGBMConfig:
     """LightGBM parameters."""
 
     # LightGBM
@@ -169,7 +169,7 @@ class Config:
     splitting: SplittingConfig = field(default_factory=SplittingConfig)
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
     labels: LabelsConfig = field(default_factory=LabelsConfig)
-    model: ModelConfig = field(default_factory=ModelConfig)
+    model: LGBMConfig = field(default_factory=LGBMConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     gru: GRUConfig = field(default_factory=GRUConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
@@ -185,7 +185,7 @@ _SECTION_MAP: dict[str, type] = {
     "splitting": SplittingConfig,
     "features": FeaturesConfig,
     "labels": LabelsConfig,
-    "model": ModelConfig,
+    "model": LGBMConfig,
     "backtest": BacktestConfig,
     "gru": GRUConfig,
     "workflow": WorkflowConfig,
@@ -223,3 +223,7 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     Path("models").mkdir(parents=True, exist_ok=True)
 
     return cfg
+
+
+# Backward-compat alias
+ModelConfig = LGBMConfig

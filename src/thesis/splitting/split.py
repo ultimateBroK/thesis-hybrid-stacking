@@ -8,10 +8,10 @@ import logging
 from datetime import timedelta
 from pathlib import Path
 
-import numpy as np
 import polars as pl
 
 from thesis.config import Config
+from .correlation import _drop_correlated
 
 logger = logging.getLogger("thesis.data")
 
@@ -162,40 +162,6 @@ def _apply_purge_embargo(
             pl.col("timestamp") >= test["timestamp"].min() + embargo_delta
         )
 
-    return train, val, test
-
-
-# ---------------------------------------------------------------------------
-# Correlation filtering
-# ---------------------------------------------------------------------------
-
-
-def _drop_correlated(
-    train: pl.DataFrame,
-    val: pl.DataFrame,
-    test: pl.DataFrame,
-    threshold: float,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Drop features with absolute correlation > *threshold* (train-only)."""
-    feature_cols = [c for c in train.columns if c not in _EXCLUDE_COLS]
-    if len(feature_cols) < 2:
-        return train, val, test
-
-    corr = train.select(feature_cols).to_pandas().corr().abs()
-    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
-    to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
-
-    if not to_drop:
-        logger.info("No highly correlated features found (threshold=%.2f)", threshold)
-        return train, val, test
-
-    logger.info("Dropping %d correlated features: %s", len(to_drop), to_drop[:10])
-    train = train.drop(to_drop)
-    val = val.drop(to_drop)
-    test = test.drop(to_drop)
-    logger.info(
-        "Remaining features: %d", len([c for c in feature_cols if c not in to_drop])
-    )
     return train, val, test
 
 

@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from thesis.config import Config
 from thesis.pipeline import run_pipeline
 from thesis.features import generate_features
-from thesis.labels import generate_labels
+from thesis.labeling import generate_labels
 
 
 def create_synthetic_ohlcv(

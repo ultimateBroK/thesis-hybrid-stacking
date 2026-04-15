@@ -32,6 +32,9 @@ test-fast = "pytest tests/ -v -m 'not slow'"
 # Dashboard
 dashboard = "python scripts/dashboard.py"
 
+# Interactive visualization
+streamlit = "PYTHONPATH=src streamlit run src/thesis/dashboard/app.py --server.port 8501"
+
 [dependencies]
 python = ">=3.13,<3.14"
 scikit-learn = ">=1.8.0,<2"
@@ -53,6 +56,9 @@ jupyter = ">=1.1.1,<2"
 aiohttp = ">=3.13.5,<4"
 pytorch = ">=2.10.0,<3"
 bokeh = ">=3.9.0,<4"
+streamlit = ">=1.56.0,<2"
+
 
 [pypi-dependencies]
 backtesting = ">=0.6.5, <0.7"
+streamlit-echarts = { version = ">=0.6.0, <0.7", extras = ["pyecharts"] }

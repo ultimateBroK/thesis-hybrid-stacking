@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.config import Config
-from thesis.data import _apply_purge_embargo, _drop_correlated, _log_distribution
+from thesis.splitting import _apply_purge_embargo, _drop_correlated, _log_distribution
 
 
 def create_synthetic_labeled_data(
