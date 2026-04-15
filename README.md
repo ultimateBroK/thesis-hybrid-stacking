@@ -77,9 +77,11 @@ The hybrid model works in two steps:
 | `pixi run workflow` | Run full pipeline (cached) |
 | `pixi run force` | Force re-run all stages |
 | `pixi run ablation` | Pipeline + model comparison study |
+| `pixi run streamlit` | Interactive Streamlit dashboard (:8501) |
 | `pixi run test` | Run tests with coverage |
 | `pixi run lint` | Check code style |
 | `pixi run format` | Auto-format code |
+| `pixi run pre-commit` | Lint + format + fast tests |
 
 ---
 
@@ -93,6 +95,7 @@ The hybrid model works in two steps:
 | Model | GRU (64-dim) → LightGBM (75 features) |
 | Features | 11 technical indicators + 64 GRU hidden states |
 | Labels | Triple Barrier (Long / Flat / Short) |
+| Charts | 12 static (matplotlib) + interactive (Streamlit/ECharts) |
 | Backtest | CFD with spread, commission, leverage, risk management |
 | Python | 3.13 (Pixi) |
 
@@ -104,19 +107,24 @@ The hybrid model works in two steps:
 thesis/
 ├── config.toml              # All settings in one file
 ├── main.py                  # Entry point (CLI)
+├── scripts/
+│   └── data_download.py     # Tick data downloader
 ├── src/thesis/              # Source code
-│   ├── config.py            # Loads config.toml
-│   ├── prepare.py           # Tick data → OHLCV bars
-│   ├── features.py          # 11 technical indicators
-│   ├── labels.py            # Triple Barrier labels
-│   ├── data.py              # Train/val/test splitting
-│   ├── gru_model.py         # GRU neural network
-│   ├── model.py             # Hybrid training (GRU + LightGBM)
-│   ├── pipeline.py          # Orchestrates all stages
-│   ├── backtest.py          # CFD trading simulator
-│   ├── ablation.py          # Compare model variants
-│   ├── report.py            # Markdown report generator
-│   └── visualize.py         # 13 charts
+│   ├── config.py            # TOML config loader + dataclasses
+│   ├── pipeline.py          # Stage orchestration (0–6)
+│   ├── ablation.py          # Model comparison study
+│   ├── ui.py                # UI utilities
+│   ├── agg/                 # Tick → OHLCV aggregation (Stage 0)
+│   ├── features/            # Technical indicators (Stage 1)
+│   ├── labeling/            # Triple-barrier labeling (Stage 2)
+│   ├── splitting/           # Train/val/test split + correlation (Stage 3)
+│   ├── gru/                 # GRU feature extractor (arch, dataset, train, inference)
+│   ├── hybrid/              # GRU + LightGBM hybrid training (Stage 4)
+│   ├── backtest/            # CFD trading simulation (Stage 5)
+│   ├── report/              # Report generation (Stage 6)
+│   ├── plots/               # Static matplotlib/seaborn charts (12 total)
+│   ├── charts/              # Interactive ECharts / pyecharts builders
+│   └── dashboard/           # Streamlit dashboard app
 ├── tests/                   # Test suite
 ├── data/raw/XAUUSD/         # Raw tick data
 ├── data/processed/          # Generated parquet files

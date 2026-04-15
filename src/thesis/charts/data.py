@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -56,14 +57,17 @@ def _get_feature_cols(df: pl.DataFrame) -> list[str]:
 # --- Data Loading -------------------------------------------------------------
 
 
-def load_session_data(config: Config) -> dict[str, pl.DataFrame | dict | None]:
+def load_session_data(config: Config) -> dict[str, Any]:
     """Load all parquet/json artifacts needed for charts.
 
     Returns dict with keys: ohlcv, features, labels, predictions,
-    backtest_results, feature_importance, metrics, trades.
+    backtest_results, feature_importance, metrics, trades, session_dir.
     Missing files return None values.
     """
-    data: dict[str, pl.DataFrame | dict | None] = {}
+    data: dict[str, Any] = {}
+
+    # Session dir (for download paths)
+    data["session_dir"] = config.paths.session_dir
 
     # OHLCV
     ohlcv_path = Path(config.paths.ohlcv)

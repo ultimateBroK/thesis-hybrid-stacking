@@ -343,7 +343,7 @@ def test_train_gru_returns_correct_shapes(
     train_df = synthetic_df.slice(0, split)
     val_df = synthetic_df.slice(split)
 
-    model, _classifier, train_hidden, val_hidden = train_gru(
+    model, _classifier, train_hidden, val_hidden, history = train_gru(
         gru_config, train_df, val_df
     )
 
@@ -367,7 +367,9 @@ def test_train_gru_hidden_states_finite(
     train_df = synthetic_df.slice(0, split)
     val_df = synthetic_df.slice(split)
 
-    _, _classifier, train_hidden, val_hidden = train_gru(gru_config, train_df, val_df)
+    _, _classifier, train_hidden, val_hidden, history = train_gru(
+        gru_config, train_df, val_df
+    )
 
     assert np.isfinite(train_hidden).all()
     assert np.isfinite(val_hidden).all()

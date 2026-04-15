@@ -42,7 +42,7 @@ class SplittingConfig:
     test_start: str = "2024-01-01"
     test_end: str = "2026-03-31 23:59:59"
     purge_bars: int = 25
-    embargo_bars: int = 10
+    embargo_bars: int = 50
 
 
 @dataclass
@@ -72,7 +72,7 @@ class LGBMConfig:
     """LightGBM parameters."""
 
     # LightGBM
-    use_optuna: bool = False
+    use_optuna: bool = True
     optuna_trials: int = 50
     optuna_timeout: int = 3600
     num_leaves: int = 48
@@ -99,7 +99,9 @@ class BacktestConfig:
     commission_per_lot: float = 10.0  # → callable commission
     atr_stop_multiplier: float = 0.75
     lots_per_trade: float = 1.0  # fixed lot size per trade
-    confidence_threshold: float = 0.0  # min predicted probability to act (0 = disabled)
+    confidence_threshold: float = (
+        0.70  # min predicted probability to act (0 = disabled)
+    )
     contract_size: int = 100
     tick_size: float = 0.01
 
@@ -108,14 +110,14 @@ class BacktestConfig:
 class GRUConfig:
     """GRU feature extractor parameters."""
 
-    input_size: int = 2  # log_returns + rsi_14
+    input_size: int = 4  # log_returns + rsi_14 + atr_14 + macd_hist
     hidden_size: int = 64
     num_layers: int = 2
     sequence_length: int = 24
-    dropout: float = 0.3
+    dropout: float = 0.4
     learning_rate: float = 0.001
     batch_size: int = 64
-    epochs: int = 50
+    epochs: int = 30
     patience: int = 10
 
 

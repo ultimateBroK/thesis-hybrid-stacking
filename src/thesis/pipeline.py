@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 from thesis.config import Config
+from thesis.ui import console, stage_header, stage_skip, STAGE_LABELS
 from thesis.agg import prepare_data
 from thesis.features import generate_features
 from thesis.labeling import generate_labels
@@ -14,36 +15,6 @@ from thesis.report import generate_report
 from thesis.plots import generate_all_charts
 
 logger = logging.getLogger("thesis.pipeline")
-
-# ---------------------------------------------------------------------------
-# ANSI color codes for stage identification
-# ---------------------------------------------------------------------------
-
-_BOLD = "\033[1m"
-_RESET = "\033[0m"
-
-_STAGE_COLORS: dict[str, str] = {
-    "prepare": "\033[94m",  # Blue
-    "features": "\033[92m",  # Green
-    "labels": "\033[93m",  # Yellow
-    "split": "\033[96m",  # Cyan
-    "train": "\033[95m",  # Magenta
-    "backtest": "\033[91m",  # Red
-    "report": "\033[97m",  # White/Bright
-}
-
-_SKIP_COLOR = "\033[90m"  # Dark gray
-
-
-def _stage_log(stage_key: str, message: str) -> None:
-    """Log a stage message with color coding."""
-    color = _STAGE_COLORS.get(stage_key, "")
-    logger.info("%s%s%s", f"{_BOLD}{color}▶ {message}{_RESET}", "", "")
-
-
-def _skip_log(message: str) -> None:
-    """Log a skip message in gray."""
-    logger.info("%s⊘ %s%s", _SKIP_COLOR, message, _RESET)
 
 
 def run_pipeline(config: Config) -> None:
@@ -67,71 +38,73 @@ def run_pipeline(config: Config) -> None:
     if config.workflow.run_data_pipeline:
         ohlcv_path = Path(config.paths.ohlcv)
         if force or not ohlcv_path.exists():
-            _stage_log("prepare", "STAGE 0/6: Data Preparation (Tick → OHLCV)")
+            stage_header(0)
             prepare_data(config)
         else:
-            _skip_log(f"SKIP: OHLCV already exists ({ohlcv_path})")
+            stage_skip(0, f"OHLCV exists ({ohlcv_path.name})")
     else:
-        _skip_log("SKIP: Data preparation disabled")
+        stage_skip(0, "disabled")
 
     # Stage 1: Features
     if config.workflow.run_feature_engineering:
         features_path = Path(config.paths.features)
         if force or not features_path.exists():
-            _stage_log("features", "STAGE 1/6: Feature Engineering")
+            stage_header(1)
             generate_features(config)
         else:
-            _skip_log(f"SKIP: Features already exist ({features_path})")
+            stage_skip(1, f"Features exist ({features_path.name})")
     else:
-        _skip_log("SKIP: Feature engineering disabled")
+        stage_skip(1, "disabled")
 
     # Stage 2: Labels
     if config.workflow.run_label_generation:
         labels_path = Path(config.paths.labels)
         if force or not labels_path.exists():
-            _stage_log("labels", "STAGE 2/6: Triple-Barrier Labeling")
+            stage_header(2)
             generate_labels(config)
         else:
-            _skip_log(f"SKIP: Labels already exist ({labels_path})")
+            stage_skip(2, f"Labels exist ({labels_path.name})")
     else:
-        _skip_log("SKIP: Label generation disabled")
+        stage_skip(2, "disabled")
 
     # Stage 3: Split
     if config.workflow.run_data_splitting:
         train_path = Path(config.paths.train_data)
         if force or not train_path.exists():
-            _stage_log("split", "STAGE 3/6: Data Splitting (Train/Val/Test)")
+            stage_header(3)
             split_data(config)
         else:
-            _skip_log(f"SKIP: Splits already exist ({train_path})")
+            stage_skip(3, f"Splits exist ({train_path.name})")
     else:
-        _skip_log("SKIP: Data splitting disabled")
+        stage_skip(3, "disabled")
 
     # Stage 4: Model training
     if config.workflow.run_model_training:
         model_path = Path(config.paths.model)
         preds_path = Path(config.paths.predictions)
         if force or not model_path.exists() or not preds_path.exists():
-            _stage_log("train", "STAGE 4/6: Model Training (GRU + LightGBM)")
+            stage_header(4)
             train_model(config)
         else:
-            _skip_log(f"SKIP: Model already exists ({model_path})")
+            stage_skip(4, f"Model exists ({model_path.name})")
     else:
-        _skip_log("SKIP: Model training disabled")
+        stage_skip(4, "disabled")
 
     # Stage 5: Backtest
     if config.workflow.run_backtest:
-        _stage_log("backtest", "STAGE 5/6: Backtest (CFD Simulation)")
+        stage_header(5)
         run_backtest(config)
     else:
-        _skip_log("SKIP: Backtest disabled")
+        stage_skip(5, "disabled")
 
     # Stage 6: Report
     if config.workflow.run_reporting:
-        _stage_log("report", "STAGE 6/6: Report Generation")
+        stage_header(6)
         generate_report(config)
         generate_all_charts(config)
     else:
-        _skip_log("SKIP: Reporting disabled")
+        stage_skip(6, "disabled")
 
-    logger.info("✓ Pipeline complete.")
+    console.print()
+    console.rule("[bold green]✓ Pipeline Complete[/]")
+    console.print()

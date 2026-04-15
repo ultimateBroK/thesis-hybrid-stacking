@@ -1,9 +1,18 @@
 """LightGBM utilities shared between hybrid training and ablation."""
 
 import logging
+import time
 from typing import Any
 
 import numpy as np
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from thesis.config import Config
 
@@ -63,6 +72,16 @@ def _train_fixed(
     import lightgbm as lgb
 
     m = config.model
+    logger.info(
+        "LightGBM: leaves=%d depth=%d lr=%.4f n_est=%d",
+        m.num_leaves,
+        m.max_depth,
+        m.learning_rate,
+        m.n_estimators,
+    )
+
+    start_time = time.perf_counter()
+
     model = lgb.LGBMClassifier(
         num_leaves=m.num_leaves,
         max_depth=m.max_depth,
@@ -81,13 +100,47 @@ def _train_fixed(
         n_jobs=config.workflow.n_jobs,
         verbose=-1,
     )
-    model.fit(
-        _wrap_np(X_train, feature_cols),
-        y_train,
-        eval_set=[(_wrap_np(X_val, feature_cols), y_val)],
-        callbacks=[lgb.early_stopping(m.early_stopping_rounds, verbose=False)],
+
+    # Rich progress bar over boosting iterations
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold magenta]LightGBM boosting"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
+        TimeElapsedColumn(),
+        transient=False,
     )
-    logger.info("Best iteration: %d", model.best_iteration_)
+
+    with progress:
+        task = progress.add_task("iter", total=m.n_estimators, v_loss=0.0)
+
+        def _progress_cb(env: Any) -> None:
+            progress.update(
+                task,
+                advance=1,
+                v_loss=env.evaluation_result_list[0][2]
+                if env.evaluation_result_list
+                else 0.0,
+            )
+
+        model.fit(
+            _wrap_np(X_train, feature_cols),
+            y_train,
+            eval_set=[(_wrap_np(X_val, feature_cols), y_val)],
+            callbacks=[
+                lgb.early_stopping(m.early_stopping_rounds, verbose=False),
+                _progress_cb,
+            ],
+        )
+
+    train_time = time.perf_counter() - start_time
+    logger.info(
+        "LightGBM done: best_iter=%d (%.1fs)",
+        model.best_iteration_,
+        train_time,
+    )
     return model
 
 
@@ -146,15 +199,48 @@ def _train_optuna(
     study = optuna.create_study(
         direction="maximize", sampler=optuna.samplers.TPESampler(seed=seed)
     )
-    study.optimize(
-        objective,
-        n_trials=config.model.optuna_trials,
-        timeout=config.model.optuna_timeout,
+
+    n_trials = config.model.optuna_trials
+
+    # Rich progress for Optuna trials
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold yellow]Optuna tuning"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TextColumn("[green]best_F1={task.fields[best_f1]:.4f}"),
+        TimeElapsedColumn(),
+        transient=False,
     )
 
-    logger.info("Optuna best F1: %.4f", study.best_value)
-    logger.info("Optuna best params: %s", study.best_params)
+    best_f1 = 0.0
 
+    with progress:
+        task = progress.add_task("trials", total=n_trials, best_f1=0.0)
+
+        def _optuna_cb(
+            study: optuna.study.Study, trial: optuna.trial.FrozenTrial
+        ) -> None:
+            nonlocal best_f1
+            if study.best_value > best_f1:
+                best_f1 = study.best_value
+            progress.update(task, advance=1, best_f1=best_f1)
+
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            timeout=config.model.optuna_timeout,
+            callbacks=[_optuna_cb],
+        )
+
+    logger.info(
+        "Optuna done: best_F1=%.4f (trial #%d)",
+        study.best_value,
+        study.best_trial.number,
+    )
+
+    # Final model with best params
     best = study.best_params
     model = lgb.LGBMClassifier(
         **best,
@@ -165,12 +251,40 @@ def _train_optuna(
         n_jobs=-1,
         verbose=-1,
     )
-    model.fit(
-        _wrap_np(X_train, feature_cols),
-        y_train,
-        eval_set=[(_wrap_np(X_val, feature_cols), y_val)],
-        callbacks=[
-            lgb.early_stopping(config.model.early_stopping_rounds, verbose=False)
-        ],
+
+    n_est = best.get("n_estimators", 500)
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold magenta]Final LightGBM"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
+        TimeElapsedColumn(),
+        transient=False,
     )
+
+    with progress:
+        task = progress.add_task("iter", total=n_est, v_loss=0.0)
+
+        def _progress_cb(env: Any) -> None:
+            progress.update(
+                task,
+                advance=1,
+                v_loss=env.evaluation_result_list[0][2]
+                if env.evaluation_result_list
+                else 0.0,
+            )
+
+        model.fit(
+            _wrap_np(X_train, feature_cols),
+            y_train,
+            eval_set=[(_wrap_np(X_val, feature_cols), y_val)],
+            callbacks=[
+                lgb.early_stopping(config.model.early_stopping_rounds, verbose=False),
+                _progress_cb,
+            ],
+        )
+
+    logger.info("Final model: best_iteration=%d", model.best_iteration_)
     return model

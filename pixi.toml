@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [tasks]
 # Data ingestion
-data = "python data_download.py --symbol XAUUSD --start-year 2018"
+data = "python scripts/data_download.py --symbol XAUUSD --start-year 2018"
 
 # Pipeline execution
 workflow = "python main.py"
@@ -28,9 +28,6 @@ test = "pytest tests/ -v --cov=src/thesis --cov-fail-under=70"
 test-unit = "pytest tests/unit/ -v -m unit"
 test-integration = "pytest tests/integration/ -v -m integration"
 test-fast = "pytest tests/ -v -m 'not slow'"
-
-# Dashboard
-dashboard = "python scripts/dashboard.py"
 
 # Interactive visualization
 streamlit = "PYTHONPATH=src streamlit run src/thesis/dashboard/app.py --server.port 8501"
@@ -57,6 +54,7 @@ aiohttp = ">=3.13.5,<4"
 pytorch = ">=2.10.0,<3"
 bokeh = ">=3.9.0,<4"
 streamlit = ">=1.56.0,<2"
+rich = ">=15.0.0,<16"
 
 
 [pypi-dependencies]

@@ -1,12 +1,21 @@
 """GRU model training loop."""
 
 import logging
+import time
 from typing import Any
 
 import numpy as np
 import polars as pl
 import torch
 import torch.nn as nn
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from torch.utils.data import DataLoader
 
 from thesis.config import Config
@@ -21,7 +30,7 @@ def train_gru(
     config: Config,
     train_df: pl.DataFrame,
     val_df: pl.DataFrame,
-) -> tuple[GRUExtractor, nn.Linear, np.ndarray, np.ndarray]:
+) -> tuple[GRUExtractor, nn.Linear, np.ndarray, np.ndarray, list[dict[str, float]]]:
     """Train GRU feature extractor and produce hidden states for LightGBM.
 
     The GRU is trained as a classifier on the labels. After training,
@@ -34,7 +43,8 @@ def train_gru(
         val_df: Validation DataFrame.
 
     Returns:
-        Tuple of (trained_model, classifier_head, train_hidden, val_hidden).
+        Tuple of (trained_model, classifier_head, train_hidden, val_hidden,
+            history).
     """
     gru_cfg = config.gru
     gru_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
@@ -50,13 +60,6 @@ def train_gru(
     )
     val_seq, val_labels, _ = prepare_sequences(
         val_df, gru_cols, gru_cfg.sequence_length
-    )
-
-    logger.info(
-        "GRU sequences — train: %d, val: %d (seq_len=%d)",
-        len(train_seq),
-        len(val_seq),
-        gru_cfg.sequence_length,
     )
 
     # Remap labels from {-1, 0, 1} to {0, 1, 2} for PyTorch CrossEntropyLoss
@@ -95,6 +98,15 @@ def train_gru(
     num_classes = config.labels.num_classes
     classifier = nn.Linear(gru_cfg.hidden_size, num_classes).to(device)
 
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info(
+        "GRU: %d params, %d layers, hidden=%d, device=%s",
+        total_params,
+        gru_cfg.num_layers,
+        gru_cfg.hidden_size,
+        device,
+    )
+
     # Optimizer
     optimizer = torch.optim.Adam(
         list(model.parameters()) + list(classifier.parameters()),
@@ -104,44 +116,46 @@ def train_gru(
 
     # Training loop with early stopping
     best_val_loss = float("inf")
+    best_epoch = 0
     best_state: dict[str, Any] | None = None
     patience_counter = 0
+    history: list[dict[str, float]] = []
+    stage_start = time.perf_counter()
 
-    for epoch in range(gru_cfg.epochs):
-        # Train
-        model.train()
-        classifier.train()
-        train_loss = 0.0
-        train_correct = 0
-        train_total = 0
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]GRU training"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("•"),
+        TextColumn("[cyan]t_loss={task.fields[t_loss]:.4f}"),
+        TextColumn("[green]t_acc={task.fields[t_acc]:.3f}"),
+        TextColumn("•"),
+        TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
+        TextColumn("[green]v_acc={task.fields[v_acc]:.3f}"),
+        TimeElapsedColumn(),
+        transient=False,
+    )
 
-        for batch_x, batch_y in train_loader:
-            batch_x = batch_x.to(device)
-            batch_y = batch_y.to(device)
+    with progress:
+        task = progress.add_task(
+            "epochs",
+            total=gru_cfg.epochs,
+            t_loss=0.0,
+            t_acc=0.0,
+            v_loss=0.0,
+            v_acc=0.0,
+        )
 
-            hidden = model(batch_x)
-            logits = classifier(hidden)
+        for epoch in range(gru_cfg.epochs):
+            # Train
+            model.train()
+            classifier.train()
+            train_loss = 0.0
+            train_correct = 0
+            train_total = 0
 
-            loss = criterion(logits, batch_y)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            train_loss += loss.item() * len(batch_x)
-            train_correct += (logits.argmax(dim=1) == batch_y).sum().item()
-            train_total += len(batch_y)
-
-        train_loss /= train_total
-
-        # Validate
-        model.eval()
-        classifier.eval()
-        val_loss = 0.0
-        val_correct = 0
-        val_total = 0
-
-        with torch.no_grad():
-            for batch_x, batch_y in val_loader:
+            for batch_x, batch_y in train_loader:
                 batch_x = batch_x.to(device)
                 batch_y = batch_y.to(device)
 
@@ -149,43 +163,90 @@ def train_gru(
                 logits = classifier(hidden)
 
                 loss = criterion(logits, batch_y)
-                val_loss += loss.item() * len(batch_x)
-                val_correct += (logits.argmax(dim=1) == batch_y).sum().item()
-                val_total += len(batch_y)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-        val_loss /= val_total
-        val_acc = val_correct / val_total
+                train_loss += loss.item() * len(batch_x)
+                train_correct += (logits.argmax(dim=1) == batch_y).sum().item()
+                train_total += len(batch_y)
 
-        if (epoch + 1) % 5 == 0 or epoch == 0:
+            train_loss /= train_total
+
+            # Validate
+            model.eval()
+            classifier.eval()
+            val_loss = 0.0
+            val_correct = 0
+            val_total = 0
+
+            with torch.no_grad():
+                for batch_x, batch_y in val_loader:
+                    batch_x = batch_x.to(device)
+                    batch_y = batch_y.to(device)
+
+                    hidden = model(batch_x)
+                    logits = classifier(hidden)
+
+                    loss = criterion(logits, batch_y)
+                    val_loss += loss.item() * len(batch_x)
+                    val_correct += (logits.argmax(dim=1) == batch_y).sum().item()
+                    val_total += len(batch_y)
+
+            val_loss /= val_total
+            val_acc = val_correct / val_total
             train_acc = train_correct / train_total
-            logger.info(
-                "Epoch %d/%d — train_loss: %.4f train_acc: %.3f | "
-                "val_loss: %.4f val_acc: %.3f",
-                epoch + 1,
-                gru_cfg.epochs,
-                train_loss,
-                train_acc,
-                val_loss,
-                val_acc,
+
+            history.append(
+                {
+                    "epoch": epoch + 1,
+                    "train_loss": round(train_loss, 4),
+                    "train_acc": round(train_acc, 4),
+                    "val_loss": round(val_loss, 4),
+                    "val_acc": round(val_acc, 4),
+                }
             )
 
-        # Early stopping
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_state = {
-                "model": model.state_dict(),
-                "classifier": classifier.state_dict(),
-            }
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            if patience_counter >= gru_cfg.patience:
-                logger.info(
-                    "Early stopping at epoch %d (patience=%d)",
-                    epoch + 1,
-                    gru_cfg.patience,
-                )
-                break
+            progress.update(
+                task,
+                advance=1,
+                t_loss=train_loss,
+                t_acc=train_acc,
+                v_loss=val_loss,
+                v_acc=val_acc,
+            )
+
+            # Early stopping
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_epoch = epoch + 1
+                best_state = {
+                    "model": model.state_dict(),
+                    "classifier": classifier.state_dict(),
+                }
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= gru_cfg.patience:
+                    logger.info(
+                        "Early stop at epoch %d (patience=%d)",
+                        epoch + 1,
+                        gru_cfg.patience,
+                    )
+                    break
+
+    # Summary
+    total_time = time.perf_counter() - stage_start
+    best_val_acc = history[best_epoch - 1]["val_acc"] if history else 0.0
+    logger.info(
+        "GRU done: %d/%d epochs, best=e%d v_loss=%.4f v_acc=%.3f (%.1fs)",
+        len(history),
+        gru_cfg.epochs,
+        best_epoch,
+        best_val_loss,
+        best_val_acc,
+        total_time,
+    )
 
     # Restore best model
     if best_state is not None:
@@ -197,9 +258,7 @@ def train_gru(
     val_hidden = extract_hidden_states(model, val_seq, gru_cfg.batch_size, device)
 
     logger.info(
-        "GRU hidden states — train: %s, val: %s",
-        train_hidden.shape,
-        val_hidden.shape,
+        "GRU hidden states: train=%s, val=%s", train_hidden.shape, val_hidden.shape
     )
 
-    return model, classifier, train_hidden, val_hidden
+    return model, classifier, train_hidden, val_hidden, history

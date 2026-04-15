@@ -53,7 +53,7 @@ min_atr = 0.0001
 # MODEL — LightGBM (receives GRU hidden states + static features)
 # =============================================================================
 [model]
-use_optuna = false
+use_optuna = true
 optuna_trials = 50
 optuna_timeout = 3600
 num_leaves = 48

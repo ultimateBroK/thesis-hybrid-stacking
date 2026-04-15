@@ -215,7 +215,7 @@ def run_ablation(config: Config) -> None:
     # Shared: Train GRU once (used by variants B and C)
     # ==================================================================
     logger.info("=== Training GRU (shared by variants B + C) ===")
-    gru_model, gru_classifier, train_hidden, val_hidden = train_gru(
+    gru_model, gru_classifier, train_hidden, val_hidden, _gru_history = train_gru(
         config, train_df, val_df
     )
 

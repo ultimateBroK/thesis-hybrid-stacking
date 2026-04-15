@@ -39,43 +39,43 @@ flowchart LR
 
 ## Pipeline Stages
 
-The pipeline has **7 stages**. Each stage reads data, processes it, and saves the result.
+The pipeline has **7 stages** (0–6). Each stage reads data, processes it, and saves the result.
 You can run all stages at once or run them one by one.
 
 ```mermaid
 flowchart TD
-    S1["<b>Stage 1</b><br/>Prepare<br/><i>Tick → OHLCV</i>"]
-    S2["<b>Stage 2</b><br/>Features<br/><i>11 indicators</i>"]
-    S3["<b>Stage 3</b><br/>Labels<br/><i>Triple Barrier</i>"]
-    S4["<b>Stage 4</b><br/>Split<br/><i>Train/Val/Test</i>"]
-    S5["<b>Stage 5</b><br/>Train<br/><i>GRU + LightGBM</i>"]
-    S6["<b>Stage 6</b><br/>Backtest<br/><i>CFD Simulation</i>"]
-    S7["<b>Stage 7</b><br/>Report<br/><i>Charts + Markdown</i>"]
+    S0["<b>Stage 0</b><br/>Prepare<br/><i>Tick → OHLCV</i>"]
+    S1["<b>Stage 1</b><br/>Features<br/><i>11 indicators</i>"]
+    S2["<b>Stage 2</b><br/>Labels<br/><i>Triple Barrier</i>"]
+    S3["<b>Stage 3</b><br/>Split<br/><i>Train/Val/Test</i>"]
+    S4["<b>Stage 4</b><br/>Train<br/><i>GRU + LightGBM</i>"]
+    S5["<b>Stage 5</b><br/>Backtest<br/><i>CFD Simulation</i>"]
+    S6["<b>Stage 6</b><br/>Report<br/><i>Charts + Markdown</i>"]
 
-    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+    S0 --> S1 --> S2 --> S3 --> S4 --> S5 --> S6
 
+    style S0 fill:#2563EB,color:#fff
     style S1 fill:#2563EB,color:#fff
     style S2 fill:#2563EB,color:#fff
     style S3 fill:#2563EB,color:#fff
-    style S4 fill:#2563EB,color:#fff
-    style S5 fill:#7C3AED,color:#fff
+    style S4 fill:#7C3AED,color:#fff
+    style S5 fill:#059669,color:#fff
     style S6 fill:#059669,color:#fff
-    style S7 fill:#059669,color:#fff
 ```
 
 | # | Stage | What It Does | Input | Output |
 |---|-------|-------------|-------|--------|
-| 1 | **Prepare** | Convert raw tick data into 1-hour candle (OHLCV) bars | Raw parquet ticks | `ohlcv.parquet` |
-| 2 | **Features** | Calculate 11 technical indicators (RSI, ATR, MACD, etc.) | `ohlcv.parquet` | `features.parquet` |
-| 3 | **Labels** | Generate buy/sell/hold labels using the Triple Barrier method | `features.parquet` | `labels.parquet` |
-| 4 | **Split** | Split data into train, validation, and test sets with anti-leakage protection | `labels.parquet` | `train/val/test.parquet` |
-| 5 | **Train** | Train GRU, then train LightGBM on combined features | Split parquets | Model files + predictions |
-| 6 | **Backtest** | Simulate CFD trading with spread, commission, and ATR stop-loss via `backtesting.py` | Test data + predictions | `backtest_results.json` |
-| 7 | **Report** | Generate charts and a summary markdown report | All outputs | Charts + `thesis_report.md` |
+| 0 | **Prepare** | Convert raw tick data into 1-hour candle (OHLCV) bars | Raw parquet ticks | `ohlcv.parquet` |
+| 1 | **Features** | Calculate 11 technical indicators (RSI, ATR, MACD, etc.) | `ohlcv.parquet` | `features.parquet` |
+| 2 | **Labels** | Generate buy/sell/hold labels using the Triple Barrier method | `features.parquet` | `labels.parquet` |
+| 3 | **Split** | Split data into train, validation, and test sets with anti-leakage protection | `labels.parquet` | `train/val/test.parquet` |
+| 4 | **Train** | Train GRU, then train LightGBM on combined features | Split parquets | Model files + predictions |
+| 5 | **Backtest** | Simulate CFD trading with spread, commission, and ATR stop-loss via `backtesting.py` | Test data + predictions | `backtest_results.json` |
+| 6 | **Report** | Generate charts and a summary markdown report | All outputs | Charts + `thesis_report.md` |
 
 ---
 
-## The Hybrid Model (Stage 5)
+## The Hybrid Model (Stage 4)
 
 This is the core innovation. Here is how it works step by step:
 
@@ -164,18 +164,45 @@ thesis/
 ├── pixi.toml                # Package manager config
 │
 ├── src/thesis/              # Source code
-│   ├── config.py            # Loads config.toml
-│   ├── prepare.py           # Tick data → OHLCV bars
-│   ├── features.py          # 11 technical indicators
-│   ├── labels.py            # Triple Barrier labels
-│   ├── data.py              # Train/val/test splitting
-│   ├── gru_model.py         # GRU neural network
-│   ├── model.py             # Hybrid training (GRU + LightGBM)
-│   ├── pipeline.py          # Orchestrates all stages
-│   ├── backtest.py          # CFD backtest via backtesting.py
-│   ├── ablation.py          # Compare model variants
-│   ├── report.py            # Markdown report generator
-│   └── visualize.py         # Data & model charts
+│   ├── config.py            # TOML config loader + dataclasses
+│   ├── pipeline.py          # Stage orchestration (0–6)
+│   ├── ablation.py          # Model comparison study
+│   ├── ui.py                # UI utilities
+│   ├── agg/                 # Tick → OHLCV aggregation (Stage 0)
+│   │   └── ohlcv.py
+│   ├── features/            # Technical indicators (Stage 1)
+│   │   └── indicators.py
+│   ├── labeling/            # Triple-barrier labeling (Stage 2)
+│   │   └── triple_barrier.py
+│   ├── splitting/           # Train/val/test split + correlation (Stage 3)
+│   │   ├── split.py
+│   │   └── correlation.py
+│   ├── gru/                 # GRU feature extractor
+│   │   ├── arch.py
+│   │   ├── dataset.py
+│   │   ├── train.py
+│   │   └── inference.py
+│   ├── hybrid/              # GRU + LightGBM hybrid training (Stage 4)
+│   │   ├── train.py
+│   │   ├── lgbm.py
+│   │   └── interpret.py
+│   ├── backtest/            # CFD trading simulation (Stage 5)
+│   │   └── strategy.py
+│   ├── report/              # Report generation (Stage 6)
+│   │   ├── main.py
+│   │   ├── builder.py
+│   │   └── stats.py
+│   ├── plots/               # Static matplotlib/seaborn charts (12 total)
+│   │   ├── data.py
+│   │   ├── model.py
+│   │   └── backtest.py
+│   ├── charts/              # Interactive ECharts/pyecharts (Streamlit)
+│   │   ├── data.py
+│   │   ├── data_charts.py
+│   │   ├── model_charts.py
+│   │   └── backtest_charts.py
+│   └── dashboard/           # Streamlit dashboard
+│       └── app.py
 │
 ├── tests/                   # Test suite
 │   ├── conftest.py
@@ -191,7 +218,7 @@ thesis/
 │       ├── config/          # Config snapshot
 │       ├── models/          # Saved models (LightGBM + GRU)
 │       ├── predictions/     # Predictions (parquet)
-│       ├── reports/         # Report + charts
+│       ├── reports/         # Report + charts (12 charts)
 │       ├── backtest/        # Trading results + Bokeh chart
 │       └── logs/            # Pipeline log (ANSI-stripped)
 │
@@ -258,7 +285,7 @@ flowchart TD
     SESSION --> MOD["models/<br/>lightgbm_model.pkl<br/>gru_model.pt"]
     SESSION --> PRED["predictions/<br/>final_predictions.parquet"]
     SESSION --> REP["reports/<br/>thesis_report.md<br/>charts/"]
-    SESSION --> BT["backtest/<br/>backtest_results.json<br/>backtest_chart.html"]
+    SESSION --> BT["backtest/<br/>backtest_results.json<br/>trades_detail.csv<br/>equity_curve.csv<br/>backtest_chart.html"]
     SESSION --> LOG["logs/<br/>pipeline.log"]
 
     style SESSION fill:#2563EB,color:#fff

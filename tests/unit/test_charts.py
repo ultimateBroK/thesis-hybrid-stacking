@@ -142,12 +142,41 @@ def test_excluded_feature_cols_is_frozenset() -> None:
 
 
 @pytest.mark.unit
-def test_build_candlestick_chart(sample_ohlcv: pl.DataFrame, sample_config: Config) -> None:
-    chart = build_candlestick_chart(sample_ohlcv, sample_config)
+def test_build_candlestick_chart(
+    sample_ohlcv: pl.DataFrame, sample_config: Config
+) -> None:
+    chart, info = build_candlestick_chart(sample_ohlcv, sample_config)
     assert isinstance(chart, Grid)
+    assert isinstance(info, dict)
+    assert "total_bars" in info
+    assert "displayed_bars" in info
+    assert "downsampled" in info
     opts = chart.dump_options()
     assert isinstance(opts, str)
     assert "candlestick" in opts or "kline" in opts.lower() or "series" in opts
+
+
+@pytest.mark.unit
+def test_build_candlestick_downsamples(sample_config: Config) -> None:
+    """Large dataset triggers downsampling."""
+    n = 5000
+    df = pl.DataFrame(
+        {
+            "timestamp": [
+                f"2024-01-{(i % 28) + 1:02d}T{(i % 24):02d}:00" for i in range(n)
+            ],
+            "open": [1800.0 + i * 0.01 for i in range(n)],
+            "high": [1802.0 + i * 0.01 for i in range(n)],
+            "low": [1798.0 + i * 0.01 for i in range(n)],
+            "close": [1801.0 + i * 0.01 for i in range(n)],
+            "volume": [100.0] * n,
+        }
+    )
+    chart, info = build_candlestick_chart(df, sample_config, max_bars=1000)
+    assert isinstance(chart, Grid)
+    assert info["downsampled"] is True
+    assert info["total_bars"] == n
+    assert info["displayed_bars"] <= 1000
 
 
 @pytest.mark.unit
@@ -276,14 +305,22 @@ def test_build_candlestick_empty(sample_config: Config) -> None:
             "volume": pl.Float64,
         },
     )
-    chart = build_candlestick_chart(df, sample_config)
+    chart, info = build_candlestick_chart(df, sample_config)
     assert isinstance(chart, Grid)
+    assert isinstance(info, dict)
+    assert info["total_bars"] == 0
 
 
 @pytest.mark.unit
 def test_build_rolling_sharpe_too_few_trades() -> None:
     """Fewer trades than window should return empty Line."""
-    trades = [{"pnl": 100.0, "entry_time": "2024-01-01T10:00:00Z", "exit_time": "2024-01-01T14:00:00Z"}]
+    trades = [
+        {
+            "pnl": 100.0,
+            "entry_time": "2024-01-01T10:00:00Z",
+            "exit_time": "2024-01-01T14:00:00Z",
+        }
+    ]
     chart = build_rolling_sharpe_chart(trades, window=30)
     assert isinstance(chart, Line)
 

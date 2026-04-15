@@ -14,23 +14,69 @@ from .data import COLORS, _get_feature_cols
 logger = logging.getLogger("thesis.charts")
 
 
+def _downsample_ohlcv(df: pl.DataFrame, max_bars: int) -> pl.DataFrame:
+    """Downsample OHLCV data using stride-based aggregation.
+
+    Groups rows into chunks of size N, then aggregates:
+    - open: first value in chunk
+    - high: max value in chunk
+    - low: min value in chunk
+    - close: last value in chunk
+    - volume: sum of chunk
+    - timestamp: first timestamp in chunk
+    """
+    stride = max(1, len(df) // max_bars)
+    group_col = pl.int_range(0, len(df)) // stride
+    agg_exprs = [
+        pl.col("timestamp").first(),
+        pl.col("open").first(),
+        pl.col("high").max(),
+        pl.col("low").min(),
+        pl.col("close").last(),
+    ]
+    if "volume" in df.columns:
+        agg_exprs.append(pl.col("volume").sum())
+    return (
+        df.with_columns(group_col.alias("_group"))
+        .group_by("_group", maintain_order=True)
+        .agg(*agg_exprs)
+        .drop("_group")
+    )
+
+
 def build_candlestick_chart(
     df: pl.DataFrame,
     config: Config,
-) -> Grid:
+    max_bars: int = 3000,
+) -> tuple[Grid, dict]:
     """Build interactive OHLCV candlestick chart with volume.
 
     Uses Grid layout: price (top 70%) + volume (bottom 30%).
     DataZoom slider + inside zoom for time range selection.
-    Renders all available bars; DataZoom handles navigation.
+    Downsamples when bar count exceeds *max_bars* for fast rendering.
 
     Args:
         df: OHLCV DataFrame with timestamp, open, high, low, close, volume.
         config: Application configuration.
+        max_bars: Maximum bars to render. Downsampling applied above this.
 
     Returns:
-        pyecharts Grid chart with Kline + Bar.
+        Tuple of (pyecharts Grid chart, info dict).
+        Info dict keys: total_bars, displayed_bars, downsampled.
     """
+    total_bars = len(df)
+    if total_bars > max_bars:
+        df = _downsample_ohlcv(df, max_bars)
+        downsampled = True
+        logger.info(
+            "Candlestick: downsampled %d -> %d bars (stride=%d)",
+            total_bars,
+            len(df),
+            max(1, total_bars // max_bars),
+        )
+    else:
+        downsampled = False
+
     n = len(df)
     logger.info("Candlestick: rendering %d bars", n)
 
@@ -152,7 +198,12 @@ def build_candlestick_chart(
         )
     )
 
-    return grid
+    info = {
+        "total_bars": total_bars,
+        "displayed_bars": n,
+        "downsampled": downsampled,
+    }
+    return grid, info
 
 
 def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:

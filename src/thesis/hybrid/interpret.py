@@ -2,10 +2,19 @@
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 from thesis.config import Config
 from thesis.hybrid.lgbm import _wrap_np
@@ -20,35 +29,56 @@ def _compute_shap(
     try:
         import shap
 
-        explainer = shap.TreeExplainer(model)
         n_samples = min(500, len(X_test))
-        X_sample = _wrap_np(X_test[:n_samples], feature_cols)
-        shap_values = explainer.shap_values(X_sample)
+        shap_start = time.perf_counter()
 
-        # Multiclass models return 3-D (samples × features × classes).
-        # Convert to a list of 2-D arrays so summary_plot handles each
-        # class correctly instead of misinterpreting as interaction values.
-        if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
-            shap_values = [shap_values[:, :, i] for i in range(shap_values.shape[2])]
-
-        import matplotlib
-
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-
-        plt.figure(figsize=(10, 8))
-        rng = np.random.default_rng(config.workflow.random_seed)
-        shap.summary_plot(
-            shap_values, X_sample, feature_names=feature_cols, show=False, rng=rng
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]SHAP analysis"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            transient=False,
         )
-        if config.paths.session_dir:
-            out = Path(config.paths.session_dir) / "reports" / "shap_summary.png"
-        else:
-            out = Path("results/shap_summary.png")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(out, dpi=150, bbox_inches="tight")
-        plt.close()
-        logger.info("SHAP summary saved: %s", out)
+
+        with progress:
+            task = progress.add_task("steps", total=2)
+
+            # Step 1: Compute SHAP values
+            progress.update(task, description="[bold cyan]SHAP computing")
+            explainer = shap.TreeExplainer(model)
+            X_sample = _wrap_np(X_test[:n_samples], feature_cols)
+            shap_values = explainer.shap_values(X_sample)
+            progress.update(task, advance=1)
+
+            # Step 2: Render plot
+            progress.update(task, description="[bold cyan]SHAP rendering")
+            if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+                shap_values = [
+                    shap_values[:, :, i] for i in range(shap_values.shape[2])
+                ]
+
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            plt.figure(figsize=(10, 8))
+            rng = np.random.default_rng(config.workflow.random_seed)
+            shap.summary_plot(
+                shap_values, X_sample, feature_names=feature_cols, show=False, rng=rng
+            )
+            if config.paths.session_dir:
+                out = Path(config.paths.session_dir) / "reports" / "shap_summary.png"
+            else:
+                out = Path("results/shap_summary.png")
+            out.parent.mkdir(parents=True, exist_ok=True)
+            plt.savefig(out, dpi=150, bbox_inches="tight")
+            plt.close()
+            progress.update(task, advance=1)
+
+        shap_time = time.perf_counter() - shap_start
+        logger.info("SHAP done: %d samples, %.1fs", n_samples, shap_time)
     except Exception as e:
         logger.warning("SHAP computation failed: %s", e)
 
@@ -70,8 +100,7 @@ def _save_feature_importance(
         with open(out_path, "w") as f:
             json.dump({name: float(val) for name, val in pairs}, f, indent=2)
         logger.info(
-            "Feature importance saved: %s (top 5: %s)",
-            out_path,
+            "Feature importance saved (top 5: %s)",
             [p[0] for p in pairs[:5]],
         )
     except Exception as e:

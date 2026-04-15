@@ -817,7 +817,7 @@ def _build_markdown(
                 vsh = m.get("sharpe_ratio", 0)
                 vdd = m.get("max_drawdown_pct", 0)
                 lines.append(
-                    f"| {variant} | {fc} | {trades_v} | {vwr:.2f}% | {vret:.2f} | {vsh:.4f} | {vdd:.2f} |"
+                    f"| {variant} | {fc} | {trades_v} | {vwr:.2f}% | {vret:.2f} | {vsh:.2f} | {vdd:.2f} |"
                 )
         lines.append("")
         if "comparison_note" in ablation:

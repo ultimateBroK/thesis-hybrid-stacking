@@ -127,9 +127,12 @@ results/XAUUSD_1H_YYYYMMDD_HHMMSS/
 |------|-----------------|
 | `reports/thesis_report.md` | Full written report with metrics and charts |
 | `backtest/backtest_results.json` | Trading metrics (win rate, return, Sharpe, etc.) |
+| `backtest/trades_detail.csv` | Trade-by-trade breakdown (entry/exit, PnL, duration) |
+| `backtest/equity_curve.csv` | Equity curve data points over time |
 | `backtest/backtest_chart.html` | Interactive Bokeh equity chart |
-| `reports/charts/` | All visualization charts (7 charts) |
+| `reports/charts/` | All visualization charts (12 charts) |
 | `config/config_snapshot.toml` | The exact config used for this run |
+| `config/session_info.json` | Session metadata (run ID, timestamps, stage durations) |
 | `logs/pipeline.log` | Detailed execution log (ANSI-stripped) |
 
 ### Quick Look at Results
@@ -179,6 +182,8 @@ Results are saved to `ablation_results.json` in the session folder.
 | `pixi run test` | Run all tests with coverage |
 | `pixi run lint` | Check code for style issues |
 | `pixi run format` | Auto-format code |
+| `pixi run streamlit` | Interactive Streamlit dashboard (:8501) |
+| `pixi run pre-commit` | Lint + format + fast tests |
 | `pixi run clean-cache` | Delete processed data files |
 | `pixi run clean-all` | Delete processed data + models + results |
 
@@ -302,6 +307,9 @@ pixi run data                   # Download XAU/USD data
 pixi run workflow               # Run full pipeline
 pixi run force                  # Force re-run everything
 pixi run ablation               # Pipeline + ablation study
+
+# === Visualization ===
+pixi run streamlit              # Interactive dashboard on :8501
 
 # === Code Quality ===
 pixi run lint                   # Check code style

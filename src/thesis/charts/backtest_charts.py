@@ -56,7 +56,7 @@ def build_equity_drawdown_chart(
         )
         .set_global_opts(
             title_opts=opts.TitleOpts(
-                title=f"Equity Curve — {total_trades} trades, {total_return:.1f}% return"
+                title=f"Equity Curve — {total_trades} trades, {total_return:.2f}% return"
             ),
             yaxis_opts=opts.AxisOpts(name="Equity (USD)", is_scale=True),
             xaxis_opts=opts.AxisOpts(is_show=False),
@@ -319,6 +319,7 @@ def build_duration_pnl_scatter(trades: list[dict]) -> Scatter:
     """Build trade duration vs PnL scatter plot.
 
     Points colored by win (green) / loss (red).
+    Uses numeric x-axis so points are plotted at exact duration values.
 
     Args:
         trades: List of trade dicts with 'entry_time', 'exit_time', 'pnl' keys.
@@ -346,12 +347,9 @@ def build_duration_pnl_scatter(trades: list[dict]) -> Scatter:
     if not win_data and not loss_data:
         return Scatter()
 
-    # Build x-axis from all durations
-    all_durations = [d[0] for d in win_data + loss_data]
-
     chart = (
         Scatter(init_opts=opts.InitOpts(height="500px"))
-        .add_xaxis([str(d) for d in all_durations])
+        .add_xaxis([])
         .add_yaxis(
             series_name="Wins",
             y_axis=win_data,
@@ -368,9 +366,11 @@ def build_duration_pnl_scatter(trades: list[dict]) -> Scatter:
         )
         .set_global_opts(
             title_opts=opts.TitleOpts(title="Trade Duration vs PnL"),
-            xaxis_opts=opts.AxisOpts(name="Duration (hours)"),
+            xaxis_opts=opts.AxisOpts(
+                type_="value",
+                name="Duration (hours)",
+            ),
             yaxis_opts=opts.AxisOpts(name="PnL (USD)"),
-            tooltip_opts=opts.TooltipOpts(trigger="item"),
             legend_opts=opts.LegendOpts(),
         )
     )

@@ -4,6 +4,7 @@ Replaces the 721-line custom CFD simulator with backtesting.py v0.6.5.
 Strategy logic: ML signals + ATR stop-loss. All risk management is native.
 """
 
+import csv
 import json
 import logging
 from pathlib import Path
@@ -117,23 +118,40 @@ def _normalize_stats(stats: pd.Series) -> dict:
     return out
 
 
-def _trades_to_list(trades_df: pd.DataFrame) -> list[dict]:
-    """Convert _trades DataFrame to list of dicts for JSON serialization."""
+def _trades_to_list(
+    trades_df: pd.DataFrame,
+    commission_per_lot: float = 20.0,
+    contract_size: float = 100.0,
+) -> list[dict]:
+    """Convert _trades DataFrame to list of dicts for JSON serialization.
+
+    backtesting.py stores ReturnPct as a decimal fraction (e.g. 0.002 = 0.2%).
+    We multiply by 100 so the CSV shows an actual percentage.
+
+    Args:
+        trades_df: Raw trades DataFrame from backtesting.py stats.
+        commission_per_lot: Commission charged per lot (for per-trade breakdown).
+        contract_size: Units per lot (e.g. 100 oz for XAU/USD).
+    """
     if trades_df.empty:
         return []
     records = trades_df.reset_index(drop=True)
     result: list[dict] = []
     for _, row in records.iterrows():
+        size = float(row.get("Size", 0))
+        lots = abs(size) / contract_size
+        commission = lots * commission_per_lot
         result.append(
             {
                 "entry_time": str(row.get("EntryTime", "")),
                 "exit_time": str(row.get("ExitTime", "")),
-                "direction": "long" if row.get("Size", 0) > 0 else "short",
+                "direction": "long" if size > 0 else "short",
                 "entry_price": float(row.get("EntryPrice", 0)),
                 "exit_price": float(row.get("ExitPrice", 0)),
-                "size": float(row.get("Size", 0)),
+                "size": size,
                 "pnl": float(row.get("PnL", 0)),
-                "return_pct": float(row.get("ReturnPct", 0)),
+                "return_pct": float(row.get("ReturnPct", 0)) * 100,
+                "commission": round(commission, 2),
                 "duration": str(row.get("Duration", "")),
             }
         )
@@ -252,7 +270,11 @@ def run_backtest(config: Config) -> None:
 
     # Extract results
     metrics = _normalize_stats(stats)
-    trades = _trades_to_list(stats["_trades"])
+    trades = _trades_to_list(
+        stats["_trades"],
+        commission_per_lot=config.backtest.commission_per_lot,
+        contract_size=config.data.contract_size,
+    )
 
     # Save JSON
     out_path = Path(config.paths.backtest_results)
@@ -260,6 +282,43 @@ def run_backtest(config: Config) -> None:
     with open(out_path, "w") as f:
         json.dump({"metrics": metrics, "trades": trades}, f, indent=2, default=str)
     logger.info("Backtest results saved: %s", out_path)
+
+    # Save trade details CSV
+    if trades:
+        csv_path = out_path.parent / "trades_detail.csv"
+        fieldnames = list(trades[0].keys())
+        with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(trades)
+        logger.info("Trade details CSV saved: %s (%d trades)", csv_path, len(trades))
+
+        # Save equity curve CSV
+        eq_path = out_path.parent / "equity_curve.csv"
+        initial_capital = (
+            config.backtest.initial_capital
+            if hasattr(config.backtest, "initial_capital")
+            else 10_000.0
+        )
+        equity = initial_capital
+        with open(eq_path, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["trade_num", "exit_time", "pnl", "equity", "drawdown_pct"])
+            peak = initial_capital
+            for i, t in enumerate(trades, 1):
+                equity += t["pnl"]
+                peak = max(peak, equity)
+                dd_pct = (equity - peak) / peak * 100 if peak > 0 else 0.0
+                writer.writerow(
+                    [
+                        i,
+                        t.get("exit_time", ""),
+                        round(t["pnl"], 2),
+                        round(equity, 2),
+                        round(dd_pct, 4),
+                    ]
+                )
+        logger.info("Equity curve CSV saved: %s", eq_path)
 
     # Log key metrics
     logger.info("=== BACKTEST RESULTS ===")

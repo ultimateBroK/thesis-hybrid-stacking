@@ -30,9 +30,11 @@
 
 ### Visualization
 
-- [x] **Data charts** — Price series, label distribution, feature correlation, feature distributions
+- [x] **Data charts** — Candlestick, label distribution, feature correlation, feature distributions
 - [x] **Model charts** — Confusion matrix, confidence distribution, feature importance
+- [x] **Backtest charts** — Equity curve, drawdown, trade analysis
 - [x] **Thesis report** — Auto-generated markdown report with all metrics and charts
+- [x] **Interactive Streamlit dashboard** — ECharts-based visualization on :8501 (`src/thesis/dashboard/app.py`)
 
 ### Infrastructure
 
@@ -44,6 +46,7 @@
 - [x] **Code quality** — Ruff linting and formatting
 - [x] **CI/CD workflows** — GitHub Actions for testing and releases
 - [x] **Git conventions** — Conventional commits, branch strategy, PR templates
+- [x] **Optuna hyperparameter search** — Integrated auto-tuning with `optuna_trials` and `optuna_timeout`
 
 ---
 
@@ -69,8 +72,6 @@
 ### Operational
 
 - [ ] **Real-time inference** — Deploy model for live signal generation
-- [ ] **Dashboard** — Interactive web dashboard for monitoring (script exists at `scripts/dashboard.py`)
-- [ ] **Automated hyperparameter search** — Integrate Optuna tuning into the main workflow
 - [ ] **Model versioning** — Track and compare model versions across experiments
 - [ ] **Data pipeline monitoring** — Alert when data quality drops or drifts
 
@@ -90,9 +91,9 @@
 | Core Pipeline | 5 | 0 | 5 |
 | Models | 4 | 6 | 10 |
 | Evaluation | 4 | 5 | 9 |
-| Visualization | 4 | 0 | 4 |
-| Infrastructure | 8 | 5 | 13 |
+| Visualization | 5 | 0 | 5 |
+| Infrastructure | 9 | 3 | 12 |
 | Documentation | 0 | 4 | 4 |
-| **Total** | **25** | **20** | **45** |
+| **Total** | **27** | **18** | **45** |
 
-> **Overall: 56% complete** — The core research pipeline is fully functional. Pending items are enhancements and production features.
+> **Overall: 60% complete** — The core research pipeline is fully functional. Pending items are enhancements and production features.

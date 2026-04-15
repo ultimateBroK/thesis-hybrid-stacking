@@ -141,6 +141,9 @@ start_date = "2018-01-01"      # Data start
 end_date = "2026-03-31"        # Data end
 tick_size = 0.01               # Minimum price movement
 contract_size = 100            # Ounces per contract
+symbol_download = "XAUUSD"     # Symbol for data downloader
+asset_class = "fx"             # Asset class (fx, commodity, etc.)
+download_concurrency = 20      # Parallel download connections
 ```
 
 | Parameter | What to Change | Effect |
@@ -263,8 +266,9 @@ flowchart TD
 
 ```toml
 [model]
-use_optuna = false
+use_optuna = true
 optuna_trials = 50
+optuna_timeout = 3600
 num_leaves = 48
 max_depth = 5
 learning_rate = 0.03
@@ -290,6 +294,7 @@ early_stopping_rounds = 30
 | `reg_alpha` | L1 regularization | Higher = simpler model. Try 0-0.1. |
 | `reg_lambda` | L2 regularization | Higher = simpler model. Try 1-10. |
 | `use_optuna` | Set to `true` to auto-tune parameters | Automatically searches for the best hyperparameters. |
+| `optuna_timeout` | Maximum seconds for Optuna search | Default 3600 (1 hour). Increase for more thorough search. |
 
 > **Beginner tip:** Start with the defaults. If the model overfits (train accuracy much higher than test), increase `min_child_samples`, decrease `num_leaves`, or increase regularization. If the model underfits, do the opposite.
 
@@ -335,6 +340,7 @@ slippage_ticks = 3                  # 3 ticks = $0.03 per side (absorbed into sp
 commission_per_lot = 10.0           # Round-trip commission per lot
 atr_stop_multiplier = 0.75          # ATR multiplier for stop-loss distance
 lots_per_trade = 1.0                # Fixed 1 lot per trade (100 oz XAUUSD)
+confidence_threshold = 0.70         # Min predicted probability to trade (0 = disabled)
 ```
 
 | Parameter | What It Does | What to Try |
@@ -346,6 +352,7 @@ lots_per_trade = 1.0                # Fixed 1 lot per trade (100 oz XAUUSD)
 | `commission_per_lot` | Commission per standard lot round-trip | $10 is typical. Higher = more conservative. |
 | `atr_stop_multiplier` | Stop-loss distance as a multiple of ATR | Higher = wider stop (more room). Lower = tighter stop (cut losses faster). |
 | `lots_per_trade` | Fixed position size per trade | 1.0 = 1 lot (100 oz). Keeps sizing constant to prevent runaway. |
+| `confidence_threshold` | Minimum predicted probability to take a trade | 0 = disabled (trade on all signals). 0.70 = only trade when model is confident. |
 
 > **Important:** Position sizing is fixed (`lots_per_trade × contract_size`). This prevents the "runaway sizing" problem where compounding equity with leverage creates unrealistic position sizes.
 
@@ -388,7 +395,23 @@ labels = "data/processed/labels.parquet"
 train_data = "data/processed/train.parquet"
 val_data = "data/processed/val.parquet"
 test_data = "data/processed/test.parquet"
+model = "models/lightgbm_model.pkl"
+gru_model = "models/gru_model.pt"
+predictions = "data/predictions/final_predictions.parquet"
+backtest_results = "results/backtest_results.json"
+report = "results/thesis_report.md"
 ```
+
+| Parameter | What It Points To |
+|-----------|-------------------|
+| `data_raw` | Directory for raw tick parquet files |
+| `data_processed` | Directory for intermediate parquet files |
+| `ohlcv` / `features` / `labels` | Stage 0–2 outputs |
+| `train_data` / `val_data` / `test_data` | Stage 3 split outputs |
+| `model` | LightGBM model pickle |
+| `gru_model` | GRU PyTorch weights |
+| `predictions` | Final model predictions |
+| `backtest_results` / `report` | Backtest and report outputs |
 
 You usually do not need to change these unless you are reorganizing the project structure.
 
@@ -420,8 +443,8 @@ Try different `atr_multiplier` values (1.0, 1.5, 2.0, 2.5). This changes the tra
 ### Step 3: Adjust Stop-Loss Distance
 Change `atr_stop_multiplier` in `[backtest]`. Try 0.5, 0.75, 1.0, 1.5.
 
-### Step 4: Use Optuna
-Set `use_optuna = true` in `[model]`. This automatically finds the best LightGBM parameters.
+### Step 4: Tune Optuna Search
+Optuna is **enabled by default**. Adjust `optuna_trials` and `optuna_timeout` to control the search depth and duration.
 
 ### Step 5: Adjust GRU
 Change `sequence_length` (12, 24, 36, 48). This changes how far back the model looks.

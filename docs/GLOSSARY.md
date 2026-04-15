@@ -42,7 +42,10 @@ Total return divided by maximum drawdown. A Calmar ratio of 2.0 means you made t
 A technique to handle imbalanced data. If you have 60% "Flat" labels and 20% "Long" and 20% "Short", class weights tell the model to pay more attention to the minority classes.
 
 **Commission**
-A fee you pay to your broker for each trade. In this project, the commission is $7 per standard lot round-trip (open + close).
+A fee you pay to your broker for each trade. In this project, the commission is $10 per standard lot round-trip (open + close).
+
+**Confidence Threshold**
+The minimum predicted probability required before the model takes a trade. In this project, the threshold is 0.70 (70%) — the model only trades when it is at least 70% confident. Set to 0 to disable and trade on all signals.
 
 **Confusion Matrix**
 A table that shows how many predictions were correct and how many were wrong. The rows are the actual values, the columns are the predicted values. A perfect model would only have numbers on the diagonal.
@@ -133,7 +136,7 @@ Not a real technical term, but in this project, the "killer feature" is the hybr
 The correct answer for each data point. In this project, labels are: +1 (Long/buy), 0 (Flat/hold), -1 (Short/sell). Labels are generated using the Triple Barrier method.
 
 **Leverage**
-Borrowed money from your broker. Leverage of 100:1 means with $1,000 in your account, you can trade as if you had $100,000. Leverage amplifies both profits and losses.
+Borrowed money from your broker. Leverage of 30:1 means with $10,000 in your account, you can trade as if you had $300,000. This project uses 30:1 leverage. Leverage amplifies both profits and losses.
 
 **LightGBM**
 A fast, efficient gradient boosting library developed by Microsoft. It builds decision trees and combines their predictions. It handles large datasets well and is widely used in competitions and industry.
@@ -243,6 +246,9 @@ When your broker forcibly closes your positions because your margin level is too
 
 **Take-Profit (TP)**
 A price level where you automatically exit a winning trade to lock in your profit. If you buy at $2,000 and set take-profit at $2,020, you will exit when the price reaches $2,020.
+
+**Tick**
+The smallest price increment for an asset. For XAU/USD, one tick = $0.01 per ounce (config: `tick_size = 0.01`). Spread and slippage are measured in ticks.
 
 **Time Series**
 Data collected over time in chronological order. Stock prices, temperature readings, and heart rate monitors all produce time series data. Order matters — you cannot shuffle it randomly.

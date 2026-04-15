@@ -6,11 +6,13 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import re
 import shutil
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -45,7 +47,7 @@ def main() -> None:
         config.workflow.force_rerun = True
 
     # Create session directory and update paths
-    session_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_name = f"{config.data.symbol}_{config.data.timeframe}_{session_ts}"
     session_dir = Path("results") / session_name
 
@@ -68,16 +70,29 @@ def main() -> None:
     # Save config snapshot
     shutil.copy2(args.config, session_dir / "config" / "config_snapshot.toml")
 
-    # Logging setup (now that we know the session dir)
+    # Logging setup — Rich for console, plain for file
+    from rich.logging import RichHandler
+
+    from thesis.ui import console as _console
+
     _log_fmt = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
     file_handler = logging.FileHandler(session_dir / "logs" / "pipeline.log", mode="w")
     file_handler.setFormatter(_StripAnsiFormatter(_log_fmt))
 
     logging.basicConfig(
         level=logging.INFO,
-        format=_log_fmt,
+        format="%(message)s",
+        datefmt="[%X]",
         handlers=[
-            logging.StreamHandler(sys.stdout),
+            RichHandler(
+                console=_console,
+                rich_tracebacks=True,
+                show_path=False,
+                show_time=True,
+                omit_repeated_times=False,
+                log_time_format="[%H:%M:%S]",
+                markup=True,
+            ),
             file_handler,
         ],
     )
@@ -87,6 +102,9 @@ def main() -> None:
     logger.info("Symbol: %s, Timeframe: %s", config.data.symbol, config.data.timeframe)
     logger.info("Session directory: %s", session_dir)
 
+    # Track pipeline timing
+    t_start = time.monotonic()
+
     # Run pipeline
     run_pipeline(config)
 
@@ -95,7 +113,31 @@ def main() -> None:
         logger.info("Running ablation study...")
         run_ablation(config)
 
-    logger.info("Done. Results saved to: %s", session_dir)
+    elapsed = round(time.monotonic() - t_start, 2)
+
+    # Save session_info.json manifest
+    session_info = {
+        "symbol": config.data.symbol,
+        "timeframe": config.data.timeframe,
+        "session_timestamp": session_ts,
+        "pipeline_duration_seconds": elapsed,
+        "data_range": {
+            "train": [
+                str(config.splitting.train_start),
+                str(config.splitting.train_end),
+            ],
+            "val": [str(config.splitting.val_start), str(config.splitting.val_end)],
+            "test": [str(config.splitting.test_start), str(config.splitting.test_end)],
+        },
+        "force_rerun": config.workflow.force_rerun,
+        "random_seed": config.workflow.random_seed,
+    }
+    session_info_path = session_dir / "config" / "session_info.json"
+    with open(session_info_path, "w") as f:
+        json.dump(session_info, f, indent=2)
+    logger.info("Session info saved: %s", session_info_path)
+
+    logger.info("Done. Results saved to: %s (%.1fs)", session_dir, elapsed)
 
 
 if __name__ == "__main__":

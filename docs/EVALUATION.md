@@ -16,7 +16,7 @@ results/XAUUSD_1H_20260414_042000/
 flowchart TD
     ROOT["results/XAUUSD_1H_.../"] --> BT["backtest_results.json<br/><b>⬅ Start here</b>"]
     ROOT --> REP["thesis_report.md<br/><b>⬅ Then read this</b>"]
-    ROOT --> CH["charts/<br/>13 visualizations"]
+    ROOT --> CH["charts/<br/>12 visualizations"]
     ROOT --> CFG["config_snapshot.toml"]
     ROOT --> LOG["logs/pipeline.log"]
 
@@ -148,13 +148,13 @@ If your account grew to $120,000 and then dropped to $96,000, your max drawdown 
 
 ## Reading the Charts
 
-The project generates **7 charts** in the session folder, plus an interactive Bokeh chart.
+The project generates **12 charts** in the session folder, plus an interactive Bokeh chart.
 
 ### Data Charts (`charts/data/`)
 
 | Chart | What to Look For |
 |-------|-----------------|
-| `price_series.png` | Make sure the data looks normal — no huge gaps or spikes. |
+| `candlestick.png` | OHLC candlestick chart with volume. Make sure the data looks normal — no huge gaps or spikes. |
 | `label_distribution.png` | Check if the three classes (Long/Flat/Short) are balanced. If one class dominates (>70%), the model may struggle. |
 | `feature_correlation.png` | Look for very dark red squares — these mean two features carry almost the same information. |
 | `feature_distributions.png` | Each feature should have a reasonable shape (not all zeros, no extreme outliers). |
@@ -167,13 +167,24 @@ The project generates **7 charts** in the session folder, plus an interactive Bo
 | `confidence_distribution.png` | Good models show high confidence for correct predictions and low confidence for wrong ones. |
 | `feature_importance.png` | Shows which features matter most. GRU features (purple) vs. static features (blue). |
 
-### Backtest Charts (`backtest/`)
+### Backtest Charts (`charts/backtest/`)
 
 | Chart | What to Look For |
 |-------|-----------------|
+| `equity_drawdown.png` | Equity curve with drawdown overlay. Should trend upward over time with manageable drawdowns. |
+| `pnl_histogram.png` | Distribution of trade profits and losses. Wins should outweigh losses. |
+| `monthly_returns.png` | Heatmap of monthly returns. Most months should be green. |
+| `rolling_sharpe.png` | Rolling Sharpe ratio over a 30-trade window. Should stay above 0 consistently. |
+| `duration_vs_pnl.png` | Scatter plot of trade duration vs profit. No strong patterns = good. |
 | `backtest_chart.html` | Interactive Bokeh chart with equity, drawdown, and trade markers. Resampled to 2h for performance. |
-| `equity_curve.png` | Static equity curve by trade number. Should trend upward over time. |
-| `feature_importance.png` | Top 20 features — bar chart showing GRU vs static importance. |
+
+### Additional Backtest Files
+
+| File | What It Contains |
+|------|-----------------|
+| `backtest_results.json` | All metrics + trade list (JSON) |
+| `trades_detail.csv` | Per-trade breakdown: entry/exit time, direction, PnL, commission, duration |
+| `equity_curve.csv` | Running equity and drawdown percentage per trade |
 
 ---
 

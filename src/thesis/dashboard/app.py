@@ -13,20 +13,21 @@ Features:
 import json
 import logging
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
 import polars as pl
 import streamlit as st
 from pyecharts import options as opts
-from pyecharts.charts import Bar, Pie
+from pyecharts.charts import Bar, Line, Pie
 
 # Ensure src/ is on path for imports
 _src = str(Path(__file__).resolve().parent.parent.parent / "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-from streamlit_echarts import st_echarts  # noqa: E402
+from streamlit_echarts import st_echarts, st_pyecharts  # noqa: E402
 
 from thesis.charts import (  # noqa: E402
     COLORS,
@@ -67,21 +68,78 @@ def _find_sessions() -> list[Path]:
     return sessions
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def _load_config(session_dir: str) -> dict:
-    """Load config and session data for a given session directory."""
+    """Load config and session data for a given session directory.
+
+    Cached for 60 seconds to balance freshness with I/O performance.
+    """
     config = load_config()
     config.paths.session_dir = session_dir
     data = load_session_data(config)
     return {"config": config, "data": data}
 
 
+@st.fragment(run_every=30)
+def _session_selector_fragment() -> str | None:
+    """Render session selector with auto-refresh every 30 seconds.
+
+    Returns selected session name, or None if no sessions exist.
+    Detects new sessions and shows toast notification.
+    """
+    sessions = _find_sessions()
+    if not sessions:
+        return None
+
+    session_names = [s.name for s in sessions]
+
+    # Detect new sessions
+    known = st.session_state.get("known_sessions", set())
+    current_set = set(session_names)
+    new_sessions = current_set - known
+    if new_sessions and known:  # Skip toast on first load
+        for ns in sorted(new_sessions):
+            meta = _parse_session_meta(ns)
+            st.toast(f"🆕 New session: {meta['date']} {meta['time']}", icon="📈")
+    st.session_state.known_sessions = current_set
+
+    # Format labels with metadata
+    session_labels = []
+    for name in session_names:
+        meta = _parse_session_meta(name)
+        session_labels.append(
+            f"{meta['date']} {meta['time']} ({meta['symbol']} {meta['timeframe']})"
+        )
+
+    # Preserve current selection
+    current = st.session_state.get("selected_session")
+    if current in session_names:
+        idx = session_names.index(current)
+    else:
+        idx = 0
+        st.session_state.selected_session = session_names[0]
+
+    selected_label = st.selectbox(
+        "Select session",
+        options=session_labels,
+        index=idx,
+        key="_session_selectbox",
+    )
+    selected = session_names[session_labels.index(selected_label)]
+    st.session_state.selected_session = selected
+
+    # Refresh button
+    if st.button("🔄 Refresh", use_container_width=True, key="_refresh_btn"):
+        st.rerun()
+
+    st.caption("Run `pixi run workflow` to generate new sessions")
+    return selected
+
+
 def _render_chart(chart: object, height: str = "500px") -> None:
-    """Render a pyecharts chart in Streamlit via st_echarts."""
+    """Render a pyecharts chart in Streamlit via st_pyecharts."""
     try:
-        opts_str = chart.dump_options()
-        opts_dict = json.loads(opts_str) if isinstance(opts_str, str) else opts_str
-        st_echarts(options=opts_dict, height=height)
+        st_pyecharts(chart, height=height)
     except Exception as e:
         st.warning(f"Chart render failed: {e}")
 
@@ -93,6 +151,7 @@ def _render_chart(chart: object, height: str = "500px") -> None:
 
 def _render_data_section(data: dict, config: object) -> None:
     """Render data exploration charts."""
+    st.markdown("> 🏠 Dashboard > **Data Exploration**")
     st.header("Data Exploration")
 
     ohlcv = data.get("ohlcv")
@@ -106,8 +165,67 @@ def _render_data_section(data: dict, config: object) -> None:
 
     if ohlcv is not None and len(ohlcv) > 0:
         st.subheader("Candlestick Chart")
-        chart = build_candlestick_chart(ohlcv, config)
-        _render_chart(chart, height="700px")
+
+        # Date range selector for lazy loading
+        ts_col = ohlcv["timestamp"]
+        if ts_col.dtype == pl.Utf8:
+            ts_parsed = ts_col.str.to_datetime()
+        else:
+            ts_parsed = ts_col.cast(pl.Datetime)
+
+        min_dt = ts_parsed.min()
+        max_dt = ts_parsed.max()
+        total_bars = len(ohlcv)
+
+        if min_dt is not None and max_dt is not None:
+            min_date = min_dt.date()
+            max_date = max_dt.date()
+            default_end = max_date
+            default_start = max(min_date, max_date - timedelta(days=180))
+
+            col_range1, col_range2 = st.columns(2)
+            with col_range1:
+                start_date = st.date_input(
+                    "From",
+                    value=default_start,
+                    min_value=min_date,
+                    max_value=max_date,
+                    key="_candle_start",
+                )
+            with col_range2:
+                end_date = st.date_input(
+                    "To",
+                    value=default_end,
+                    min_value=min_date,
+                    max_value=max_date,
+                    key="_candle_end",
+                )
+
+            # Filter OHLCV to selected range
+            start_str = str(start_date)
+            end_str = str(end_date) + " 23:59:59"
+            ohlcv_filtered = ohlcv.filter(
+                (ts_parsed >= pl.lit(start_str).str.to_datetime())
+                & (ts_parsed <= pl.lit(end_str).str.to_datetime())
+            )
+        else:
+            ohlcv_filtered = ohlcv
+
+        if len(ohlcv_filtered) > 0:
+            chart, info = build_candlestick_chart(ohlcv_filtered, config)
+            _render_chart(chart, height="700px")
+            if info["total_bars"] < total_bars:
+                st.caption(
+                    f"Showing {info['displayed_bars']:,} of {total_bars:,} total bars "
+                    f"({len(ohlcv_filtered):,} in selected range)"
+                )
+            elif info["downsampled"]:
+                st.caption(
+                    f"Showing {info['displayed_bars']:,} of {info['total_bars']:,} bars "
+                    f"(downsampled). Use DataZoom to navigate."
+                )
+        else:
+            st.info("No data in selected date range.")
     else:
         st.info("No OHLCV data available.")
 
@@ -168,6 +286,7 @@ def _render_data_section(data: dict, config: object) -> None:
 
 def _render_model_section(data: dict) -> None:
     """Render model performance charts."""
+    st.markdown("> 🏠 Dashboard > **Model Performance**")
     st.header("Model Performance")
 
     preds = data.get("predictions")
@@ -206,6 +325,7 @@ def _render_model_section(data: dict) -> None:
 
 def _render_backtest_section(data: dict) -> None:
     """Render backtest analysis charts."""
+    st.markdown("> 🏠 Dashboard > **Backtest Results**")
     st.header("Backtest Results")
 
     bt = data.get("backtest_results")
@@ -216,73 +336,83 @@ def _render_backtest_section(data: dict) -> None:
         st.info("No backtest results available.")
         return
 
-    # --- Key Metrics Row ---
-    st.subheader("Performance Summary")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Total Return", f"{metrics.get('return_pct', 0):.1f}%")
-    col2.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}")
-    col3.metric("Max Drawdown", f"{metrics.get('max_drawdown_pct', 0):.1f}%")
-    col4.metric("Win Rate", f"{metrics.get('win_rate_pct', 0):.1f}%")
-    col5.metric("Profit Factor", f"{metrics.get('profit_factor', 0):.2f}")
+    # --- Performance Overview (bordered container) ---
+    with st.container(border=True):
+        st.subheader("Performance Overview")
 
-    # --- Detailed Metrics in expander ---
-    with st.expander("Detailed Metrics", expanded=False):
-        left, right = st.columns(2)
-        with left:
-            st.markdown(f"""
-            **Period**: {metrics.get("start", "N/A")} → {metrics.get("end", "N/A")}  
-            **Duration**: {metrics.get("duration", "N/A")}  
-            **Exposure**: {metrics.get("exposure_time_pct", 0):.1f}%  
-            **Total Trades**: {metrics.get("num_trades", 0)}  
-            **Annual Return**: {metrics.get("return_ann_pct", 0):.1f}%  
-            **CAGR**: {metrics.get("cagr_pct", 0):.1f}%  
-            **Volatility (Ann.)**: {metrics.get("volatility_ann_pct", 0):.1f}%  
-            """)
-        with right:
-            st.markdown(f"""
-            **Sortino Ratio**: {metrics.get("sortino_ratio", 0):.2f}  
-            **Calmar Ratio**: {metrics.get("calmar_ratio", 0):.2f}  
-            **SQN**: {metrics.get("sqn", 0):.2f}  
-            **Kelly Criterion**: {metrics.get("kelly_criterion", 0):.3f}  
-            **Avg Trade**: {metrics.get("avg_trade_pct", 0):.2f}%  
-            **Best Trade**: {metrics.get("best_trade_pct", 0):.2f}%  
-            **Worst Trade**: {metrics.get("worst_trade_pct", 0):.2f}%  
-            """)
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total Return", f"{metrics.get('return_pct', 0):.2f}%")
+        col2.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}")
+        col3.metric("Max Drawdown", f"{metrics.get('max_drawdown_pct', 0):.2f}%")
+        col4.metric("Win Rate", f"{metrics.get('win_rate_pct', 0):.2f}%")
+        col5.metric("Profit Factor", f"{metrics.get('profit_factor', 0):.2f}")
 
-    # --- Win/Loss stats ---
-    if trades:
-        pnls = [t["pnl"] for t in trades]
-        wins = [p for p in pnls if p > 0]
-        losses = [p for p in pnls if p <= 0]
-        avg_win = sum(wins) / len(wins) if wins else 0
-        avg_loss = sum(losses) / len(losses) if losses else 0
+        # Win/Loss stats
+        if trades:
+            pnls = [t["pnl"] for t in trades]
+            wins = [p for p in pnls if p > 0]
+            losses = [p for p in pnls if p <= 0]
+            avg_win = sum(wins) / len(wins) if wins else 0
+            avg_loss = sum(losses) / len(losses) if losses else 0
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Winning Trades", f"{len(wins)}", delta=f"Avg ${avg_win:.0f}")
-        col2.metric("Losing Trades", f"{len(losses)}", delta=f"Avg ${avg_loss:.0f}")
-        rr = abs(avg_win / avg_loss) if avg_loss != 0 else 0
-        col3.metric("Reward/Risk", f"{rr:.2f}:1")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Winning Trades", f"{len(wins)}", delta=f"Avg ${avg_win:.0f}")
+            c2.metric("Losing Trades", f"{len(losses)}", delta=f"Avg ${avg_loss:.0f}")
+            rr = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+            c3.metric("Risk/Reward", f"1:{rr:.2f}")
 
-    # --- Charts ---
+        # Detailed Metrics in expander
+        with st.expander("Detailed Metrics", expanded=False):
+            left, right = st.columns(2)
+            with left:
+                st.markdown(f"""
+                **Period**: {metrics.get("start", "N/A")} → {metrics.get("end", "N/A")}  
+                **Duration**: {metrics.get("duration", "N/A")}  
+                **Exposure**: {metrics.get("exposure_time_pct", 0):.2f}%  
+                **Total Trades**: {metrics.get("num_trades", 0)}  
+                **Annual Return**: {metrics.get("return_ann_pct", 0):.2f}%  
+                **CAGR**: {metrics.get("cagr_pct", 0):.2f}%  
+                **Volatility (Ann.)**: {metrics.get("volatility_ann_pct", 0):.2f}%  
+                """)
+            with right:
+                st.markdown(f"""
+                **Sortino Ratio**: {metrics.get("sortino_ratio", 0):.2f}  
+                **Calmar Ratio**: {metrics.get("calmar_ratio", 0):.2f}  
+                **SQN**: {metrics.get("sqn", 0):.2f}  
+                **Kelly Criterion**: {metrics.get("kelly_criterion", 0):.3f}  
+                **Avg Trade**: {metrics.get("avg_trade_pct", 0):.2f}%  
+                **Best Trade**: {metrics.get("best_trade_pct", 0):.2f}%  
+                **Worst Trade**: {metrics.get("worst_trade_pct", 0):.2f}%  
+                """)
+
+    st.divider()
+
+    # --- Equity & Drawdown ---
     st.subheader("Equity Curve & Drawdown")
     chart = build_equity_drawdown_chart(trades, metrics)
     _render_chart(chart, height="600px")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Trade PnL Distribution")
-        chart = build_pnl_histogram_chart(trades, metrics)
-        _render_chart(chart, height="500px")
-    with col2:
-        st.subheader("Duration vs PnL")
-        chart = build_duration_pnl_scatter(trades)
-        _render_chart(chart, height="500px")
+    st.divider()
 
+    # --- Trade Analysis ---
+    st.subheader("Trade PnL Distribution")
+    chart = build_pnl_histogram_chart(trades, metrics)
+    _render_chart(chart, height="500px")
+
+    st.subheader("Trade Duration vs PnL")
+    chart = build_duration_pnl_scatter(trades)
+    _render_chart(chart, height="500px")
+
+    st.divider()
+
+    # --- Monthly Returns ---
     st.subheader("Monthly Returns")
     chart = build_monthly_returns_heatmap(trades)
     _render_chart(chart, height="400px")
 
-    # --- Trade Returns Bar Chart ---
+    st.divider()
+
+    # --- Individual Trade Returns ---
     if trades:
         st.subheader("Individual Trade Returns")
         pnls = [t["pnl"] for t in trades]
@@ -318,7 +448,10 @@ def _render_backtest_section(data: dict) -> None:
         )
         _render_chart(returns_chart, height="400px")
 
-        # --- Direction Distribution Pie ---
+        st.divider()
+
+        # --- Direction Analysis ---
+        st.subheader("Direction Analysis")
         col_left, col_right = st.columns(2)
         with col_left:
             directions = [t.get("direction", "unknown") for t in trades]
@@ -339,7 +472,6 @@ def _render_backtest_section(data: dict) -> None:
             )
             _render_chart(dir_chart, height="400px")
         with col_right:
-            # PnL by direction
             long_pnl = sum(t["pnl"] for t in trades if t.get("direction") == "long")
             short_pnl = sum(t["pnl"] for t in trades if t.get("direction") == "short")
             pnl_dir_chart = (
@@ -361,14 +493,184 @@ def _render_backtest_section(data: dict) -> None:
             _render_chart(pnl_dir_chart, height="400px")
 
     if len(trades) > 30:
-        st.subheader("Rolling Sharpe Ratio")
+        st.divider()
+        st.subheader("Rolling Metrics")
         chart = build_rolling_sharpe_chart(trades)
         _render_chart(chart, height="400px")
+
+    # --- Downloads ---
+    st.divider()
+    st.subheader("Download Data")
+    session_dir = data.get("session_dir")
+    if session_dir:
+        bt_dir = Path(session_dir) / "backtest"
+        dl_col1, dl_col2, dl_col3 = st.columns(3)
+        with dl_col1:
+            csv_path = bt_dir / "trades_detail.csv"
+            if csv_path.exists():
+                st.download_button(
+                    "📄 Trades Detail CSV",
+                    data=csv_path.read_text(),
+                    file_name="trades_detail.csv",
+                    mime="text/csv",
+                )
+        with dl_col2:
+            eq_path = bt_dir / "equity_curve.csv"
+            if eq_path.exists():
+                st.download_button(
+                    "📈 Equity Curve CSV",
+                    data=eq_path.read_text(),
+                    file_name="equity_curve.csv",
+                    mime="text/csv",
+                )
+        with dl_col3:
+            preds_dir = Path(session_dir) / "predictions"
+            preds_csv = preds_dir / "final_predictions.csv"
+            if preds_csv.exists():
+                st.download_button(
+                    "🎯 Predictions CSV",
+                    data=preds_csv.read_text(),
+                    file_name="final_predictions.csv",
+                    mime="text/csv",
+                )
+    else:
+        st.info("No session directory available for downloads.")
+
+
+def _render_training_section(data: dict, session_dir: str) -> None:
+    """Render training history: GRU loss curves, LightGBM info, pipeline log."""
+    st.markdown("> 🏠 Dashboard > **Training**")
+    st.header("Training History")
+
+    session_path = Path(session_dir)
+
+    # --- Training History JSON ---
+    history_path = session_path / "models" / "training_history.json"
+    if history_path.exists():
+        with open(history_path) as f:
+            history = json.load(f)
+
+        gru_history = history.get("gru", [])
+        lgbm_info = history.get("lightgbm", {})
+
+        if gru_history:
+            st.subheader("GRU Training Progress")
+            epochs = [e["epoch"] for e in gru_history]
+            train_loss = [e["train_loss"] for e in gru_history]
+            val_loss = [e["val_loss"] for e in gru_history]
+            train_acc = [e["train_acc"] for e in gru_history]
+            val_acc = [e["val_acc"] for e in gru_history]
+
+            # Metric summary cards
+            best_epoch = max(gru_history, key=lambda e: e["val_acc"])
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Best Val Accuracy", f"{best_epoch['val_acc']:.2%}")
+            c2.metric("Best Epoch", f"{best_epoch['epoch']}")
+            c3.metric("Final Train Loss", f"{gru_history[-1]['train_loss']:.4f}")
+            c4.metric("Final Val Loss", f"{gru_history[-1]['val_loss']:.4f}")
+
+            # Loss curve as ECharts
+            loss_chart = (
+                Line(init_opts=opts.InitOpts(height="400px"))
+                .add_xaxis([str(e) for e in epochs])
+                .add_yaxis(
+                    series_name="Train Loss",
+                    y_axis=[round(v, 4) for v in train_loss],
+                    linestyle_opts=opts.LineStyleOpts(width=2, color=COLORS["primary"]),
+                    label_opts=opts.LabelOpts(is_show=False),
+                )
+                .add_yaxis(
+                    series_name="Val Loss",
+                    y_axis=[round(v, 4) for v in val_loss],
+                    linestyle_opts=opts.LineStyleOpts(width=2, color=COLORS["danger"]),
+                    label_opts=opts.LabelOpts(is_show=False),
+                )
+                .set_global_opts(
+                    title_opts=opts.TitleOpts(title="GRU Loss Curves"),
+                    xaxis_opts=opts.AxisOpts(name="Epoch"),
+                    yaxis_opts=opts.AxisOpts(name="Loss"),
+                    tooltip_opts=opts.TooltipOpts(trigger="axis"),
+                    legend_opts=opts.LegendOpts(),
+                )
+            )
+            _render_chart(loss_chart, height="400px")
+
+            # Accuracy curve
+            acc_chart = (
+                Line(init_opts=opts.InitOpts(height="400px"))
+                .add_xaxis([str(e) for e in epochs])
+                .add_yaxis(
+                    series_name="Train Accuracy",
+                    y_axis=[round(v, 4) for v in train_acc],
+                    linestyle_opts=opts.LineStyleOpts(width=2, color=COLORS["primary"]),
+                    label_opts=opts.LabelOpts(is_show=False),
+                )
+                .add_yaxis(
+                    series_name="Val Accuracy",
+                    y_axis=[round(v, 4) for v in val_acc],
+                    linestyle_opts=opts.LineStyleOpts(width=2, color=COLORS["success"]),
+                    label_opts=opts.LabelOpts(is_show=False),
+                )
+                .set_global_opts(
+                    title_opts=opts.TitleOpts(title="GRU Accuracy Curves"),
+                    xaxis_opts=opts.AxisOpts(name="Epoch"),
+                    yaxis_opts=opts.AxisOpts(name="Accuracy"),
+                    tooltip_opts=opts.TooltipOpts(trigger="axis"),
+                    legend_opts=opts.LegendOpts(),
+                )
+            )
+            _render_chart(acc_chart, height="400px")
+        else:
+            st.info("No GRU training history available.")
+
+        if lgbm_info:
+            st.subheader("LightGBM Configuration")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Best Iteration", f"{lgbm_info.get('best_iteration', 'N/A')}")
+            c2.metric("Features", f"{lgbm_info.get('n_features', 'N/A')}")
+            c3.metric("Classes", f"{lgbm_info.get('n_classes', 'N/A')}")
+    else:
+        st.info("No training history file found for this session.")
+
+    st.divider()
+
+    # --- Pipeline Log ---
+    log_path = session_path / "logs" / "pipeline.log"
+    if log_path.exists():
+        st.subheader("Pipeline Log")
+
+        # Show last 150 lines by default
+        with open(log_path) as f:
+            all_lines = f.readlines()
+
+        with st.expander("Recent Log (last 150 lines)", expanded=True):
+            st.code("".join(all_lines[-150:]), language="log")
+
+        with st.expander("Full Pipeline Log", expanded=False):
+            st.code("".join(all_lines), language="log")
+    else:
+        st.info("No pipeline log found for this session.")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+
+def _parse_session_meta(name: str) -> dict[str, str]:
+    """Extract metadata from session directory name.
+
+    Format: {SYMBOL}_{TIMEFRAME}_{YYYYMMDD}_{HHMMSS}
+    """
+    parts = name.split("_")
+    if len(parts) >= 4:
+        return {
+            "symbol": parts[0],
+            "timeframe": parts[1],
+            "date": f"{parts[2][:4]}-{parts[2][4:6]}-{parts[2][6:8]}",
+            "time": f"{parts[3][:2]}:{parts[3][2:4]}:{parts[3][4:6]}",
+        }
+    return {"symbol": "?", "timeframe": "?", "date": "?", "time": "?"}
 
 
 def main() -> None:
@@ -417,61 +719,85 @@ def main() -> None:
                         0 0 20px rgba(37,99,235,0.05);
             transition: all 0.2s ease;
         }
+        /* Compact sidebar spacing */
+        .stSidebar .stExpander details summary {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
     </style>
     """,
         unsafe_allow_html=True,
     )
 
-    # Sidebar
-    st.sidebar.title("📊 Thesis Dashboard")
-    st.sidebar.caption("Hybrid GRU + LightGBM — XAU/USD H1")
+    # ── Sidebar Header ──
+    st.sidebar.markdown("### 📈 Thesis Dashboard")
+    st.sidebar.caption("Hybrid GRU + LightGBM — XAU/USD")
 
-    # Session selector
-    sessions = _find_sessions()
-    if not sessions:
+    # ── Session Selector (auto-refresh via fragment) ──
+    with st.sidebar.expander("📁 Session", expanded=True):
+        selected = _session_selector_fragment()
+
+    if selected is None:
         st.error("No session results found. Run `pixi run workflow` first.")
         return
 
-    session_names = [s.name for s in sessions]
-    selected = st.sidebar.selectbox(
-        "Session",
-        options=session_names,
-        index=0,
-    )
-
+    # ── Section Navigation ──
     section = st.sidebar.radio(
-        "Section",
-        ["Data Exploration", "Model Performance", "Backtest Results"],
+        "Navigation",
+        ["📊 Data", "🧠 Model", "🏃 Training", "💰 Backtest"],
         label_visibility="collapsed",
     )
+    section_map = {
+        "📊 Data": "Data Exploration",
+        "🧠 Model": "Model Performance",
+        "🏃 Training": "Training",
+        "💰 Backtest": "Backtest Results",
+    }
 
     # Load data
-    session_path = str(next(s for s in sessions if s.name == selected))
+    session_path = str(Path("results") / selected)
     loaded = _load_config(session_path)
     config = loaded["config"]
     data = loaded["data"]
+    metrics = data.get("metrics", {})
 
-    # Session info in sidebar
-    st.sidebar.divider()
-    st.sidebar.markdown(f"**Session**: `{selected}`")
-    st.sidebar.markdown(
-        f"**Symbol**: {config.data.symbol} | **TF**: {config.data.timeframe}"
-    )
-    if data.get("ohlcv") is not None:
-        ohlcv = data["ohlcv"]
-        st.sidebar.markdown(f"**Data**: {len(ohlcv):,} bars")
-    if data.get("trades"):
-        st.sidebar.markdown(f"**Trades**: {len(data['trades'])}")
-    bt = data.get("backtest_results")
-    if bt and "metrics" in bt:
-        m = bt["metrics"]
-        st.sidebar.markdown(f"**Period**: {m.get('start', '?')} → {m.get('end', '?')}")
+    # ── Configuration (collapsed expander) ──
+    with st.sidebar.expander("⚙️ Configuration", expanded=False):
+        st.markdown(
+            f"**GRU**: hidden={config.gru.hidden_size}, layers={config.gru.num_layers}, "
+            f"seq={config.gru.sequence_length}, epochs={config.gru.epochs}"
+        )
+        st.markdown(
+            f"**LightGBM**: leaves={config.model.num_leaves}, "
+            f"depth={config.model.max_depth}, lr={config.model.learning_rate}"
+        )
+        st.markdown(
+            f"**Backtest**: leverage={config.backtest.leverage}:1, "
+            f"lots={config.backtest.lots_per_trade}, "
+            f"conf≥{config.backtest.confidence_threshold}"
+        )
+        st.markdown(
+            f"**Split**: train={config.splitting.train_start[:10]}→"
+            f"{config.splitting.train_end[:10]}"
+        )
+
+    # ── Quick Stats (collapsed expander) ──
+    if metrics:
+        with st.sidebar.expander("📊 Quick Stats", expanded=False):
+            c1, c2 = st.columns(2)
+            c1.metric("Return", f"{metrics.get('return_pct', 0):.2f}%")
+            c2.metric("Win Rate", f"{metrics.get('win_rate_pct', 0):.2f}%")
+            c1.metric("Trades", f"{metrics.get('num_trades', 0)}")
+            c2.metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
 
     # Render selected section
-    if section == "Data Exploration":
+    section_name = section_map[section]
+    if section_name == "Data Exploration":
         _render_data_section(data, config)
-    elif section == "Model Performance":
+    elif section_name == "Model Performance":
         _render_model_section(data)
+    elif section_name == "Training":
+        _render_training_section(data, session_path)
     else:
         _render_backtest_section(data)
 
