@@ -81,6 +81,8 @@ class HybridGRUStrategy(Strategy):
         self._stops: dict[str, float] = {}
         # Time-based exit: bar index when position was entered (direction -> bar index)
         self._entry_bar: dict[str, int] = {}
+        # Entry price tracking: direction -> price at which position was entered
+        self._entry_price: dict[str, float] = {}
 
     def _floor_atr(self, atr: float) -> float:
         """Floor ATR to min_atr to prevent unrealistic stops in low-volatility regimes."""
@@ -134,14 +136,16 @@ class HybridGRUStrategy(Strategy):
         # Check manual stops first (from previous bar's entry)
         self._check_stop()
 
-        # Set stops for newly filled positions using actual entry price
+        # Set stops for newly filled positions using actual fill price
         if self.position:
             if (
                 self.position.is_long
                 and "long" in self._entry_bar
                 and "long" not in self._stops
             ):
-                entry_price = self.position.entry_price
+                # Market order filled at this bar's open (backtesting.py convention)
+                entry_price = self.data.Open[-1]
+                self._entry_price["long"] = entry_price
                 sl = entry_price - atr * self.atr_stop_mult
                 self._stops["long"] = sl
             elif (
@@ -149,7 +153,8 @@ class HybridGRUStrategy(Strategy):
                 and "short" in self._entry_bar
                 and "short" not in self._stops
             ):
-                entry_price = self.position.entry_price
+                entry_price = self.data.Open[-1]
+                self._entry_price["short"] = entry_price
                 sl = entry_price + atr * self.atr_stop_mult
                 self._stops["short"] = sl
 
