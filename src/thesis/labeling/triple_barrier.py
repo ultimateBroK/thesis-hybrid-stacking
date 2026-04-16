@@ -21,13 +21,24 @@ logger = logging.getLogger("thesis.labels")
 
 
 def generate_labels(config: Config) -> None:
-    """Generate triple-barrier labels and persist to parquet.
-
-    Reads the features parquet (for ATR) and OHLCV parquet (for prices),
-    computes labels, and writes the merged result to the labels path.
-
-    Args:
-        config: Loaded application configuration.
+    """
+    Generate triple-barrier labels and write them to the configured labels path.
+    
+    Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes triple-barrier labels using `config.labels` parameters (`atr_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `tp_price`, `sl_price`, `touched_bar`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
+    
+    Parameters:
+        config (Config): Application configuration containing:
+            - paths.features: path to features parquet
+            - paths.ohlcv: path to OHLCV parquet
+            - paths.labels: output path for labels parquet
+            - features.atr_period: integer ATR period (used to form `atr_{period}` column)
+            - labels.atr_multiplier: ATR multiplier for TP/SL
+            - labels.horizon_bars: forward horizon in bars
+            - labels.min_atr: minimum ATR value to use
+    
+    Raises:
+        FileNotFoundError: If the features or OHLCV input paths do not exist.
+        ValueError: If the required ATR column (`atr_{atr_period}`) is missing from the features.
     """
     features_path = Path(config.paths.features)
     ohlcv_path = Path(config.paths.ohlcv)
@@ -111,13 +122,17 @@ def _compute_labels(
     horizon: int,
     min_atr: float,
 ) -> dict:
-    """Compute triple-barrier labels without lookahead bias.
-
-    At each bar *i*, set barriers and scan bars *i+1 … i+horizon*
-    sequentially. The first barrier touched determines the label.
-
+    """
+    Compute triple-barrier outcomes for each bar by setting TP/SL levels and scanning forward up to the given horizon.
+    
+    For each index i this sets TP = close[i] + mult * max(atr[i], min_atr) and SL = close[i] - mult * max(atr[i], min_atr), then inspects bars i+1 .. i+horizon (bounded by series end) to determine which barrier is touched first. If neither barrier is touched within the horizon the label remains 0. When both barriers are reached on the same forward bar, the take-profit (TP) is selected due to the check order.
+    
     Returns:
-        Dict with keys: labels, tp_prices, sl_prices, touched_bars.
+        dict: A dictionary with the following keys:
+            - "labels" (np.ndarray[int32]): per-bar labels where 1 = TP hit (Long), -1 = SL hit (Short), 0 = Hold.
+            - "tp_prices" (np.ndarray[float64]): TP price set at each bar.
+            - "sl_prices" (np.ndarray[float64]): SL price set at each bar.
+            - "touched_bars" (np.ndarray[int32]): number of bars forward until the barrier was touched; -1 if not touched within the horizon.
     """
     n = len(close)
     labels = np.zeros(n, dtype=np.int32)
@@ -158,7 +173,14 @@ def _compute_labels(
 
 
 def _log_distribution(df: pl.DataFrame) -> None:
-    """Log class distribution."""
+    """
+    Log counts and percentages for each value in the dataframe's `label` column.
+    
+    If the `label` column is not present the function returns without logging. Each logged line reports the label value, its absolute count, and its percentage of the dataframe rows.
+    
+    Parameters:
+        df (pl.DataFrame): DataFrame expected to contain a `label` column.
+    """
     if "label" not in df.columns:
         return
     counts = df["label"].value_counts().sort("label")

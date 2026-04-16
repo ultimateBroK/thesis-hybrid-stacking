@@ -44,7 +44,19 @@ def _train_lgbm(
     config: Config,
     feature_cols: list[str],
 ) -> Any:
-    """Train LightGBM classifier with fixed hyperparameters."""
+    """
+    Train a LightGBM multiclass classifier using hyperparameters from the provided config.
+    
+    This trains an LGBMClassifier with objective "multiclass" and `num_class=3`, applies the given class weights, and uses early stopping with the number of rounds specified in the config.
+    
+    Parameters:
+        class_weights (dict[int, float]): Mapping from class index to weight used during training.
+        config (Config): Configuration object whose `model` attributes supply LightGBM hyperparameters and whose `workflow` fields supply random seed and job count.
+        feature_cols (list[str]): Names of features corresponding to columns in `X_train`/`X_val` used for logging and any feature-order expectations.
+    
+    Returns:
+        Trained LightGBM classifier instance (lgb.LGBMClassifier).
+    """
     import lightgbm as lgb
 
     m = config.model
@@ -83,7 +95,21 @@ def _save_preds(
     proba: np.ndarray,
     path: Path,
 ) -> None:
-    """Save prediction parquet with standard columns."""
+    """
+    Create and write a prediction parquet file with standardized columns for backtesting.
+    
+    Parameters:
+        timestamps (pl.Series): Datetime-aligned timestamps for each prediction row.
+        y_true (np.ndarray): Ground-truth labels as integers (shape: [n_rows]).
+        preds (np.ndarray): Predicted label indices as integers (shape: [n_rows]); saved as `pred_label`.
+        proba (np.ndarray): Per-class probabilities with shape (n_rows, 3); columns saved as
+            `pred_proba_class_minus1`, `pred_proba_class_0`, `pred_proba_class_1`.
+        path (Path): Destination parquet file path; parent directories will be created if missing.
+    
+    Side effects:
+        Writes a parquet file at `path` containing columns:
+        `timestamp`, `true_label` (int32), `pred_label` (int32), and the three per-class probability columns.
+    """
     df = pl.DataFrame(
         {
             "timestamp": timestamps,
@@ -105,7 +131,20 @@ def _run_backtest_for(
     config: Config,
     variant: str,
 ) -> dict:
-    """Run backtest for a variant and return metrics dict."""
+    """
+    Run the configured backtest for a single variant using the provided test data and prediction dataframe.
+    
+    Both `test_df` and `preds_df` must include a `timestamp` column; this function casts those columns to microsecond-resolution datetimes before running the backtest. The `variant` string is used only for logging.
+    
+    Parameters:
+        test_df (pl.DataFrame): Ground-truth test dataframe containing at least a `timestamp` column.
+        preds_df (pl.DataFrame): Predictions dataframe containing at least a `timestamp` column and prediction columns expected by the backtest.
+        config (Config): Configuration object passed through to the backtest runner.
+        variant (str): Human-readable name of the variant being evaluated (used for logging).
+    
+    Returns:
+        dict: Metrics dictionary produced by the backtest runner.
+    """
     from thesis.backtest import run_backtest_from_data
 
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
@@ -117,7 +156,22 @@ def _run_backtest_for(
 
 
 def _log_comparison(comparison: dict) -> None:
-    """Log formatted comparison table."""
+    """
+    Log a formatted table comparing ablation metrics for each variant.
+    
+    Displays rows for: Trades, Win Rate, Return %, Sharpe, Max DD %, Profit Factor, and Total PnL
+    for the variants "lgbm_only", "gru_only", and "combined". If a variant reports zero trades,
+    all metric cells except Trades are rendered as an em dash ("—"). After the table the function
+    logs each variant's feature count.
+    
+    Parameters:
+        comparison (dict): Mapping from variant keys ("lgbm_only", "gru_only", "combined")
+            to dictionaries containing:
+              - "metrics" (dict): metric name → numeric value (expects keys like
+                "num_trades", "win_rate_pct", "return_pct", "sharpe_ratio",
+                "max_drawdown_pct", "profit_factor", "total_pnl")
+              - "feature_count" (int): number of features used by the variant
+    """
     logger.info("=" * 70)
     logger.info("ABLATION COMPARISON")
     logger.info("=" * 70)
@@ -156,7 +210,13 @@ def _log_comparison(comparison: dict) -> None:
 
 
 def _determine_best(comparison: dict) -> str:
-    """Determine best variant by Sharpe ratio, breaking ties by trades."""
+    """
+    Select the best variant using Sharpe ratio, using the number of trades to break ties.
+    
+    Returns:
+        best_variant (str): The variant key ('lgbm_only', 'gru_only', or 'combined') with the highest
+        `sharpe_ratio`; if Sharpe ratios are equal, the variant with the larger `num_trades` is chosen.
+    """
     scores: dict[str, tuple[float, int]] = {}
     for variant in ["lgbm_only", "gru_only", "combined"]:
         m = comparison[variant]["metrics"]
@@ -174,13 +234,13 @@ def _determine_best(comparison: dict) -> str:
 
 
 def run_ablation(config: Config) -> None:
-    """Run all three ablation variants and save comparison results.
-
-    GRU is trained **once** and shared across GRU-only and Combined variants
-    to avoid ~10 min of redundant training.
-
-    Args:
-        config: Loaded application configuration.
+    """
+    Run the three ablation variants (LightGBM-only, GRU-only, Combined), compare their backtest metrics, and save results.
+    
+    Trains the GRU once and reuses it for the GRU-only and Combined variants, executes a backtest for each variant, writes per-variant prediction Parquet files under the session predictions directory, and writes a JSON comparison report to the session reports directory.
+    
+    Parameters:
+        config (Config): Application configuration containing dataset paths, GRU and LightGBM settings, and optional session_dir for outputs.
     """
     import torch
 

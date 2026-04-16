@@ -20,7 +20,16 @@ logger = logging.getLogger("thesis.hybrid.lgbm")
 
 
 def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
-    """Wrap numpy array in DataFrame to preserve feature names for LightGBM."""
+    """
+    Convert a NumPy feature matrix into a pandas DataFrame with the given column names to preserve feature names.
+    
+    Parameters:
+        X (np.ndarray): 2-D array of shape (n_samples, n_features) containing feature values.
+        feature_cols (list[str]): Column names to assign to the DataFrame; length must equal the number of columns in `X`.
+    
+    Returns:
+        pandas.DataFrame: DataFrame representation of `X` with columns named according to `feature_cols`.
+    """
     import pandas as pd
 
     return pd.DataFrame(X, columns=feature_cols)
@@ -51,7 +60,14 @@ _EXCLUDE_COLS = frozenset(
 
 
 def _compute_class_weights(y: np.ndarray) -> dict[int, float]:
-    """Compute balanced class weights."""
+    """
+    Compute balanced class weights for multiclass labels.
+    
+    Calculates weights inversely proportional to class frequencies so that each class contributes equally during training. The returned mapping uses integer class labels as keys and their corresponding weight as float values.
+    
+    Returns:
+        class_weights (dict[int, float]): Mapping from class label to its computed weight.
+    """
     from sklearn.utils.class_weight import compute_class_weight
 
     classes = np.unique(y)
@@ -68,7 +84,21 @@ def _train_fixed(
     config: Config,
     feature_cols: list[str],
 ) -> Any:
-    """Train LightGBM with fixed hyperparameters."""
+    """
+    Train a LightGBM multiclass classifier using fixed hyperparameters from `config` and early stopping on the provided validation set.
+    
+    Parameters:
+        X_train (np.ndarray): Training feature matrix.
+        y_train (np.ndarray): Training labels.
+        X_val (np.ndarray): Validation feature matrix used for early stopping.
+        y_val (np.ndarray): Validation labels.
+        class_weights (dict[int, float]): Mapping from class index to weight used for `class_weight`.
+        config (Config): Configuration containing model hyperparameters and workflow settings.
+        feature_cols (list[str]): Column names applied to feature matrices to preserve feature names for LightGBM.
+    
+    Returns:
+        model: Trained `lightgbm.LGBMClassifier` instance with the fitted state (including `best_iteration_`).
+    """
     import lightgbm as lgb
 
     m = config.model
@@ -117,6 +147,12 @@ def _train_fixed(
         task = progress.add_task("iter", total=m.n_estimators, v_loss=0.0)
 
         def _progress_cb(env: Any) -> None:
+            """
+            Advance the Rich progress task by one iteration and set the `v_loss` field from the LightGBM callback environment.
+            
+            Parameters:
+                env (Any): LightGBM callback environment; `env.evaluation_result_list[0][2]` is used as the validation loss when available, otherwise `0.0`.
+            """
             progress.update(
                 task,
                 advance=1,
@@ -153,7 +189,17 @@ def _train_optuna(
     config: Config,
     feature_cols: list[str],
 ) -> Any:
-    """Train LightGBM with Optuna hyperparameter optimisation."""
+    """
+    Perform an Optuna hyperparameter search for a LightGBM multiclass classifier using time-series cross-validation, then train and return a final LightGBM model using the best-found parameters.
+    
+    Parameters:
+        class_weights (dict[int, float]): Mapping from class index to weight applied during training.
+        config (Config): Configuration object controlling randomness, Optuna budget, early stopping, and related training settings.
+        feature_cols (list[str]): Column names used to wrap NumPy feature matrices so LightGBM preserves feature names.
+    
+    Returns:
+        model: A fitted LightGBM classifier trained on the provided training set and validated using the supplied validation set.
+    """
     import lightgbm as lgb
     import optuna
     from sklearn.metrics import f1_score
@@ -163,6 +209,15 @@ def _train_optuna(
     seed = config.workflow.random_seed
 
     def objective(trial: Any) -> float:
+        """
+        Evaluate hyperparameters proposed by an Optuna `trial` using 3-fold time-series cross-validation and return the mean macro F1 score.
+        
+        Parameters:
+            trial: An Optuna trial object that suggests hyperparameter values for a LightGBM multiclass classifier.
+        
+        Returns:
+            float: Mean macro F1 score across the three TimeSeriesSplit folds (uses a gap of `config.splitting.purge_bars` and LightGBM early stopping of 30 rounds).
+        """
         params = {
             "num_leaves": trial.suggest_int("num_leaves", 20, 150),
             "max_depth": trial.suggest_int("max_depth", 3, 12),
@@ -222,6 +277,13 @@ def _train_optuna(
         def _optuna_cb(
             study: optuna.study.Study, trial: optuna.trial.FrozenTrial
         ) -> None:
+            """
+            Update the external Rich progress task and store a new best F1 score when the study improves.
+            
+            Parameters:
+                study (optuna.study.Study): The Optuna study to read the current best value from.
+                trial (optuna.trial.FrozenTrial): The trial that just finished (unused except for callback signature).
+            """
             nonlocal best_f1
             if study.best_value > best_f1:
                 best_f1 = study.best_value
@@ -268,6 +330,12 @@ def _train_optuna(
         task = progress.add_task("iter", total=n_est, v_loss=0.0)
 
         def _progress_cb(env: Any) -> None:
+            """
+            Advance the Rich progress task by one iteration and set the `v_loss` field from the LightGBM callback environment.
+            
+            Parameters:
+                env (Any): LightGBM callback environment; `env.evaluation_result_list[0][2]` is used as the validation loss when available, otherwise `0.0`.
+            """
             progress.update(
                 task,
                 advance=1,

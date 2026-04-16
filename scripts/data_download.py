@@ -39,11 +39,27 @@ class ProjectPaths:
     data_raw_base: Path = Path("data/raw")
 
     def raw_data_dir(self, symbol: str) -> Path:
-        """Return the raw-tick directory for *symbol* (must be fs-safe)."""
+        """
+        Get the raw-tick data directory path for the given filesystem-safe symbol.
+        
+        Parameters:
+            symbol (str): Filesystem-safe symbol (e.g., with '/' replaced by '_') used as the directory name under the raw data base.
+        
+        Returns:
+            Path: Path to the symbol's raw-tick directory (data_raw_base / symbol).
+        """
         return self.data_raw_base / symbol
 
     def state_file(self, symbol: str) -> Path:
-        """Return the download-state JSON path for *symbol*."""
+        """
+        Get the filesystem path to the download-state JSON file for the given symbol.
+        
+        Parameters:
+            symbol (str): Filesystem-safe symbol (e.g., slashes replaced with underscores).
+        
+        Returns:
+            Path: Path to 'download_state.json' located under the project's raw data directory for the symbol.
+        """
         return self.data_raw_base / symbol / "download_state.json"
 
 
@@ -67,11 +83,13 @@ SYMBOL_OVERRIDES: dict[str, str] = {}
 
 
 def _download_symbol(symbol: str) -> str:
-    """Return the symbol used in Dukascopy data-feed URLs.
-
-    If the symbol has an explicit override in :data:`SYMBOL_OVERRIDES`,
-    use that.  For composite names containing ``/``, the part before
-    the slash is used.  Otherwise the symbol is returned unchanged.
+    """
+    Select the Dukascopy feed symbol corresponding to a canonical symbol.
+    
+    If an explicit mapping exists in SYMBOL_OVERRIDES that mapping is returned; otherwise, if the canonical symbol contains a slash (`/`) the substring before the slash is returned; if neither condition applies, the original symbol is returned.
+    
+    Returns:
+        str: The symbol to use in Dukascopy URL paths.
     """
     if symbol in SYMBOL_OVERRIDES:
         return SYMBOL_OVERRIDES[symbol]
@@ -111,7 +129,24 @@ def build_download_config(
     skip_current_month: bool = False,
     paths: ProjectPaths = DEFAULT_PATHS,
 ) -> DownloadRuntimeConfig:
-    """Build an immutable runtime config for the downloader."""
+    """
+    Create a DownloadRuntimeConfig with filesystem-safe output/state paths and the Dukascopy download symbol resolved.
+    
+    Parameters:
+        symbol (str): Canonical symbol provided by the user (may contain '/' characters).
+        start_year (int): First year to include.
+        start_month (int): First month to include (1-12).
+        asset_class (str): Asset class identifier (e.g., "fx", "crypto", "index").
+        concurrency (int): Maximum concurrent HTTP downloads.
+        force (bool): If true, ignore existing files/state and re-download.
+        end_year (int | None): Optional final year to include.
+        end_month (int | None): Optional final month to include (1-12).
+        skip_current_month (bool): If true, omit processing the current month.
+        paths (ProjectPaths): Project path helpers used to compute output and state file locations.
+    
+    Returns:
+        DownloadRuntimeConfig: Immutable runtime configuration with `download_symbol`, `output_dir`, and `state_file` populated.
+    """
     fs_sym = _fs_symbol(symbol)
     return DownloadRuntimeConfig(
         symbol=symbol,
@@ -134,7 +169,18 @@ def list_available_raw_months(
     *,
     paths: ProjectPaths = DEFAULT_PATHS,
 ) -> list[tuple[int, int]]:
-    """Return list of (year, month) from YYYY-MM.parquet files in raw dir."""
+    """
+    List available months for which raw parquet files exist for a symbol.
+    
+    Scans the raw-data directory for files named `YYYY-MM.parquet` and returns the parsed (year, month) tuples sorted in ascending order.
+    
+    Parameters:
+    	symbol (str): Canonical symbol; slashes are converted to a filesystem-safe form before locating the directory.
+    	paths (ProjectPaths): Paths helper used to locate the symbol's raw data directory (defaults to DEFAULT_PATHS).
+    
+    Returns:
+    	list[tuple[int, int]]: Sorted list of (year, month) tuples found in the raw directory; empty if the directory does not exist or no matching files are found.
+    """
     raw_dir = paths.raw_data_dir(_fs_symbol(symbol))
     if not raw_dir.exists():
         return []
@@ -248,7 +294,18 @@ async def _fetch_one(
     hour: int,
     month: int,
 ) -> pl.DataFrame | None | str:
-    """Fetch, decompress, and parse one hourly file asynchronously."""
+    """
+    Download, decompress, and parse a single Dukascopy hourly bi5 file for a specific datetime slot.
+    
+    Attempts up to four HTTP fetch/decompress/parse attempts with backoff. Returns parsed tick data when successful, `None` when the remote file is absent (HTTP 404), or the string `'TIMEOUT'` when all attempts fail.
+    
+    Parameters:
+        month_idx (int): Zero-based month component used in the Dukascopy URL path (0 == January).
+        month (int): One-based calendar month used for parsing and downstream metadata (1 == January).
+    
+    Returns:
+        pl.DataFrame | None | str: `pl.DataFrame` containing parsed tick records for the hour; `None` if the server returned 404 (no file for that hour); or the string `'TIMEOUT'` if all retries were exhausted without a successful parse.
+    """
     url = f"{BASE_URL}/{config.download_symbol}/{year:04d}/{month_idx:02d}/{day:02d}/{hour:02d}h_ticks.bi5"
     async with semaphore:
         for attempt in range(4):
@@ -551,7 +608,14 @@ def run_download_job(
 
 
 def _add_download_parser(subparsers: argparse._SubParsersAction) -> None:
-    """Add download subcommand parser with config.toml defaults."""
+    """
+    Register the "download" subcommand on the provided subparsers and configure its CLI arguments using defaults from config.toml.
+    
+    If loading config.toml fails, sensible fallback defaults are used for start/end dates, concurrency, force, and skip-current-month.
+    
+    Parameters:
+        subparsers (argparse._SubParsersAction): Subparsers collection returned by ArgumentParser.add_subparsers() to which the "download" command will be added.
+    """
     from thesis.config import load_config
 
     # Load config to get defaults
@@ -652,7 +716,23 @@ def _add_download_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _get_download_defaults_from_config():
-    """Helper to extract download defaults from config.toml."""
+    """
+    Load download-related defaults from config.toml.
+    
+    Returns a mapping of download defaults extracted from the file with the following keys:
+    - "symbol": canonical symbol string.
+    - "asset_class": asset class (e.g., "fx", "crypto", "index").
+    - "start_year": start year as an integer.
+    - "start_month": start month as an integer (1-12).
+    - "end_year": end year as an integer.
+    - "end_month": end month as an integer (1-12).
+    - "concurrency": download concurrency as an integer.
+    - "force": boolean indicating whether to force re-downloads.
+    - "skip_current_month": boolean indicating whether to skip the current month.
+    
+    Returns:
+        dict[str, object]: The defaults mapping, or `None` if the configuration could not be loaded or parsed.
+    """
     from thesis.config import load_config
     from datetime import datetime
 
@@ -712,7 +792,14 @@ Dukascopy instruments may work if you know the exact feed name.
 
 
 def main():
-    """CLI entry point for data download."""
+    """
+    CLI entry point that parses command-line arguments and runs the data download job.
+    
+    Parses download-related CLI options, configures logging, invokes `run_download_job` with the parsed values, and returns an appropriate process exit code.
+    
+    Returns:
+        int: `0` on success, `1` on failure.
+    """
     import argparse
 
     parser = argparse.ArgumentParser(

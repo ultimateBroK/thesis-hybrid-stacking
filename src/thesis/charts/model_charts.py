@@ -12,16 +12,17 @@ def build_confusion_matrix_chart(
     true: np.ndarray,
     pred: np.ndarray,
 ) -> HeatMap:
-    """Build normalized confusion matrix heatmap.
-
-    3x3 matrix: Short(-1), Hold(0), Long(1). Blue colormap with cell values.
-
-    Args:
-        true: True label array.
-        pred: Predicted label array.
-
+    """
+    Builds a normalized 3×3 confusion matrix heatmap for labels Short (-1), Hold (0), and Long (1).
+    
+    The matrix is row-normalized so each true-label row sums to 1; cell values are rounded to three decimals and shown on the heatmap.
+    
+    Parameters:
+        true: Array of true labels encoded as -1, 0, or 1; must align in length with `pred`.
+        pred: Array of predicted labels encoded as -1, 0, or 1; must align in length with `true`.
+    
     Returns:
-        pyecharts HeatMap chart.
+        A pyecharts HeatMap configured to display the normalized confusion matrix with labeled cells, axis display labels, item tooltips, and a blue visual color scale from 0 to 1.
     """
     labels_order = [-1, 0, 1]
     display_labels = ["Short (-1)", "Hold (0)", "Long (1)"]
@@ -74,15 +75,16 @@ def build_confusion_matrix_chart(
 
 
 def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
-    """Build prediction confidence distribution chart.
-
-    Overlaid bars for long vs short confidence scores.
-
-    Args:
-        preds_df: Predictions DataFrame with pred_proba_class_* columns.
-
+    """
+    Create a bar chart showing the distribution of prediction confidence for Long and Short predictions.
+    
+    Only rows where `pred_label` equals the corresponding class are used: `pred_proba_class_1` for Long (`pred_label == 1`) and `pred_proba_class_minus1` for Short (`pred_label == -1`). Confidence values are binned into 50 equal-width intervals between 0 and 1. If the `pred_proba_class_1` column is absent, an empty `Bar` is returned.
+    
+    Parameters:
+        preds_df (pl.DataFrame): Predictions DataFrame. Must contain `pred_label` and `pred_proba_class_1`; `pred_proba_class_minus1` is also required for Short counts.
+    
     Returns:
-        pyecharts Bar chart.
+        Bar: A configured pyecharts `Bar` chart with two series ("Long confidence" and "Short confidence") showing counts per confidence bin, or an empty `Bar` if `pred_proba_class_1` is missing.
     """
     y_pred = preds_df["pred_label"].to_numpy()
 
@@ -131,16 +133,17 @@ def build_feature_importance_chart(
     fi: dict[str, float],
     top_n: int = 20,
 ) -> Bar:
-    """Build horizontal feature importance bar chart.
-
-    GRU features colored purple, static features colored blue.
-
+    """
+    Build a horizontal bar chart showing the top feature importances.
+    
+    Splits features into "Static Features" and "GRU Features" based on names that start with "gru_" and displays their contributions as two stacked series for the top `top_n` features.
+    
     Args:
-        fi: Feature importance dict {name: score}.
-        top_n: Number of top features to display.
-
+        fi (dict[str, float]): Mapping from feature name to importance score.
+        top_n (int): Number of top features to display.
+    
     Returns:
-        pyecharts Bar chart (horizontal).
+        Bar: A pyecharts Bar chart with a reversed (horizontal) axis showing the top features.
     """
     items = sorted(fi.items(), key=lambda x: x[1], reverse=True)[:top_n]
     names = [n for n, _ in items]
