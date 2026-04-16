@@ -103,7 +103,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.gru.arch import GRUModel
+          from thesis.gru.arch import GRUExtractor
           print('GRU module imports successfully')
           "
 
@@ -111,7 +111,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.hybrid.train import train_hybrid
+          from thesis.hybrid.train import train_model
           print('Hybrid training module imports successfully')
           "
 
@@ -119,7 +119,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.backtest.strategy import TradingStrategy
+          from thesis.backtest.strategy import run_backtest
           print('Backtest module imports successfully')
           "
 
