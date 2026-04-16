@@ -49,6 +49,9 @@ class HybridGRUStrategy(Strategy):
     confidence_threshold = 0.0  # 0 = disabled, trade all signals
     min_atr = 0.0001  # floor to prevent microscopic stops
     contract_size = 100  # units per lot (from DataConfig)
+    horizon_bars = (
+        0  # 0 = disabled (hold until opposite signal or stop); N = exit after N bars
+    )
 
     def init(self) -> None:
         """
@@ -76,6 +79,8 @@ class HybridGRUStrategy(Strategy):
         # Manual stop tracking (filled on entry, consumed in next bar)
         # dict: direction -> stop_price
         self._stops: dict[str, float] = {}
+        # Time-based exit: bar index when position was entered (direction -> bar index)
+        self._entry_bar: dict[str, int] = {}
 
     def _floor_atr(self, atr: float) -> float:
         """Floor ATR to min_atr to prevent unrealistic stops in low-volatility regimes."""
@@ -119,6 +124,9 @@ class HybridGRUStrategy(Strategy):
         Evaluate the latest model signal and, if appropriate, place a market order with an ATR-based stop-loss.
 
         Checks the most recent signal, optional predicted-class confidence (when `confidence_threshold > 0` and probability columns are available), and current position to decide whether to enter a new long or short trade. Uses manual stop tracking (market orders) instead of backtesting.py's sl= parameter to avoid the built-in tie-break bias when TP and SL are both hit on the same bar. A signal of 0 (hold) or a confidence value below the threshold results in no action.
+
+        Time-based exit: when `horizon_bars > 0`, positions are closed after holding for `horizon_bars` bars
+        (aligned with the labeling horizon). This prevents indefinite holding when no opposing signal occurs.
         """
         signal = int(self.signals[-1])
         price = self.data.Close[-1]
@@ -126,6 +134,17 @@ class HybridGRUStrategy(Strategy):
 
         # Check manual stops first (from previous bar's entry)
         self._check_stop()
+
+        # Time-based exit: close positions that have exceeded horizon_bars
+        if self.horizon_bars > 0 and self.position:
+            entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
+            if entry_bar is not None:
+                bars_held = len(self.data) - entry_bar
+                if bars_held >= self.horizon_bars:
+                    self.position.close()
+                    direction = "long" if self.position.is_long else "short"
+                    self._entry_bar.pop(direction, None)
+                    self._stops.pop(direction, None)
 
         # Confidence gate: skip low-confidence signals
         if self.confidence_threshold > 0 and self._has_proba:
@@ -145,11 +164,13 @@ class HybridGRUStrategy(Strategy):
             # Flat → enter long with manual stop
             sl = price - atr * self.atr_stop_mult
             self._stops["long"] = sl
+            self._entry_bar["long"] = len(self.data)
             self.buy(size=size)
         elif signal == -1 and not self.position:
             # Flat → enter short with manual stop
             sl = price + atr * self.atr_stop_mult
             self._stops["short"] = sl
+            self._entry_bar["short"] = len(self.data)
             self.sell(size=size)
 
 
@@ -359,6 +380,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
         lots_per_trade=bc.lots_per_trade,
         confidence_threshold=bc.confidence_threshold,
         contract_size=dc.contract_size,
+        horizon_bars=config.labels.horizon_bars,
     )
     return stats, bt
 

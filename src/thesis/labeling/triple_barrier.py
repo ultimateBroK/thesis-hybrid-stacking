@@ -99,6 +99,20 @@ def generate_labels(config: Config) -> None:
 
     df = df.join(labels_df, on="timestamp", how="left")
 
+    # Replace censored markers (-2) with Hold (0) — conservative for training
+    n_censored = int((df["label"] == -2).sum())
+    if n_censored > 0:
+        df = df.with_columns(
+            pl.when(pl.col("label") == -2)
+            .then(pl.lit(0))
+            .otherwise(pl.col("label"))
+            .alias("label")
+        )
+        logger.warning(
+            "Censored rows (near end, insufficient horizon): %d — set to Hold (0)",
+            n_censored,
+        )
+
     # Log distribution
     _log_distribution(df)
 
@@ -125,14 +139,14 @@ def _compute_labels(
     """
     Compute triple-barrier outcomes for each bar by setting TP/SL levels and scanning forward up to the given horizon.
 
-    For each index i this sets TP = close[i] + mult * max(atr[i], min_atr) and SL = close[i] - mult * max(atr[i], min_atr), then inspects bars i+1 .. i+horizon (bounded by series end) to determine which barrier is touched first. If neither barrier is touched within the horizon the label remains 0. When both barriers are reached on the same forward bar, the take-profit (TP) is selected due to the check order.
+    For each index i this sets TP = close[i] + mult * max(atr[i], min_atr) and SL = close[i] - mult * max(atr[i], min_atr), then inspects bars i+1 .. i+horizon (bounded by series end) to determine which barrier is touched first. If neither barrier is touched within the horizon the label remains 0. If both barriers are touched on the same bar, the conservative approach treats it as Hold (skips to next bar). Rows within `horizon` bars of the series end are marked -2 (censored) and should be excluded from training.
 
     Returns:
         dict: A dictionary with the following keys:
-            - "labels" (np.ndarray[int32]): per-bar labels where 1 = TP hit (Long), -1 = SL hit (Short), 0 = Hold.
+            - "labels" (np.ndarray[int32]): per-bar labels where 1 = TP hit (Long), -1 = SL hit (Short), 0 = Hold, -2 = censored (right-censored, insufficient forward bars).
             - "tp_prices" (np.ndarray[float64]): TP price set at each bar.
             - "sl_prices" (np.ndarray[float64]): SL price set at each bar.
-            - "touched_bars" (np.ndarray[int32]): number of bars forward until the barrier was touched; -1 if not touched within the horizon.
+            - "touched_bars" (np.ndarray[int32]): number of bars forward until the barrier was touched; -1 if not touched, -2 if censored.
     """
     n = len(close)
     labels = np.zeros(n, dtype=np.int32)
@@ -147,13 +161,25 @@ def _compute_labels(
         tp_prices[i] = tp
         sl_prices[i] = sl
 
+        # Right-censored: not enough forward bars to evaluate horizon
+        if i + horizon >= n:
+            labels[i] = -2  # Special marker: censored (excluded from training)
+            touched_bars[i] = -2
+            continue
+
         label = 0  # Hold by default
         for j in range(i + 1, min(i + 1 + horizon, n)):
-            if high[j] >= tp:
+            tp_hit = high[j] >= tp
+            sl_hit = low[j] <= sl
+            if tp_hit and sl_hit:
+                # Same bar spans both barriers — unknowable intrabar path.
+                # Conservative: treat as no-decision, skip to next bar.
+                continue
+            if tp_hit:
                 label = 1  # Long
                 touched_bars[i] = j - i
                 break
-            if low[j] <= sl:
+            if sl_hit:
                 label = -1  # Short
                 touched_bars[i] = j - i
                 break

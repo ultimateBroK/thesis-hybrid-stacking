@@ -65,6 +65,21 @@ def train_gru(
         val_df, gru_cols, gru_cfg.sequence_length
     )
 
+    if train_seq.shape[0] == 0:
+        raise ValueError(
+            f"GRU training: 0 sequences from train data "
+            f"(sequence_length={gru_cfg.sequence_length}, "
+            f"train rows={len(train_df)}). "
+            "Ensure train_df has >= sequence_length rows."
+        )
+    if val_seq.shape[0] == 0:
+        raise ValueError(
+            f"GRU validation: 0 sequences from val data "
+            f"(sequence_length={gru_cfg.sequence_length}, "
+            f"val rows={len(val_df)}). "
+            "Ensure val_df has >= sequence_length rows."
+        )
+
     # Remap labels from {-1, 0, 1} to {0, 1, 2} for PyTorch CrossEntropyLoss
     if train_labels is not None:
         train_labels = (train_labels + 1).astype(np.int32)

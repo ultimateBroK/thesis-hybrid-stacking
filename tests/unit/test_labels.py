@@ -37,8 +37,12 @@ def test_labels_in_valid_set() -> None:
     labels = result["labels"]
     unique_labels = np.unique(labels)
 
-    # All labels should be in {-1, 0, 1}
-    assert np.all(np.isin(unique_labels, [-1, 0, 1]))
+    # All labels should be in {-1, 0, 1}; -2 may appear for right-censored rows
+    # (last `horizon` bars with insufficient forward data to evaluate)
+    valid = np.all(np.isin(unique_labels, [-2, -1, 0, 1]))
+    assert valid, (
+        f"Unexpected labels {unique_labels}: expected subset of {{-2, -1, 0, 1}}"
+    )
 
 
 @pytest.mark.unit
@@ -159,10 +163,10 @@ def test_zero_atr_handled() -> None:
         min_atr=0.1,  # min_atr should kick in
     )
 
-    # Should still produce valid labels
+    # Should still produce valid labels; -2 may appear for right-censored rows
     labels = result["labels"]
     assert len(labels) == n
-    assert np.all(np.isin(labels, [-1, 0, 1]))
+    assert np.all(np.isin(labels, [-2, -1, 0, 1]))
 
     # TP and SL should still be valid
     tp_prices = result["tp_prices"]
