@@ -94,6 +94,11 @@ def _load_config(session_dir: str) -> dict:
     """
     config = load_config()
     config.paths.session_dir = session_dir
+    # Prefer session snapshot config if available (from a past run), otherwise use default
+    snapshot = Path(session_dir) / "config" / "config_snapshot.toml"
+    if snapshot.exists():
+        config = load_config(snapshot)
+        config.paths.session_dir = session_dir
     data = load_session_data(config)
     return {"config": config, "data": data}
 

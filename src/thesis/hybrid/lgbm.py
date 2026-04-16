@@ -232,7 +232,7 @@ def _train_optuna(
             "objective": "multiclass",
             "num_class": 3,
             "random_state": seed,
-            "n_jobs": -1,
+            "n_jobs": config.workflow.n_jobs,
             "verbose": -1,
         }
 
@@ -312,7 +312,7 @@ def _train_optuna(
         objective="multiclass",
         num_class=3,
         random_state=seed,
-        n_jobs=-1,
+        n_jobs=config.workflow.n_jobs,
         verbose=-1,
     )
 

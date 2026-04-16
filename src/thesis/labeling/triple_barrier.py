@@ -108,8 +108,8 @@ def generate_labels(config: Config) -> None:
             .otherwise(pl.col("label"))
             .alias("label")
         )
-        logger.warning(
-            "Censored rows (near end, insufficient horizon): %d — set to Hold (0)",
+        logger.info(
+            "Right-censored rows (near end, insufficient horizon): %d — set to Hold (0)",
             n_censored,
         )
 

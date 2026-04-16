@@ -122,7 +122,12 @@ def build_pnl_histogram_chart(
     losses = [p for p in pnls if p <= 0]
 
     all_pnls = np.array(pnls)
-    bins = np.linspace(all_pnls.min(), all_pnls.max(), 51)
+    if all_pnls.min() == all_pnls.max():
+        # Constant PnL: create a single centred bin so the histogram still renders
+        center = all_pnls.min()
+        bins = np.array([center - 0.5, center + 0.5])
+    else:
+        bins = np.linspace(all_pnls.min(), all_pnls.max(), 51)
     win_counts, _ = np.histogram(wins, bins=bins)
     loss_counts, _ = np.histogram(losses, bins=bins)
     bin_labels = [f"{bins[i]:.0f}" for i in range(len(bins) - 1)]
@@ -287,7 +292,9 @@ def build_rolling_sharpe_chart(
     rolling_std = np.array(
         [pnls[i : i + window].std() for i in range(len(pnls) - window + 1)]
     )
-    rolling_sharpe = rolling_mean / (rolling_std + 1e-10) * np.sqrt(252)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rolling_sharpe = rolling_mean / rolling_std * np.sqrt(252)
+    rolling_sharpe = np.where(rolling_std == 0, np.nan, rolling_sharpe)
 
     x_labels = [str(i + window) for i in range(len(rolling_sharpe))]
 

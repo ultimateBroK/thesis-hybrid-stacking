@@ -198,14 +198,17 @@ def train_model(config: Config) -> None:
     _console.print(table)
     logger.info("Test accuracy: %.4f", acc)
 
+    class_order = model.classes_.tolist()  # e.g. [-1, 0, 1]
+    proba_cols = {
+        f"pred_proba_class_{cls}": proba[:, idx] for idx, cls in enumerate(class_order)
+    }
+
     preds_df = pl.DataFrame(
         {
             "timestamp": test_aligned["timestamp"],
             "true_label": y_test,
             "pred_label": preds.astype(np.int32),
-            "pred_proba_class_minus1": proba[:, 0],
-            "pred_proba_class_0": proba[:, 1],
-            "pred_proba_class_1": proba[:, 2],
+            **proba_cols,
         }
     )
 

@@ -91,6 +91,9 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
     if "pred_proba_class_1" not in preds_df.columns:
         return Bar()
 
+    if "pred_proba_class_minus1" not in preds_df.columns:
+        return Bar()
+
     long_conf = preds_df["pred_proba_class_1"].to_numpy()
     short_conf = preds_df["pred_proba_class_minus1"].to_numpy()
 

@@ -94,6 +94,7 @@ def _save_preds(
     preds: np.ndarray,
     proba: np.ndarray,
     path: Path,
+    class_order: list | None = None,
 ) -> None:
     """
     Create and write a prediction parquet file with standardized columns for backtesting.
@@ -103,21 +104,28 @@ def _save_preds(
         y_true (np.ndarray): Ground-truth labels as integers (shape: [n_rows]).
         preds (np.ndarray): Predicted label indices as integers (shape: [n_rows]); saved as `pred_label`.
         proba (np.ndarray): Per-class probabilities with shape (n_rows, 3); columns saved as
-            `pred_proba_class_minus1`, `pred_proba_class_0`, `pred_proba_class_1`.
+            `pred_proba_class_{label}` for each label in `class_order`.
         path (Path): Destination parquet file path; parent directories will be created if missing.
+        class_order (list | None): Ordered list of class labels corresponding to proba columns
+            (e.g., `[-1, 0, 1]` means proba[:,0] → class -1, proba[:,1] → class 0, proba[:,2] → class 1).
+            When None, defaults to `[-1, 0, 1]`.
 
     Side effects:
         Writes a parquet file at `path` containing columns:
         `timestamp`, `true_label` (int32), `pred_label` (int32), and the three per-class probability columns.
     """
+    if class_order is None:
+        class_order = [-1, 0, 1]
+    col_mapping = {label: proba[:, idx] for idx, label in enumerate(class_order)}
+
     df = pl.DataFrame(
         {
             "timestamp": timestamps,
             "true_label": y_true.astype(np.int32),
             "pred_label": preds.astype(np.int32),
-            "pred_proba_class_minus1": proba[:, 0],
-            "pred_proba_class_0": proba[:, 1],
-            "pred_proba_class_1": proba[:, 2],
+            **{
+                f"pred_proba_class_{label}": col_mapping[label] for label in class_order
+            },
         }
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -324,13 +332,20 @@ def run_ablation(config: Config) -> None:
         X_train_a, y_train_a, X_val_a, y_val_a, cw_a, config, static_cols
     )
     proba_a = model_a.predict_proba(_wrap_np(X_test_a, static_cols))
-    preds_a = np.argmax(proba_a, axis=1) - 1
+    preds_a = model_a.classes_[np.argmax(proba_a, axis=1)]
     logger.info("LightGBM-only accuracy: %.4f", (preds_a == y_test_a).mean())
 
     preds_path_a = session_dir / "predictions" / "ablation_lgbm_only.parquet"
-    _save_preds(test_df["timestamp"], y_test_a, preds_a, proba_a, preds_path_a)
+    _save_preds(
+        test_aligned["timestamp"],
+        y_test_a,
+        preds_a,
+        proba_a,
+        preds_path_a,
+        class_order=model_a.classes_.tolist(),
+    )
     preds_df_a = pl.read_parquet(preds_path_a)
-    metrics_a = _run_backtest_for(test_df, preds_df_a, config, "LightGBM-only")
+    metrics_a = _run_backtest_for(test_aligned, preds_df_a, config, "LightGBM-only")
     result_a = {"metrics": metrics_a, "feature_count": len(static_cols)}
 
     # ==================================================================
@@ -394,7 +409,12 @@ def run_ablation(config: Config) -> None:
 
     preds_path_c = session_dir / "predictions" / "ablation_combined.parquet"
     _save_preds(
-        test_aligned["timestamp"], y_test_aligned, preds_c, proba_c, preds_path_c
+        test_aligned["timestamp"],
+        y_test_aligned,
+        preds_c,
+        proba_c,
+        preds_path_c,
+        class_order=model_c.classes_.tolist(),
     )
     preds_df_c = pl.read_parquet(preds_path_c)
     metrics_c = _run_backtest_for(test_aligned, preds_df_c, config, "Combined")

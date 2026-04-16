@@ -17,6 +17,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from torch.utils.data import DataLoader
+from rich.console import Console
 
 from thesis.config import Config
 from thesis.gru.arch import GRUExtractor
@@ -153,6 +154,7 @@ def train_gru(
         TextColumn("[green]v_acc={task.fields[v_acc]:.3f}"),
         TimeElapsedColumn(),
         transient=False,
+        console=Console(stderr=True),
     )
 
     with progress:

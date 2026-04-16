@@ -474,7 +474,7 @@ def run_backtest(config: Config) -> None:
 
     # Save Bokeh HTML chart
     session_dir = Path(config.paths.session_dir) if config.paths.session_dir else None
-    if session_dir:
+    if session_dir and len(stats["_trades"]) > 0:
         chart_dir = session_dir / "backtest"
         chart_dir.mkdir(parents=True, exist_ok=True)
         chart_path = chart_dir / "backtest_chart.html"
@@ -487,6 +487,8 @@ def run_backtest(config: Config) -> None:
             resample="2h",
         )
         logger.info("Bokeh chart saved: %s", chart_path)
+    elif session_dir:
+        logger.info("No trades — skipping Bokeh chart")
 
 
 def run_backtest_from_data(
