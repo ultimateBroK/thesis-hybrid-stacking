@@ -90,7 +90,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          pixi run pytest tests/integration/ -v --tb=short
+          pixi run pytest tests/integration/ -v --tb=short --override-ini="addopts="
 
   security-scan:
     name: Security Scan

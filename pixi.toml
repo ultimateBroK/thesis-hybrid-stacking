@@ -55,6 +55,7 @@ pytorch = ">=2.10.0,<3"
 bokeh = ">=3.9.0,<4"
 streamlit = ">=1.56.0,<2"
 rich = ">=15.0.0,<16"
+ta-lib = ">=0.6.4,<0.7"
 
 
 [pypi-dependencies]
