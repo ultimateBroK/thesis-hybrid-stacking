@@ -29,10 +29,29 @@ class _StripAnsiFormatter(logging.Formatter):
     """Formatter that strips ANSI escape codes — for file handlers."""
 
     def format(self, record: logging.LogRecord) -> str:
+        """
+        Format a logging.LogRecord into a string and remove ANSI escape codes.
+
+        This returns the formatted log message with any ANSI escape sequences stripped so it is safe for plain-text file output.
+
+        Parameters:
+            record (logging.LogRecord): The log record to format.
+
+        Returns:
+            str: The formatted log message with ANSI escape codes removed.
+        """
         return _ANSI_RE.sub("", super().format(record))
 
 
 def main() -> None:
+    """
+    Command-line entry point that runs the thesis ML pipeline and records a session.
+
+    Parses command-line options, loads and snapshots the configuration, creates a
+    timestamped session directory (updating config paths and creating subdirectories),
+    sets up console and file logging, executes the pipeline (and optionally an
+    ablation study), and writes a session manifest JSON with metadata and timing.
+    """
     parser = argparse.ArgumentParser(description="Thesis ML Pipeline")
     parser.add_argument("--config", default="config.toml", help="Path to config.toml")
     parser.add_argument("--force", action="store_true", help="Force re-run all stages")

@@ -33,10 +33,14 @@ _console = Console()
 
 
 def train_model(config: Config) -> None:
-    """Train hybrid GRU + LightGBM model and save predictions.
+    """
+    Orchestrates training of a hybrid GRU feature extractor and LightGBM classifier, evaluates on the test split, and saves models, predictions, and artifacts.
 
-    Args:
-        config: Loaded application configuration.
+    Parameters:
+        config (Config): Application configuration containing paths for data, model, and predictions, plus GRU and LightGBM training settings.
+
+    Raises:
+        FileNotFoundError: If any of the required split files (train/val/test) do not exist.
     """
     stage_start = time.perf_counter()
 

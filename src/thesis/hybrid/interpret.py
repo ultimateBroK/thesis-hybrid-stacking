@@ -25,7 +25,17 @@ logger = logging.getLogger("thesis.hybrid.interpret")
 def _compute_shap(
     model: Any, X_test: np.ndarray, feature_cols: list[str], config: Config
 ) -> None:
-    """Compute and save SHAP summary."""
+    """
+    Compute SHAP values for a subset of the test set and write a SHAP summary plot to disk.
+
+    This function computes SHAP values for up to 500 rows from `X_test`, renders a SHAP summary plot, and saves the plot as `shap_summary.png` under `<session_dir>/reports/` when `config.paths.session_dir` is set or `results/shap_summary.png` otherwise. On success it logs an informational message with the number of samples processed and elapsed time; on any failure it logs a warning and exits silently.
+
+    Parameters:
+        model: A tree-based predictive model compatible with SHAP's TreeExplainer.
+        X_test (np.ndarray): Feature matrix from which up to 500 rows are sampled for SHAP computation.
+        feature_cols (list[str]): Ordered list of feature names corresponding to columns in `X_test`.
+        config: Configuration object. Uses `config.workflow.random_seed` to seed plot randomness and `config.paths.session_dir` to determine the output directory.
+    """
     try:
         import shap
 
@@ -86,7 +96,11 @@ def _compute_shap(
 def _save_feature_importance(
     model: Any, feature_cols: list[str], config: Config
 ) -> None:
-    """Save feature importance as JSON."""
+    """
+    Write the model's feature importances to a JSON file, sorted by descending importance.
+
+    The output is a JSON object mapping feature names to their importance values (floats), pretty-printed with an indentation of 2. If `config.paths.session_dir` is set the file is written to `<session_dir>/reports/feature_importance.json`, otherwise it is written to `results/feature_importance.json`. Parent directories are created if needed. On success the top five feature names are logged; on failure a warning is emitted.
+    """
     try:
         imp = model.feature_importances_
         pairs = sorted(zip(feature_cols, imp), key=lambda x: x[1], reverse=True)

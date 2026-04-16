@@ -42,6 +42,11 @@ class HybridGRUStrategy(Strategy):
     confidence_threshold = 0.0  # 0 = disabled, trade all signals
 
     def init(self) -> None:
+        """
+        Register required indicator series for the strategy and detect optional prediction probabilities.
+
+        Registers `signals` from `data.pred_label` and `ATR` from `data.atr_14` with the backtesting indicator system, and sets an internal `_has_proba` flag indicating whether per-class probability columns exist. If probability columns are present, registers `proba_short` (`pred_proba_class_minus1`), `proba_hold` (`pred_proba_class_0`), and `proba_long` (`pred_proba_class_1`) as indicators.
+        """
         self.signals = self.I(lambda: self.data.pred_label, name="signals", plot=False)
         self.atr = self.I(lambda: self.data.atr_14, name="ATR", plot=True)
         # Probabilities — may not exist if predictions lack proba columns
@@ -60,6 +65,11 @@ class HybridGRUStrategy(Strategy):
             )
 
     def next(self) -> None:
+        """
+        Evaluate the latest model signal and, if appropriate, place a market order with an ATR-based stop-loss.
+
+        Checks the most recent signal, optional predicted-class confidence (when `confidence_threshold > 0` and probability columns are available), and current position to decide whether to enter a new long or short trade. If entering a trade, computes fixed sizing as `lots_per_trade * 100` (100 is the baked-in contract size) and sets the stop-loss at price ± ATR * `atr_stop_mult`. A signal of 0 (hold) or a confidence value below the threshold results in no action.
+        """
         signal = int(self.signals[-1])
         price = self.data.Close[-1]
         atr = self.atr[-1]
@@ -93,7 +103,17 @@ class HybridGRUStrategy(Strategy):
 
 
 def _normalize_stats(stats: pd.Series) -> dict:
-    """Convert backtesting.py stats to snake_case dict for downstream use."""
+    """
+    Convert a Backtesting.py statistics Series into a dictionary with snake_case keys.
+
+    The function omits keys that begin with an underscore and normalizes display-style keys by lowercasing, replacing spaces and punctuation with underscores or removing them, and mapping `%` to `pct` and `#` to `num`.
+
+    Parameters:
+        stats (pd.Series): Series-like statistics object produced by Backtesting.py
+
+    Returns:
+        dict: A dictionary of normalized metric names to their original values.
+    """
     raw = stats.to_dict()
     out: dict = {}
     for k, v in raw.items():
@@ -123,15 +143,28 @@ def _trades_to_list(
     commission_per_lot: float = 20.0,
     contract_size: float = 100.0,
 ) -> list[dict]:
-    """Convert _trades DataFrame to list of dicts for JSON serialization.
+    """
+    Convert a backtesting.py trades DataFrame into a JSON-serializable list of trade records.
 
-    backtesting.py stores ReturnPct as a decimal fraction (e.g. 0.002 = 0.2%).
-    We multiply by 100 so the CSV shows an actual percentage.
+    Each record contains entry/exit timestamps, direction ("long" or "short"), entry/exit prices, raw size, PnL, return percentage (converted from fractional `ReturnPct` to percent), rounded commission (computed as lots * `commission_per_lot`), and duration. If `trades_df` is empty, returns an empty list.
 
-    Args:
-        trades_df: Raw trades DataFrame from backtesting.py stats.
-        commission_per_lot: Commission charged per lot (for per-trade breakdown).
-        contract_size: Units per lot (e.g. 100 oz for XAU/USD).
+    Parameters:
+        trades_df (pd.DataFrame): Raw trades DataFrame from backtesting.py stats.
+        commission_per_lot (float): Commission charged per lot used to compute per-trade commission.
+        contract_size (float): Units per lot used to convert raw `Size` into lot counts.
+
+    Returns:
+        list[dict]: List of trade dictionaries with keys:
+            - entry_time (str)
+            - exit_time (str)
+            - direction (str): "long" if `Size` > 0, "short" otherwise.
+            - entry_price (float)
+            - exit_price (float)
+            - size (float)
+            - pnl (float)
+            - return_pct (float): `ReturnPct` multiplied by 100.
+            - commission (float): Rounded to two decimals.
+            - duration (str)
     """
     if trades_df.empty:
         return []
@@ -159,7 +192,19 @@ def _trades_to_list(
 
 
 def _prepare_df(test_df: pl.DataFrame, preds_df: pl.DataFrame) -> pd.DataFrame:
-    """Merge test data + predictions and convert to pandas for backtesting.py."""
+    """
+    Prepare and return a pandas DataFrame merging market data and prediction columns for consumption by backtesting.py.
+
+    Parameters:
+        test_df (pl.DataFrame): Market data with a `timestamp` column and required feature `atr_14`. Expected bar columns include `open`, `high`, `low`, `close`, and optionally `volume`.
+        preds_df (pl.DataFrame): Predictions with a `timestamp` column and required `pred_label`. May include probability columns `pred_proba_class_minus1`, `pred_proba_class_0`, and `pred_proba_class_1`.
+
+    Returns:
+        pd.DataFrame: Pandas DataFrame indexed by `timestamp` (DatetimeIndex) with price columns renamed to `Open`, `High`, `Low`, `Close`, and `Volume` (set to 0 if absent). Prediction columns from `preds_df` are preserved.
+
+    Raises:
+        ValueError: If `pred_label` is missing from `preds_df` or `atr_14` is missing from `test_df`.
+    """
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
@@ -207,7 +252,16 @@ def _prepare_df(test_df: pl.DataFrame, preds_df: pl.DataFrame) -> pd.DataFrame:
 
 
 def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
-    """Create and run the Backtest with native cost params."""
+    """
+    Run a backtest on prepared market and prediction data using HybridGRUStrategy, with spread, commission, and margin derived from the provided configuration.
+
+    Parameters:
+        pdf (pd.DataFrame): Pandas DataFrame indexed by timestamp containing market columns required by backtesting.py (Open, High, Low, Close, Volume) and strategy inputs (e.g., `pred_label`, `atr_14`).
+        config (Config): Configuration object with `backtest` and `data` sections that supply cost parameters, contract sizing, leverage, initial capital, and strategy parameters.
+
+    Returns:
+        tuple[pd.Series, Backtest]: A pair where the first element is the backtesting statistics as a pandas Series and the second is the Backtest instance used to run the strategy.
+    """
     bc = config.backtest
     dc = config.data
 
@@ -217,6 +271,16 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
 
     # Commission: callable for per-lot model
     def commission_fn(order_size: float, price: float) -> float:
+        """
+        Calculate commission for an order based on the number of lots and configured per-lot commission.
+
+        Parameters:
+                order_size (float): Signed order size in base units; absolute value is divided by the configured contract size to get lots.
+                price (float): Order price (ignored by this calculation; included for compatibility).
+
+        Returns:
+                commission (float): Commission amount in the same currency as `bc.commission_per_lot`.
+        """
         lots = abs(order_size) / dc.contract_size
         return lots * bc.commission_per_lot
 
@@ -248,10 +312,14 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
 
 
 def run_backtest(config: Config) -> None:
-    """Run CFD backtest and save results.
+    """
+    Run a full CFD backtest from files specified in `config` and persist results and artifacts.
 
-    Args:
-        config: Loaded application configuration.
+    Loads test market data and model predictions from configured Parquet paths, validates required inputs, prepares merged market/prediction data, executes the backtest using the configured strategy and risk/cost settings, and writes outputs to disk. Written outputs include a JSON file with normalized metrics and trade records, an optional trades detail CSV and equity-curve CSV when trades are present, and an optional Bokeh HTML chart under the configured session directory.
+
+    Parameters:
+        config: Application configuration object containing paths and backtest/data settings (must provide
+            `paths.test_data`, `paths.predictions`, `paths.backtest_results`; optional `paths.session_dir`).
     """
     test_path = Path(config.paths.test_data)
     preds_path = Path(config.paths.predictions)
@@ -347,15 +415,16 @@ def run_backtest_from_data(
     preds_df: pl.DataFrame,
     config: Config,
 ) -> dict:
-    """Run backtest from pre-loaded DataFrames (for ablation).
+    """
+    Run the full backtest pipeline using in-memory Polars DataFrames and return normalized metrics.
 
-    Args:
-        test_df: Test data (Polars).
-        preds_df: Predictions (Polars).
-        config: Configuration.
+    Parameters:
+        test_df (pl.DataFrame): Market/test data containing price columns and `atr_14`.
+        preds_df (pl.DataFrame): Predictions data containing `timestamp` and `pred_label` (optional `pred_proba_*` columns allowed).
+        config (Config): Configuration object with `backtest`, `data`, and `paths` sections used to parameterize the backtest.
 
     Returns:
-        Normalized metrics dict.
+        dict: Normalized metrics dictionary extracted from the backtest results.
     """
     pdf = _prepare_df(test_df, preds_df)
     stats, _ = _run_bt(pdf, config)

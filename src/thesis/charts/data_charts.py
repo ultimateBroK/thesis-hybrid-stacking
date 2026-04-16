@@ -15,15 +15,21 @@ logger = logging.getLogger("thesis.charts")
 
 
 def _downsample_ohlcv(df: pl.DataFrame, max_bars: int) -> pl.DataFrame:
-    """Downsample OHLCV data using stride-based aggregation.
+    """
+    Reduce an OHLCV DataFrame to at most `max_bars` rows by aggregating contiguous rows into fixed-size groups.
 
-    Groups rows into chunks of size N, then aggregates:
-    - open: first value in chunk
-    - high: max value in chunk
-    - low: min value in chunk
-    - close: last value in chunk
-    - volume: sum of chunk
-    - timestamp: first timestamp in chunk
+    Parameters:
+        df (pl.DataFrame): Input OHLCV time series with columns `timestamp`, `open`, `high`, `low`, `close`, and optionally `volume`.
+        max_bars (int): Maximum number of bars to retain after downsampling.
+
+    Returns:
+        pl.DataFrame: Aggregated OHLCV DataFrame with at most `max_bars` rows. For each group:
+            - `timestamp`: first timestamp in the group
+            - `open`: first open price in the group
+            - `high`: maximum high price in the group
+            - `low`: minimum low price in the group
+            - `close`: last close price in the group
+            - `volume` (if present): sum of volumes in the group
     """
     stride = max(1, len(df) // max_bars)
     group_col = pl.int_range(0, len(df)) // stride
@@ -49,20 +55,23 @@ def build_candlestick_chart(
     config: Config,
     max_bars: int = 3000,
 ) -> tuple[Grid, dict]:
-    """Build interactive OHLCV candlestick chart with volume.
+    """
+    Build an interactive OHLCV candlestick chart with stacked volume and time zoom controls.
 
-    Uses Grid layout: price (top 70%) + volume (bottom 30%).
-    DataZoom slider + inside zoom for time range selection.
-    Downsamples when bar count exceeds *max_bars* for fast rendering.
+    Expects `df` to contain columns: `timestamp`, `open`, `high`, `low`, `close`; `volume` is optional.
+    The chart is laid out as price (top) and volume (bottom) with a visible slider and inside data zoom.
+    Downsamples `df` when its row count exceeds `max_bars` to limit rendered bars.
 
-    Args:
-        df: OHLCV DataFrame with timestamp, open, high, low, close, volume.
-        config: Application configuration.
-        max_bars: Maximum bars to render. Downsampling applied above this.
+    Parameters:
+        df (pl.DataFrame): OHLCV data. `timestamp` may be temporal or UTF-8 strings.
+        config (Config): Application configuration used for chart title (expects `config.data.symbol` and `config.data.timeframe`).
+        max_bars (int): Maximum number of bars to render before downsampling.
 
     Returns:
-        Tuple of (pyecharts Grid chart, info dict).
-        Info dict keys: total_bars, displayed_bars, downsampled.
+        tuple[Grid, dict]: A tuple containing the pyecharts `Grid` chart and an info dict with keys:
+            - `total_bars`: original number of rows in `df`
+            - `displayed_bars`: number of bars actually rendered (after downsampling)
+            - `downsampled`: `true` if downsampling was applied, `false` otherwise
     """
     total_bars = len(df)
     if total_bars > max_bars:
@@ -207,15 +216,16 @@ def build_candlestick_chart(
 
 
 def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
-    """Build feature correlation heatmap.
+    """
+    Builds a correlation heatmap for numeric feature columns.
 
-    Blue-white-red diverging colormap, -1 to 1 range.
+    Selects numeric feature columns (falls back to numeric dtypes if fewer than two detected features), computes pairwise Pearson correlations, and renders them as a pyecharts HeatMap using a blue-white-red diverging colormap mapped to the range -1..1.
 
-    Args:
-        df: Features DataFrame (timestamp + feature columns).
+    Parameters:
+        df (pl.DataFrame): DataFrame containing timestamp and feature columns.
 
     Returns:
-        pyecharts HeatMap chart.
+        HeatMap: pyecharts HeatMap chart of the correlation matrix with values rounded to three decimals.
     """
     feature_cols = _get_feature_cols(df)
     if len(feature_cols) < 2:
@@ -304,15 +314,16 @@ def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
 
 
 def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
-    """Build tabbed feature distribution histograms.
+    """
+    Build a tabbed chart of per-feature 50-bin histograms.
 
-    One tab per feature, each with 50-bin histogram.
+    Each tab contains a bar chart showing the histogram counts for one feature; features with no non-null values are skipped. Bin labels use bin centers formatted to two decimal places.
 
-    Args:
-        df: Features DataFrame.
+    Parameters:
+        df (pl.DataFrame): Polars DataFrame containing feature columns to plot.
 
     Returns:
-        pyecharts Tab chart with per-feature Bar tabs.
+        Tab: A pyecharts Tab where each tab is a Bar chart of a feature's histogram.
     """
     feature_cols = _get_feature_cols(df)
     tab = Tab()

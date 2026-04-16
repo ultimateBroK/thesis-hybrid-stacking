@@ -33,13 +33,16 @@ logger = logging.getLogger("thesis.features")
 
 
 def generate_features(config: Config) -> None:
-    """Build and persist feature-enriched bars.
+    """
+    Generate and persist feature-enriched OHLCV bars based on the provided configuration.
 
-    Reads OHLCV parquet, computes technical indicators, writes features
-    parquet and a sidecar feature-list JSON.
+    Loads OHLCV data from config.paths.ohlcv, computes technical indicators and normalized/session features, forward-fills remaining nulls (then replaces any remaining nulls with 0.0), writes the enriched bars to config.paths.features, and saves a sidecar JSON file listing the produced feature column names (excluding core/label columns).
 
-    Args:
-        config: Loaded application configuration.
+    Parameters:
+        config (Config): Application configuration containing input/output paths and feature parameters.
+
+    Raises:
+        FileNotFoundError: If the OHLCV parquet file at config.paths.ohlcv does not exist.
     """
     ohlcv_path = Path(config.paths.ohlcv)
     if not ohlcv_path.exists():
@@ -107,7 +110,16 @@ _EXCLUDE_COLS = frozenset(
 
 
 def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add RSI (Wilder's smoothing)."""
+    """
+    Compute Wilder-style Relative Strength Index (RSI) and append it as a column.
+
+    Parameters:
+        df (pl.DataFrame): Input OHLCV dataframe containing a `close` column.
+        config (Config): Configuration object with `features.rsi_period` specifying the RSI period.
+
+    Returns:
+        pl.DataFrame: New dataframe with an added column `rsi_{p}` where `{p}` is the configured RSI period.
+    """
     p = config.features.rsi_period
     delta = pl.col("close").diff()
     gain = delta.clip(lower_bound=0.0)
@@ -119,14 +131,26 @@ def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add Average True Range."""
+    """
+    Add an Average True Range (ATR) column to the DataFrame.
+
+    Returns:
+        pl.DataFrame: The input DataFrame with a new column named `atr_{p}` (where `p` is `config.features.atr_period`) containing the ATR values.
+    """
     p = config.features.atr_period
     atr = _compute_atr_expr(p)
     return df.with_columns(atr.alias(f"atr_{p}"))
 
 
 def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add MACD histogram only."""
+    """
+    Add a `macd_hist` column to the DataFrame using configured MACD spans.
+
+    The MACD histogram is computed as the difference between the MACD line (EMA(fast) - EMA(slow)) and its signal line (EMA of the MACD line) using spans from `config.features.macd_fast`, `macd_slow`, and `macd_signal`.
+
+    Returns:
+        pl.DataFrame: The input DataFrame with an added `macd_hist` column.
+    """
     fast = config.features.macd_fast
     slow = config.features.macd_slow
     sig = config.features.macd_signal
@@ -145,7 +169,15 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _compute_atr_expr(period: int) -> pl.Expr:
-    """Return Polars expression for ATR with given period."""
+    """
+    Compute an expression for the Average True Range (ATR) smoothed using a Wilder-style exponential moving average.
+
+    Parameters:
+        period (int): Lookback period used for ATR smoothing.
+
+    Returns:
+        pl.Expr: Polars expression that yields the ATR series for the specified period.
+    """
     tr = pl.max_horizontal(
         [
             (pl.col("high") - pl.col("low")),
@@ -162,7 +194,22 @@ def _compute_atr_expr(period: int) -> pl.Expr:
 
 
 def _add_new_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add normalized feature set: atr_ratio, price_dist_ratio, pivot_position, sessions, atr_percentile."""
+    """
+    Add derived, normalized, and regime/session features to the input OHLCV DataFrame.
+
+    The function appends these columns:
+    - `atr_ratio`: ATR(5) divided by ATR(20) (volatility regime).
+    - `price_dist_ratio`: (close - EMA89) divided by ATR_{p} where `p = config.features.atr_period`.
+    - `pivot_position`: bounded position of price between previous-day S1 and R1 in [0.0, 1.0].
+    - Session indicator columns: `sess_asia`, `sess_london`, `sess_overlap`, `sess_ny_pm` (America/New_York, DST-aware).
+    - `atr_percentile`: rolling rank of ATR_{p} over a 50-bar window scaled to [0, 1].
+
+    Parameters:
+        config (Config): Configuration object; `config.features.atr_period` determines which ATR column (`atr_{p}`) is used.
+
+    Returns:
+        pl.DataFrame: The input DataFrame with the new feature columns appended.
+    """
     p = config.features.atr_period
 
     # ATR Ratio: ATR(5) / ATR(20) — volatility regime
@@ -195,7 +242,17 @@ def _add_new_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
-    """Add pivot_position: (Close - S1) / (R1 - S1) clipped to [0,1]."""
+    """
+    Compute previous-day pivot levels and add a bounded pivot_position column.
+
+    Calculates daily pivot, R1, and S1 from the previous trading day and joins them to each row, then computes pivot_position = (close - prev_s1) / (prev_r1 - prev_s1) clipped to the range [0.0, 1.0].
+
+    Parameters:
+        df (pl.DataFrame): Input OHLCV dataframe with at least `timestamp`, `high`, `low`, and `close` columns.
+
+    Returns:
+        pl.DataFrame: The input dataframe with an added `pivot_position` column (float) and without the intermediate previous-day pivot columns.
+    """
     ts = pl.col("timestamp")
     daily = (
         df.group_by(ts.dt.truncate("1d"))
@@ -247,13 +304,20 @@ def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
-    """Add 4 session flags using America/New_York timezone (DST-aware).
+    """
+    Add four New York session indicator columns to the DataFrame using the America/New_York timezone (DST-aware).
 
-    Sessions (in NY time):
-        Asia    = 18:00-01:59  (Tokyo/Sydney)
-        London  = 03:00-07:59  (London AM open)
-        Overlap = 08:00-11:59  (London + NY — highest gold volume)
-        NY PM   = 12:00-17:59  (NY afternoon, US data releases)
+    Handles naive timestamps by first assigning UTC before converting to America/New_York. Adds the following Int8 columns based on the local NY hour:
+    - sess_asia: 18–23 and 0–1
+    - sess_london: 3–7
+    - sess_overlap: 8–11
+    - sess_ny_pm: 12–17
+
+    Parameters:
+        df (pl.DataFrame): Input OHLCV bars containing a "timestamp" column.
+
+    Returns:
+        pl.DataFrame: A new DataFrame with the four session indicator columns appended.
     """
     # Handle naive timestamps by adding UTC first
     ts = pl.col("timestamp")
@@ -280,7 +344,13 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
-    """Write a JSON sidecar listing the feature column names."""
+    """
+    Write a JSON sidecar file next to the given features path named "<features_path>.feature_list.json" containing the feature column names.
+
+    Parameters:
+        features_path (Path): Path to the features output file; the sidecar file is created by replacing this path's suffix with ".feature_list.json".
+        feature_cols (list[str]): Ordered list of feature column names to write to the sidecar.
+    """
     list_path = features_path.with_suffix(".feature_list.json")
     with open(list_path, "w") as f:
         json.dump(feature_cols, f, indent=2)

@@ -18,29 +18,49 @@ class SequenceDataset(Dataset):
         sequences: np.ndarray,
         labels: np.ndarray | None = None,
     ) -> None:
+        """
+        Initialize the dataset with precomputed GRU input sequences and optional labels.
+
+        Parameters:
+            sequences (np.ndarray): 3-D array shaped (n_samples, sequence_length, n_features) containing GRU input sequences. Stored internally as a PyTorch float tensor (copy is made).
+            labels (np.ndarray | None): Optional 1-D array of labels of length n_samples. If provided, stored internally as a PyTorch long tensor (copy is made); if omitted, labels are set to None.
+        """
         self.sequences = torch.from_numpy(sequences.copy()).float()
         self.labels = (
             torch.from_numpy(labels.copy()).long() if labels is not None else None
         )
 
     def __len__(self) -> int:
+        """
+        Return the number of sequences (samples) in the dataset.
+
+        Returns:
+                length (int): Number of samples available.
+        """
         return len(self.sequences)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """
+        Retrieve the sequence (and optional label) at the given index.
+
+        Returns:
+            (sequence, label): `sequence` is the sequence tensor at `idx`; `label` is the corresponding label tensor if labels were provided, otherwise `None`.
+        """
         if self.labels is not None:
             return self.sequences[idx], self.labels[idx]
         return self.sequences[idx], None
 
 
 def _sliding_windows(data: np.ndarray, window: int) -> np.ndarray:
-    """Create sliding windows using stride tricks.
+    """
+    Construct a 3D sliding-window view over a 2D array.
 
-    Args:
-        data: 2D array of shape (n_rows, n_features).
-        window: Window size.
+    Parameters:
+        data (np.ndarray): 2D array with shape (n_rows, n_features).
+        window (int): Length of each sliding window.
 
     Returns:
-        3D array of shape (n_samples, window, n_features).
+        np.ndarray: 3D array with shape (n_samples, window, n_features), where n_samples = n_rows - window + 1. The returned array is a view into `data` (no copy).
     """
     n_rows, n_features = data.shape
     n_samples = n_rows - window + 1

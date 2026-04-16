@@ -14,17 +14,18 @@ def build_equity_drawdown_chart(
     metrics: dict,
     initial_capital: float = 10_000.0,
 ) -> Grid:
-    """Build equity curve with drawdown overlay.
+    """
+    Create an equity curve chart with a drawdown subplot arranged in a two-row Grid.
 
-    Grid layout: equity line (top 75%) + drawdown area (bottom 25%).
+    The Grid places the equity line in the top region (~75%) and the drawdown area in the bottom region (~25%). Expects each trade dict in `trades` to contain a numeric `pnl`. `metrics` is used to populate the chart title (e.g., total trades and return percent).
 
-    Args:
-        trades: List of trade dicts with 'pnl' key.
-        metrics: Backtest metrics dict.
-        initial_capital: Starting capital.
+    Parameters:
+        trades (list[dict]): List of trade records; each must include a numeric 'pnl' key.
+        metrics (dict): Backtest metrics used in the chart title (e.g., "total_trades", "return_pct").
+        initial_capital (float): Starting capital used to build the equity curve.
 
     Returns:
-        pyecharts Grid chart.
+        pyecharts.charts.Grid: Grid containing the equity line chart (top) and drawdown chart (bottom).
     """
     if not trades:
         return Grid()
@@ -101,16 +102,17 @@ def build_pnl_histogram_chart(
     trades: list[dict],
     metrics: dict,
 ) -> Bar:
-    """Build trade PnL distribution histogram.
+    """
+    Create a histogram of trade PnL that splits wins and losses into two bar series.
 
-    Green bars for wins, red bars for losses.
+    The function separates trade PnLs into wins (pnl > 0) and losses (pnl <= 0), bins the values across the observed PnL range, and produces a pyecharts Bar chart with one series for wins (green) and one for losses (red). The chart title includes average win and average loss taken from `metrics` (or computed from the data).
 
-    Args:
-        trades: List of trade dicts with 'pnl' key.
-        metrics: Backtest metrics dict.
+    Parameters:
+        trades (list[dict]): Sequence of trade dictionaries; each must contain a numeric `'pnl'` key.
+        metrics (dict): Backtest metrics used to populate title values (e.g., `avg_win`, `avg_loss`).
 
     Returns:
-        pyecharts Bar chart.
+        Bar: A pyecharts Bar chart where each x-axis bin shows counts for wins and losses.
     """
     if not trades:
         return Bar()
@@ -160,7 +162,18 @@ def _compute_monthly_returns(
     trades: list[dict],
     initial_capital: float = 10_000.0,
 ) -> dict[tuple[int, int], float]:
-    """Compute monthly percentage returns from trade list."""
+    """
+    Compute percentage returns for each month based on sequential trade PnL applied to an equity curve.
+
+    Processes trades in order, updating running equity starting from `initial_capital`. For each trade with a parsable `exit_time`, the function records the equity at the first trade seen in that (year, month) as the month's start equity and the equity after the last trade in that month as the month's end equity; the monthly percentage return is (end - start) / start * 100. Trades with unparseable `exit_time` values are skipped. Months where the start equity is less than or equal to zero are omitted.
+
+    Parameters:
+        trades (list[dict]): Sequence of trade records; each trade is expected to contain numeric `pnl` and an `exit_time` parseable by ISO format.
+        initial_capital (float): Starting equity before applying any trades.
+
+    Returns:
+        dict[tuple[int, int], float]: Mapping from `(year, month)` tuples to the monthly percentage return (percent).
+    """
     equity = initial_capital
     equity_by_month: dict[tuple[int, int], tuple[float, float]] = {}
 
@@ -190,15 +203,16 @@ def _compute_monthly_returns(
 
 
 def build_monthly_returns_heatmap(trades: list[dict]) -> HeatMap:
-    """Build monthly returns heatmap.
+    """
+    Create a month-by-year heatmap of percentage returns.
 
-    Years on y-axis, months on x-axis. RdYlGn colormap.
+    Each cell shows the monthly return (%) for a specific year and month, rounded to two decimals; years appear on the y-axis and months (Jan–Dec) on the x-axis.
 
-    Args:
-        trades: List of trade dicts with 'pnl', 'exit_time' keys.
+    Parameters:
+        trades (list[dict]): Trades containing at least the keys 'pnl' and 'exit_time' (ISO timestamp or parseable datetime).
 
     Returns:
-        pyecharts HeatMap chart.
+        HeatMap: A pyecharts HeatMap where each data point value is the monthly return percentage (rounded to 2 decimals).
     """
     monthly = _compute_monthly_returns(trades)
     if not monthly:
@@ -255,16 +269,15 @@ def build_rolling_sharpe_chart(
     trades: list[dict],
     window: int = 30,
 ) -> Line:
-    """Build rolling Sharpe ratio line chart.
+    """
+    Create a line chart of the rolling annualized Sharpe ratio computed over trade PnL.
 
-    Reference lines at Sharpe=0 and Sharpe=2.
-
-    Args:
-        trades: List of trade dicts with 'pnl' key.
-        window: Rolling window size (number of trades).
+    Parameters:
+        trades (list[dict]): Ordered list of trade dictionaries containing a numeric 'pnl' key; order determines the rolling sequence.
+        window (int): Number of consecutive trades used for each rolling Sharpe calculation.
 
     Returns:
-        pyecharts Line chart.
+        pyecharts Line: A Line chart plotting the rolling annualized Sharpe (values rounded to 2 decimals). Returns an empty `Line()` if the number of trades is less than or equal to `window`.
     """
     if len(trades) <= window:
         return Line()

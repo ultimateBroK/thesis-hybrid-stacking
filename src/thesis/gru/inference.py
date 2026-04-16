@@ -19,16 +19,17 @@ def extract_hidden_states(
     batch_size: int = 64,
     device: torch.device | None = None,
 ) -> np.ndarray:
-    """Extract hidden states from sequences using trained GRU.
+    """
+    Extracts the final hidden state for each input sequence using a trained GRUExtractor.
 
-    Args:
-        model: Trained GRUExtractor.
-        sequences: Input sequences of shape (n_samples, seq_len, input_size).
-        batch_size: Batch size for inference.
-        device: Device for computation.
+    Parameters:
+        model (GRUExtractor): Trained GRUExtractor used to compute hidden states.
+        sequences (np.ndarray): Input sequences with shape (n_samples, seq_len, input_size).
+        batch_size (int): Number of samples processed per inference batch.
+        device (torch.device | None): Computation device; if `None`, selects CUDA if available, otherwise CPU.
 
     Returns:
-        Hidden states of shape (n_samples, hidden_size).
+        np.ndarray: Array of shape (n_samples, hidden_size) containing the final hidden state for each sequence.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -52,12 +53,13 @@ def save_gru_model(
     config: Config,
     path: str | Path,
 ) -> None:
-    """Save GRU model weights and config to disk.
+    """
+    Save the GRU extractor's weights and related GRU configuration to disk.
 
-    Args:
-        model: Trained GRUExtractor.
-        config: Application configuration.
-        path: Output path for model file.
+    Parameters:
+    \tmodel (GRUExtractor): Trained GRU extractor whose state_dict will be saved.
+    \tconfig (Config): Application configuration; `config.gru` supplies GRU hyperparameters and `sequence_length` to include in the checkpoint.
+    \tpath (str | Path): Destination file path for the saved checkpoint. The parent directory will be created if it does not exist.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,13 +78,19 @@ def save_gru_model(
 
 
 def load_gru_model(path: str | Path) -> tuple[GRUExtractor, dict[str, Any]]:
-    """Load GRU model from disk.
+    """
+    Load a saved GRUExtractor and its associated metadata from disk.
 
-    Args:
-        path: Path to saved model file.
+    Parameters:
+        path (str | Path): Filesystem path to the saved checkpoint file produced by `save_gru_model`.
 
     Returns:
-        Tuple of (model, checkpoint_metadata).
+        tuple[GRUExtractor, dict[str, Any]]: A tuple where the first element is a `GRUExtractor` instance
+        initialized with the saved weights and set to evaluation mode, and the second element is a
+        metadata dictionary containing all checkpoint entries except the model's `state_dict`.
+
+    Raises:
+        FileNotFoundError: If the provided `path` does not exist.
     """
     path = Path(path)
     if not path.exists():

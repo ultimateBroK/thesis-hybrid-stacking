@@ -56,7 +56,16 @@ logger = logging.getLogger("thesis.app_streamlit")
 
 
 def _find_sessions() -> list[Path]:
-    """Find all session directories under results/."""
+    """
+    Discover available session directories under the local results/ folder.
+
+    A session directory is any immediate subdirectory that contains a `config` entry.
+    If the `results/` folder does not exist, an empty list is returned.
+    The returned list is sorted in descending order by directory name.
+
+    Returns:
+        list[Path]: Reverse-sorted list of session directory paths; empty if none found.
+    """
     results = Path("results")
     if not results.exists():
         return []
@@ -70,9 +79,18 @@ def _find_sessions() -> list[Path]:
 
 @st.cache_data(ttl=60)
 def _load_config(session_dir: str) -> dict:
-    """Load config and session data for a given session directory.
+    """
+    Load and return the configuration object and associated session data for the given session directory.
 
-    Cached for 60 seconds to balance freshness with I/O performance.
+    This function is cached for a short duration to reduce I/O overhead.
+
+    Parameters:
+        session_dir (str): Path to the session directory (e.g., "results/<session_name>") or session directory name.
+
+    Returns:
+        dict: A mapping with keys:
+            - "config": the loaded configuration object with `paths.session_dir` set to `session_dir`.
+            - "data": the session data loaded according to the configuration.
     """
     config = load_config()
     config.paths.session_dir = session_dir
@@ -82,10 +100,13 @@ def _load_config(session_dir: str) -> dict:
 
 @st.fragment(run_every=30)
 def _session_selector_fragment() -> str | None:
-    """Render session selector with auto-refresh every 30 seconds.
+    """
+    Render a sidebar session selector and return the chosen session directory name.
 
-    Returns selected session name, or None if no sessions exist.
-    Detects new sessions and shows toast notification.
+    Updates Streamlit session state keys "known_sessions" (set of discovered session names) and "selected_session" (the currently selected raw session name). When new sessions are discovered (after the initial load) displays a toast for each new session, provides a refresh button, and shows a caption with instructions to generate sessions.
+
+    Returns:
+        str | None: The raw session directory name selected by the user, or `None` if no sessions are available.
     """
     sessions = _find_sessions()
     if not sessions:
@@ -137,7 +158,11 @@ def _session_selector_fragment() -> str | None:
 
 
 def _render_chart(chart: object, height: str = "500px") -> None:
-    """Render a pyecharts chart in Streamlit via st_pyecharts."""
+    """
+    Render a pyecharts chart into the Streamlit app.
+
+    If rendering fails, catches the exception and displays a Streamlit warning with the error message.
+    """
     try:
         st_pyecharts(chart, height=height)
     except Exception as e:
@@ -150,7 +175,16 @@ def _render_chart(chart: object, height: str = "500px") -> None:
 
 
 def _render_data_section(data: dict, config: object) -> None:
-    """Render data exploration charts."""
+    """
+    Render the Data Exploration section of the dashboard, producing charts and controls for OHLCV, feature correlations, label distribution, and per-feature distributions.
+
+    Parameters:
+        data (dict): Session data container expected to possibly include:
+            - "ohlcv": tabular OHLCV rows with a "timestamp" column for candlestick plotting and date-range selection.
+            - "features": table of feature columns used for correlation heatmap and per-feature histograms.
+            - "labels": optional table containing a "label" column for label-distribution plotting.
+        config (object): Session configuration object passed to chart builders (used by the candlestick chart builder).
+    """
     st.markdown("> 🏠 Dashboard > **Data Exploration**")
     st.header("Data Exploration")
 
@@ -285,7 +319,16 @@ def _render_data_section(data: dict, config: object) -> None:
 
 
 def _render_model_section(data: dict) -> None:
-    """Render model performance charts."""
+    """
+    Render the "Model Performance" section with prediction metrics and feature-importance charts.
+
+    Renders accuracy and basic test statistics, a confusion matrix and confidence-distribution chart when prediction data is present; renders a feature importance chart when feature-importance data is provided. Displays informational messages when predictions or feature-importance are missing.
+
+    Parameters:
+        data (dict): Session data dictionary. Expected keys:
+            - "predictions": table-like object (e.g., DataFrame) containing "true_label" and "pred_label" columns and any additional fields used by the confidence-distribution chart.
+            - "feature_importance": dict or sequence describing feature importances, in the format accepted by build_feature_importance_chart.
+    """
     st.markdown("> 🏠 Dashboard > **Model Performance**")
     st.header("Model Performance")
 
@@ -324,7 +367,19 @@ def _render_model_section(data: dict) -> None:
 
 
 def _render_backtest_section(data: dict) -> None:
-    """Render backtest analysis charts."""
+    """
+    Render the Backtest Results section including summary metrics, visual analyses, and optional CSV downloads.
+
+    This function reads these keys from `data` to drive the UI:
+    - `backtest_results`: if missing or falsy, the section shows a "No backtest results available." message and returns early.
+    - `trades` (list): per-trade records used to build equity/drawdown, PnL distribution, duration vs PnL, individual trade returns, direction analysis, and rolling metrics.
+    - `metrics` (dict): summary numeric metrics displayed in the performance overview and the detailed metrics expander.
+    - `session_dir` (str or Path, optional): when present and containing expected CSV files, enables download buttons for trades detail, equity curve, and final predictions.
+
+    The rendered content includes a performance overview (summary metrics and win/loss stats), equity & drawdown chart, multiple trade-analysis charts, direction/PnL breakdowns, rolling metrics when sufficient trades exist, and download buttons for available CSV artifacts.
+    Parameters:
+        data (dict): Backtest session data containing at least the keys described above.
+    """
     st.markdown("> 🏠 Dashboard > **Backtest Results**")
     st.header("Backtest Results")
 
@@ -538,7 +593,15 @@ def _render_backtest_section(data: dict) -> None:
 
 
 def _render_training_section(data: dict, session_dir: str) -> None:
-    """Render training history: GRU loss curves, LightGBM info, pipeline log."""
+    """
+    Render the training-history and pipeline logs UI for the selected session in the Streamlit dashboard.
+
+    This renders GRU training progress (loss and accuracy curves with summary metrics) when a models/training_history.json file is present, shows LightGBM summary metrics if available, and displays the pipeline.log contents (recent and full) when present. If expected files are missing, informative messages are shown instead.
+
+    Parameters:
+        data (dict): Loaded session data dictionary (unused directly here but kept for interface consistency).
+        session_dir (str): Path to the session directory containing `models/training_history.json` and `logs/pipeline.log`.
+    """
     st.markdown("> 🏠 Dashboard > **Training**")
     st.header("Training History")
 
@@ -658,9 +721,14 @@ def _render_training_section(data: dict, session_dir: str) -> None:
 
 
 def _parse_session_meta(name: str) -> dict[str, str]:
-    """Extract metadata from session directory name.
+    """
+    Parse a session directory name into its metadata fields.
 
-    Format: {SYMBOL}_{TIMEFRAME}_{YYYYMMDD}_{HHMMSS}
+    Parameters:
+        name (str): Session directory name, expected as `SYMBOL_TIMEFRAME_YYYYMMDD_HHMMSS`.
+
+    Returns:
+        dict[str, str]: A mapping with keys `symbol`, `timeframe`, `date`, and `time`. `date` is formatted as `YYYY-MM-DD` and `time` as `HH:MM:SS`. If the name cannot be parsed, each value is the placeholder `"?"`.
     """
     parts = name.split("_")
     if len(parts) >= 4:
@@ -674,7 +742,11 @@ def _parse_session_meta(name: str) -> dict[str, str]:
 
 
 def main() -> None:
-    """Run the Streamlit dashboard."""
+    """
+    Start and render the Streamlit dashboard for thesis experiment results, providing session selection, configuration display, and navigation between main inspection sections.
+
+    Sets up the page layout and styling, discovers and loads a selected session from the local results directory, and dispatches rendering to the appropriate section renderer (Data Exploration, Model Performance, Training, or Backtest).
+    """
     st.set_page_config(
         page_title="Thesis Dashboard — XAU/USD",
         page_icon="📊",

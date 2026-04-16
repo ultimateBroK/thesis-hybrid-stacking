@@ -18,14 +18,15 @@ logger = logging.getLogger("thesis.prepare")
 
 
 def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
-    """Aggregate a single tick file to OHLCV bars.
+    """
+    Aggregate a monthly tick Parquet file into OHLCV bars aligned to the specified millisecond bar size.
 
-    Args:
-        file_path: Path to monthly tick parquet file.
-        group_ms: Bar size in milliseconds.
+    Parameters:
+        file_path (Path): Path to a monthly tick Parquet file containing at least the columns `timestamp`, `bid`, `ask`, `ask_volume`, and `bid_volume`.
+        group_ms (int): Bar size in milliseconds used to floor tick timestamps to bar boundaries.
 
     Returns:
-        Small DataFrame with OHLCV columns for this month.
+        pl.DataFrame: DataFrame with columns `timestamp`, `open`, `high`, `low`, `close`, `volume`, `tick_count`, and `avg_spread`. Rows correspond to bars whose timestamps are the bar boundary datetimes; ticks with years outside 2000–2100 are excluded.
     """
     ticks = pl.read_parquet(
         file_path,
@@ -77,13 +78,17 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
 
 
 def prepare_data(config: Config) -> None:
-    """Convert raw tick data to OHLCV bars.
+    """
+    Prepare OHLCV bars from raw monthly tick parquet files and write the resulting parquet to the configured output path.
 
-    Args:
-        config: Loaded application configuration.
+    Reads all parquet files under config.paths.data_raw, aggregates ticks into OHLCV bars using the timeframe in config.data.timeframe, concatenates and deduplicates monthly results, filters bars with years outside 2000–2100, and writes the final dataset to config.paths.ohlcv.
+
+    Parameters:
+        config (Config): Application configuration. `config.data.timeframe` controls bar size and accepts hourly (e.g., "1H", "4H"), minute (e.g., "1MIN", "5M"), or daily ("D" or "1D") formats.
 
     Raises:
-        FileNotFoundError: If raw data directory is empty or missing.
+        FileNotFoundError: If the raw data directory is missing or contains no parquet files (unless the output already exists, in which case the function returns).
+        ValueError: If `config.data.timeframe` uses an unsupported format.
     """
     raw_dir = Path(config.paths.data_raw)
     ohlcv_path = Path(config.paths.ohlcv)

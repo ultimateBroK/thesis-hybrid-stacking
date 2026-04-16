@@ -31,20 +31,23 @@ def train_gru(
     train_df: pl.DataFrame,
     val_df: pl.DataFrame,
 ) -> tuple[GRUExtractor, nn.Linear, np.ndarray, np.ndarray, list[dict[str, float]]]:
-    """Train GRU feature extractor and produce hidden states for LightGBM.
+    """
+    Train a GRU feature extractor as a classifier and return per-sample hidden states for downstream LightGBM.
 
-    The GRU is trained as a classifier on the labels. After training,
-    we extract the hidden state for each sample — these become features
-    for LightGBM.
+    Trains a GRUExtractor backbone together with a temporary linear classification head using cross-entropy loss, applies early stopping by validation loss, restores the best checkpoint, and extracts hidden-state features for both training and validation splits.
 
-    Args:
-        config: Application configuration with GRU parameters.
-        train_df: Training DataFrame.
-        val_df: Validation DataFrame.
+    Parameters:
+        config (Config): Application configuration containing GRU hyperparameters and label info.
+        train_df (pl.DataFrame): Time-series training data to convert into fixed-length GRU sequences.
+        val_df (pl.DataFrame): Time-series validation data to convert into fixed-length GRU sequences.
 
     Returns:
-        Tuple of (trained_model, classifier_head, train_hidden, val_hidden,
-            history).
+        tuple: A 5-tuple containing:
+            - model (GRUExtractor): The trained GRU feature extractor with the best checkpoint loaded.
+            - classifier (nn.Linear): The trained linear classification head (best checkpoint loaded).
+            - train_hidden (np.ndarray): Array of per-sample hidden states extracted from training sequences.
+            - val_hidden (np.ndarray): Array of per-sample hidden states extracted from validation sequences.
+            - history (list[dict[str, float]]): Per-epoch metrics including 'epoch', 'train_loss', 'train_acc', 'val_loss', and 'val_acc' (losses and accuracies rounded).
     """
     gru_cfg = config.gru
     gru_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
