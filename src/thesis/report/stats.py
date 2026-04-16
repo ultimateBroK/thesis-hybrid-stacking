@@ -83,8 +83,14 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         return None
     try:
         cols = ["true_label", "pred_label"]
-        proba_cols = [
+        # Accept both naming conventions: pred_proba_class_minus1 (word) and pred_proba_class_-1 (hyphen)
+        proba_cols_word = [
             "pred_proba_class_minus1",
+            "pred_proba_class_0",
+            "pred_proba_class_1",
+        ]
+        proba_cols_hyphen = [
+            "pred_proba_class_-1",
             "pred_proba_class_0",
             "pred_proba_class_1",
         ]
@@ -93,6 +99,13 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
             df = pl.read_parquet(preds_path)
         except Exception:
             df = pl.read_parquet(preds_path, columns=cols)
+
+        # Detect which naming convention is used
+        has_word = all(c in df.columns for c in proba_cols_word)
+        has_hyphen = all(c in df.columns for c in proba_cols_hyphen)
+        proba_cols = (
+            proba_cols_hyphen if has_hyphen else (proba_cols_word if has_word else [])
+        )
 
         true = df["true_label"].to_numpy()
         pred = df["pred_label"].to_numpy()
@@ -141,7 +154,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         }
 
         # Confidence-filtered accuracy
-        has_proba = all(c in df.columns for c in proba_cols)
+        has_proba = len(proba_cols) == 3 and all(c in df.columns for c in proba_cols)
         if has_proba:
             proba = df.select(proba_cols).to_numpy()
             max_proba = proba.max(axis=1)

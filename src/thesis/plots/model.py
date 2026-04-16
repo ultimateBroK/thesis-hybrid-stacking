@@ -53,9 +53,21 @@ def _generate_model_charts(config: Config) -> None:
     logger.info("Chart: confusion_matrix.png")
 
     # --- 2. Prediction Confidence Distribution ---
-    if "pred_proba_class_1" in preds_df.columns:
+    # Check both probability columns — names may be pred_proba_class_-1 or pred_proba_class_minus1
+    has_long_proba = "pred_proba_class_1" in preds_df.columns
+    has_short_proba = (
+        "pred_proba_class_minus1" in preds_df.columns
+        or "pred_proba_class_-1" in preds_df.columns
+    )
+    if has_long_proba and has_short_proba:
         long_conf = preds_df["pred_proba_class_1"].to_numpy()
-        short_conf = preds_df["pred_proba_class_minus1"].to_numpy()
+        # Handle both naming conventions for the Short class column
+        short_col = (
+            "pred_proba_class_minus1"
+            if "pred_proba_class_minus1" in preds_df.columns
+            else "pred_proba_class_-1"
+        )
+        short_conf = preds_df[short_col].to_numpy()
 
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.hist(
