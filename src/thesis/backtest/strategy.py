@@ -124,14 +124,18 @@ class HybridGRUStrategy(Strategy):
         # Risk per lot = stop distance * contract size
         risk_per_lot = stop_distance_dollars * self.contract_size
 
-        if risk_per_lot <= 0:
+        if risk_per_lot <= 0 or risk_amount <= 0:
             return self.lots_per_trade  # Fallback to fixed
 
         # Calculate lot size
         lot_size = risk_amount / risk_per_lot
 
         # Clamp to configured bounds
-        return max(self.min_lot_size, min(self.max_lot_size, lot_size))
+        lot_size = max(self.min_lot_size, min(self.max_lot_size, lot_size))
+
+        # Round to nearest whole number so size (lot_size * contract_size) is a valid
+        # whole number of base units that backtesting.py requires when size >= 1
+        return round(lot_size) if lot_size >= 1 else lot_size
 
     def _check_stop(self) -> None:
         """

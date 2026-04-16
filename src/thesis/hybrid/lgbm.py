@@ -241,6 +241,10 @@ def _train_optuna(
     Perform an Optuna hyperparameter search for a LightGBM multiclass classifier using time-series cross-validation optimizing for Sharpe Ratio, then train and return a final LightGBM model using the best-found parameters.
 
     Parameters:
+        X_train (np.ndarray): Training feature matrix.
+        y_train (np.ndarray): Training labels.
+        X_val (np.ndarray): Validation feature matrix used for early stopping of final model.
+        y_val (np.ndarray): Validation labels.
         class_weights (dict[int, float]): Mapping from class index to weight applied during training.
         config (Config): Configuration object controlling randomness, Optuna budget, early stopping, and related training settings.
         feature_cols (list[str]): Column names used to wrap NumPy feature matrices so LightGBM preserves feature names.
