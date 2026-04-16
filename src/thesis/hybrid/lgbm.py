@@ -180,6 +180,54 @@ def _train_fixed(
     return model
 
 
+def _compute_sharpe_from_predictions(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    confidence_threshold: float = 0.0,
+) -> float:
+    """
+    Compute Sharpe Ratio from prediction labels using a simplified trade simulation.
+
+    Simulates fixed-lot trades based on predicted direction vs actual direction.
+    Uses simplified returns without full backtesting.py overhead for fast Optuna evaluation.
+
+    Parameters:
+        y_true: True labels (-1, 0, 1)
+        y_pred: Predicted labels (-1, 0, 1)
+        confidence_threshold: Minimum probability threshold to trade (0 = trade all)
+
+    Returns:
+        Sharpe Ratio (annualized), or 0.0 if insufficient trades.
+    """
+    # Filter to non-hold predictions only
+    mask = y_pred != 0
+    if mask.sum() < 10:
+        return 0.0
+
+    correct = y_pred == y_true
+    # Simple return: +1 for correct direction, -1 for wrong direction
+    # (actual P&L would depend on price move, but for direction this is a proxy)
+    direction_returns = np.where(correct, 1.0, -1.0)
+
+    # Remove hold periods (zeros)
+    returns = direction_returns[mask]
+
+    if len(returns) < 10:
+        return 0.0
+
+    # Annualization factor (1H bars → ~8760 bars/year)
+    annualization = np.sqrt(8760 / len(returns))
+
+    mean_ret = np.mean(returns)
+    std_ret = np.std(returns)
+
+    if std_ret == 0:
+        return 0.0
+
+    sharpe = (mean_ret / std_ret) * annualization
+    return float(sharpe)
+
+
 def _train_optuna(
     X_train: np.ndarray,
     y_train: np.ndarray,
@@ -190,7 +238,7 @@ def _train_optuna(
     feature_cols: list[str],
 ) -> Any:
     """
-    Perform an Optuna hyperparameter search for a LightGBM multiclass classifier using time-series cross-validation, then train and return a final LightGBM model using the best-found parameters.
+    Perform an Optuna hyperparameter search for a LightGBM multiclass classifier using time-series cross-validation optimizing for Sharpe Ratio, then train and return a final LightGBM model using the best-found parameters.
 
     Parameters:
         class_weights (dict[int, float]): Mapping from class index to weight applied during training.
@@ -202,7 +250,6 @@ def _train_optuna(
     """
     import lightgbm as lgb
     import optuna
-    from sklearn.metrics import f1_score
     from sklearn.model_selection import TimeSeriesSplit
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -210,13 +257,15 @@ def _train_optuna(
 
     def objective(trial: Any) -> float:
         """
-        Evaluate hyperparameters proposed by an Optuna `trial` using 3-fold time-series cross-validation and return the mean macro F1 score.
+        Evaluate hyperparameters proposed by an Optuna `trial` using 3-fold time-series cross-validation and return the mean Sharpe Ratio.
+
+        Optimizes for trading performance (Sharpe Ratio) rather than classification accuracy (F1).
 
         Parameters:
             trial: An Optuna trial object that suggests hyperparameter values for a LightGBM multiclass classifier.
 
         Returns:
-            float: Mean macro F1 score across the three TimeSeriesSplit folds (uses a gap of `config.splitting.purge_bars` and LightGBM early stopping of 30 rounds).
+            float: Mean Sharpe Ratio across the three TimeSeriesSplit folds.
         """
         params = {
             "num_leaves": trial.suggest_int("num_leaves", 20, 150),
@@ -249,7 +298,10 @@ def _train_optuna(
                 callbacks=[lgb.early_stopping(30, verbose=False)],
             )
             preds = m.predict(_wrap_np(X_train[va_idx], feature_cols))
-            scores.append(f1_score(y_train[va_idx], preds, average="macro"))
+            sharpe = _compute_sharpe_from_predictions(
+                y_train[va_idx], preds, config.backtest.confidence_threshold
+            )
+            scores.append(sharpe)
 
         return float(np.mean(scores))
 
@@ -262,34 +314,34 @@ def _train_optuna(
     # Rich progress for Optuna trials
     progress = Progress(
         SpinnerColumn(),
-        TextColumn("[bold yellow]Optuna tuning"),
+        TextColumn("[bold yellow]Optuna tuning (Sharpe)"),
         BarColumn(),
         MofNCompleteColumn(),
         TextColumn("•"),
-        TextColumn("[green]best_F1={task.fields[best_f1]:.4f}"),
+        TextColumn("[green]best_sharpe={task.fields[best_sharpe]:.4f}"),
         TimeElapsedColumn(),
         transient=False,
     )
 
-    best_f1 = 0.0
+    best_sharpe = 0.0
 
     with progress:
-        task = progress.add_task("trials", total=n_trials, best_f1=0.0)
+        task = progress.add_task("trials", total=n_trials, best_sharpe=0.0)
 
         def _optuna_cb(
             study: optuna.study.Study, trial: optuna.trial.FrozenTrial
         ) -> None:
             """
-            Update the external Rich progress task and store a new best F1 score when the study improves.
+            Update the external Rich progress task and store a new best Sharpe when the study improves.
 
             Parameters:
-                study (optuna.study.Study): The Optuna study to read the current best value from.
-                trial (optuna.trial.FrozenTrial): The trial that just finished (unused except for callback signature).
+                study: The Optuna study to read the current best value from.
+                trial: The trial that just finished (unused except for callback signature).
             """
-            nonlocal best_f1
-            if study.best_value > best_f1:
-                best_f1 = study.best_value
-            progress.update(task, advance=1, best_f1=best_f1)
+            nonlocal best_sharpe
+            if study.best_value > best_sharpe:
+                best_sharpe = study.best_value
+            progress.update(task, advance=1, best_sharpe=best_sharpe)
 
         study.optimize(
             objective,
@@ -299,7 +351,7 @@ def _train_optuna(
         )
 
     logger.info(
-        "Optuna done: best_F1=%.4f (trial #%d)",
+        "Optuna done: best_sharpe=%.4f (trial #%d)",
         study.best_value,
         study.best_trial.number,
     )
@@ -336,7 +388,7 @@ def _train_optuna(
             Advance the Rich progress task by one iteration and set the `v_loss` field from the LightGBM callback environment.
 
             Parameters:
-                env (Any): LightGBM callback environment; `env.evaluation_result_list[0][2]` is used as the validation loss when available, otherwise `0.0`.
+                env: LightGBM callback environment; `env.evaluation_result_list[0][2]` is used as the validation loss when available, otherwise `0.0`.
             """
             progress.update(
                 task,

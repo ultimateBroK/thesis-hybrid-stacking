@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.config import Config
-from thesis.hybrid.lgbm import _compute_class_weights
+from thesis.hybrid.lgbm import _compute_class_weights, _compute_sharpe_from_predictions
 
 
 @pytest.fixture
@@ -108,3 +108,109 @@ def test_class_weights_with_imbalanced_data() -> None:
     # Minority classes should have higher weights
     assert weights[0] > weights[1]
     assert weights[-1] > weights[1]
+
+
+# ============================================================================
+# Sharpe Ratio computation tests
+# ============================================================================
+
+
+@pytest.mark.unit
+@pytest.mark.models
+def test_sharpe_highly_accurate() -> None:
+    """Test Sharpe with very accurate predictions (96% correct).
+
+    Note: 100% correct predictions give Sharpe=0 due to std=0 (undefined).
+    """
+    np.random.seed(42)
+    y_true = np.random.choice([-1, 1], 500)  # No holds for clarity
+    y_pred = y_true.copy()
+    # Add some noise to avoid std=0 edge case
+    flip_idx = np.random.choice(500, 20, replace=False)
+    y_pred[flip_idx] = -y_true[flip_idx]  # ~96% accuracy
+
+    sharpe = _compute_sharpe_from_predictions(y_true, y_pred)
+    assert sharpe > 0  # Should be positive with high accuracy
+
+
+@pytest.mark.unit
+@pytest.mark.models
+def test_sharpe_wrong_predictions() -> None:
+    """Test Sharpe with mostly wrong predictions (~4% correct)."""
+    np.random.seed(42)
+    y_true = np.random.choice([-1, 1], 500)
+    y_pred = -y_true.copy()
+    # Make a few correct to avoid std=0 edge case
+    flip_idx = np.random.choice(500, 20, replace=False)
+    y_pred[flip_idx] = y_true[flip_idx]  # ~4% accuracy
+
+    sharpe = _compute_sharpe_from_predictions(y_true, y_pred)
+    assert sharpe < 0  # Should be negative with mostly wrong
+
+
+@pytest.mark.unit
+@pytest.mark.models
+def test_sharpe_random_predictions() -> None:
+    """Test Sharpe with random predictions (near zero)."""
+    np.random.seed(42)
+    y_true = np.random.choice([-1, 0, 1], 500, p=[0.3, 0.4, 0.3])
+    y_pred = np.random.choice([-1, 1], 500)  # Random direction
+
+    sharpe = _compute_sharpe_from_predictions(y_true, y_pred)
+    # Random predictions should give Sharpe near 0
+    assert -3.0 < sharpe < 3.0  # Reasonable range
+
+
+@pytest.mark.unit
+@pytest.mark.models
+def test_sharpe_insufficient_trades() -> None:
+    """Test Sharpe returns 0 with too few trades."""
+    y_true = np.array([1, -1, 1, -1, 1])
+    y_pred = np.array([1, -1, 1, -1, 1])
+
+    sharpe = _compute_sharpe_from_predictions(y_true, y_pred)
+    assert sharpe == 0.0  # Less than 10 non-hold trades
+
+
+@pytest.mark.unit
+@pytest.mark.models
+def test_sharpe_holds_filtered() -> None:
+    """Test that hold signals (0) are filtered out."""
+    np.random.seed(42)
+    y_true = np.array([1, 0, 0, 1, 0, 0, -1, 0, 0, 1] * 50)  # Mostly holds
+    y_pred = y_true.copy()
+
+    sharpe = _compute_sharpe_from_predictions(y_true, y_pred)
+    # With holds filtered, we should have enough non-hold trades
+    assert sharpe >= 0  # Perfect direction should give Sharpe >= 0
+
+
+@pytest.mark.unit
+@pytest.mark.models
+def test_sharpe_better_than_random() -> None:
+    """Test that better predictions give higher Sharpe."""
+    np.random.seed(42)
+    n = 500
+    y_true = np.random.choice([-1, 0, 1], n, p=[0.3, 0.4, 0.3])
+
+    # Good predictions (80% correct on non-holds)
+    y_good = y_true.copy()
+    # Only flip non-hold predictions
+    non_hold_idx = np.where(y_true != 0)[0]
+    flip_n = int(len(non_hold_idx) * 0.2)
+    flip_idx = np.random.choice(non_hold_idx, flip_n, replace=False)
+    y_good[flip_idx] = -y_true[flip_idx]
+
+    # Bad predictions (20% correct on non-holds)
+    y_bad = y_true.copy()
+    y_bad[non_hold_idx] = -y_true[non_hold_idx]
+    # Make some correct to avoid std=0
+    fix_idx = np.random.choice(
+        non_hold_idx, int(len(non_hold_idx) * 0.2), replace=False
+    )
+    y_bad[fix_idx] = y_true[fix_idx]
+
+    sharpe_good = _compute_sharpe_from_predictions(y_true, y_good)
+    sharpe_bad = _compute_sharpe_from_predictions(y_true, y_bad)
+
+    assert sharpe_good > sharpe_bad

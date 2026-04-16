@@ -40,57 +40,62 @@ atr_period = 14
 macd_fast = 12
 macd_slow = 26
 macd_signal = 9
-correlation_threshold = 0.90
+correlation_threshold = 0.75
 
 # =============================================================================
 # LABELS — Triple Barrier
 # =============================================================================
 [labels]
 atr_multiplier = 1.5
-horizon_bars = 10
+horizon_bars = 24
 num_classes = 3
-min_atr = 0.0001
+min_atr = 0.5
 
 # =============================================================================
 # MODEL — LightGBM (receives GRU hidden states + static features)
 # =============================================================================
 [model]
 use_optuna = true
-optuna_trials = 50
+optuna_trials = 100
 optuna_timeout = 3600
 num_leaves = 48
-max_depth = 5
+max_depth = 4
 learning_rate = 0.03
 n_estimators = 150
-min_child_samples = 150
+min_child_samples = 200
 subsample = 0.70
 subsample_freq = 5
 feature_fraction = 0.60
 reg_alpha = 0.1
-reg_lambda = 5.0
-early_stopping_rounds = 30
+reg_lambda = 10.0
+early_stopping_rounds = 50
 
 # =============================================================================
 # BACKTEST — via backtesting.py
 # =============================================================================
 [backtest]
 initial_capital = 10000.0
-leverage = 30                       # 30:1 — affordable for 1 lot with $10k
-spread_ticks = 30                   # 30 ticks = $0.30 (realistic XAUUSD ECN spread)
-slippage_ticks = 3                  # 3 ticks = $0.03 per side (absorbed into spread)
+leverage = 20                       # 20:1 — affordable for 1 lot with $10k
+spread_ticks = 35                   # 35 ticks = $0.35 (realistic XAUUSD ECN spread)
+slippage_ticks = 5                  # 5 ticks = $0.05 per side (absorbed into spread)
 commission_per_lot = 10.0           # Round-trip commission per lot
-atr_stop_multiplier = 0.75          # ATR multiplier for stop-loss distance
-lots_per_trade = 1.0                # Fixed 1 lot per trade (100 oz XAUUSD)
+atr_stop_multiplier = 1.5          # ATR multiplier for stop-loss distance
+lots_per_trade = 0.15                # Fixed 0.15 lot per trade (15 oz XAUUSD)
 confidence_threshold = 0.70         # Min predicted probability to trade (0 = disabled)
+# Auto lot sizing (risk-based position sizing)
+auto_lot_sizing = true             # Enable dynamic lot sizing based on equity + risk %
+risk_per_trade_pct = 1.0            # Risk % of equity per trade
+min_lot_size = 0.01                  # Minimum lot size floor
+max_lot_size = 5.0                 # Maximum lot size ceiling
 
 # =============================================================================
 # GRU — Feature Extractor
 # =============================================================================
 [gru]
 input_size = 4        # log_returns + rsi_14 + atr_14 + macd_hist
-hidden_size = 64
+hidden_size = 32
 num_layers = 2
-sequence_length = 24
+sequence_length = 48
 dropout = 0.4
 learning_rate = 0.001
 batch_size = 64

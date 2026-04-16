@@ -32,6 +32,8 @@ class HybridGRUStrategy(Strategy):
     Position sizing: fixed lot size per trade (avoids runaway sizing
     that occurs when buy()/sell() are called without explicit size
     and backtesting.py defaults to "max affordable" with leverage).
+    When auto_lot_sizing=True, lot size is calculated dynamically
+    based on current equity and risk_per_trade_pct.
 
     Confidence filtering: when confidence_threshold > 0, only trade
     when the predicted class probability exceeds the threshold.
@@ -52,6 +54,11 @@ class HybridGRUStrategy(Strategy):
     horizon_bars = (
         0  # 0 = disabled (hold until opposite signal or stop); N = exit after N bars
     )
+    # Auto lot sizing parameters
+    auto_lot_sizing = False
+    risk_per_trade_pct = 1.0
+    min_lot_size = 0.1
+    max_lot_size = 10.0
 
     def init(self) -> None:
         """
@@ -85,8 +92,46 @@ class HybridGRUStrategy(Strategy):
         self._entry_price: dict[str, float] = {}
 
     def _floor_atr(self, atr: float) -> float:
-        """Floor ATR to min_atr to prevent unrealistic stops in low-volatility regimes."""
+        """Floor ATR to prevent unrealistic stops in low-volatility regimes."""
         return max(atr, self.min_atr)
+
+    def _calc_lot_size(self, atr: float, entry_price: float) -> float:
+        """
+        Calculate lot size based on current equity and risk parameters.
+
+        Uses the formula:
+            lot_size = (equity * risk_pct / 100) / (atr_stop_distance * contract_size)
+
+        Where atr_stop_distance = atr * atr_stop_mult (the dollar distance to stop loss).
+
+        Args:
+            atr: Current ATR value in price units
+            entry_price: Entry price for the trade
+
+        Returns:
+            Lot size, clamped between min_lot_size and max_lot_size
+        """
+        if not self.auto_lot_sizing:
+            return self.lots_per_trade
+
+        # Risk amount in dollars
+        risk_amount = self.equity * (self.risk_per_trade_pct / 100.0)
+
+        # Stop loss distance in dollars per unit
+        # For gold: ATR is in price units (USD), contract_size = 100 oz per lot
+        stop_distance_dollars = atr * self.atr_stop_mult
+
+        # Risk per lot = stop distance * contract size
+        risk_per_lot = stop_distance_dollars * self.contract_size
+
+        if risk_per_lot <= 0:
+            return self.lots_per_trade  # Fallback to fixed
+
+        # Calculate lot size
+        lot_size = risk_amount / risk_per_lot
+
+        # Clamp to configured bounds
+        return max(self.min_lot_size, min(self.max_lot_size, lot_size))
 
     def _check_stop(self) -> None:
         """
@@ -180,8 +225,10 @@ class HybridGRUStrategy(Strategy):
             if confidence < self.confidence_threshold:
                 return  # Below threshold — skip trade
 
-        # Fixed lot sizing: lots × contract_size = units (e.g. 1 lot = 100 oz)
-        size = self.lots_per_trade * self.contract_size
+        # Dynamic lot sizing: calculate based on equity and risk parameters
+        entry_price = self.data.Open[-1]
+        lot_size = self._calc_lot_size(atr, entry_price)
+        size = lot_size * self.contract_size
 
         if signal == 1 and not self.position:
             # Flat → enter long; stop will be set after fill
@@ -400,6 +447,10 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
         confidence_threshold=bc.confidence_threshold,
         contract_size=dc.contract_size,
         horizon_bars=config.labels.horizon_bars,
+        auto_lot_sizing=bc.auto_lot_sizing,
+        risk_per_trade_pct=bc.risk_per_trade_pct,
+        min_lot_size=bc.min_lot_size,
+        max_lot_size=bc.max_lot_size,
     )
     return stats, bt
 
