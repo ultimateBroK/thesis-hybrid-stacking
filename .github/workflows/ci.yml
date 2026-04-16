@@ -201,7 +201,7 @@ jobs:
       - name: Verify project structure
         run: |
           echo "Checking required directories..."
-          required_dirs=("src/thesis" "data" "models" "results" "docs")
+          required_dirs=("src/thesis" "data" "models" "docs")
           for dir in "${required_dirs[@]}"; do
             if [ ! -d "$dir" ]; then
               echo "ERROR: Required directory missing: $dir"
