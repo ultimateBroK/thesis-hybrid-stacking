@@ -133,9 +133,15 @@ class HybridGRUStrategy(Strategy):
         # Clamp to configured bounds
         lot_size = max(self.min_lot_size, min(self.max_lot_size, lot_size))
 
+        # When lot_size < 1, multiplying by contract_size gives non-integer base units
+        # (e.g., 0.5 * 100 = 50.5), which is invalid for backtesting.py.
+        # Fall back to fixed lots_per_trade to ensure valid size = lots_per_trade * contract_size.
+        if lot_size < 1:
+            return self.lots_per_trade
+
         # Round to nearest whole number so size (lot_size * contract_size) is a valid
         # whole number of base units that backtesting.py requires when size >= 1
-        return round(lot_size) if lot_size >= 1 else lot_size
+        return round(lot_size)
 
     def _check_stop(self) -> None:
         """
