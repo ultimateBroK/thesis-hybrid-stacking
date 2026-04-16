@@ -57,6 +57,10 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
         ]
     )
 
+    # Sort ticks by bar_time then timestamp before aggregation
+    # so first()/last() within each bar give deterministic open/close
+    ticks = ticks.sort(["bar_time", "timestamp"])
+
     # Aggregate to OHLCV
     ohlcv = (
         ticks.group_by("bar_time", maintain_order=True)

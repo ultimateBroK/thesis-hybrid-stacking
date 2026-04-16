@@ -64,6 +64,7 @@ jobs:
           if [ ${#missing_docs[@]} -gt 0 ]; then
             echo "Missing documentation files:"
             printf '  - %s\n' "${missing_docs[@]}"
+            exit 1
           else
             echo "All required documentation present"
           fi

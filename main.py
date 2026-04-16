@@ -123,16 +123,22 @@ def main() -> None:
 
     # Track pipeline timing
     t_start = time.monotonic()
+    pipeline_ok = False
 
-    # Run pipeline
-    run_pipeline(config)
+    # Run pipeline and ablation with error handling
+    try:
+        run_pipeline(config)
 
-    # Run ablation study if requested
-    if args.ablation:
-        logger.info("Running ablation study...")
-        run_ablation(config)
+        # Run ablation study if requested
+        if args.ablation:
+            logger.info("Running ablation study...")
+            run_ablation(config)
 
-    elapsed = round(time.monotonic() - t_start, 2)
+        pipeline_ok = True
+    except Exception as e:
+        logger.exception("Pipeline failed: %s", e)
+    finally:
+        elapsed = round(time.monotonic() - t_start, 2)
 
     # Save session_info.json manifest
     session_info = {
@@ -140,6 +146,7 @@ def main() -> None:
         "timeframe": config.data.timeframe,
         "session_timestamp": session_ts,
         "pipeline_duration_seconds": elapsed,
+        "pipeline_ok": pipeline_ok,
         "data_range": {
             "train": [
                 str(config.splitting.train_start),
@@ -156,7 +163,12 @@ def main() -> None:
         json.dump(session_info, f, indent=2)
     logger.info("Session info saved: %s", session_info_path)
 
-    logger.info("Done. Results saved to: %s (%.1fs)", session_dir, elapsed)
+    logger.info(
+        "Done. Results saved to: %s (%.1fs) [%s]",
+        session_dir,
+        elapsed,
+        "OK" if pipeline_ok else "FAILED",
+    )
 
 
 if __name__ == "__main__":
