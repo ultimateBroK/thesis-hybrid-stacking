@@ -199,8 +199,16 @@ def train_model(config: Config) -> None:
     logger.info("Test accuracy: %.4f", acc)
 
     class_order = model.classes_.tolist()  # e.g. [-1, 0, 1]
+
+    def _normalize_label(lbl: int) -> str:
+        """Normalize negative labels to string form: -1 -> 'minus1'."""
+        if lbl < 0:
+            return f"minus{abs(lbl)}"
+        return str(lbl)
+
     proba_cols = {
-        f"pred_proba_class_{cls}": proba[:, idx] for idx, cls in enumerate(class_order)
+        f"pred_proba_class_{_normalize_label(cls)}": proba[:, idx]
+        for idx, cls in enumerate(class_order)
     }
 
     preds_df = pl.DataFrame(

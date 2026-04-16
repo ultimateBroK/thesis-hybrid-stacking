@@ -137,6 +137,7 @@ def main() -> None:
         pipeline_ok = True
     except Exception as e:
         logger.exception("Pipeline failed: %s", e)
+        pipeline_ok = False
     finally:
         elapsed = round(time.monotonic() - t_start, 2)
 
@@ -169,6 +170,7 @@ def main() -> None:
         elapsed,
         "OK" if pipeline_ok else "FAILED",
     )
+    sys.exit(0 if pipeline_ok else 1)
 
 
 if __name__ == "__main__":

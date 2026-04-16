@@ -13,7 +13,7 @@ Features:
 import json
 import logging
 import sys
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -23,7 +23,7 @@ from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie
 
 # Ensure src/ is on path for imports
-_src = str(Path(__file__).resolve().parent.parent.parent / "src")
+_src = str(Path(__file__).resolve().parent.parent.parent)
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
@@ -69,9 +69,29 @@ def _find_sessions() -> list[Path]:
     results = Path("results")
     if not results.exists():
         return []
+
+    def parse_session_timestamp(path: Path) -> datetime | None:
+        """Extract and parse timestamp from session directory name.
+
+        Session directories follow the pattern: {SYMBOL}_{TIMEFRAME}_{YYYYMMDD}_{HHMMSS}
+        e.g., XAUUSD_H1_20260416_143052
+
+        Returns:
+            datetime if parsing succeeds, None otherwise.
+        """
+        import re
+
+        m = re.search(r"(\d{8})_(\d{6})$", path.name)
+        if not m:
+            return None
+        try:
+            return datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
+        except ValueError:
+            return None
+
     sessions = sorted(
         [p for p in results.iterdir() if p.is_dir() and (p / "config").exists()],
-        key=lambda p: p.name,
+        key=lambda p: parse_session_timestamp(p) or datetime.min,
         reverse=True,
     )
     return sessions
@@ -541,19 +561,31 @@ def _render_backtest_section(data: dict) -> None:
             long_pnl = sum(t["pnl"] for t in trades if t.get("direction") == "long")
             short_pnl = sum(t["pnl"] for t in trades if t.get("direction") == "short")
             pnl_dir_chart = (
-                Pie(init_opts=opts.InitOpts(height="400px"))
-                .add(
-                    series_name="PnL",
-                    data_pair=[
-                        ("Long", round(long_pnl, 2)),
-                        ("Short", round(short_pnl, 2)),
-                    ],
-                    label_opts=opts.LabelOpts(formatter="{b}: ${c}"),
+                Bar(init_opts=opts.InitOpts(height="400px"))
+                .add_xaxis(["Long", "Short"])
+                .add_yaxis(
+                    "PnL",
+                    [round(long_pnl, 2), round(short_pnl, 2)],
                 )
                 .set_colors([COLORS["long"], COLORS["short"]])
                 .set_global_opts(
                     title_opts=opts.TitleOpts(title="PnL by Direction"),
-                    tooltip_opts=opts.TooltipOpts(trigger="item"),
+                    tooltip_opts=opts.TooltipOpts(
+                        trigger="axis",
+                        formatter="{b}: ${c}",
+                    ),
+                    xaxis_opts=opts.AxisOpts(type_="category"),
+                    yaxis_opts=opts.AxisOpts(
+                        axisline_opts=opts.AxisLineOpts(
+                            linestyle_opts=opts.LineStyleOpts(is_show=True, opacity=0.5)
+                        ),
+                    ),
+                )
+                .set_series_opts(
+                    label_opts=opts.LabelOpts(
+                        formatter="{b}: ${c}",
+                        is_show=True,
+                    ),
                 )
             )
             _render_chart(pnl_dir_chart, height="400px")

@@ -1,5 +1,6 @@
 """GRU model training loop."""
 
+import copy
 import logging
 import time
 from typing import Any
@@ -241,8 +242,8 @@ def train_gru(
                 best_val_loss = val_loss
                 best_epoch = epoch + 1
                 best_state = {
-                    "model": model.state_dict(),
-                    "classifier": classifier.state_dict(),
+                    "model": copy.deepcopy(model.state_dict()),
+                    "classifier": copy.deepcopy(classifier.state_dict()),
                 }
                 patience_counter = 0
             else:

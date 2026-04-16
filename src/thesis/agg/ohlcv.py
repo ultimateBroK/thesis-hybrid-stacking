@@ -109,6 +109,13 @@ def prepare_data(config: Config) -> None:
 
     parquet_files = sorted(raw_dir.glob("*.parquet"))
     if not parquet_files:
+        if ohlcv_path.exists():
+            logger.warning(
+                "No parquet files found (%s) but OHLCV exists (%s) — skipping prepare.",
+                raw_dir,
+                ohlcv_path,
+            )
+            return
         raise FileNotFoundError(f"No parquet files in {raw_dir}")
 
     logger.info("Found %d tick files in %s", len(parquet_files), raw_dir)
@@ -116,9 +123,14 @@ def prepare_data(config: Config) -> None:
     # Determine timeframe in milliseconds for grouping
     tf = config.data.timeframe.upper()
     if tf.endswith("H"):
-        group_ms = int(tf[:-1]) * 3_600_000
+        hours = int(tf[:-1])
+        if hours <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': hours must be > 0")
+        group_ms = hours * 3_600_000
     elif tf.endswith("MIN") or tf.endswith("M"):
         minutes = int(tf.replace("MIN", "").replace("M", ""))
+        if minutes <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': minutes must be > 0")
         group_ms = minutes * 60_000
     elif tf in ("D", "1D"):
         group_ms = 86_400_000

@@ -129,11 +129,29 @@ class HybridGRUStrategy(Strategy):
         (aligned with the labeling horizon). This prevents indefinite holding when no opposing signal occurs.
         """
         signal = int(self.signals[-1])
-        price = self.data.Close[-1]
         atr = self._floor_atr(self.atr[-1])
 
         # Check manual stops first (from previous bar's entry)
         self._check_stop()
+
+        # Set stops for newly filled positions using actual entry price
+        if self.position:
+            if (
+                self.position.is_long
+                and "long" in self._entry_bar
+                and "long" not in self._stops
+            ):
+                entry_price = self.position.entry_price
+                sl = entry_price - atr * self.atr_stop_mult
+                self._stops["long"] = sl
+            elif (
+                self.position.is_short
+                and "short" in self._entry_bar
+                and "short" not in self._stops
+            ):
+                entry_price = self.position.entry_price
+                sl = entry_price + atr * self.atr_stop_mult
+                self._stops["short"] = sl
 
         # Time-based exit: close positions that have exceeded horizon_bars
         if self.horizon_bars > 0 and self.position:
@@ -161,15 +179,11 @@ class HybridGRUStrategy(Strategy):
         size = self.lots_per_trade * self.contract_size
 
         if signal == 1 and not self.position:
-            # Flat → enter long with manual stop
-            sl = price - atr * self.atr_stop_mult
-            self._stops["long"] = sl
+            # Flat → enter long; stop will be set after fill
             self._entry_bar["long"] = len(self.data)
             self.buy(size=size)
         elif signal == -1 and not self.position:
-            # Flat → enter short with manual stop
-            sl = price + atr * self.atr_stop_mult
-            self._stops["short"] = sl
+            # Flat → enter short; stop will be set after fill
             self._entry_bar["short"] = len(self.data)
             self.sell(size=size)
 

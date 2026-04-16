@@ -173,8 +173,8 @@ def _compute_labels(
             sl_hit = low[j] <= sl
             if tp_hit and sl_hit:
                 # Same bar spans both barriers — unknowable intrabar path.
-                # Conservative: treat as no-decision, skip to next bar.
-                continue
+                # Conservative: treat as no-decision, stop scanning.
+                break
             if tp_hit:
                 label = 1  # Long
                 touched_bars[i] = j - i

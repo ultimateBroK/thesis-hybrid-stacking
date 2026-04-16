@@ -118,13 +118,20 @@ def _save_preds(
         class_order = [-1, 0, 1]
     col_mapping = {label: proba[:, idx] for idx, label in enumerate(class_order)}
 
+    def _normalize_label(lbl: int) -> str:
+        """Normalize negative labels to string form: -1 -> 'minus1'."""
+        if lbl < 0:
+            return f"minus{abs(lbl)}"
+        return str(lbl)
+
     df = pl.DataFrame(
         {
             "timestamp": timestamps,
             "true_label": y_true.astype(np.int32),
             "pred_label": preds.astype(np.int32),
             **{
-                f"pred_proba_class_{label}": col_mapping[label] for label in class_order
+                f"pred_proba_class_{_normalize_label(label)}": col_mapping[label]
+                for label in class_order
             },
         }
     )
