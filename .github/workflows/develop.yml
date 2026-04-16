@@ -71,7 +71,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.agg.ohlcv import tick_to_ohlcv
+          from thesis.agg.ohlcv import _aggregate_file, prepare_data
           print('Aggregation module imports successfully')
           "
 
@@ -79,7 +79,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.features.indicators import compute_indicators
+          from thesis.features.indicators import generate_features
           print('Features module imports successfully')
           "
 
@@ -87,7 +87,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.labeling.triple_barrier import apply_triple_barrier
+          from thesis.labeling.triple_barrier import generate_labels
           print('Labeling module imports successfully')
           "
 
@@ -95,7 +95,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.splitting.split import train_val_test_split
+          from thesis.splitting.split import split_data
           print('Splitting module imports successfully')
           "
 

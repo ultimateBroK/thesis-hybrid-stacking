@@ -42,39 +42,7 @@ jobs:
         uses: webiny/action-conventional-commits@v1.3.0
 
   test-suite:
-    name: Test Suite (Unit)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: lint-and-format
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Install Pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
-        with:
-          environments: default
-
-      - name: Run unit tests with coverage
-        run: |
-          pixi run pytest tests/ -v \
-            --cov=src/thesis \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing \
-            --cov-fail-under=29 \
-            -m "not integration"
-
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v6
-        if: always() && hashFiles('coverage.xml') != ''
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-          verbose: true
-
-  integration-tests:
-    name: Integration Tests
+    name: Test Suite (Unit + Integration)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: lint-and-format
@@ -88,9 +56,21 @@ jobs:
         with:
           environments: default
 
-      - name: Run integration tests
+      - name: Run all tests with coverage
         run: |
-          pixi run pytest tests/integration/ -v --tb=short --override-ini="addopts="
+          pixi run pytest tests/ -v \
+            --cov=src/thesis \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v6
+        if: always() && hashFiles('coverage.xml') != ''
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
 
   security-scan:
     name: Security Scan

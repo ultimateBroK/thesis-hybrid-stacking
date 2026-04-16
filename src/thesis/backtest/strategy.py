@@ -35,11 +35,19 @@ class HybridGRUStrategy(Strategy):
 
     Confidence filtering: when confidence_threshold > 0, only trade
     when the predicted class probability exceeds the threshold.
+
+    Stop-loss: managed manually via market orders (no sl= parameter)
+    to avoid backtesting.py's built-in tie-break bias when both TP and
+    SL are hit on the same bar (the framework always attributes the
+    exit to the Long side). Manual tracking also allows using a
+    max(atr, min_atr) floor to prevent unrealistic stops in low-ATR
+    regimes.
     """
 
     atr_stop_mult = 0.75
     lots_per_trade = 1.0
     confidence_threshold = 0.0  # 0 = disabled, trade all signals
+    min_atr = 0.0001  # floor to prevent microscopic stops
 
     def init(self) -> None:
         """
@@ -64,15 +72,59 @@ class HybridGRUStrategy(Strategy):
                 lambda: self.data.pred_proba_class_1, name="proba_long", plot=False
             )
 
+        # Manual stop tracking (filled on entry, consumed in next bar)
+        # dict: direction -> stop_price
+        self._stops: dict[str, float] = {}
+
+    def _floor_atr(self, atr: float) -> float:
+        """Floor ATR to min_atr to prevent unrealistic stops in low-volatility regimes."""
+        return max(atr, self.min_atr)
+
+    def _check_stop(self) -> None:
+        """
+        Check if price has crossed the tracked stop level from the previous bar.
+
+        Uses open price (execution price) vs stored stop to detect crossings.
+        High/Low may briefly pierce the stop without actually filling at that price,
+        so we use open for conservative detection.
+        """
+        if not self._stops or not self.position:
+            return
+        open_price = self.data.Open[-1]
+        high = self.data.High[-1]
+        low = self.data.Low[-1]
+
+        if self.position.is_long:
+            sl = self._stops.get("long")
+            if sl is not None and open_price <= sl:
+                self.position.close()
+                self._stops.pop("long", None)
+            elif sl is not None and low <= sl < open_price:
+                # Gap below stop: exit at stop
+                self.position.close()
+                self._stops.pop("long", None)
+        elif self.position.is_short:
+            sl = self._stops.get("short")
+            if sl is not None and open_price >= sl:
+                self.position.close()
+                self._stops.pop("short", None)
+            elif sl is not None and high >= sl > open_price:
+                # Gap above stop: exit at stop
+                self.position.close()
+                self._stops.pop("short", None)
+
     def next(self) -> None:
         """
         Evaluate the latest model signal and, if appropriate, place a market order with an ATR-based stop-loss.
 
-        Checks the most recent signal, optional predicted-class confidence (when `confidence_threshold > 0` and probability columns are available), and current position to decide whether to enter a new long or short trade. If entering a trade, computes fixed sizing as `lots_per_trade * 100` (100 is the baked-in contract size) and sets the stop-loss at price ± ATR * `atr_stop_mult`. A signal of 0 (hold) or a confidence value below the threshold results in no action.
+        Checks the most recent signal, optional predicted-class confidence (when `confidence_threshold > 0` and probability columns are available), and current position to decide whether to enter a new long or short trade. Uses manual stop tracking (market orders) instead of backtesting.py's sl= parameter to avoid the built-in tie-break bias when TP and SL are both hit on the same bar. A signal of 0 (hold) or a confidence value below the threshold results in no action.
         """
         signal = int(self.signals[-1])
         price = self.data.Close[-1]
-        atr = self.atr[-1]
+        atr = self._floor_atr(self.atr[-1])
+
+        # Check manual stops first (from previous bar's entry)
+        self._check_stop()
 
         # Confidence gate: skip low-confidence signals
         if self.confidence_threshold > 0 and self._has_proba:
@@ -88,13 +140,16 @@ class HybridGRUStrategy(Strategy):
         # Fixed lot sizing: lots × contract_size = units (e.g. 1 lot = 100 oz)
         size = self.lots_per_trade * 100  # contract_size baked in
 
-        # is_long/is_short allow signal reversal via exclusive_orders
-        if signal == 1 and not self.position.is_long:
+        if signal == 1 and not self.position:
+            # Flat → enter long with manual stop
             sl = price - atr * self.atr_stop_mult
-            self.buy(size=size, sl=sl)
-        elif signal == -1 and not self.position.is_short:
+            self._stops["long"] = sl
+            self.buy(size=size)
+        elif signal == -1 and not self.position:
+            # Flat → enter short with manual stop
             sl = price + atr * self.atr_stop_mult
-            self.sell(size=size, sl=sl)
+            self._stops["short"] = sl
+            self.sell(size=size)
 
 
 # ---------------------------------------------------------------------------
