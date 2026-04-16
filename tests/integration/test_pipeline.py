@@ -1,6 +1,7 @@
 """Integration tests for pipeline module.
 
 Tests pipeline stage ordering, caching, and --force flag.
+These tests use a temporary directory and do NOT write to the project's results/ directory.
 """
 
 import sys
@@ -92,6 +93,9 @@ def pipeline_config(temp_pipeline_dir: Path) -> Config:
         temp_pipeline_dir / "results" / "backtest_results.json"
     )
     config.paths.report = str(temp_pipeline_dir / "results" / "thesis_report.md")
+
+    # Point session_dir into temp directory so all report outputs go there
+    config.paths.session_dir = str(temp_pipeline_dir / "session")
 
     # Adjust date ranges for synthetic data (500 hours = ~21 days starting 2020-01-01)
     # Split: 60% train, 20% val, 20% test
@@ -285,7 +289,11 @@ def test_pipeline_split_data_stage(pipeline_config: Config) -> None:
 @pytest.mark.integration
 @pytest.mark.slow
 def test_pipeline_end_to_end_smoke(pipeline_config: Config) -> None:
-    """Smoke test: full pipeline runs without errors."""
+    """Smoke test: full pipeline runs without errors.
+
+    All outputs are written to the temp directory via session_dir.
+    Does NOT create any files in the project's results/ directory.
+    """
     # Create OHLCV data with more rows to cover all date ranges
     n_rows = 1000  # ~42 days of hourly data
     setup_ohlcv_data(pipeline_config, n_rows=n_rows)
@@ -317,7 +325,7 @@ def test_pipeline_end_to_end_smoke(pipeline_config: Config) -> None:
     # Should not raise any exception
     run_pipeline(pipeline_config)
 
-    # Check that outputs exist
+    # Verify outputs exist within temp session_dir
     assert Path(pipeline_config.paths.features).exists()
     assert Path(pipeline_config.paths.labels).exists()
     assert Path(pipeline_config.paths.train_data).exists()

@@ -601,9 +601,12 @@ def _build_markdown(
         # Win rate explained
         lines.append("### Win Rate — How Often Does the Strategy Win?")
         lines.append("")
-        lines.append(
-            f"- **Win rate**: {wr:.1f}% (about {int(wr)} out of every 10 trades were profitable)"
-        )
+        if np.isnan(wr):
+            lines.append("- **Win rate**: N/A (no trades or insufficient data)")
+        else:
+            lines.append(
+                f"- **Win rate**: {wr:.1f}% (about {int(wr)} out of every 10 trades were profitable)"
+            )
         lines.append("")
         lines.append(
             f"> **{wr:.0f}% sounds low — is it bad?** Not necessarily. "
@@ -816,8 +819,9 @@ def _build_markdown(
                 vret = m.get("return_pct", 0)
                 vsh = m.get("sharpe_ratio", 0)
                 vdd = m.get("max_drawdown_pct", 0)
+                vwr_str = f"{vwr:.2f}%" if not np.isnan(vwr) else "N/A"
                 lines.append(
-                    f"| {variant} | {fc} | {trades_v} | {vwr:.2f}% | {vret:.2f} | {vsh:.2f} | {vdd:.2f} |"
+                    f"| {variant} | {fc} | {trades_v} | {vwr_str} | {vret:.2f} | {vsh:.2f} | {vdd:.2f} |"
                 )
         lines.append("")
         if "comparison_note" in ablation:
@@ -863,9 +867,13 @@ def _build_markdown(
         conclusion_parts.append(summary)
 
         # Backtest conclusion
+        if np.isnan(wr_val):
+            wr_str = "N/A"
+        else:
+            wr_str = f"{wr_val:.0f}%"
         bt_conclusion = (
             f"Trading only on these high-confidence signals produces **{n_trades:,} trades** "
-            f"over the test period. The strategy wins only {wr_val:.0f}% of the time, "
+            f"over the test period. The strategy wins only {wr_str} of the time, "
             f"but when it wins, it wins big — **${pf_val:.1f} for every $1 lost**. "
             f"The Sharpe ratio of {sharpe_val:.2f} indicates "
             f"{'good' if sharpe_val < 1.5 else 'very good' if sharpe_val < 2.0 else 'excellent'} "
