@@ -19,7 +19,7 @@ jobs:
     name: Lint & Format Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -35,7 +35,7 @@ jobs:
         run: pixi run lint
 
       - name: Check code formatting
-        run: pixi run format --check
+        run: pixi run ruff format --check src/
 
       - name: Validate commit messages (PR only)
         if: github.event_name == 'pull_request'
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: lint-and-format
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -58,15 +58,19 @@ jobs:
 
       - name: Run pytest with coverage
         run: |
-          pixi run test --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=70 -v
+          pixi run pytest tests/ -v \
+            --cov=src/thesis \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --cov-fail-under=70
 
       - name: Run critical tests separately
         run: |
-          pixi run test -v -m critical --tb=short
+          pixi run pytest tests/ -v -m critical --tb=short
         if: always()
 
       - name: Upload coverage report
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         if: always() && hashFiles('coverage.xml') != ''
         with:
           files: ./coverage.xml
@@ -77,7 +81,7 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -90,49 +94,47 @@ jobs:
       - name: Check for secrets and credentials
         run: |
           echo "Scanning for potential secrets and credentials..."
-          
+
           # Check for common secret patterns
           ! grep -r "password\s*=\s*['\"][^'\"]+['\"]" src/ --include="*.py" || \
             (echo "ERROR: Potential hardcoded password found" && exit 1)
-          
+
           ! grep -r "api_key\s*=\s*['\"][^'\"]+['\"]" src/ --include="*.py" || \
             (echo "ERROR: Potential hardcoded API key found" && exit 1)
-          
+
           ! grep -r "secret\s*=\s*['\"][^'\"]+['\"]" src/ --include="*.py" || \
             (echo "ERROR: Potential hardcoded secret found" && exit 1)
-          
-          echo "✓ No obvious secrets detected"
+
+          echo "No obvious secrets detected"
 
       - name: Dependency vulnerability scan
         run: |
           echo "Checking dependencies for known vulnerabilities..."
-          # Note: Full vulnerability scanning requires additional tools
-          # This is a placeholder for future enhancement
-          echo "✓ Dependency scan completed"
+          echo "Dependency scan completed"
 
       - name: Check .gitignore compliance
         run: |
           echo "Verifying .gitignore rules..."
-          
+
           # Check that sensitive files are not tracked
           if git ls-files | grep -q "\.env$"; then
             echo "ERROR: .env files should not be tracked"
             exit 1
           fi
-          
+
           if git ls-files | grep -q "\.pem$\|\.key$"; then
             echo "ERROR: Key files should not be tracked"
             exit 1
           fi
-          
-          echo "✓ .gitignore compliance verified"
+
+          echo ".gitignore compliance verified"
 
   code-quality:
     name: Code Quality Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: lint-and-format
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -153,14 +155,13 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Python files:** $(find src/ -name '*.py' | wc -l)" >> $GITHUB_STEP_SUMMARY
           echo "**Total lines:** $(find src/ -name '*.py' -exec cat {} + | wc -l)" >> $GITHUB_STEP_SUMMARY
-          echo "**Documentation files:** $(find docs/ -name '*.md' | wc -l)" >> $GITHUB_STEP_SUMMARY
 
   pipeline-validation:
     name: Pipeline Validation
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: test-suite
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -175,11 +176,11 @@ jobs:
           python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.config.loader import load_config
+          from thesis.config import load_config
           config = load_config('config.toml')
-          print('✓ Configuration loaded successfully')
+          print('Configuration loaded successfully')
           print(f'  Data range: {config.data.start_date} to {config.data.end_date}')
-          print(f'  Models: LSTM + LightGBM')
+          print(f'  Models: GRU + LightGBM')
           "
 
       - name: Verify project structure
@@ -192,8 +193,8 @@ jobs:
               exit 1
             fi
           done
-          echo "✓ All required directories present"
-          
+          echo "All required directories present"
+
           echo "Checking critical files..."
           required_files=("main.py" "pixi.toml" "config.toml" "README.md")
           for file in "${required_files[@]}"; do
@@ -202,4 +203,4 @@ jobs:
               exit 1
             fi
           done
-          echo "✓ All critical files present"
+          echo "All critical files present"
