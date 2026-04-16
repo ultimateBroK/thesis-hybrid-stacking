@@ -157,7 +157,7 @@ flowchart LR
 
 ## Project Structure
 
-```
+```text
 thesis/
 ├── config.toml              # All settings in one file
 ├── main.py                  # Entry point (CLI)

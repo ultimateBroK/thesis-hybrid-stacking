@@ -311,12 +311,13 @@ def run_ablation(config: Config) -> None:
     logger.info("=== VARIANT A: LightGBM-only (static features) ===")
     logger.info("Static features (%d): %s", len(static_cols), static_cols)
 
-    X_train_a = train_df.select(static_cols).to_numpy()
-    X_val_a = val_df.select(static_cols).to_numpy()
-    X_test_a = test_df.select(static_cols).to_numpy()
-    y_train_a = train_df["label"].to_numpy().astype(np.int32)
-    y_val_a = val_df["label"].to_numpy().astype(np.int32)
-    y_test_a = test_df["label"].to_numpy().astype(np.int32)
+    # Align to same samples as variants B and C for fair comparison
+    X_train_a = train_aligned.select(static_cols).to_numpy()
+    X_val_a = val_aligned.select(static_cols).to_numpy()
+    X_test_a = test_aligned.select(static_cols).to_numpy()
+    y_train_a = y_train_aligned
+    y_val_a = y_val_aligned
+    y_test_a = y_test_aligned
 
     cw_a = _compute_class_weights(y_train_a)
     model_a = _train_lgbm(
@@ -337,7 +338,8 @@ def run_ablation(config: Config) -> None:
     # ==================================================================
     logger.info("=== VARIANT B: GRU-only (direct predictions) ===")
     gru_preds = np.argmax(gru_softmax, axis=1)
-    trading_signals = gru_preds - 1  # Map 0,1,2 → -1,0,1
+    # GRU classifier outputs indices 0,1,2 → labels -1,0,1 (hardcoded since PyTorch classifier has no classes_ attribute)
+    trading_signals = gru_preds - 1
     logger.info("GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean())
 
     preds_path_b = session_dir / "predictions" / "ablation_gru_only.parquet"
@@ -349,7 +351,7 @@ def run_ablation(config: Config) -> None:
         preds_path_b,
     )
     preds_df_b = pl.read_parquet(preds_path_b)
-    metrics_b = _run_backtest_for(test_df, preds_df_b, config, "GRU-only")
+    metrics_b = _run_backtest_for(test_aligned, preds_df_b, config, "GRU-only")
     result_b = {"metrics": metrics_b, "feature_count": hidden_size}
 
     # ==================================================================
@@ -387,7 +389,7 @@ def run_ablation(config: Config) -> None:
         all_feature_cols,
     )
     proba_c = model_c.predict_proba(_wrap_np(X_test_c, all_feature_cols))
-    preds_c = np.argmax(proba_c, axis=1) - 1
+    preds_c = model_c.classes_[np.argmax(proba_c, axis=1)]
     logger.info("Combined accuracy: %.4f", (preds_c == y_test_aligned).mean())
 
     preds_path_c = session_dir / "predictions" / "ablation_combined.parquet"
@@ -395,7 +397,7 @@ def run_ablation(config: Config) -> None:
         test_aligned["timestamp"], y_test_aligned, preds_c, proba_c, preds_path_c
     )
     preds_df_c = pl.read_parquet(preds_path_c)
-    metrics_c = _run_backtest_for(test_df, preds_df_c, config, "Combined")
+    metrics_c = _run_backtest_for(test_aligned, preds_df_c, config, "Combined")
     result_c = {"metrics": metrics_c, "feature_count": len(all_feature_cols)}
 
     # ==================================================================

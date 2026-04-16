@@ -8,7 +8,7 @@
 
 After running `pixi run workflow`, everything is saved to a timestamped folder:
 
-```
+```text
 results/XAUUSD_1H_20260414_042000/
 ```
 
@@ -75,7 +75,7 @@ Here is every metric the backtest calculates, explained in plain language.
 
 #### Profit Factor — The Most Important Metric
 
-```
+```text
 Profit Factor = Total Wins ($) / Total Losses ($)
 ```
 
@@ -104,7 +104,7 @@ Profit Factor = Total Wins ($) / Total Losses ($)
 
 #### Sharpe Ratio — The Gold Standard
 
-```
+```text
 Sharpe Ratio = (Average Return - Risk-Free Rate) / Standard Deviation of Returns
 ```
 
@@ -120,13 +120,13 @@ Sharpe Ratio = (Average Return - Risk-Free Rate) / Standard Deviation of Returns
 
 #### Max Drawdown — How Much Pain?
 
-```
+```text
 Max Drawdown = Biggest drop from your highest account value
 ```
 
 If your account grew to $120,000 and then dropped to $96,000, your max drawdown is:
 
-```
+```text
 (120,000 - 96,000) / 120,000 = 20%
 ```
 
@@ -192,7 +192,7 @@ The project generates **12 charts** in the session folder, plus an interactive B
 
 The confusion matrix shows you **where the model makes mistakes**.
 
-```
+```text
               Predicted
               Long   Flat   Short
 Actual Long  [0.45] [0.30] [0.25]
@@ -240,9 +240,19 @@ Look at `ablation_results.json`:
 
 ```json
 {
-  "lgbm_only": { "sharpe_ratio": 0.8, "total_return_pct": 5.2 },
-  "gru_only":  { "sharpe_ratio": 0.6, "total_return_pct": 3.1 },
-  "combined":  { "sharpe_ratio": 1.2, "total_return_pct": 8.7 }
+  "lgbm_only": {
+    "metrics": { "sharpe_ratio": 0.8, "return_pct": 5.2, "num_trades": 320 },
+    "feature_count": 11
+  },
+  "gru_only": {
+    "metrics": { "sharpe_ratio": 0.6, "return_pct": 3.1, "num_trades": 280 },
+    "feature_count": 64
+  },
+  "combined": {
+    "metrics": { "sharpe_ratio": 1.2, "return_pct": 8.7, "num_trades": 410 },
+    "feature_count": 75
+  },
+  "comparison_note": "Best variant: combined."
 }
 ```
 

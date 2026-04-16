@@ -29,7 +29,7 @@ jobs:
       - name: Run complete test suite
         run: |
           echo "Running complete test suite for release validation..."
-          pixi run test || echo "No tests or tests skipped"
+          pixi run test
 
       - name: Validate version tag
         id: version_check

@@ -27,7 +27,7 @@ def build_equity_drawdown_chart(
     Returns:
         pyecharts.charts.Grid: Grid containing the equity line chart (top) and drawdown chart (bottom).
     """
-    if not trades:
+    if not trades or initial_capital <= 0:
         return Grid()
 
     pnls = [t["pnl"] for t in trades]

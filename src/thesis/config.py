@@ -29,6 +29,8 @@ class DataConfig:
     symbol_download: str = "XAUUSD"
     asset_class: str = "fx"
     download_concurrency: int = 20
+    download_force: bool = False  # Force re-download even if file exists
+    download_skip_current_month: bool = True  # Skip current month (incomplete data)
 
 
 @dataclass

@@ -15,6 +15,8 @@ contract_size = 100
 symbol_download = "XAUUSD"
 asset_class = "fx"
 download_concurrency = 20
+download_force = false           # Force re-download even if file exists
+download_skip_current_month = true  # Skip current month (incomplete data)
 
 # =============================================================================
 # SPLITTING
@@ -27,7 +29,7 @@ val_end = "2023-12-31 23:59:59"
 test_start = "2024-01-01"             # OOS: gold bull run $2000→$3000+
 test_end = "2026-03-31 23:59:59"
 purge_bars = 25
-embargo_bars = 50                     # ~2 days — covers 24-bar label horizon
+embargo_bars = 50                     # ~2 days — conservative vs 10-bar label horizon
 
 # =============================================================================
 # FEATURES

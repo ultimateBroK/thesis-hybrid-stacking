@@ -48,6 +48,7 @@ class HybridGRUStrategy(Strategy):
     lots_per_trade = 1.0
     confidence_threshold = 0.0  # 0 = disabled, trade all signals
     min_atr = 0.0001  # floor to prevent microscopic stops
+    contract_size = 100  # units per lot (from DataConfig)
 
     def init(self) -> None:
         """
@@ -138,7 +139,7 @@ class HybridGRUStrategy(Strategy):
                 return  # Below threshold — skip trade
 
         # Fixed lot sizing: lots × contract_size = units (e.g. 1 lot = 100 oz)
-        size = self.lots_per_trade * 100  # contract_size baked in
+        size = self.lots_per_trade * self.contract_size
 
         if signal == 1 and not self.position:
             # Flat → enter long with manual stop
@@ -357,6 +358,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
         atr_stop_mult=bc.atr_stop_multiplier,
         lots_per_trade=bc.lots_per_trade,
         confidence_threshold=bc.confidence_threshold,
+        contract_size=dc.contract_size,
     )
     return stats, bt
 

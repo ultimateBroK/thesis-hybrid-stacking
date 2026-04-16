@@ -90,7 +90,7 @@ The GRU's 64 hidden states capture **temporal patterns** — like trends, revers
 
 ### Full Feature Space
 
-```
+```text
 64 GRU hidden states  +  11 static indicators  =  75 total features
 ```
 

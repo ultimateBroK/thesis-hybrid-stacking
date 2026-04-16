@@ -1,6 +1,6 @@
 # Hybrid GRU + LightGBM
 
-### XAU/USD Trading Signal Prediction
+## XAU/USD Trading Signal Prediction
 
 [![Python 3.13](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
 [![Pixi](https://img.shields.io/badge/Pixi-Package%20Manager-orange.svg)](https://pixi.sh/)
@@ -103,7 +103,7 @@ The hybrid model works in two steps:
 
 ## Project Structure
 
-```
+```text
 thesis/
 ├── config.toml              # All settings in one file
 ├── main.py                  # Entry point (CLI)

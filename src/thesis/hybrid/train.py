@@ -172,7 +172,7 @@ def train_model(config: Config) -> None:
         )
     )
     proba = model.predict_proba(_wrap_np(X_test, all_feature_cols))
-    preds = np.argmax(proba, axis=1) - 1  # Map 0,1,2 → -1,0,1
+    preds = model.classes_[np.argmax(proba, axis=1)]  # Explicit class mapping
 
     acc = (preds == y_test).mean()
 
@@ -237,7 +237,7 @@ def train_model(config: Config) -> None:
             f"[bold green]Stage 4 complete[/]\n"
             f"  Accuracy: [bold]{acc:.4f}[/]\n"
             f"  GRU: {hidden_size} features ({config.gru.num_layers} layers)\n"
-            f"  LightGBM: {len(all_feature_cols)} features, best_iter={model.best_iteration_}\n"
+            f"  LightGBM: {len(all_feature_cols)} features, best_iter={getattr(model, 'best_iteration_', 'N/A')}\n"
             f"  Time: {stage_time:.1f}s",
             style="green",
             padding=(0, 2),

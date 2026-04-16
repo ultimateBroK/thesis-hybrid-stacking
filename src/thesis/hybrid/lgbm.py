@@ -236,7 +236,9 @@ def _train_optuna(
             "verbose": -1,
         }
 
-        tscv = TimeSeriesSplit(n_splits=3, gap=config.splitting.purge_bars)
+        tscv = TimeSeriesSplit(
+            n_splits=3, gap=config.splitting.purge_bars + config.splitting.embargo_bars
+        )
         scores = []
         for tr_idx, va_idx in tscv.split(X_train):
             m = lgb.LGBMClassifier(**params)

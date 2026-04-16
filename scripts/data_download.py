@@ -6,7 +6,7 @@ from __future__ import annotations
 import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
 
-src_dir = Path(__file__).parent / "src"  # noqa: E402
+src_dir = Path(__file__).resolve().parent.parent / "src"  # noqa: E402
 if src_dir.exists() and str(src_dir) not in sys.path:  # noqa: E402
     sys.path.insert(0, str(src_dir))  # noqa: E402
 

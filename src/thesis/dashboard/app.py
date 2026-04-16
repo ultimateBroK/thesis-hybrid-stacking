@@ -336,6 +336,12 @@ def _render_model_section(data: dict) -> None:
     fi = data.get("feature_importance", {})
 
     if preds is not None and len(preds) > 0:
+        required_cols = {"true_label", "pred_label"}
+        if not required_cols.issubset(set(preds.columns)):
+            st.warning(
+                f"Predictions missing columns: {required_cols - set(preds.columns)}"
+            )
+            return
         # Metrics cards
         y_true = preds["true_label"].to_numpy()
         y_pred = preds["pred_label"].to_numpy()
