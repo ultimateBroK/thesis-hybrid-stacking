@@ -1,7 +1,7 @@
 """Interactive ECharts chart builders for thesis visualization.
 
 Each function builds a pyecharts chart object that can be:
-- Rendered via st_echarts() in Streamlit (using dump_options())
+- Rendered via st_pyecharts() in Streamlit (pyecharts charts)
 - Exported as HTML via chart.render("path.html")
 
 Usage:

@@ -15,7 +15,7 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.panel import Panel
-from rich.rule import Rule
+
 from rich.text import Text
 
 # ---------------------------------------------------------------------------

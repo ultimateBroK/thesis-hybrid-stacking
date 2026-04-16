@@ -27,7 +27,7 @@ _src = str(Path(__file__).resolve().parent.parent.parent / "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-from streamlit_echarts import st_echarts, st_pyecharts  # noqa: E402
+from streamlit_echarts import st_pyecharts  # noqa: E402
 
 from thesis.charts import (  # noqa: E402
     COLORS,

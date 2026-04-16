@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 from thesis.config import Config
-from thesis.ui import console, stage_header, stage_skip, STAGE_LABELS
+from thesis.ui import console, stage_header, stage_skip
 from thesis.agg import prepare_data
 from thesis.features import generate_features
 from thesis.labeling import generate_labels
