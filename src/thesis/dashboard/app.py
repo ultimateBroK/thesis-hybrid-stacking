@@ -199,16 +199,50 @@ def _render_chart(chart: object, height: str = "500px") -> None:
 # -----------------------------------------------------------------------------
 
 
+def _is_extreme_value(metric_name: str, value: float) -> tuple[bool, float]:
+    """
+    Check if a metric value is extreme and return threshold info.
+    
+    Args:
+        metric_name: Name of the metric (e.g., 'recovery_factor', 'sharpe_ratio')
+        value: Original metric value
+        
+    Returns:
+        Tuple of (is_extreme: bool, threshold: float)
+    """
+    # Define maximum reasonable thresholds for metrics prone to extreme values
+    extreme_thresholds = {
+        "recovery_factor": 20.0,      # Above 20 is unrealistic
+        "sharpe_ratio": 10.0,         # Above 10 is suspicious
+        "sortino_ratio": 20.0,        # Above 20 is unrealistic  
+        "calmar_ratio": 15.0,         # Above 15 is suspicious
+        "profit_factor": 10.0,        # Above 10 is unrealistic
+        "sqn": 5.0,                   # Above 5 indicates overfitting
+        "kelly_criterion": 0.8,       # Above 80% is overly aggressive
+        "return_pct": 1000.0,         # Above 1000% return is suspicious
+        "cagr_pct": 500.0,            # Above 500% CAGR is unrealistic
+        "return_ann_pct": 500.0,      # Above 500% annual return is suspicious
+    }
+    
+    # Get threshold for this metric, default to no filtering
+    threshold = extreme_thresholds.get(metric_name, float('inf'))
+    is_extreme = value > threshold
+    
+    return is_extreme, threshold
+
+
 def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     """
     Return (color_name, zone_label, recommendation) for a given metric.
 
     Zone colors:
-        - excellent (green): Target zone, most strategies should aim here
+        - excellent (green): Target zone for XAUUSD
         - good (light green): Acceptable zone, solid performance
         - moderate (yellow): Marginal, needs attention
         - poor (orange): Below average, review needed
         - dangerous (red): Critical issues, high risk
+
+    All zones are XAUUSD 1H optimized based on real-world benchmarks.
 
     Parameters:
         metric_name: The metric key (e.g., 'sharpe_ratio', 'max_drawdown_pct')
@@ -223,107 +257,124 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return ("moderate", "N/A", "No data available")
 
-    # Sharpe Ratio (higher is better)
-    # Source: BoringEdge, LuxAlgo, Quantified Strategies
+    # Check for extreme values
+    is_extreme, threshold = _is_extreme_value(metric_name, value)
+    
+    # Special handling for extreme values
+    if is_extreme:
+        return ("dangerous", "Extreme", f"Value {value:.1f} exceeds threshold {threshold:.1f} — verify for overfitting/data issues")
+
+    # ========== Sharpe Ratio ==========
+    # Higher is better. XAUUSD: 0.5-2.0 is realistic, >3.0 is suspicious.
     if metric_name == "sharpe_ratio":
         if value < 0:
             return ("dangerous", "Negative", "Below risk-free rate — review strategy")
         if value < 0.5:
-            return ("dangerous", "Poor", "Below 0.5 — high risk-adjusted cost")
+            return ("dangerous", "Poor", "<0.5 — high risk-adjusted cost for XAUUSD")
         if value < 1.0:
             return (
                 "moderate",
                 "Acceptable",
-                "0.5-1.0 — acceptable for conservative strategies",
+                "0.5-1.0 — acceptable for XAUUSD strategies",
             )
-        if value < 1.5:
-            return ("good", "Good", "1.0-1.5 — solid risk-adjusted returns")
         if value < 2.0:
-            return ("excellent", "Excellent", "1.5-2.0 — hedge fund target range")
-        return ("excellent", "Exceptional", ">2.0 — verify no overfitting")
+            return ("good", "Good", "1.0-2.0 — solid risk-adjusted returns")
+        if value < 3.0:
+            return (
+                "excellent",
+                "Excellent",
+                "2.0-3.0 — hedge fund target (verify no overfitting)",
+            )
+        return ("dangerous", "Suspicious", ">3.0 — verify no overfitting for XAUUSD")
 
-    # Sortino Ratio (same scale as Sharpe)
+    # ========== Sortino Ratio ==========
+    # Same scale as Sharpe but only penalizes downside.
     if metric_name == "sortino_ratio":
         if value < 0:
             return ("dangerous", "Negative", "Negative — below risk-free rate")
         if value < 0.5:
-            return ("dangerous", "Poor", "Below 0.5 — excessive downside risk")
-        if value < 1.0:
-            return ("moderate", "Acceptable", "0.5-1.0 — acceptable for conservative")
+            return ("dangerous", "Poor", "<0.5 — excessive downside risk")
         if value < 1.5:
-            return ("good", "Good", "1.0-1.5 — solid downside-adjusted returns")
-        if value < 2.0:
-            return ("excellent", "Excellent", "1.5-2.0 — very good risk-adjusted")
-        return ("excellent", "Exceptional", ">2.0 — verify no overfitting")
+            return ("moderate", "Acceptable", "0.5-1.5 — acceptable for XAUUSD")
+        if value < 2.5:
+            return ("good", "Good", "1.5-2.5 — solid downside-adjusted returns")
+        if value < 4.0:
+            return ("excellent", "Excellent", "2.5-4.0 — very good")
+        return ("excellent", "Exceptional", ">4.0 — exceptional downside protection")
 
-    # Max Drawdown (less negative is better)
-    # Source: BoringEdge, LuxAlgo (drawdown is stored as negative)
+    # ========== Max Drawdown ==========
+    # Less negative is better. XAUUSD is volatile, so zones are wider.
+    # Drawdown is stored as negative (e.g., -20 means 20% drawdown).
     if metric_name == "max_drawdown_pct":
         if value > -10:
             return ("excellent", "Excellent", "<10% — exceptional capital preservation")
         if value > -20:
-            return ("good", "Good", "10-20% — conservative drawdown")
-        if value > -30:
-            return ("moderate", "Moderate", "20-30% — typical for trend strategies")
-        if value > -40:
-            return ("poor", "Significant", "30-40% — high, assess suitability")
-        if value > -60:
-            return ("dangerous", "High Risk", "40-60% — aggressive drawdown")
-        return (
-            "dangerous",
-            "Critical",
-            ">60% — similar to buy & hold, question strategy viability",
-        )
+            return ("good", "Good", "10-20% — conservative drawdown for XAUUSD")
+        if value > -35:
+            return ("moderate", "Moderate", "20-35% — typical for volatile XAUUSD")
+        if value > -50:
+            return ("poor", "Significant", "35-50% — high, assess suitability")
+        return ("dangerous", "Critical", ">50% — aggressive, question viability")
 
-    # Profit Factor (higher is better)
-    # Source: LuxAlgo, Quantified Strategies
+    # ========== Profit Factor ==========
+    # Higher is better. XAUUSD: 1.5-2.0 is target, >3.0 is suspicious.
     if metric_name == "profit_factor":
         if value < 1.0:
             return ("dangerous", "Losing", "<1.0 — strategy loses money")
-        if value < 1.25:
-            return ("poor", "Marginal", "1.0-1.25 — barely covers costs")
+        if value < 1.2:
+            return ("poor", "Marginal", "1.0-1.2 — barely covers costs")
         if value < 1.5:
-            return ("moderate", "Acceptable", "1.25-1.5 — covers costs with margin")
+            return ("moderate", "Acceptable", "1.2-1.5 — covers costs with margin")
         if value < 2.0:
-            return ("good", "Good", "1.5-2.0 — strong profitability")
+            return ("good", "Good", "1.5-2.0 — strong profitability for XAUUSD")
         if value < 3.0:
             return ("excellent", "Excellent", "2.0-3.0 — very efficient")
-        return ("excellent", "Exceptional", ">3.0 — verify no overfitting")
+        return ("dangerous", "Suspicious", ">3.0 — verify no overfitting for XAUUSD")
 
-    # Win Rate (higher is better, but context matters)
-    # Source: BoringEdge, LuxAlgo
+    # ========== Win Rate ==========
+    # Higher is better. For XAUUSD trend-following, 35-55% is normal.
     if metric_name == "win_rate_pct":
-        if value < 25:
-            return ("poor", "Low", "<25% — very low, requires large R:R")
         if value < 35:
-            return ("moderate", "Low", "25-35% — typical for trend-following")
+            return ("poor", "Low", "<35% — requires large R:R for XAUUSD")
         if value < 45:
-            return ("good", "Good", "35-45% — solid for trend strategies")
+            return ("moderate", "Acceptable", "35-45% — typical for trend-following")
         if value < 55:
-            return ("excellent", "Excellent", "45-55% — strong win rate")
-        return (
-            "excellent",
-            "Very High",
-            ">55% — verify no overfitting or data leakage",
-        )
+            return ("good", "Good", "45-55% — solid win rate for XAUUSD")
+        if value < 65:
+            return ("excellent", "Excellent", "55-65% — strong (verify if >65%)")
+        return ("dangerous", "Suspicious", ">65% — verify no overfitting")
 
-    # CAGR / Annual Return (higher is better)
-    # Source: BoringEdge
-    if metric_name in ("cagr_pct", "return_ann_pct", "return_pct"):
+    # ========== CAGR / Annual Return ==========
+    # Enhanced zones with risk context for XAUUSD
+    if metric_name in ("cagr_pct", "return_ann_pct"):
+        if value < 0:
+            return ("dangerous", "Negative", "Negative returns — strategy losing money")
         if value < 5:
-            return ("poor", "Underperforming", "<5% — underperforms inflation")
-        if value < 10:
-            return ("moderate", "Low", "5-10% — barely above index funds")
-        if value < 20:
-            return ("good", "Acceptable", "10-20% — solid hedge fund territory")
-        if value < 40:
-            return ("excellent", "Good", "20-40% — exceptional returns")
-        if value < 60:
-            return ("excellent", "Very High", "40-60% — verify not overfitted")
-        return ("dangerous", "Suspicious", ">60% — likely overfitting or short period")
+            return ("poor", "Very Low", "<5% — underperforms inflation")
+        if value < 15:
+            return ("moderate", "Conservative", "5-15% — conservative but acceptable")
+        if value < 30:
+            return ("good", "Strong", "15-30% — strong risk-adjusted returns")
+        if value < 50:
+            return ("excellent", "Excellent", "30-50% — exceptional performance")
+        return ("dangerous", "Suspicious", ">50% — verify for overfitting")
+    
+    # Total Return (different scale - entire period)
+    if metric_name == "return_pct":
+        if value < 0:
+            return ("dangerous", "Loss", "Negative returns — capital loss")
+        if value < 50:
+            return ("poor", "Low", "<50% — minimal growth over period")
+        if value < 100:
+            return ("moderate", "Moderate", "50-100% — doubled capital at best")
+        if value < 200:
+            return ("good", "Good", "100-200% — solid growth")
+        if value < 500:
+            return ("excellent", "Strong", "200-500% — strong performance")
+        return ("dangerous", "Extreme", ">500% — verify for data issues")
 
-    # Calmar Ratio (CAGR / Max DD — higher is better)
-    # Source: BoringEdge, LuxAlgo
+    # ========== Calmar Ratio ==========
+    # CAGR / Max DD. Higher is better.
     if metric_name == "calmar_ratio":
         if value < 0:
             return ("dangerous", "Negative", "Negative — losses exceed returns")
@@ -331,68 +382,158 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
             return ("poor", "Weak", "<0.5 — risk outweighs reward")
         if value < 1.0:
             return ("moderate", "Acceptable", "0.5-1.0 — minimum acceptable threshold")
-        if value < 1.5:
-            return ("good", "Good", "1.0-1.5 — healthy risk/reward balance")
         if value < 2.0:
+            return ("good", "Good", "1.0-2.0 — healthy risk/reward balance")
+        if value < 3.0:
             return (
                 "excellent",
                 "Excellent",
-                "1.5-2.0 — very strong risk-adjusted returns",
+                "2.0-3.0 — very strong risk-adjusted returns",
             )
-        if value < 3.0:
-            return ("excellent", "Outstanding", "2.0-3.0 — exceptional")
-        return ("excellent", "Exceptional", ">3.0 — verify no overfitting")
+        return ("excellent", "Exceptional", ">3.0 — exceptional risk/reward")
 
-    # SQN (System Quality Number — higher is better)
-    # Source: Van Tharp
+    # ========== SQN (System Quality Number) ==========
+    # Van Tharp's measure. >2.0 is good, >3.0 may be overfitting.
     if metric_name == "sqn":
         if value < 1.0:
             return ("poor", "Poor", "<1.0 — system has no edge")
-        if value < 2.0:
-            return ("moderate", "Average", "1.0-2.0 — average system")
-        if value < 2.5:
-            return ("good", "Good", "2.0-2.5 — good system")
-        if value < 3.0:
-            return ("excellent", "Excellent", "2.5-3.0 — excellent system")
-        return ("dangerous", "Superb?", ">3.0 — verify no overfitting")
-
-    # Risk/Reward Ratio (higher is better)
-    if metric_name == "risk_reward_ratio":
-        if value < 0.5:
-            return ("poor", "Low", "<0.5 — losses exceed wins")
-        if value < 1.0:
-            return ("moderate", "Below Avg", "0.5-1.0 — marginal")
         if value < 1.5:
-            return ("good", "Good", "1.0-1.5 — acceptable")
+            return ("moderate", "Average", "1.0-1.5 — acceptable for XAUUSD")
         if value < 2.0:
-            return ("excellent", "Excellent", "1.5-2.0 — strong")
-        return ("excellent", "Exceptional", ">2.0 — very efficient")
+            return ("moderate", "Average", "1.5-2.0 — acceptable system")
+        if value < 3.0:
+            return ("good", "Good", "2.0-3.0 — good system quality")
+        return ("excellent", "Excellent", ">3.0 — excellent system")
 
-    # Exposure Time (lower can be better for capital efficiency)
+    
+    # ========== Exposure Time ==========
+    # XAUUSD trades 24/5. 30-60% is target range.
     if metric_name == "exposure_time_pct":
-        if value < 20:
-            return ("excellent", "Efficient", "<20% — high capital efficiency")
-        if value < 40:
-            return ("good", "Good", "20-40% — good capital efficiency")
+        if value < 15:
+            return ("poor", "Too Selective", "<15% — may miss opportunities")
+        if value < 30:
+            return ("moderate", "Low", "15-30% — conservative exposure")
         if value < 60:
-            return ("moderate", "Moderate", "40-60% — typical exposure")
-        return ("poor", "High", ">60% — significant market exposure")
+            return ("good", "Good", "30-60% — typical XAUUSD exposure")
+        if value < 80:
+            return ("moderate", "High", "60-80% — significant market commitment")
+        return ("poor", "Overexposed", ">80% — almost always in trade")
 
-    # Kelly Criterion (optimal bet size — lower is safer)
-    # 0.2-0.3 is typical for trading
+    # ========== Kelly Criterion ==========
+    # Optimal bet size. XAUUSD: 0.15-0.25 is target (more conservative).
     if metric_name == "kelly_criterion":
         if value <= 0:
             return ("dangerous", "Invalid", "0 or negative — no edge")
-        if value < 0.2:
-            return ("good", "Conservative", "<20% — conservative position sizing")
-        if value < 0.3:
-            return ("excellent", "Optimal", "20-30% — textbook optimal")
+        if value < 0.15:
+            return ("moderate", "Conservative", "<15% — conservative position sizing")
+        if value < 0.25:
+            return ("good", "Optimal", "15-25% — textbook optimal for XAUUSD")
+        if value < 0.4:
+            return ("moderate", "Aggressive", "25-40% — aggressive, high variance")
+        return ("excellent", "Very Aggressive", ">40% — very aggressive, high risk")
+
+    # ========== Recovery Factor ==========
+    # Net Profit / Max Drawdown. Higher is better.
+    if metric_name == "recovery_factor":
+        if value < 1.0:
+            return ("dangerous", "Bad", "<1.0 — never recovered worst loss")
+        if value < 2.0:
+            return ("poor", "Weak", "1.0-2.0 — slow recovery")
+        if value < 4.0:
+            return ("good", "Good", "2.0-4.0 — reasonable recovery")
+        return ("excellent", "Excellent", ">4.0 — quick recovery from drawdowns")
+
+    # ========== Volatility (Ann.) ==========
+    # Annualized volatility. Lower = smoother returns.
+    if metric_name == "volatility_ann_pct":
+        if value < 10:
+            return ("excellent", "Low", "<10% — very stable")
+        if value < 20:
+            return ("good", "Moderate", "10-20% — acceptable range")
+        if value < 35:
+            return ("moderate", "High", "20-35% — elevated risk")
+        return ("poor", "Very High", ">35% — excessive volatility")
+
+    # ========== Avg Win / Avg Loss ==========
+    # Absolute $ values with relative zones based on typical XAUUSD trade sizes
+    if metric_name == "avg_win":
+        if value < 50:
+            return ("poor", "Low", "<$50 — small wins, may not cover costs")
+        if value < 200:
+            return ("moderate", "Moderate", "$50-200 — decent win size")
+        if value < 500:
+            return ("good", "Good", "$200-500 — strong average wins")
+        return ("excellent", "High", ">$500 — excellent win size")
+    
+    if metric_name == "avg_loss":
+        value = abs(value)  # Use absolute value for comparison
+        if value < 50:
+            return ("excellent", "Low", "<$50 — excellent risk control")
+        if value < 200:
+            return ("good", "Moderate", "$50-200 — reasonable losses")
+        if value < 500:
+            return ("moderate", "High", "$200-500 — large average losses")
+        return ("poor", "Severe", ">$500 — concerning loss size")
+
+    # ========== Equity Final ==========
+    # Final account value with percentage return zones
+    if metric_name == "equity_final":
+        # Use configured initial capital (default to 10k if not available)
+        return ("moderate", "Absolute", "Absolute value — compare to initial capital")
+
+    # ========== Equity Peak ==========
+    # Peak account value with drawdown context
+    if metric_name == "equity_peak":
+        return ("moderate", "Peak", "Peak equity reached")
+
+    # ========== Commissions ==========
+    # Commission cost — context depends on account size and trade count.
+    if metric_name == "commissions":
+        return ("moderate", "Cost", "Compare to total return — should be <5% of profits")
+
+    # ========== Avg Trade % ==========
+    # Average trade return as %. Context: timeframe and strategy.
+    if metric_name == "avg_trade_pct":
+        if value > 1.0:
+            return ("excellent", "Excellent", ">1% — strong per-trade returns")
+        if value > 0.3:
+            return ("good", "Good", "0.3-1% — solid average")
+        if value > 0:
+            return ("moderate", "Low", "0-0.3% — small per-trade edge")
+        return ("poor", "Negative", "<0% — average trade loses money")
+
+    # ========== Best / Worst Trade ==========
+    if metric_name == "best_trade_pct":
         if value < 0.5:
-            return ("moderate", "Aggressive", "30-50% — aggressive, high variance")
-        return ("dangerous", "Dangerous", ">50% — extreme risk, unsustainable")
+            return ("poor", "Weak", "<0.5% — small best trade, limited upside")
+        if value < 1.5:
+            return ("moderate", "Moderate", "0.5-1.5% — decent single trade")
+        if value < 3.0:
+            return ("good", "Strong", "1.5-3.0% — strong best trade")
+        if value < 5.0:
+            return ("excellent", "Excellent", "3.0-5.0% — exceptional single trade")
+        return ("dangerous", "Suspicious", ">5.0% — verify for data errors")
+    if metric_name == "worst_trade_pct":
+        if value > -1.0:
+            return ("good", "Good", ">-1% — manageable worst case")
+        if value > -3.0:
+            return ("moderate", "Moderate", "-1% to -3% — acceptable")
+        if value > -5.0:
+            return ("poor", "Poor", "-3% to -5% — large single loss")
+        return ("dangerous", "Dangerous", "<-5% — catastrophic risk management")
+
+    # ========== Risk/Reward Ratio ==========
+    if metric_name == "risk_reward_ratio":
+        if value >= 2.0:
+            return ("excellent", "Excellent", "≥2.0 — strong R/R")
+        if value >= 1.5:
+            return ("good", "Good", "1.5-2.0 — solid R/R")
+        if value >= 1.0:
+            return ("moderate", "Fair", "1.0-1.5 — marginal edge")
+        return ("poor", "Poor", "<1.0 — risk outweighs reward")
 
     # Default: no zone
-    return ("moderate", "N/A", "No benchmark available")
+    return ("moderate", "Neutral", "No benchmark available")
 
 
 _ZONE_COLORS = {
@@ -413,20 +554,16 @@ def _render_zoned_metric(
     unit: str = "",
 ) -> None:
     """
-    Render a metric with a color-coded zone indicator and recommendation.
-
-    Parameters:
-        col: Streamlit column object
-        label: Display label for the metric
-        value: Numeric value
-        metric_key: Key for zone lookup (e.g., 'sharpe_ratio')
-        format_str: Format string for display (e.g., '{:.2f}')
-        unit: Optional unit suffix (e.g., '%', ':1')
-    """
+    Render a metric card with color-coded zone indicator."""
+    # Check for extreme values
+    is_extreme, _ = _is_extreme_value(metric_key, value)
     color, zone_label, recommendation = _get_metric_zone(metric_key, value)
 
     # Render zone badge
     hex_color = _ZONE_COLORS.get(color, "#6b7280")
+
+    # Show extreme value indicator
+    display_suffix = " ⚠️" if is_extreme else ""
 
     col.markdown(
         f"""
@@ -445,7 +582,7 @@ def _render_zoned_metric(
             <div>
                 <div style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
                 <div style="font-size: 1.5rem; font-weight: 700; color: #e2e8f0; line-height: 1.2;">
-                    {format_str.format(value)}{unit}
+                    {format_str.format(value)}{unit}{display_suffix}
                 </div>
             </div>
             <div style="margin-top: 8px;">
@@ -796,7 +933,7 @@ def _render_backtest_section(data: dict) -> None:
             "Zone indicators based on industry benchmarks for XAU/USD CFD trading"
         )
 
-        # Pre-compute win/loss stats for row3 and cards below
+        # Pre-compute win/loss stats for calculations
         pnls = [t["pnl"] for t in trades] if trades else []
         wins = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
@@ -804,10 +941,11 @@ def _render_backtest_section(data: dict) -> None:
             abs(sum(losses) / len(losses)) if losses else 1
         )
 
-        # ── Row 1: Return & Risk ──────────────────────────────────────────
-        row1_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        # ── Key Performance Indicators (Top Row) ──────────────────────────
+        st.markdown("**📊 Key Performance Indicators**")
+        kpi_cols = st.columns(5, gap="small")
         _render_zoned_metric(
-            row1_cols[0],
+            kpi_cols[0],
             "Total Return",
             metrics.get("return_pct", 0),
             "return_pct",
@@ -815,15 +953,14 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            row1_cols[1],
-            "CAGR",
-            metrics.get("cagr_pct", 0),
-            "cagr_pct",
+            kpi_cols[1],
+            "Sharpe Ratio",
+            metrics.get("sharpe_ratio", 0),
+            "sharpe_ratio",
             "{:.2f}",
-            "%",
         )
         _render_zoned_metric(
-            row1_cols[2],
+            kpi_cols[2],
             "Max Drawdown",
             metrics.get("max_drawdown_pct", 0),
             "max_drawdown_pct",
@@ -831,7 +968,7 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            row1_cols[3],
+            kpi_cols[3],
             "Win Rate",
             metrics.get("win_rate_pct", 0),
             "win_rate_pct",
@@ -839,62 +976,83 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            row1_cols[4],
-            "Profit Factor",
-            metrics.get("profit_factor", 0),
-            "profit_factor",
-            "{:.2f}",
+            kpi_cols[4],
+            "Trades",
+            metrics.get("num_trades", 0),
+            "num_trades",
+            "{:.0f}",
         )
 
-        # ── Row 2: Risk-Adjusted & System ────────────────────────────────
-        row2_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        st.markdown("---")
+
+        # ── Risk-Adjusted Returns ────────────────────────────────────────
+        st.markdown("**⚖️ Risk-Adjusted Returns**")
+        risk_cols = st.columns([1, 1, 1, 1, 1], gap="small")
         _render_zoned_metric(
-            row2_cols[0],
-            "Sharpe Ratio",
-            metrics.get("sharpe_ratio", 0),
-            "sharpe_ratio",
-            "{:.2f}",
-        )
-        _render_zoned_metric(
-            row2_cols[1],
+            risk_cols[0],
             "Sortino Ratio",
             metrics.get("sortino_ratio", 0),
             "sortino_ratio",
             "{:.2f}",
         )
         _render_zoned_metric(
-            row2_cols[2],
+            risk_cols[1],
             "Calmar Ratio",
             metrics.get("calmar_ratio", 0),
             "calmar_ratio",
             "{:.2f}",
         )
         _render_zoned_metric(
-            row2_cols[3], "SQN", metrics.get("sqn", 0), "sqn", "{:.2f}"
+            risk_cols[2],
+            "SQN",
+            metrics.get("sqn", 0),
+            "sqn",
+            "{:.2f}",
         )
         _render_zoned_metric(
-            row2_cols[4],
-            "Exposure",
-            metrics.get("exposure_time_pct", 0),
-            "exposure_time_pct",
-            "{:.1f}",
+            risk_cols[3],
+            "Volatility",
+            metrics.get("volatility_ann_pct", 0),
+            "volatility_ann_pct",
+            "{:.2f}",
             "%",
         )
+        _render_zoned_metric(
+            risk_cols[4],
+            "Recovery Factor",
+            metrics.get("recovery_factor", 0),
+            "recovery_factor",
+            "{:.2f}",
+        )
 
-        # ── Row 3: Trade Statistics & Risk ───────────────────────────────
-        row3_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        # ── Profitability Metrics ─────────────────────────────────────────
+        st.markdown("**💰 Profitability Metrics**")
+        profit_cols = st.columns([1, 1, 1, 1, 1], gap="small")
         _render_zoned_metric(
-            row3_cols[0],
-            "Kelly Criterion",
-            metrics.get("kelly_criterion", 0),
-            "kelly_criterion",
-            "{:.3f}",
+            profit_cols[0],
+            "CAGR",
+            metrics.get("cagr_pct", 0),
+            "cagr_pct",
+            "{:.2f}",
+            "%",
         )
         _render_zoned_metric(
-            row3_cols[1], "Risk/Reward", rr, "risk_reward_ratio", "1:{:.2f}"
+            profit_cols[1],
+            "Annual Return",
+            metrics.get("return_ann_pct", 0),
+            "return_ann_pct",
+            "{:.2f}",
+            "%",
         )
         _render_zoned_metric(
-            row3_cols[2],
+            profit_cols[2],
+            "Profit Factor",
+            metrics.get("profit_factor", 0),
+            "profit_factor",
+            "{:.2f}",
+        )
+        _render_zoned_metric(
+            profit_cols[3],
             "Avg Trade",
             metrics.get("avg_trade_pct", 0),
             "avg_trade_pct",
@@ -902,7 +1060,40 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            row3_cols[3],
+            profit_cols[4],
+            "Kelly Criterion",
+            metrics.get("kelly_criterion", 0) * 100,
+            "kelly_criterion",
+            "{:.1f}",
+            "%",
+        )
+
+        # ── Trade Analysis ─────────────────────────────────────────────────
+        st.markdown("**📈 Trade Analysis**")
+        trade_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        _render_zoned_metric(
+            trade_cols[0],
+            "Avg Win",
+            metrics.get("avg_win", 0),
+            "avg_win",
+            "${:.0f}",
+        )
+        _render_zoned_metric(
+            trade_cols[1],
+            "Avg Loss",
+            metrics.get("avg_loss", 0),
+            "avg_loss",
+            "${:.0f}",
+        )
+        _render_zoned_metric(
+            trade_cols[2],
+            "Risk/Reward",
+            rr,
+            "risk_reward_ratio",
+            "1:{:.2f}",
+        )
+        _render_zoned_metric(
+            trade_cols[3],
             "Best Trade",
             metrics.get("best_trade_pct", 0),
             "best_trade_pct",
@@ -910,7 +1101,7 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            row3_cols[4],
+            trade_cols[4],
             "Worst Trade",
             metrics.get("worst_trade_pct", 0),
             "worst_trade_pct",
@@ -918,42 +1109,82 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
 
-        st.divider()
+        # ── Account Summary ───────────────────────────────────────────────
+        st.markdown("**💼 Account Summary**")
+        account_cols = st.columns(5, gap="small")
+        _render_zoned_metric(
+            account_cols[0],
+            "Equity Final",
+            metrics.get("equity_final", 0),
+            "equity_final",
+            "${:.0f}",
+        )
+        _render_zoned_metric(
+            account_cols[1],
+            "Equity Peak",
+            metrics.get("equity_peak", 0),
+            "equity_peak",
+            "${:.0f}",
+        )
+        _render_zoned_metric(
+            account_cols[2],
+            "Commissions",
+            metrics.get("commissions", 0),
+            "commissions",
+            "${:.0f}",
+        )
+        _render_zoned_metric(
+            account_cols[3],
+            "Exposure",
+            metrics.get("exposure_time_pct", 0),
+            "exposure_time_pct",
+            "{:.1f}",
+            "%",
+        )
+        # Period — display only, no zone
+        account_cols[4].markdown(
+            f"""
+            <div style="
+                background: linear-gradient(135deg, #4b556322 0%, #4b556311 100%);
+                border-left: 3px solid #4b5563;
+                border-radius: 8px;
+                padding: 12px 14px;
+                margin: 4px 0;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                box-sizing: border-box;
+            ">
+                <div>
+                    <div style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Period</div>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: #e2e8f0; line-height: 1.2;">
+                        {metrics.get("start", "N/A")[:10]}<br/>→ {metrics.get("end", "N/A")[:10]}
+                    </div>
+                </div>
+                <div style="margin-top: 8px;">
+                    <span style="
+                        background: #4b556333;
+                        color: #9ca3af;
+                        padding: 2px 10px;
+                        border-radius: 12px;
+                        font-size: 0.65rem;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 0.03em;
+                    ">Duration</span>
+                    <div style="font-size: 0.65rem; color: #6b7280; margin-top: 4px; line-height: 1.3;">Trading period</div>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        # Win/Loss stats
-        if trades:
-            avg_win = sum(wins) / len(wins) if wins else 0
-            avg_loss = sum(losses) / len(losses) if losses else 0
-
-            c1, c2 = st.columns(2)
-            c1.metric("Winning Trades", f"{len(wins)}", delta=f"Avg ${avg_win:.0f}")
-            c2.metric(
-                "Losing Trades", f"{len(losses)}", delta=f"Avg ${abs(avg_loss):.0f}"
-            )
-
-        # Detailed Metrics in expander
-        with st.expander("Detailed Metrics", expanded=False):
-            left, right = st.columns(2)
-            with left:
-                st.markdown(f"""
-                **Period**: {metrics.get("start", "N/A")} → {metrics.get("end", "N/A")}  
-                **Duration**: {metrics.get("duration", "N/A")}  
-                **Exposure**: {metrics.get("exposure_time_pct", 0):.2f}%  
-                **Total Trades**: {metrics.get("num_trades", 0)}  
-                **Annual Return**: {metrics.get("return_ann_pct", 0):.2f}%  
-                **CAGR**: {metrics.get("cagr_pct", 0):.2f}%  
-                **Volatility (Ann.)**: {metrics.get("volatility_ann_pct", 0):.2f}%  
-                """)
-            with right:
-                st.markdown(f"""
-                **Sortino Ratio**: {metrics.get("sortino_ratio", 0):.2f}  
-                **Calmar Ratio**: {metrics.get("calmar_ratio", 0):.2f}  
-                **SQN**: {metrics.get("sqn", 0):.2f}  
-                **Kelly Criterion**: {metrics.get("kelly_criterion", 0):.3f}  
-                **Avg Trade**: {metrics.get("avg_trade_pct", 0):.2f}%  
-                **Best Trade**: {metrics.get("best_trade_pct", 0):.2f}%  
-                **Worst Trade**: {metrics.get("worst_trade_pct", 0):.2f}%  
-                """)
+        # ── Zone Color Legend ─────────────────────────────────────────────
+        st.caption(
+            "🟢 Excellent  🟡 Good  🟠 Moderate  🔴 Poor/Dangerous  "
+            "⚪ N/A (context-dependent)"
+        )
 
     st.divider()
 

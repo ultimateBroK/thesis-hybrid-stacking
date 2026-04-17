@@ -948,17 +948,6 @@ _EXPLANATIONS = {
         "Directional accuracy — decent signal quality",
         "Directional accuracy — poor signal quality",
     ),
-    # Market comparison
-    "alpha_pct": (
-        "Alpha — outperforms market significantly",
-        "Alpha — modest market outperformance",
-        "Alpha — underperforms market",
-    ),
-    "beta": (
-        "Beta — low market correlation (independent)",
-        "Beta — moderate market correlation",
-        "Beta — high market correlation",
-    ),
     # Other
     "commissions": (
         "Commissions — low trading costs",

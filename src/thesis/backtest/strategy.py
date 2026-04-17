@@ -265,6 +265,41 @@ def _normalize_stats(stats: pd.Series) -> dict:
             .rstrip("_")
         )
         out[key] = v
+
+    # Calculate recovery factor: Net Profit / Max Drawdown
+    # Use absolute dollar amounts, not percentages
+    # Net profit in dollars: (equity_final - initial_capital)
+    # Max drawdown in dollars: max_drawdown_pct * initial_capital / 100
+    equity_final = out.get("equity_final", 0)
+    initial_capital = 10000.0  # Default initial capital
+    max_dd_pct = out.get("max_drawdown_pct", 0)
+    
+    net_profit_dollars = equity_final - initial_capital
+    max_dd_dollars = abs(max_dd_pct * initial_capital / 100)
+    
+    if max_dd_dollars > 0:
+        recovery_factor = net_profit_dollars / max_dd_dollars
+    else:
+        recovery_factor = 0.0
+    
+    out["recovery_factor"] = recovery_factor
+    
+    # Calculate avg_win and avg_loss from trades data
+    # These are not provided by backtesting.py natively, so we calculate manually
+    trades_df = stats.get("_trades", pd.DataFrame())
+    if not trades_df.empty and "PnL" in trades_df.columns:
+        wins = trades_df[trades_df["PnL"] > 0]["PnL"]
+        losses = trades_df[trades_df["PnL"] <= 0]["PnL"]
+        
+        avg_win = float(wins.mean()) if not wins.empty else 0.0
+        avg_loss = float(losses.mean()) if not losses.empty else 0.0
+        
+        out["avg_win"] = avg_win
+        out["avg_loss"] = avg_loss
+    else:
+        out["avg_win"] = 0.0
+        out["avg_loss"] = 0.0
+    
     return out
 
 
