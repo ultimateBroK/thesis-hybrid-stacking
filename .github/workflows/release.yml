@@ -14,7 +14,7 @@ jobs:
     name: Final Validation
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -29,52 +29,55 @@ jobs:
       - name: Run complete test suite
         run: |
           echo "Running complete test suite for release validation..."
-          pixi run test || echo "No tests or tests skipped"
+          pixi run test
 
       - name: Validate version tag
         id: version_check
         run: |
-          # Get version from src/thesis/__init__.py
-          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/thesis/__init__.py || echo "0.1.0")
+          # Read version from pixi.toml
+          VERSION=$(grep -oP 'version\s*=\s*"\K[^"]+' pixi.toml | head -1 || echo "0.1.0")
           echo "Current version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          
+
           # Check if tag already exists
           if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "⚠️ Tag v$VERSION already exists"
+            echo "Tag v$VERSION already exists"
           else
-            echo "ℹ️ Tag v$VERSION will be created"
+            echo "Tag v$VERSION will be created"
           fi
 
-      - name: Verify documentation builds
+      - name: Verify documentation completeness
         run: |
           echo "Checking documentation completeness..."
-          
+
           required_docs=(
             "README.md"
-            "docs/Architecture.md"
-            "docs/Features.md"
-            "docs/Evaluation.md"
-            "docs/Quickstart.md"
           )
-          
+
           missing_docs=()
           for doc in "${required_docs[@]}"; do
             if [ ! -f "$doc" ]; then
               missing_docs+=("$doc")
             fi
           done
-          
+
           if [ ${#missing_docs[@]} -gt 0 ]; then
-            echo "⚠️ Missing documentation files:"
+            echo "Missing documentation files:"
             printf '  - %s\n' "${missing_docs[@]}"
+            exit 1
           else
-            echo "✓ All required documentation present"
+            echo "All required documentation present"
+          fi
+
+          # Check docs directory exists
+          if [ -d "docs" ]; then
+            doc_count=$(find docs/ -name '*.md' | wc -l)
+            echo "Documentation directory: $doc_count markdown files"
           fi
 
       - name: Build verification report
         run: |
-          echo "## 🎯 Release Validation Report" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Validation Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** ${{ steps.version_check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** main" >> $GITHUB_STEP_SUMMARY
@@ -82,10 +85,10 @@ jobs:
           echo "**Timestamp:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Validation Checks" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Code quality checks passed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Test suite executed" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Version verified" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Documentation reviewed" >> $GITHUB_STEP_SUMMARY
+          echo "- Code quality checks passed" >> $GITHUB_STEP_SUMMARY
+          echo "- Test suite executed" >> $GITHUB_STEP_SUMMARY
+          echo "- Version verified" >> $GITHUB_STEP_SUMMARY
+          echo "- Documentation reviewed" >> $GITHUB_STEP_SUMMARY
 
   create-release:
     name: Create GitHub Release
@@ -97,7 +100,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.get_version.outputs.version }}
       release_date: ${{ steps.release_date.outputs.date }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -107,15 +110,14 @@ jobs:
       - name: Get version
         id: get_version
         run: |
-          VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/thesis/__init__.py || echo "0.1.0")
+          VERSION=$(grep -oP 'version\s*=\s*"\K[^"]+' pixi.toml | head -1 || echo "0.1.0")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         id: changelog
         run: |
-          # Get the last tag
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
+
           if [ -n "$LAST_TAG" ]; then
             echo "Generating changelog since $LAST_TAG..."
             CHANGELOG=$(git log --pretty=format:"- %s (%h)" $LAST_TAG..HEAD 2>/dev/null || echo "No changes recorded")
@@ -123,11 +125,9 @@ jobs:
             echo "Generating changelog for all commits..."
             CHANGELOG=$(git log --pretty=format:"- %s (%h)" 2>/dev/null | head -20)
           fi
-          
-          # Save to output file
+
           echo "$CHANGELOG" > /tmp/changelog.md
-          
-          # Set GitHub output
+
           {
             echo 'changelog<<EOF'
             echo "$CHANGELOG"
@@ -145,64 +145,55 @@ jobs:
         run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
-          
+
           TAG="v${{ steps.get_version.outputs.version }}"
-          
+
           if ! git rev-parse "$TAG" >/dev/null 2>&1; then
-            git tag -a "$TAG" -m "Release $TAG - Hybrid Stacking Thesis"
+            git tag -a "$TAG" -m "Release $TAG - Hybrid GRU + LightGBM Thesis"
             git push origin "$TAG"
-            echo "✓ Created and pushed tag: $TAG"
+            echo "Created and pushed tag: $TAG"
           else
-            echo "ℹ️ Tag $TAG already exists"
+            echo "Tag $TAG already exists"
           fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.get_version.outputs.version }}
-          name: Release v${{ steps.get_version.outputs.version }} - Hybrid Stacking Thesis
+          name: Release v${{ steps.get_version.outputs.version }} - Hybrid GRU + LightGBM Thesis
           body: |
-            ## 📋 Release Notes
-            
-            **Version:** ${{ steps.get_version.outputs.version }}  
-            **Date:** ${{ steps.release_date.outputs.date }}  
-            **Thesis:** Hybrid Stacking (LSTM + LightGBM) for XAU/USD H1 Trading Signals
-            
-            ## 🔄 Changes Since Last Release
-            
+            ## Release Notes
+
+            **Version:** ${{ steps.get_version.outputs.version }}
+            **Date:** ${{ steps.release_date.outputs.date }}
+            **Thesis:** Hybrid GRU + LightGBM for XAU/USD H1 Trading Signals
+
+            ## Changes Since Last Release
+
             ${{ steps.changelog.outputs.changelog }}
-            
-            ## 📦 Installation
-            
+
+            ## Installation
+
             ```bash
-            # Clone repository
             git clone https://github.com/${{ github.repository }}.git
             cd thesis
-            
-            # Install dependencies
             pixi install
-            
-            # Run pipeline
-            pixi run run
+            pixi run workflow
             ```
-            
-            ## 📊 Key Features
-            
-            - Hybrid stacking ensemble (LSTM + LightGBM)
+
+            ## Key Features
+
+            - Hybrid GRU + LightGBM ensemble
             - Triple-barrier method for labeling
-            - Comprehensive feature engineering
-            - Full backtesting engine
-            - Automated reporting
-            
-            ## 🔗 Links
-            
-            - [Documentation](./docs/)
-            - [Quick Start Guide](./docs/Quickstart.md)
-            - [Architecture Overview](./docs/Architecture.md)
-            
+            - Comprehensive feature engineering (40+ indicators)
+            - Purge + embargo train/val/test splitting
+            - Full CFD backtesting engine
+            - Optuna hyperparameter tuning
+            - Automated reporting with 12 charts
+
             ---
-            
-            *Bachelor's Thesis - Thuy Loi University*  
+
+            *Bachelor's Thesis - Thuy Loi University*
             *Student: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung*
           draft: false
           prerelease: false
@@ -215,7 +206,7 @@ jobs:
     needs: create-release
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -228,17 +219,18 @@ jobs:
       - name: Prepare release artifacts
         run: |
           echo "Preparing release artifacts..."
-          
+
           mkdir -p release-artifacts
-          
-          # Copy configuration files
+
           cp pixi.toml release-artifacts/
           cp config.toml release-artifacts/
           cp README.md release-artifacts/
-          
-          # Copy documentation
-          cp -r docs/ release-artifacts/
-          
+
+          # Copy documentation if exists
+          if [ -d "docs" ]; then
+            cp -r docs/ release-artifacts/
+          fi
+
           # Create source archive
           tar -czf release-artifacts/thesis-source.tar.gz \
             --exclude='.git' \
@@ -247,17 +239,17 @@ jobs:
             --exclude='data/processed' \
             --exclude='models/*.pkl' \
             --exclude='models/*.pt' \
-            --exclude='results/*.png' \
+            --exclude='results' \
             --exclude='logs' \
             --exclude='.pytest_cache' \
             --exclude='.ruff_cache' \
-            src/ main.py main.ipynb pixi.toml config.toml README.md
-          
-          echo "✓ Artifacts prepared"
+            src/ main.py pixi.toml config.toml README.md
+
+          echo "Artifacts prepared"
           ls -lh release-artifacts/
 
       - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.create-release.outputs.tag_name }}
           files: |
@@ -269,11 +261,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [final-validation, create-release, deploy-artifacts]
     if: always()
-    
+
     steps:
       - name: Send release notification
         run: |
-          echo "🎉 RELEASE PUBLISHED!"
+          echo "RELEASE PUBLISHED!"
           echo ""
           echo "Repository: ${{ github.repository }}"
           echo "Version: v${{ needs.create-release.outputs.tag_name }}"
@@ -285,10 +277,8 @@ jobs:
           echo "Artifacts: ${{ needs.deploy-artifacts.result }}"
           echo ""
           echo "View release: https://github.com/${{ github.repository }}/releases"
-          echo ""
-          
-          # Create summary
-          echo "## 🎉 Release Successfully Published!" >> $GITHUB_STEP_SUMMARY
+
+          echo "## Release Published!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
           echo "**Version:** v${{ needs.create-release.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY

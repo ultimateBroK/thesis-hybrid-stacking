@@ -1,371 +1,310 @@
 #!/usr/bin/env python3
-"""
-Main entry point for Hybrid Stacking thesis pipeline.
-
-Bachelor's Thesis: Hybrid Stacking (LSTM + LightGBM) for XAU/USD H1 Trading Signals
-Student: Nguyen Duc Hieu - 2151061192
-Advisor: Hoang Quoc Dung
-Thuy Loi University
+"""Main entry point — simplified thesis pipeline.
 
 Usage:
-    python main.py [--stage STAGE] [--force] [--config CONFIG]
+    python main.py [--config CONFIG] [--session SESSION] [--stage N] [--force]
 
 Options:
-    --stage STAGE         Run specific stage only (data, features, labels, split,
-                          lightgbm, lstm, stacking, backtest, report)
-    --force               Force re-run (ignore cache)
-    --config CONFIG       Path to config file (default: config.toml)
-    --session-id NAME     Use custom session ID (default: auto-generated)
-    --list-sessions       List all existing sessions and exit
-
-Session Management:
-    Each pipeline run creates a session folder: results/SYMBOL_TIMEFRAME_YYYYMMDD_HHMMSS/
-    The 'results/latest' symlink always points to the most recent session.
-
-Environment Variables:
-    THESIS_WORKFLOW__FORCE_RERUN=true    Force pipeline re-run
-    THESIS_WORKFLOW__N_JOBS=8            Set parallel workers
-    THESIS_DATA__TIMEFRAME=30m           Override timeframe
+    --session SESSION   Continue from an existing session directory name
+                        (e.g., XAUUSD_H1_20260418_143052)
+    --stage N           Start pipeline from stage N (0-6). Use with --session.
+                        Default: resumes from first missing stage.
+    --force             Force re-run all stages (or stage with --stage)
 """
 
 import argparse
+from datetime import datetime
+import json
 import logging
-import sys
 from pathlib import Path
-
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
-
-from thesis.config.loader import load_config
-from thesis.pipeline.runner import run_thesis_workflow
-from thesis.pipeline.session import SessionManager
-
-
 import re
+import shutil
+import sys
+import time
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+if (PROJECT_ROOT / "src").exists():
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from thesis.ablation import run_ablation
+from thesis.config import load_config
+from thesis.pipeline import run_pipeline
 
 
-_ORIGINAL_STDOUT = sys.stdout
-_ORIGINAL_STDERR = sys.stderr
-_PIPELINE_LOG_STREAM = None
-
-# ANSI escape sequence regex for stripping colors
-_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 
-# Color codes for terminal output (ADHD-friendly visual cues)
-class Colors:
-    """ANSI color codes for terminal output."""
+class _StripAnsiFormatter(logging.Formatter):
+    """Formatter that strips ANSI escape codes — for file handlers."""
 
-    GREEN = "\033[92m"  # Success
-    YELLOW = "\033[93m"  # Warning/Attention
-    RED = "\033[91m"  # Error
-    BLUE = "\033[94m"  # Info/Stage headers
-    CYAN = "\033[96m"  # Secondary info
-    MAGENTA = "\033[95m"  # Special highlights
-    BOLD = "\033[1m"  # Emphasis
-    RESET = "\033[0m"  # Reset
+    def format(self, record: logging.LogRecord) -> str:
+        """
+        Format a logging.LogRecord into a string and remove ANSI escape codes.
 
+        This returns the formatted log message with any ANSI escape sequences stripped so it is safe for plain-text file output.
 
-class TeeWriter:
-    """Tee output to multiple streams, with ANSI stripping for file output."""
+        Parameters:
+            record (logging.LogRecord): The log record to format.
 
-    def __init__(self, *streams, strip_ansi_for=None):
-        self._streams = streams
-        self._strip_ansi_for = strip_ansi_for or []
-
-    def write(self, data: str) -> int:
-        for i, stream in enumerate(self._streams):
-            # Strip ANSI codes for designated streams (log file)
-            if i in self._strip_ansi_for:
-                clean_data = _ANSI_ESCAPE.sub("", data)
-                stream.write(clean_data)
-            else:
-                stream.write(data)
-        return len(data)
-
-    def flush(self) -> None:
-        for stream in self._streams:
-            stream.flush()
-
-    def isatty(self) -> bool:
-        # Only return True if the first stream (console) is a tty
-        # This prevents tqdm from showing progress bars in log files
-        first_stream = self._streams[0]
-        return getattr(first_stream, "isatty", lambda: False)()
+        Returns:
+            str: The formatted log message with ANSI escape codes removed.
+        """
+        return _ANSI_RE.sub("", super().format(record))
 
 
-class ColoredFormatter(logging.Formatter):
-    """Custom formatter with color support for different log levels."""
+def _find_session(session_name: str) -> Path | None:
+    """
+    Find an existing session directory by name.
 
-    LEVEL_COLORS = {
-        logging.DEBUG: Colors.CYAN,
-        logging.INFO: Colors.GREEN,
-        logging.WARNING: Colors.YELLOW,
-        logging.ERROR: Colors.RED,
-        logging.CRITICAL: Colors.RED + Colors.BOLD,
-    }
+    Parameters:
+        session_name: The session directory name (e.g., XAUUSD_H1_20260418_143052)
 
-    def format(self, record):
-        # Save original levelname, add color, format, then restore
-        # This prevents ANSI codes from bleeding into file handler output
-        original_levelname = record.levelname
-        color = self.LEVEL_COLORS.get(record.levelno, Colors.RESET)
-        record.levelname = f"{color}{record.levelname}{Colors.RESET}"
-        result = super().format(record)
-        record.levelname = original_levelname
-        return result
+    Returns:
+        Path to the session directory if found, None otherwise.
+    """
+    results = Path("results")
+    if not results.exists():
+        return None
+
+    session_path = results / session_name
+    if session_path.exists() and (session_path / "config").exists():
+        return session_path
+
+    return None
 
 
-def setup_logging(log_path: str | Path) -> logging.Logger:
-    """Configure logging for the pipeline with color support."""
-    global _PIPELINE_LOG_STREAM
+def _load_session_config(session_dir: Path) -> object:
+    """
+    Load configuration from an existing session directory.
 
-    log_path = Path(log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    Uses the session's config_snapshot.toml if available.
 
-    if _PIPELINE_LOG_STREAM is not None and not _PIPELINE_LOG_STREAM.closed:
-        _PIPELINE_LOG_STREAM.close()
+    Parameters:
+        session_dir: Path to the session directory.
 
-    _PIPELINE_LOG_STREAM = log_path.open("a", encoding="utf-8", buffering=1)
-    # Use strip_ansi_for=[1] to strip ANSI codes when writing to file stream (index 1)
-    sys.stdout = TeeWriter(_ORIGINAL_STDOUT, _PIPELINE_LOG_STREAM, strip_ansi_for=[1])
-    sys.stderr = TeeWriter(_ORIGINAL_STDERR, _PIPELINE_LOG_STREAM, strip_ansi_for=[1])
+    Returns:
+        Loaded configuration object with paths updated to session_dir.
+    """
+    snapshot = session_dir / "config" / "config_snapshot.toml"
+    if snapshot.exists():
+        config = load_config(str(snapshot))
+    else:
+        config = load_config()
 
-    # Configure optuna logging to disable colors
-    import optuna.logging
-
-    optuna.logging.disable_default_handler()
-    optuna.logging.enable_propagation()  # Let our handlers handle optuna logs
-
-    # Console handler with colors
-    console_handler = logging.StreamHandler(_ORIGINAL_STDOUT)
-    console_handler.setFormatter(
-        ColoredFormatter(
-            fmt="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+    config.paths.session_dir = str(session_dir)
+    config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
+    config.paths.predictions = str(
+        session_dir / "predictions" / "final_predictions.parquet"
     )
-
-    # File handler without colors
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.setFormatter(
-        logging.Formatter(
-            fmt="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+    config.paths.backtest_results = str(
+        session_dir / "backtest" / "backtest_results.json"
     )
+    config.paths.report = str(session_dir / "reports" / "thesis_report.md")
 
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=[console_handler, file_handler],
-        force=True,
-    )
-    return logging.getLogger("thesis")
+    return config
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Hybrid Stacking Thesis Pipeline",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-    # Run full pipeline
-    python main.py
-    
-    # Run specific stage only
-    python main.py --stage data
-    
-    # Force re-run with custom config
-    python main.py --force --config my_config.toml
-        """,
-    )
+def main() -> None:
+    """
+    Command-line entry point that runs the thesis ML pipeline and records a session.
 
+    Parses command-line options, loads and snapshots the configuration, creates a
+    timestamped session directory (updating config paths and creating subdirectories),
+    sets up console and file logging, executes the pipeline (and optionally an
+    ablation study), and writes a session manifest JSON with metadata and timing.
+    """
+    parser = argparse.ArgumentParser(description="Thesis ML Pipeline")
+    parser.add_argument("--config", default="config.toml", help="Path to config.toml")
     parser.add_argument(
-        "--stage",
-        type=str,
-        choices=[
-            "data",
-            "features",
-            "labels",
-            "split",
-            "lightgbm",
-            "lstm",
-            "stacking",
-            "backtest",
-            "report",
-            "all",
-        ],
-        default="all",
-        help="Run specific stage only (default: all)",
-    )
-
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force re-run (ignore cache)",
-    )
-
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config.toml",
-        help="Path to configuration file (default: config.toml)",
-    )
-
-    parser.add_argument(
-        "--jobs",
-        type=int,
-        default=-1,
-        help="Number of parallel jobs (default: -1 = all cores)",
-    )
-
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility (default: 42)",
-    )
-
-    # Session management arguments
-    parser.add_argument(
-        "--session-id",
+        "--session",
         type=str,
         default=None,
-        help="Custom session ID (default: auto-generated from timestamp)",
+        help="Continue from existing session (e.g., XAUUSD_H1_20260418_143052)",
     )
-
     parser.add_argument(
-        "--list-sessions",
-        action="store_true",
-        help="List all existing sessions and exit",
+        "--stage",
+        type=int,
+        choices=[0, 1, 2, 3, 4, 5, 6],
+        default=None,
+        help="Start from stage N (0-6). Use with --session.",
     )
+    parser.add_argument("--force", action="store_true", help="Force re-run all stages")
+    parser.add_argument(
+        "--ablation", action="store_true", help="Run ablation study after pipeline"
+    )
+    args = parser.parse_args()
 
-    return parser.parse_args()
+    # Load config
+    config = load_config(args.config)
 
-
-def main() -> int:
-    """Main entry point."""
-    args = parse_args()
-
-    # Handle --list-sessions before anything else
-    if args.list_sessions:
-        from thesis.pipeline.session import list_sessions
-
-        sessions = list_sessions()
-        if sessions:
-            print(f"{Colors.CYAN}Found {len(sessions)} session(s):{Colors.RESET}")
-            for session in sessions:
-                print(f"  {Colors.GREEN}●{Colors.RESET} {session}")
-            print(f"\n{Colors.CYAN}Latest:{Colors.RESET} results/{sessions[-1]}/")
-        else:
-            print(f"{Colors.YELLOW}No sessions found in results/{Colors.RESET}")
-        return 0
-
-    # Load configuration first (before setting up logging)
-    try:
-        config = load_config(args.config)
-    except FileNotFoundError as e:
-        print(
-            f"{Colors.RED}Error: Configuration file not found: {e}{Colors.RESET}",
-            file=sys.stderr,
-        )
-        return 1
-
-    # Apply command-line overrides
-    if args.session_id:
-        config.paths.session_id = args.session_id
-
+    # Handle force flag
     if args.force:
         config.workflow.force_rerun = True
 
-    if args.jobs != -1:
-        config.workflow.n_jobs = args.jobs
+    # Determine session directory and setup
+    if args.session:
+        # Continue from existing session
+        session_dir = _find_session(args.session)
+        if session_dir is None:
+            print(f"Error: Session '{args.session}' not found in results/")
+            sys.exit(1)
 
-    config.workflow.random_seed = args.seed
+        # Load existing session config
+        config = _load_session_config(session_dir)
+        session_ts = (
+            session_dir.name.split("_")[-2] + "_" + session_dir.name.split("_")[-1]
+        )
+        config.workflow.session_timestamp = session_ts
 
-    # Set random seeds for reproducibility across all libraries
-    import torch
+        # If --stage specified, disable stages before the target stage
+        if args.stage is not None:
+            if args.stage <= 0:
+                config.workflow.run_data_pipeline = False
+            if args.stage <= 1:
+                config.workflow.run_feature_engineering = False
+            if args.stage <= 2:
+                config.workflow.run_label_generation = False
+            if args.stage <= 3:
+                config.workflow.run_data_splitting = False
+            if args.stage <= 4:
+                config.workflow.run_model_training = False
+            if args.stage < 5:
+                config.workflow.run_backtest = False
+            if args.stage < 6:
+                config.workflow.run_reporting = False
 
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        log_mode = "a"  # Append to existing log
+    else:
+        # Create new session directory
+        session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_name = f"{config.data.symbol}_{config.data.timeframe}_{session_ts}"
+        session_dir = Path("results") / session_name
 
-    # Initialize session (always creates session folder)
-    session_manager = SessionManager(config, custom_session_id=args.session_id or None)
-    session_manager.update_config_paths(config)
-    session_manager.create_config_snapshot()
+        # Update config paths to point to session directory
+        config.workflow.session_timestamp = session_ts
+        config.paths.session_dir = str(session_dir)
+        config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
+        config.paths.predictions = str(
+            session_dir / "predictions" / "final_predictions.parquet"
+        )
+        config.paths.backtest_results = str(
+            session_dir / "backtest" / "backtest_results.json"
+        )
+        config.paths.report = str(session_dir / "reports" / "thesis_report.md")
 
-    # Setup logging NOW (after session is initialized)
-    log_path = session_manager.get_log_path()
-    logger = setup_logging(log_path)
+        # Create session subdirectories
+        for subdir in [
+            "config",
+            "models",
+            "predictions",
+            "reports",
+            "backtest",
+            "logs",
+        ]:
+            (session_dir / subdir).mkdir(parents=True, exist_ok=True)
 
-    # Visual header with colors
-    logger.info(f"{Colors.BLUE}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
-    logger.info(
-        f"{Colors.BLUE}{Colors.BOLD}Hybrid Stacking (LSTM + LightGBM) - XAU/USD H1 Trading Signals{Colors.RESET}"
+        # Save config snapshot
+        shutil.copy2(args.config, session_dir / "config" / "config_snapshot.toml")
+
+        log_mode = "w"  # New log file
+
+    # Logging setup — Rich for console, plain for file
+    from rich.logging import RichHandler
+
+    from thesis.ui import console as _console
+
+    _log_fmt = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
+    plain_file_handler = logging.FileHandler(
+        session_dir / "logs" / "pipeline.log", mode=log_mode
     )
-    logger.info(f"{Colors.CYAN}Bachelor's Thesis - Thuy Loi University{Colors.RESET}")
-    logger.info(
-        f"{Colors.CYAN}Student: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung{Colors.RESET}"
-    )
-    logger.info(f"{Colors.BLUE}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
+    plain_file_handler.setFormatter(_StripAnsiFormatter(_log_fmt))
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[
+            RichHandler(
+                console=_console,
+                rich_tracebacks=True,
+                show_path=False,
+                show_time=True,
+                omit_repeated_times=False,
+                log_time_format="[%H:%M:%S]",
+                markup=True,
+            ),
+            plain_file_handler,
+        ],
+    )
+    logger = logging.getLogger("thesis")
+
+    logger.info("Config loaded: %s", args.config)
+    logger.info("Symbol: %s, Timeframe: %s", config.data.symbol, config.data.timeframe)
+    logger.info("Session directory: %s", session_dir)
+    if args.session:
+        logger.info("Resuming session: %s", args.session)
+        if args.stage is not None:
+            logger.info("Starting from stage: %d", args.stage)
+
+    # Track pipeline timing
+    t_start = time.monotonic()
+    pipeline_ok = False
+
+    # Run pipeline and ablation with error handling
     try:
-        # Log configuration summary with visual cues
-        logger.info(
-            f"{Colors.CYAN}▶ Data range:{Colors.RESET} {config.data.start_date} to {config.data.end_date}"
-        )
-        logger.info(
-            f"{Colors.CYAN}▶ Train:{Colors.RESET} {config.splitting.train_start} → {config.splitting.train_end}"
-        )
-        logger.info(
-            f"{Colors.CYAN}▶ Val:{Colors.RESET} {config.splitting.val_start} → {config.splitting.val_end}"
-        )
-        logger.info(
-            f"{Colors.CYAN}▶ Test:{Colors.RESET} {config.splitting.test_start} → {config.splitting.test_end}"
-        )
-        logger.info(
-            f"{Colors.CYAN}▶ LSTM sequence length:{Colors.RESET} {config.models['lstm'].sequence_length}"
-        )
-        logger.info(
-            f"{Colors.CYAN}▶ Triple-Barrier horizon:{Colors.RESET} {config.labels.horizon_bars} bars"
-        )
+        run_pipeline(config)
 
-        # Run pipeline
-        if args.stage == "all":
-            logger.info(
-                f"{Colors.BLUE}{Colors.BOLD}▶ Running full pipeline...{Colors.RESET}"
-            )
-            run_thesis_workflow(config, session_manager=session_manager)
-        else:
-            logger.info(
-                f"{Colors.BLUE}{Colors.BOLD}▶ Running stage: {args.stage}{Colors.RESET}"
-            )
-            run_thesis_workflow(
-                config, stage=args.stage, session_manager=session_manager
-            )
+        # Run ablation study if requested
+        if args.ablation:
+            logger.info("Running ablation study...")
+            run_ablation(config)
 
-        logger.info(f"{Colors.GREEN}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
-        logger.info(
-            f"{Colors.GREEN}{Colors.BOLD}✓ Pipeline completed successfully!{Colors.RESET}"
-        )
-        logger.info(
-            f"{Colors.GREEN}✓ Results:{Colors.RESET} {config.paths.final_report}"
-        )
-        logger.info(f"{Colors.GREEN}{Colors.BOLD}{'=' * 70}{Colors.RESET}")
-
-        return 0
-
-    except FileNotFoundError as e:
-        logger.error(f"{Colors.RED}✗ File not found: {e}{Colors.RESET}")
-        return 1
+        pipeline_ok = True
     except Exception as e:
-        logger.exception(f"{Colors.RED}✗ Pipeline failed: {e}{Colors.RESET}")
-        return 1
+        logger.exception("Pipeline failed: %s", e)
+        pipeline_ok = False
+    finally:
+        elapsed = round(time.monotonic() - t_start, 2)
+
+    # Save session_info.json manifest (only for new sessions)
+    if not args.session:
+        session_info = {
+            "symbol": config.data.symbol,
+            "timeframe": config.data.timeframe,
+            "session_timestamp": session_ts,
+            "pipeline_duration_seconds": elapsed,
+            "pipeline_ok": pipeline_ok,
+            "log_files": {
+                "plain": "logs/pipeline.log",
+            },
+            "data_range": {
+                "train": [
+                    str(config.splitting.train_start),
+                    str(config.splitting.train_end),
+                ],
+                "val": [str(config.splitting.val_start), str(config.splitting.val_end)],
+                "test": [
+                    str(config.splitting.test_start),
+                    str(config.splitting.test_end),
+                ],
+            },
+            "force_rerun": config.workflow.force_rerun,
+            "random_seed": config.workflow.random_seed,
+        }
+        session_info_path = session_dir / "config" / "session_info.json"
+        with open(session_info_path, "w") as f:
+            json.dump(session_info, f, indent=2)
+        logger.info("Session info saved: %s", session_info_path)
+
+    logger.info(
+        "Done. Results: %s (%.1fs) [%s]",
+        session_dir,
+        elapsed,
+        "OK" if pipeline_ok else "FAILED",
+    )
+    logger.info("Log: %s", plain_file_handler.baseFilename)
+    sys.exit(0 if pipeline_ok else 1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
