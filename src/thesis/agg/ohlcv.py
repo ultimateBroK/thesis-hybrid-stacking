@@ -36,7 +36,10 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
     # Compute mid-price and total volume
     ticks = ticks.with_columns(
         [
-            ((pl.col("ask") + pl.col("bid")) / 2.0).alias("mid"),
+            (
+                (pl.col("ask") * pl.col("bid_volume") + pl.col("bid") * pl.col("ask_volume"))
+                / (pl.col("ask_volume") + pl.col("bid_volume") + 1e-10)
+            ).alias("mid"),
             (pl.col("ask_volume") + pl.col("bid_volume")).alias("volume"),
         ]
     )

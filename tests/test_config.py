@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from thesis.config import load_config, Config, LGBMConfig, ModelConfig
+from thesis.config import load_config, Config, LGBMConfig
 
 
 def test_load_config_default():
@@ -55,3 +55,39 @@ def test_missing_config_raises():
 
     with pytest.raises(FileNotFoundError):
         load_config("/nonexistent/config.toml")
+
+
+def test_embargo_scales_for_daily_timeframe(tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+[data]
+timeframe = "1D"
+
+[splitting]
+embargo_bars = 50
+embargo_scale_by_timeframe = true
+embargo_reference_timeframe = "1H"
+""".strip()
+    )
+
+    cfg = load_config(cfg_file)
+    assert cfg.splitting.embargo_bars == 2
+
+
+def test_embargo_keeps_configured_bars_when_scaling_disabled(tmp_path):
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+[data]
+timeframe = "1D"
+
+[splitting]
+embargo_bars = 50
+embargo_scale_by_timeframe = false
+embargo_reference_timeframe = "1H"
+""".strip()
+    )
+
+    cfg = load_config(cfg_file)
+    assert cfg.splitting.embargo_bars == 50

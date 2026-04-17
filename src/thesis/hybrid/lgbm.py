@@ -182,7 +182,7 @@ def _train_fixed(
 
 def _compute_sharpe_from_predictions(
     y_true: np.ndarray,
-    y_pred: np.ndarray,
+    y_pred_proba: np.ndarray,
     confidence_threshold: float = 0.0,
 ) -> float:
     """
@@ -193,12 +193,38 @@ def _compute_sharpe_from_predictions(
 
     Parameters:
         y_true: True labels (-1, 0, 1)
-        y_pred: Predicted labels (-1, 0, 1)
+        y_pred_proba: Predicted class probabilities (3 columns for classes -1, 0, 1),
+                      or 1D array of hard class predictions.
         confidence_threshold: Minimum probability threshold to trade (0 = trade all)
 
     Returns:
         Sharpe Ratio (annualized), or 0.0 if insufficient trades.
     """
+    # Handle 1D hard predictions by converting to probability format
+    if y_pred_proba.ndim == 1:
+        n = len(y_pred_proba)
+        proba = np.zeros((n, 3), dtype=np.float64)
+        for i, pred in enumerate(y_pred_proba):
+            if pred == -1:
+                proba[i, 0] = 1.0
+            elif pred == 0:
+                proba[i, 1] = 1.0
+            else:  # pred == 1
+                proba[i, 2] = 1.0
+        y_pred_proba = proba
+
+    # 1. Find the class with highest probability and its confidence value
+    max_probs = np.max(y_pred_proba, axis=1)
+    pred_indices = np.argmax(y_pred_proba, axis=1)
+
+    # 2. Map index (0, 1, 2) back to original labels (-1, 0, 1).
+    # LightGBM always sorts classes, so the default order is [-1, 0, 1]
+    classes = np.array([-1, 0, 1])
+    y_pred = classes[pred_indices]
+
+    # 3. Apply confidence threshold: if confidence is below threshold, force to Hold (0)
+    y_pred[max_probs < confidence_threshold] = 0
+
     # Filter to non-hold predictions only
     mask = y_pred != 0
     if mask.sum() < 10:
@@ -298,12 +324,10 @@ def _train_optuna(
             m.fit(
                 _wrap_np(X_train[tr_idx], feature_cols),
                 y_train[tr_idx],
-                eval_set=[(_wrap_np(X_train[va_idx], feature_cols), y_train[va_idx])],
-                callbacks=[lgb.early_stopping(30, verbose=False)],
             )
-            preds = m.predict(_wrap_np(X_train[va_idx], feature_cols))
+            preds_proba = m.predict_proba(_wrap_np(X_train[va_idx], feature_cols))
             sharpe = _compute_sharpe_from_predictions(
-                y_train[va_idx], preds, config.backtest.confidence_threshold
+                y_train[va_idx], preds_proba, config.backtest.confidence_threshold
             )
             scores.append(sharpe)
 
@@ -327,7 +351,7 @@ def _train_optuna(
         transient=False,
     )
 
-    best_sharpe = 0.0
+    best_sharpe = -float("inf")
 
     with progress:
         task = progress.add_task("trials", total=n_trials, best_sharpe=0.0)
@@ -412,5 +436,5 @@ def _train_optuna(
             ],
         )
 
-    logger.info("Final model: best_iteration=%d", model.best_iteration_)
+    logger.info(f"Final model: best_iteration={model.best_iteration_}")
     return model

@@ -92,11 +92,14 @@ def train_gru(
     train_dataset = SequenceDataset(train_seq, train_labels)
     val_dataset = SequenceDataset(val_seq, val_labels)
 
+    # Note: shuffle=True for training loader shuffles which sequences are processed in each
+    # epoch (not the sequence order itself). This is standard practice for mini-batch RNN
+    # training to improve generalization. Val loader keeps shuffle=False to preserve order.
     train_loader = DataLoader(
         train_dataset,
         batch_size=gru_cfg.batch_size,
-        shuffle=False,  # Never shuffle time series!
-        drop_last=False,
+        shuffle=True,
+        drop_last=True,
     )
     val_loader = DataLoader(
         val_dataset,

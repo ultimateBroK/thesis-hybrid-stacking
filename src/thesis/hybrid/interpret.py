@@ -38,6 +38,9 @@ def _compute_shap(
     """
     try:
         import shap
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
 
         n_samples = min(500, len(X_test))
         shap_start = time.perf_counter()
@@ -63,21 +66,28 @@ def _compute_shap(
 
             # Step 2: Render plot
             progress.update(task, description="[bold cyan]SHAP rendering")
+
+            # Ensure shap_values is a list of 2D arrays for multi-class classification
             if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
                 shap_values = [
                     shap_values[:, :, i] for i in range(shap_values.shape[2])
                 ]
 
-            import matplotlib
-
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-
             plt.figure(figsize=(10, 8))
-            rng = np.random.default_rng(config.workflow.random_seed)
+
+            # Use bar plot for per-class feature importance with clear legend for 3 classes
             shap.summary_plot(
-                shap_values, X_sample, feature_names=feature_cols, show=False, rng=rng
+                shap_values,
+                X_sample,
+                feature_names=feature_cols,
+                plot_type="bar",
+                class_names=["Short", "Hold", "Long"],  # Class indices 0, 1, 2
+                show=False
             )
+
+            # Custom title for clarity
+            plt.title("Feature Importance by Class (SHAP Values)", fontsize=14, pad=20)
+
             if config.paths.session_dir:
                 out = Path(config.paths.session_dir) / "reports" / "shap_summary.png"
             else:

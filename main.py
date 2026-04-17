@@ -6,20 +6,22 @@ Usage:
 """
 
 import argparse
+from datetime import datetime
 import json
 import logging
+from pathlib import Path
 import re
 import shutil
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+PROJECT_ROOT = Path(__file__).resolve().parent
+if (PROJECT_ROOT / "src").exists():
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from thesis.ablation import run_ablation
 from thesis.config import load_config
 from thesis.pipeline import run_pipeline
-from thesis.ablation import run_ablation
 
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")

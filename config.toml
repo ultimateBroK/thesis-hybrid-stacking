@@ -30,6 +30,8 @@ test_start = "2024-01-01"             # OOS: gold bull run $2000→$3000+
 test_end = "2026-03-31 23:59:59"
 purge_bars = 25
 embargo_bars = 50                     # ~2 days — conservative vs 10-bar label horizon
+embargo_scale_by_timeframe = true     # Keep same elapsed embargo duration when timeframe changes
+embargo_reference_timeframe = "1H"   # 50 bars is defined at 1H; e.g. 1D -> ~2 bars
 
 # =============================================================================
 # FEATURES

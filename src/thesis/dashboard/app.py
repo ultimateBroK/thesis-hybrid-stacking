@@ -97,7 +97,7 @@ def _find_sessions() -> list[Path]:
     return sessions
 
 
-@st.cache_data(ttl=60)
+@st.cache_resource(ttl=60)
 def _load_config(session_dir: str) -> dict:
     """
     Load and return the configuration object and associated session data for the given session directory.

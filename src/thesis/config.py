@@ -5,9 +5,14 @@ No environment-variable overrides, no session-aware ATR, no LSTM config.
 """
 
 import tomllib
+import re
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+logger = logging.getLogger("thesis.config")
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +50,8 @@ class SplittingConfig:
     test_end: str = "2026-03-31 23:59:59"
     purge_bars: int = 25
     embargo_bars: int = 50
+    embargo_scale_by_timeframe: bool = False
+    embargo_reference_timeframe: str = "1H"
 
 
 @dataclass
@@ -204,6 +211,38 @@ _SECTION_MAP: dict[str, type] = {
 }
 
 
+def _timeframe_to_minutes(timeframe: str) -> int:
+    """Convert timeframe strings like 1H/4H/15M/1D/1W to minutes."""
+    match = re.fullmatch(r"\s*(\d+)\s*([mhdwMHDW])\s*", timeframe)
+    if not match:
+        raise ValueError(
+            "Invalid timeframe format: "
+            f"{timeframe!r}. Expected forms like 15M, 1H, 4H, 1D, 1W."
+        )
+
+    qty = int(match.group(1))
+    unit = match.group(2).upper()
+    unit_minutes = {
+        "M": 1,
+        "H": 60,
+        "D": 24 * 60,
+        "W": 7 * 24 * 60,
+    }
+    return qty * unit_minutes[unit]
+
+
+def _scale_bars_by_timeframe(
+    base_bars: int,
+    base_timeframe: str,
+    target_timeframe: str,
+) -> int:
+    """Scale bar count to preserve approximately the same elapsed time across timeframes."""
+    base_minutes = _timeframe_to_minutes(base_timeframe)
+    target_minutes = _timeframe_to_minutes(target_timeframe)
+    scaled = int(round(base_bars * (base_minutes / target_minutes)))
+    return max(1, scaled)
+
+
 def load_config(config_path: str | Path = "config.toml") -> Config:
     """Load configuration from a flat TOML file.
 
@@ -227,6 +266,23 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     for section, cls in _SECTION_MAP.items():
         if section in raw:
             setattr(cfg, section, cls(**raw[section]))
+
+    if cfg.splitting.embargo_scale_by_timeframe:
+        base_bars = cfg.splitting.embargo_bars
+        reference_tf = cfg.splitting.embargo_reference_timeframe
+        target_tf = cfg.data.timeframe
+        cfg.splitting.embargo_bars = _scale_bars_by_timeframe(
+            base_bars,
+            reference_tf,
+            target_tf,
+        )
+        logger.info(
+            "Scaled embargo bars from %d @ %s to %d @ %s",
+            base_bars,
+            reference_tf,
+            cfg.splitting.embargo_bars,
+            target_tf,
+        )
 
     # Ensure base directories exist
     Path(cfg.paths.data_processed).mkdir(parents=True, exist_ok=True)

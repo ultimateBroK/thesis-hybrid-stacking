@@ -11,7 +11,19 @@ logger = logging.getLogger("thesis.report.stats")
 
 
 def _load_parquet_stats(path: Path) -> dict | None:
-    """Load basic stats from a parquet file without loading full data."""
+    """
+    Load basic stats from a parquet file without loading full data.
+
+    Reads only row/column metadata to provide a lightweight summary of the file contents.
+    Useful for quickly checking file size and date range without loading entire datasets.
+
+    Parameters:
+        path: Path to the parquet file to inspect.
+
+    Returns:
+        Dictionary with 'rows', 'columns', and optionally 'date_range' (tuple of min/max timestamps),
+        or None if the file doesn't exist or cannot be read.
+    """
     if not path.exists():
         return None
     try:
@@ -29,7 +41,19 @@ def _load_parquet_stats(path: Path) -> dict | None:
 
 
 def _load_label_distribution(labels_path: Path) -> dict | None:
-    """Load label class distribution from labels parquet."""
+    """
+    Load label class distribution from labels parquet.
+
+    Computes the count and percentage of each label class (-1=Short, 0=Hold, 1=Long)
+    in the dataset. Used for reporting class balance in the thesis document.
+
+    Parameters:
+        labels_path: Path to the labels parquet file.
+
+    Returns:
+        Dictionary mapping class names ('Short', 'Hold', 'Long') to (count, percentage) tuples,
+        plus a 'total' key with the total row count. Returns None if file doesn't exist or cannot be read.
+    """
     if not labels_path.exists():
         return None
     try:
@@ -46,7 +70,20 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
 
 
 def _load_split_stats(config: Config) -> dict:
-    """Load row counts and label distributions per split."""
+    """
+    Load row counts and label distributions per split (train/val/test).
+
+    Reads the train, validation, and test parquet files specified in the config,
+    and collects basic statistics for each: row count, column count, date range,
+    and per-class label distribution.
+
+    Parameters:
+        config: Application configuration with paths to train_data, val_data, and test_data.
+
+    Returns:
+        Dictionary keyed by split name ('train', 'val', 'test'), each containing
+        'rows', 'columns', 'date_range', and optionally 'label_distribution'.
+    """
     splits = {}
     for name, path_str in [
         ("train", config.paths.train_data),
@@ -78,19 +115,28 @@ def _load_split_stats(config: Config) -> dict:
 
 
 def _load_prediction_stats(preds_path: Path) -> dict | None:
-    """Load model prediction performance statistics."""
+    """
+    Load model prediction performance statistics from predictions parquet.
+
+    Computes overall accuracy, per-class precision/recall/F1, confusion matrix,
+    and optionally high-confidence accuracy (predictions where max probability >= 70%%).
+    This provides a comprehensive classification performance summary for the thesis report.
+
+    Parameters:
+        preds_path: Path to the predictions parquet file containing
+            'true_label', 'pred_label', and optionally probability columns.
+
+    Returns:
+        Dictionary with 'total', 'accuracy', 'majority_baseline', 'per_class' metrics,
+        'confusion_matrix', and optionally 'high_confidence' stats.
+        Returns None if file doesn't exist or cannot be read.
+    """
     if not preds_path.exists():
         return None
     try:
         cols = ["true_label", "pred_label"]
-        # Accept both naming conventions: pred_proba_class_minus1 (word) and pred_proba_class_-1 (hyphen)
-        proba_cols_word = [
+        proba_cols = [
             "pred_proba_class_minus1",
-            "pred_proba_class_0",
-            "pred_proba_class_1",
-        ]
-        proba_cols_hyphen = [
-            "pred_proba_class_-1",
             "pred_proba_class_0",
             "pred_proba_class_1",
         ]
@@ -100,22 +146,16 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         except Exception:
             df = pl.read_parquet(preds_path, columns=cols)
 
-        # Detect which naming convention is used
-        has_word = all(c in df.columns for c in proba_cols_word)
-        has_hyphen = all(c in df.columns for c in proba_cols_hyphen)
-        proba_cols = (
-            proba_cols_hyphen if has_hyphen else (proba_cols_word if has_word else [])
-        )
-
         true = df["true_label"].to_numpy()
         pred = df["pred_label"].to_numpy()
         total = len(true)
 
-        # Overall accuracy
+        # Overall accuracy: fraction of predictions matching true labels
         accuracy = float((true == pred).mean())
+        # Majority baseline: accuracy if we always predict the most common class
         majority_baseline = float(max((true == lv).sum() for lv in [-1, 0, 1]) / total)
 
-        # Per-class metrics
+        # Per-class metrics: precision, recall, F1 for each class
         per_class = {}
         for lv, ln in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
             true_mask = true == lv
@@ -137,7 +177,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
                 "f1": f1,
             }
 
-        # Confusion matrix
+        # Confusion matrix: rows=true labels, cols=predicted labels, values=count
         cm = {}
         for true_lv, true_name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
             row = {}
@@ -153,8 +193,9 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
             "confusion_matrix": cm,
         }
 
-        # Confidence-filtered accuracy
-        has_proba = len(proba_cols) == 3 and all(c in df.columns for c in proba_cols)
+        # Confidence-filtered accuracy: evaluate only on high-confidence predictions
+        # where max probability >= 70%% threshold
+        has_proba = all(c in df.columns for c in proba_cols)
         if has_proba:
             proba = df.select(proba_cols).to_numpy()
             max_proba = proba.max(axis=1)

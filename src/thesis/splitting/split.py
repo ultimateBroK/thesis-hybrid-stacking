@@ -5,7 +5,6 @@ and optionally drops highly correlated features (computed on train only).
 """
 
 import logging
-from datetime import timedelta
 from pathlib import Path
 
 import polars as pl
@@ -22,10 +21,20 @@ logger = logging.getLogger("thesis.data")
 
 
 def split_data(config: Config) -> None:
-    """Split labeled data into train / val / test with purge & embargo.
+    """
+    Split labeled data into train / val / test with purge & embargo.
+
+    Reads labeled parquet, filters by date boundaries from config, applies purge and embargo
+    to prevent label leakage between splits, optionally drops highly correlated features
+    (computed on train only), and writes train/val/test parquet files.
 
     Args:
-        config: Loaded application configuration.
+        config: Application configuration with:
+            - paths.labels: input labeled data path
+            - splitting.{train_start,train_end,val_start,val_end,test_start,test_end}: date boundaries
+            - splitting.purge_bars: bars to remove at split boundaries
+            - splitting.embargo_bars: additional bars to remove from test start
+            - splitting.correlation_threshold: optional threshold for dropping correlated features
     """
     labels_path = Path(config.paths.labels)
     if not labels_path.exists():
@@ -145,22 +154,22 @@ def _apply_purge_embargo(
         purge: Bars to remove from ends of each split (covers label lookahead).
         embargo: Additional bars to remove from start of test set.
     """
-    purge_delta = timedelta(hours=purge)
-    embargo_delta = timedelta(hours=embargo)
 
-    # Purge: remove last N bars from train, first/last N from val, first N from test
-    train = train.filter(pl.col("timestamp") <= train["timestamp"].max() - purge_delta)
-    val = val.filter(
-        (pl.col("timestamp") >= val["timestamp"].min() + purge_delta)
-        & (pl.col("timestamp") <= val["timestamp"].max() - purge_delta)
-    )
-    test = test.filter(pl.col("timestamp") >= test["timestamp"].min() + purge_delta)
+    if len(train) > purge:
+        train = train.head(len(train) - purge)
+    else:
+        logger.warning("Train set is smaller than purge size!")
 
-    # Embargo: remove additional bars from start of test set
-    if embargo > 0:
-        test = test.filter(
-            pl.col("timestamp") >= test["timestamp"].min() + embargo_delta
-        )
+    if len(val) > 2 * purge:
+        val = val.slice(purge, len(val) - 2 * purge)
+    else:
+        logger.warning("Val set is smaller than 2 * purge size!")
+
+    drop_test = purge + embargo
+    if len(test) > drop_test:
+        test = test.slice(drop_test, len(test) - drop_test)
+    else:
+        logger.warning("Test set is smaller than purge + embargo size!")
 
     return train, val, test
 
@@ -171,7 +180,16 @@ def _apply_purge_embargo(
 
 
 def _log_distribution(name: str, df: pl.DataFrame) -> None:
-    """Log class distribution for a split."""
+    """
+    Log class distribution for a dataset split.
+
+    Logs the count and percentage of each label class (-1=Short, 0=Hold, 1=Long)
+    in the given DataFrame. Used during pipeline execution to verify class balance.
+
+    Parameters:
+        name: Name of the split (e.g., 'train', 'val', 'test') for logging purposes.
+        df: DataFrame expected to contain a 'label' column.
+    """
     if "label" not in df.columns:
         return
     total = len(df)

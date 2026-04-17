@@ -13,6 +13,7 @@ from thesis.config import Config
 
 from .data import _generate_data_charts
 from .model import _generate_model_charts
+from .backtest import _generate_backtest_charts
 
 logger = logging.getLogger("thesis.visualize")
 
@@ -49,4 +50,9 @@ def generate_all_charts(config: Config) -> None:
     logger.info("All charts generated.")
 
 
-__all__ = ["generate_all_charts"]
+__all__ = [
+    "generate_all_charts",
+    "_generate_data_charts",
+    "_generate_model_charts",
+    "_generate_backtest_charts",
+]

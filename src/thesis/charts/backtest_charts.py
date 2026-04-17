@@ -3,6 +3,7 @@
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Grid, HeatMap, Line, Scatter
 
@@ -39,7 +40,13 @@ def build_equity_drawdown_chart(
     peak = np.maximum.accumulate(equity_arr)
     drawdown_pct = (equity_arr - peak) / peak * 100
 
-    x_labels = [str(i) for i in range(len(equity))]
+    try:
+        times = [pd.to_datetime(trades[0]["entry_time"]).strftime("%Y-%m-%d %H:%M")]
+        for t in trades:
+            times.append(pd.to_datetime(t["exit_time"]).strftime("%Y-%m-%d %H:%M"))
+        x_labels = times
+    except Exception:
+        x_labels = [str(i) for i in range(len(equity))]
 
     total_trades = metrics.get("total_trades", len(trades))
     total_return = metrics.get("return_pct", 0)
@@ -207,7 +214,7 @@ def _compute_monthly_returns(
     return monthly_returns
 
 
-def build_monthly_returns_heatmap(trades: list[dict]) -> HeatMap:
+def build_monthly_returns_heatmap(trades: list[dict], initial_capital: float = 10_000.0) -> HeatMap:
     """
     Create a month-by-year heatmap of percentage returns.
 
@@ -219,7 +226,7 @@ def build_monthly_returns_heatmap(trades: list[dict]) -> HeatMap:
     Returns:
         HeatMap: A pyecharts HeatMap where each data point value is the monthly return percentage (rounded to 2 decimals).
     """
-    monthly = _compute_monthly_returns(trades)
+    monthly = _compute_monthly_returns(trades, initial_capital)
     if not monthly:
         return HeatMap()
 
@@ -292,8 +299,19 @@ def build_rolling_sharpe_chart(
     rolling_std = np.array(
         [pnls[i : i + window].std() for i in range(len(pnls) - window + 1)]
     )
+    
+    try:
+        entry = pd.to_datetime(trades[0]["entry_time"])
+        exit_ = pd.to_datetime(trades[-1]["exit_time"])
+        days = max((exit_ - entry).days, 1)
+        trades_per_year = len(trades) / (days / 365.25)
+    except Exception:
+        trades_per_year = 100 # Fallback
+        
+    annualization_factor = np.sqrt(trades_per_year)
+    
     with np.errstate(divide="ignore", invalid="ignore"):
-        rolling_sharpe = rolling_mean / rolling_std * np.sqrt(252)
+        rolling_sharpe = rolling_mean / rolling_std * annualization_factor
     rolling_sharpe = np.where(rolling_std == 0, np.nan, rolling_sharpe)
 
     x_labels = [str(i + window) for i in range(len(rolling_sharpe))]

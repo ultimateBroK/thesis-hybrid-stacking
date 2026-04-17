@@ -937,47 +937,74 @@ def _build_markdown(
     # ==================================================================
     # 10. CHARTS
     # ==================================================================
-    lines.append("## 10. Charts")
+    # ==================================================================
+    # 10. CHARTS & VISUALIZATIONS
+    # ==================================================================
+    lines.append("## 10. Visual Evidence & Analytics")
     lines.append("")
-    lines.append("### Equity Curve")
+    lines.append("This section provides visual proof of the system's robustness, from data processing and model explainability (XAI) to strict risk management execution.")
     lines.append("")
-    lines.append(
-        "The equity curve shows how the account balance changed over time. "
-        "A steadily rising line means consistent profits. Sharp drops indicate losing streaks."
-    )
+
+    # --- 10.1 Backtest Performance ---
+    lines.append("### 10.1 Strategy Performance & Risk")
     lines.append("")
+    lines.append("These charts illustrate how the model translates predictions into actual portfolio growth while managing drawdowns.")
+    lines.append("")
+    
     if config.paths.session_dir:
         bt_chart = Path(config.paths.session_dir) / "backtest" / "backtest_chart.html"
         if bt_chart.exists():
-            lines.append(
-                "See [backtest_chart.html](backtest_chart.html) for the interactive version."
-            )
+            lines.append("> 💡 **Interactive Chart Available**: See [`backtest_chart.html`](backtest_chart.html) for candlestick-level trade execution.")
             lines.append("")
+
+    # Equity Curve chính từ main.py
+    lines.append("#### Equity Curve")
     lines.append("![Equity Curve](equity_curve.png)")
     lines.append("")
-    lines.append("### Feature Importance")
+
+    # Các biểu đồ từ thư mục backtest
+    lines.append("#### Drawdown & Returns Distribution")
+    lines.append("![Drawdown](charts/backtest/equity_drawdown.png)")
     lines.append("")
-    lines.append("Higher bars = more important features for the model's predictions.")
+    lines.append("![Monthly Heatmap](charts/backtest/monthly_returns.png)")
     lines.append("")
-    lines.append("![Feature Importance](feature_importance.png)")
+    lines.append("![PnL Histogram](charts/backtest/pnl_histogram.png)")
+    lines.append("")
+    lines.append("![Duration vs PnL](charts/backtest/duration_vs_pnl.png)")
     lines.append("")
 
-    # Visualization charts
-    if config.paths.session_dir:
-        charts_dir = Path(config.paths.session_dir) / "reports" / "charts"
-        if charts_dir.exists():
-            for subdir in ["data", "model", "backtest"]:
-                sub = charts_dir / subdir
-                if sub.exists():
-                    lines.append(f"### {subdir.title()} Charts")
-                    lines.append("")
-                    for img in sorted(sub.glob("*.png")):
-                        rel = f"charts/{subdir}/{img.name}"
-                        lines.append(f"![{img.stem}]({rel})")
-                    lines.append("")
+    # --- 10.2 Model Explainability (XAI) ---
+    lines.append("### 10.2 AI Explainability (The 'Black Box' Opened)")
+    lines.append("")
+    lines.append("Why did the AI make these decisions? These diagnostics show that the model isn't guessing; it relies on complex temporal patterns (GRU) combined with market context.")
+    lines.append("")
+
+    lines.append("#### Confidence & Classification Quality")
+    lines.append("![Confidence Distribution](charts/model/confidence_distribution.png)")
+    lines.append("")
+    lines.append("![Confusion Matrix](charts/model/confusion_matrix.png)")
+    lines.append("")
+
+    lines.append("#### Feature Importance (SHAP)")
+    lines.append("The SHAP values below decompose the impact of each feature on the model's decision to go Long (Blue), Short (Red), or Hold (Yellow/Green).")
+    lines.append("")
+    lines.append("![SHAP Summary](shap_summary.png)") # SHAP nằm ở thư mục root reports/
+    lines.append("")
+    lines.append("![LightGBM Importance](charts/model/feature_importance.png)")
+    lines.append("")
+
+    # --- 10.3 Data Integrity ---
+    lines.append("### 10.3 Data Integrity & Context")
+    lines.append("")
+    lines.append("Sanity checks on the processed data to ensure no anomalies before passing to the neural networks.")
+    lines.append("")
+    
+    lines.append("![Feature Correlation](charts/data/feature_correlation.png)")
+    lines.append("")
+    lines.append("![Label Distribution](charts/data/label_distribution.png)")
+    lines.append("")
 
     return "\n".join(lines)
-
 
 # ---------------------------------------------------------------------------
 # Metric formatting helpers

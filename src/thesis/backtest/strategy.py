@@ -83,13 +83,8 @@ class HybridGRUStrategy(Strategy):
                 lambda: self.data.pred_proba_class_1, name="proba_long", plot=False
             )
 
-        # Manual stop tracking (filled on entry, consumed in next bar)
-        # dict: direction -> stop_price
-        self._stops: dict[str, float] = {}
         # Time-based exit: bar index when position was entered (direction -> bar index)
         self._entry_bar: dict[str, int] = {}
-        # Entry price tracking: direction -> price at which position was entered
-        self._entry_price: dict[str, float] = {}
 
     def _floor_atr(self, atr: float) -> float:
         """Floor ATR to prevent unrealistic stops in low-volatility regimes."""
@@ -178,9 +173,9 @@ class HybridGRUStrategy(Strategy):
 
     def next(self) -> None:
         """
-        Evaluate the latest model signal and, if appropriate, place a market order with an ATR-based stop-loss.
+        Evaluate the latest model signal and, if appropriate, place a market order with a native ATR-based stop-loss.
 
-        Checks the most recent signal, optional predicted-class confidence (when `confidence_threshold > 0` and probability columns are available), and current position to decide whether to enter a new long or short trade. Uses manual stop tracking (market orders) instead of backtesting.py's sl= parameter to avoid the built-in tie-break bias when TP and SL are both hit on the same bar. A signal of 0 (hold) or a confidence value below the threshold results in no action.
+        Checks the most recent signal, optional predicted-class confidence (when `confidence_threshold > 0` and probability columns are available), and current position to decide whether to enter a new long or short trade. Uses native stop tracking via `sl=` parameter to ensure exact execution pricing. A signal of 0 (hold) or a confidence value below the threshold results in no action.
 
         Time-based exit: when `horizon_bars > 0`, positions are closed after holding for `horizon_bars` bars
         (aligned with the labeling horizon). This prevents indefinite holding when no opposing signal occurs.
@@ -188,32 +183,7 @@ class HybridGRUStrategy(Strategy):
         signal = int(self.signals[-1])
         atr = self._floor_atr(self.atr[-1])
 
-        # Check manual stops first (from previous bar's entry)
-        self._check_stop()
-
-        # Set stops for newly filled positions using actual fill price
-        if self.position:
-            if (
-                self.position.is_long
-                and "long" in self._entry_bar
-                and "long" not in self._stops
-            ):
-                # Market order filled at this bar's open (backtesting.py convention)
-                entry_price = self.data.Open[-1]
-                self._entry_price["long"] = entry_price
-                sl = entry_price - atr * self.atr_stop_mult
-                self._stops["long"] = sl
-            elif (
-                self.position.is_short
-                and "short" in self._entry_bar
-                and "short" not in self._stops
-            ):
-                entry_price = self.data.Open[-1]
-                self._entry_price["short"] = entry_price
-                sl = entry_price + atr * self.atr_stop_mult
-                self._stops["short"] = sl
-
-        # Time-based exit: close positions that have exceeded horizon_bars
+        # 1. Time-based exit: close positions that have exceeded horizon_bars
         if self.horizon_bars > 0 and self.position:
             entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
             if entry_bar is not None:
@@ -222,9 +192,8 @@ class HybridGRUStrategy(Strategy):
                     self.position.close()
                     direction = "long" if self.position.is_long else "short"
                     self._entry_bar.pop(direction, None)
-                    self._stops.pop(direction, None)
 
-        # Confidence gate: skip low-confidence signals
+        # 2. Confidence gate: skip low-confidence signals
         if self.confidence_threshold > 0 and self._has_proba:
             if signal == 1:
                 confidence = float(self.proba_long[-1])
@@ -232,23 +201,30 @@ class HybridGRUStrategy(Strategy):
                 confidence = float(self.proba_short[-1])
             else:
                 return  # Hold — do nothing
+            
             if confidence < self.confidence_threshold:
                 return  # Below threshold — skip trade
 
-        # Dynamic lot sizing: calculate based on equity and risk parameters
-        entry_price = self.data.Open[-1]
-        lot_size = self._calc_lot_size(atr, entry_price)
+        # 3. Dynamic lot sizing: calculate based on equity and risk parameters
+        # Note: backtesting.py evaluates signals at Close[i] and executes orders at Open[i+1].
+        # We use Close[-1] as a proxy for expected entry price to calculate lot size and SL distance.
+        # This is an approximation — actual fill price will be next bar's open.
+        proxy_entry_price = self.data.Close[-1]
+        lot_size = self._calc_lot_size(atr, proxy_entry_price)
         size = lot_size * self.contract_size
 
+        # 4. Execute trades with native Stop-Loss
         if signal == 1 and not self.position:
-            # Flat → enter long; stop will be set after fill
+            # Flat → enter long
             self._entry_bar["long"] = len(self.data)
-            self.buy(size=size)
+            sl_price = proxy_entry_price - (atr * self.atr_stop_mult)
+            self.buy(size=size, sl=sl_price)
+            
         elif signal == -1 and not self.position:
-            # Flat → enter short; stop will be set after fill
+            # Flat → enter short
             self._entry_bar["short"] = len(self.data)
-            self.sell(size=size)
-
+            sl_price = proxy_entry_price + (atr * self.atr_stop_mult)
+            self.sell(size=size, sl=sl_price)
 
 # ---------------------------------------------------------------------------
 # Helpers

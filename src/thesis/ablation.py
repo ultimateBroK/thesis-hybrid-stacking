@@ -1,13 +1,12 @@
 """Ablation study: LightGBM-only vs GRU-only vs Combined (GRU + LightGBM).
 
 Runs three variants on the same data splits and compares trading performance.
-GRU is trained **once** and shared across variants B and C to avoid redundant
-~5 min training runs.
+GRU is trained once and shared across variants B and C to avoid redundant runs.
 
 Variants:
-    A. LightGBM-only  — static features only (no GRU hidden states)
-    B. GRU-only       — direct softmax predictions (no LightGBM)
-    C. Combined       — GRU hidden states + static features → LightGBM (current)
+    A. LightGBM-only  - static features only (no GRU hidden states)
+    B. GRU-only       - direct softmax predictions (no LightGBM)
+    C. Combined       - GRU hidden states + static features -> LightGBM
 
 Usage:
     Called from pipeline or standalone:
@@ -21,18 +20,16 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import polars as pl
 
 from thesis.config import Config
-from thesis.gru import (
-    extract_hidden_states,
-    prepare_sequences,
-    train_gru,
-)
-
-from thesis.hybrid.lgbm import _EXCLUDE_COLS, _wrap_np, _compute_class_weights
+from thesis.gru import extract_hidden_states, prepare_sequences, train_gru
+from thesis.hybrid.lgbm import _EXCLUDE_COLS, _compute_class_weights, _wrap_np
 
 logger = logging.getLogger("thesis.ablation")
+
+_SECONDS_PER_YEAR = 365.25 * 24 * 60 * 60
 
 
 def _train_lgbm(
@@ -45,17 +42,23 @@ def _train_lgbm(
     feature_cols: list[str],
 ) -> Any:
     """
-    Train a LightGBM multiclass classifier using hyperparameters from the provided config.
+    Train a LightGBM multiclass classifier with config hyperparameters.
 
-    This trains an LGBMClassifier with objective "multiclass" and `num_class=3`, applies the given class weights, and uses early stopping with the number of rounds specified in the config.
+    Creates and trains a LGBMClassifier with parameters from config.model,
+    applies class weighting for imbalanced data, and uses early stopping
+    based on validation set performance.
 
     Parameters:
-        class_weights (dict[int, float]): Mapping from class index to weight used during training.
-        config (Config): Configuration object whose `model` attributes supply LightGBM hyperparameters and whose `workflow` fields supply random seed and job count.
-        feature_cols (list[str]): Names of features corresponding to columns in `X_train`/`X_val` used for logging and any feature-order expectations.
+        X_train: Training feature matrix.
+        y_train: Training labels.
+        X_val: Validation feature matrix.
+        y_val: Validation labels.
+        class_weights: Balanced class weights computed from training labels.
+        config: Application configuration with model and workflow settings.
+        feature_cols: List of feature column names for wrapping X arrays.
 
     Returns:
-        Trained LightGBM classifier instance (lgb.LGBMClassifier).
+        Trained LGBMClassifier model with best iteration loaded.
     """
     import lightgbm as lgb
 
@@ -94,50 +97,117 @@ def _save_preds(
     preds: np.ndarray,
     proba: np.ndarray,
     path: Path,
-    class_order: list | None = None,
+    class_order: list[int] | None = None,
 ) -> None:
     """
-    Create and write a prediction parquet file with standardized columns for backtesting.
+    Write prediction parquet with standardized probability columns.
+
+    Converts raw model outputs (labels and probabilities) into a consistent
+    DataFrame format with standardized column names for downstream processing.
 
     Parameters:
-        timestamps (pl.Series): Datetime-aligned timestamps for each prediction row.
-        y_true (np.ndarray): Ground-truth labels as integers (shape: [n_rows]).
-        preds (np.ndarray): Predicted label indices as integers (shape: [n_rows]); saved as `pred_label`.
-        proba (np.ndarray): Per-class probabilities with shape (n_rows, 3); columns saved as
-            `pred_proba_class_{label}` for each label in `class_order`.
-        path (Path): Destination parquet file path; parent directories will be created if missing.
-        class_order (list | None): Ordered list of class labels corresponding to proba columns
-            (e.g., `[-1, 0, 1]` means proba[:,0] → class -1, proba[:,1] → class 0, proba[:,2] → class 1).
-            When None, defaults to `[-1, 0, 1]`.
-
-    Side effects:
-        Writes a parquet file at `path` containing columns:
-        `timestamp`, `true_label` (int32), `pred_label` (int32), and the three per-class probability columns.
+        timestamps: Series of timestamps corresponding to each prediction.
+        y_true: Ground truth labels.
+        preds: Predicted labels.
+        proba: Prediction probabilities (shape: n_samples x n_classes).
+        path: Output path for the parquet file.
+        class_order: Optional ordering of class indices; defaults to [-1, 0, 1].
     """
     if class_order is None:
         class_order = [-1, 0, 1]
-    col_mapping = {label: proba[:, idx] for idx, label in enumerate(class_order)}
 
-    def _normalize_label(lbl: int) -> str:
-        """Normalize negative labels to string form: -1 -> 'minus1'."""
-        if lbl < 0:
-            return f"minus{abs(lbl)}"
-        return str(lbl)
+    col_mapping = {label: proba[:, idx] for idx, label in enumerate(class_order)}
+    standardized_cols = {
+        -1: "pred_proba_class_minus1",
+        0: "pred_proba_class_0",
+        1: "pred_proba_class_1",
+    }
+    proba_columns = {
+        standardized_cols[label]: col_mapping[label]
+        for label in class_order
+        if label in standardized_cols
+    }
 
     df = pl.DataFrame(
         {
             "timestamp": timestamps,
             "true_label": y_true.astype(np.int32),
             "pred_label": preds.astype(np.int32),
-            **{
-                f"pred_proba_class_{_normalize_label(label)}": col_mapping[label]
-                for label in class_order
-            },
+            **proba_columns,
         }
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(path)
     logger.info("Saved predictions: %s (%d rows)", path, len(df))
+
+
+def _time_span_years(df: pl.DataFrame) -> float:
+    """
+    Compute covered time span in years from a split dataframe.
+
+    Calculates the elapsed time between the first and last timestamp
+    in the dataframe, expressed in years. Used for annualizing Sharpe ratio.
+
+    Parameters:
+        df: DataFrame with a 'timestamp' column.
+
+    Returns:
+        Time span in years, or 0.0 if insufficient data.
+    """
+    if "timestamp" not in df.columns or len(df) < 2:
+        return 0.0
+
+    start_ts = df["timestamp"].min()
+    end_ts = df["timestamp"].max()
+    if start_ts is None or end_ts is None:
+        return 0.0
+
+    seconds = (pd.Timestamp(end_ts) - pd.Timestamp(start_ts)).total_seconds()
+    if seconds <= 0:
+        return 0.0
+    return float(seconds / _SECONDS_PER_YEAR)
+
+
+def _compute_annualized_sharpe(
+    trades_df: pd.DataFrame,
+    test_df: pl.DataFrame,
+) -> tuple[float, float]:
+    """
+    Compute annualized Sharpe from per-trade returns and trades per year.
+
+    Calculates the Sharpe ratio using trade-level returns, annualized by
+    the number of trades per year (derived from the test set time span).
+
+    Parameters:
+        trades_df: DataFrame with 'ReturnPct' column containing per-trade returns.
+        test_df: DataFrame with 'timestamp' column to compute the time span.
+
+    Returns:
+        Tuple of (annualized_sharpe, trades_per_year). Returns (0.0, 0) if
+        insufficient data or invalid standard deviation.
+    """
+    if trades_df.empty or "ReturnPct" not in trades_df.columns:
+        return 0.0, 0.0
+
+    returns = trades_df["ReturnPct"].to_numpy(dtype=float)
+    returns = returns[np.isfinite(returns)]
+    n_trades = int(len(returns))
+    if n_trades == 0:
+        return 0.0, 0.0
+
+    years = _time_span_years(test_df)
+    trades_per_year = (n_trades / years) if years > 0 else float(n_trades)
+
+    if n_trades < 2:
+        return 0.0, float(trades_per_year)
+
+    std_ret = float(np.std(returns, ddof=1))
+    if std_ret <= 1e-12:
+        return 0.0, float(trades_per_year)
+
+    mean_ret = float(np.mean(returns))
+    sharpe = (mean_ret / std_ret) * np.sqrt(trades_per_year)
+    return float(sharpe), float(trades_per_year)
 
 
 def _run_backtest_for(
@@ -147,59 +217,78 @@ def _run_backtest_for(
     variant: str,
 ) -> dict:
     """
-    Run the configured backtest for a single variant using the provided test data and prediction dataframe.
+    Run backtest and compute annualized Sharpe ratio.
 
-    Both `test_df` and `preds_df` must include a `timestamp` column; this function casts those columns to microsecond-resolution datetimes before running the backtest. The `variant` string is used only for logging.
+    Executes the backtesting.py simulation on the test set using predictions
+    from a specific variant (LGBM-only, GRU-only, or Combined), then
+    overrides the Sharpe ratio with a properly annualized trade-based calculation.
 
     Parameters:
-        test_df (pl.DataFrame): Ground-truth test dataframe containing at least a `timestamp` column.
-        preds_df (pl.DataFrame): Predictions dataframe containing at least a `timestamp` column and prediction columns expected by the backtest.
-        config (Config): Configuration object passed through to the backtest runner.
-        variant (str): Human-readable name of the variant being evaluated (used for logging).
+        test_df: Test set DataFrame with features and labels.
+        preds_df: DataFrame with predictions and probabilities.
+        config: Application configuration for backtest parameters.
+        variant: Name identifier for this ablation variant (for logging).
 
     Returns:
-        dict: Metrics dictionary produced by the backtest runner.
+        Dictionary with backtest metrics including annualized Sharpe.
     """
-    from thesis.backtest import run_backtest_from_data
+    from thesis.backtest.strategy import _normalize_stats, _prepare_df, _run_bt
 
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
     logger.info("%s: running backtest", variant)
 
-    return run_backtest_from_data(test, preds, config)
+    pdf = _prepare_df(test, preds)
+    stats, _ = _run_bt(pdf, config)
+    metrics = _normalize_stats(stats)
+
+    trades_df = stats["_trades"]
+    annual_sharpe, trades_per_year = _compute_annualized_sharpe(trades_df, test)
+    raw_sharpe = float(metrics.get("sharpe_ratio", 0) or 0)
+
+    metrics["sharpe_ratio_raw"] = raw_sharpe
+    metrics["sharpe_ratio"] = annual_sharpe
+    metrics["annualized_sharpe_ratio"] = annual_sharpe
+    metrics["trades_per_year"] = trades_per_year
+
+    logger.info(
+        "%s: Sharpe(raw)=%.4f, Sharpe(annualized)=%.4f, trades/year=%.2f",
+        variant,
+        raw_sharpe,
+        annual_sharpe,
+        trades_per_year,
+    )
+
+    return metrics
 
 
-def _log_comparison(comparison: dict) -> None:
+def _log_comparison(comparison: dict[str, dict]) -> None:
     """
     Log a formatted table comparing ablation metrics for each variant.
 
-    Displays rows for: Trades, Win Rate, Return %, Sharpe, Max DD %, Profit Factor, and Total PnL
-    for the variants "lgbm_only", "gru_only", and "combined". If a variant reports zero trades,
-    all metric cells except Trades are rendered as an em dash ("—"). After the table the function
-    logs each variant's feature count.
+    Logs a human-readable table showing key metrics (trades, win rate, return,
+    Sharpe, drawdown, profit factor) for all three variants: LGBM-only, GRU-only,
+    and Combined.
 
     Parameters:
-        comparison (dict): Mapping from variant keys ("lgbm_only", "gru_only", "combined")
-            to dictionaries containing:
-              - "metrics" (dict): metric name → numeric value (expects keys like
-                "num_trades", "win_rate_pct", "return_pct", "sharpe_ratio",
-                "max_drawdown_pct", "profit_factor", "total_pnl")
-              - "feature_count" (int): number of features used by the variant
+        comparison: Dictionary keyed by variant name ('lgbm_only', 'gru_only', 'combined'),
+            each containing a 'metrics' dict and 'feature_count'.
     """
-    logger.info("=" * 70)
+    logger.info("=" * 78)
     logger.info("ABLATION COMPARISON")
-    logger.info("=" * 70)
+    logger.info("=" * 78)
 
-    header = f"{'Metric':<25} {'LGBM-only':>14} {'GRU-only':>14} {'Combined':>14}"
+    header = f"{'Metric':<25} {'LGBM-only':>16} {'GRU-only':>16} {'Combined':>16}"
     logger.info(header)
-    logger.info("-" * 70)
+    logger.info("-" * 78)
 
     metrics_keys = [
         ("num_trades", "Trades"),
+        ("trades_per_year", "Trades/Year"),
         ("win_rate_pct", "Win Rate"),
         ("return_pct", "Return %"),
-        ("sharpe_ratio", "Sharpe"),
+        ("sharpe_ratio", "Sharpe (Ann.)"),
         ("max_drawdown_pct", "Max DD %"),
         ("profit_factor", "Profit Factor"),
         ("total_pnl", "Total PnL"),
@@ -210,52 +299,54 @@ def _log_comparison(comparison: dict) -> None:
         for variant in ["lgbm_only", "gru_only", "combined"]:
             val = comparison[variant]["metrics"].get(key, "N/A")
             total_trades = comparison[variant]["metrics"].get("num_trades", 0)
-            if total_trades == 0 and key != "num_trades":
-                row += f" {'—':>14}"
+            if total_trades == 0 and key not in {"num_trades", "trades_per_year"}:
+                row += f" {'-':>16}"
             elif isinstance(val, float):
-                row += f" {val:>13.4f}"
+                row += f" {val:>15.4f}"
             else:
-                row += f" {str(val):>14}"
+                row += f" {str(val):>16}"
         logger.info(row)
 
-    logger.info("-" * 70)
+    logger.info("-" * 78)
     for variant in ["lgbm_only", "gru_only", "combined"]:
         fc = comparison[variant]["feature_count"]
         logger.info("%s feature count: %d", variant, fc)
 
 
-def _determine_best(comparison: dict) -> str:
+def _determine_best(comparison: dict[str, dict]) -> str:
     """
-    Select the best variant using Sharpe ratio, using the number of trades to break ties.
+    Select best variant by annualized Sharpe ratio, then number of trades.
+
+    Compares the annualized Sharpe ratios across all three variants and returns
+    the name of the best performer. If Sharpe ratios are equal, the variant
+    with more trades is preferred (better statistical significance).
+
+    Parameters:
+        comparison: Dictionary keyed by variant name, each containing 'metrics'
+            with 'sharpe_ratio' and 'num_trades'.
 
     Returns:
-        best_variant (str): The variant key ('lgbm_only', 'gru_only', or 'combined') with the highest
-        `sharpe_ratio`; if Sharpe ratios are equal, the variant with the larger `num_trades` is chosen.
+        Name of the best variant ('lgbm_only', 'gru_only', or 'combined').
     """
     scores: dict[str, tuple[float, int]] = {}
     for variant in ["lgbm_only", "gru_only", "combined"]:
         m = comparison[variant]["metrics"]
-        sharpe = m.get("sharpe_ratio", 0)
-        trades = m.get("num_trades", 0)
-        scores[variant] = (sharpe, trades)
-
-    best = max(scores, key=lambda k: scores[k])
-    return best
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+        sharpe_ann = float(m.get("sharpe_ratio", 0) or 0)
+        trades = int(m.get("num_trades", 0) or 0)
+        scores[variant] = (sharpe_ann, trades)
+    return max(scores, key=lambda k: scores[k])
 
 
 def run_ablation(config: Config) -> None:
     """
-    Run the three ablation variants (LightGBM-only, GRU-only, Combined), compare their backtest metrics, and save results.
+    Run all ablation variants and save comparison results to JSON.
 
-    Trains the GRU once and reuses it for the GRU-only and Combined variants, executes a backtest for each variant, writes per-variant prediction Parquet files under the session predictions directory, and writes a JSON comparison report to the session reports directory.
+    Executes three model variants (LGBM-only, GRU-only, Combined) on the test set,
+    computes backtest metrics for each, logs a comparison table, identifies the best
+    variant, and saves results to the session directory.
 
     Parameters:
-        config (Config): Application configuration containing dataset paths, GRU and LightGBM settings, and optional session_dir for outputs.
+        config: Application configuration with paths, model, and backtest settings.
     """
     import torch
 
@@ -272,7 +363,7 @@ def run_ablation(config: Config) -> None:
     test_df = pl.read_parquet(test_path)
 
     logger.info(
-        "Loaded splits — train: %d, val: %d, test: %d",
+        "Loaded splits - train: %d, val: %d, test: %d",
         len(train_df),
         len(val_df),
         len(test_df),
@@ -286,9 +377,7 @@ def run_ablation(config: Config) -> None:
     logger.info("ABLATION STUDY: 3 Variants")
     logger.info("=" * 60)
 
-    # ==================================================================
-    # Shared: Train GRU once (used by variants B and C)
-    # ==================================================================
+    # Shared: train GRU once (used by variants B + C)
     logger.info("=== Training GRU (shared by variants B + C) ===")
     gru_model, gru_classifier, train_hidden, val_hidden, _gru_history = train_gru(
         config, train_df, val_df
@@ -307,7 +396,7 @@ def run_ablation(config: Config) -> None:
     y_val_aligned = val_aligned["label"].to_numpy().astype(np.int32)
     y_test_aligned = test_aligned["label"].to_numpy().astype(np.int32)
 
-    # GRU softmax probabilities via trained classifier head (shared by variant B)
+    # GRU softmax probabilities via trained classifier head (variant B)
     gru_model.eval()
     gru_classifier.eval()
     with torch.no_grad():
@@ -320,49 +409,48 @@ def run_ablation(config: Config) -> None:
     static_cols = [c for c in train_aligned.columns if c not in _EXCLUDE_COLS]
     hidden_size = config.gru.hidden_size
 
-    # ==================================================================
-    # Variant A: LightGBM-only (no GRU)
-    # ==================================================================
+    # Variant A: LightGBM-only
     logger.info("=== VARIANT A: LightGBM-only (static features) ===")
     logger.info("Static features (%d): %s", len(static_cols), static_cols)
 
-    # Align to same samples as variants B and C for fair comparison
     X_train_a = train_aligned.select(static_cols).to_numpy()
     X_val_a = val_aligned.select(static_cols).to_numpy()
     X_test_a = test_aligned.select(static_cols).to_numpy()
-    y_train_a = y_train_aligned
-    y_val_a = y_val_aligned
-    y_test_a = y_test_aligned
 
-    cw_a = _compute_class_weights(y_train_a)
+    cw_a = _compute_class_weights(y_train_aligned)
     model_a = _train_lgbm(
-        X_train_a, y_train_a, X_val_a, y_val_a, cw_a, config, static_cols
+        X_train_a,
+        y_train_aligned,
+        X_val_a,
+        y_val_aligned,
+        cw_a,
+        config,
+        static_cols,
     )
     proba_a = model_a.predict_proba(_wrap_np(X_test_a, static_cols))
     preds_a = model_a.classes_[np.argmax(proba_a, axis=1)]
-    logger.info("LightGBM-only accuracy: %.4f", (preds_a == y_test_a).mean())
+    logger.info("LightGBM-only accuracy: %.4f", (preds_a == y_test_aligned).mean())
 
     preds_path_a = session_dir / "predictions" / "ablation_lgbm_only.parquet"
     _save_preds(
         test_aligned["timestamp"],
-        y_test_a,
+        y_test_aligned,
         preds_a,
         proba_a,
         preds_path_a,
-        class_order=model_a.classes_.tolist(),
+        class_order=[int(x) for x in model_a.classes_.tolist()],
     )
     preds_df_a = pl.read_parquet(preds_path_a)
     metrics_a = _run_backtest_for(test_aligned, preds_df_a, config, "LightGBM-only")
     result_a = {"metrics": metrics_a, "feature_count": len(static_cols)}
 
-    # ==================================================================
-    # Variant B: GRU-only (direct softmax, no LightGBM)
-    # ==================================================================
+    # Variant B: GRU-only
     logger.info("=== VARIANT B: GRU-only (direct predictions) ===")
     gru_preds = np.argmax(gru_softmax, axis=1)
-    # GRU classifier outputs indices 0,1,2 → labels -1,0,1 (hardcoded since PyTorch classifier has no classes_ attribute)
-    trading_signals = gru_preds - 1
-    logger.info("GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean())
+    trading_signals = gru_preds - 1  # 0,1,2 -> -1,0,1
+    logger.info(
+        "GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean()
+    )
 
     preds_path_b = session_dir / "predictions" / "ablation_gru_only.parquet"
     _save_preds(
@@ -376,9 +464,7 @@ def run_ablation(config: Config) -> None:
     metrics_b = _run_backtest_for(test_aligned, preds_df_b, config, "GRU-only")
     result_b = {"metrics": metrics_b, "feature_count": hidden_size}
 
-    # ==================================================================
-    # Variant C: Combined (GRU hidden + static → LightGBM)
-    # ==================================================================
+    # Variant C: Combined
     logger.info("=== VARIANT C: Combined (GRU + LightGBM) ===")
     gru_feat_names = [f"gru_h{i}" for i in range(hidden_size)]
     all_feature_cols = gru_feat_names + static_cols
@@ -421,15 +507,12 @@ def run_ablation(config: Config) -> None:
         preds_c,
         proba_c,
         preds_path_c,
-        class_order=model_c.classes_.tolist(),
+        class_order=[int(x) for x in model_c.classes_.tolist()],
     )
     preds_df_c = pl.read_parquet(preds_path_c)
     metrics_c = _run_backtest_for(test_aligned, preds_df_c, config, "Combined")
     result_c = {"metrics": metrics_c, "feature_count": len(all_feature_cols)}
 
-    # ==================================================================
-    # Compare and save
-    # ==================================================================
     comparison = {
         "lgbm_only": result_a,
         "gru_only": result_b,
@@ -440,10 +523,9 @@ def run_ablation(config: Config) -> None:
 
     best_variant = _determine_best(comparison)
     comparison["comparison_note"] = (
-        f"Best variant: {best_variant}. "
-        f"Combined achieves hybrid temporal+static feature learning. "
-        f"LightGBM-only lacks temporal context. "
-        f"GRU-only lacks rich static features."
+        f"Best variant by annualized Sharpe: {best_variant}. "
+        "Sharpe is annualized from per-trade ReturnPct using the observed "
+        "trade frequency (trades/year) on the test window."
     )
 
     out_path = session_dir / "reports" / "ablation_results.json"

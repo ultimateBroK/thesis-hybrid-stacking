@@ -3,9 +3,14 @@
 import json
 import logging
 from pathlib import Path
+import pandas as pd
 
 from thesis.config import Config
 from thesis.report.builder import _build_markdown
+
+from thesis.plots import _generate_data_charts
+from thesis.plots import _generate_model_charts
+from thesis.plots import _generate_backtest_charts
 
 logger = logging.getLogger("thesis.report")
 
@@ -37,18 +42,36 @@ def generate_report(config: Config) -> None:
         metrics = bt.get("metrics", {})
         trades = bt.get("trades", [])
 
+    _generate_data_charts(config)
+    _generate_model_charts(config)
+    _generate_backtest_charts(config)
+
     # --- 1. Equity Curve ---
     if trades:
         pnls = [t["pnl"] for t in trades]
+
+        # 1. Extract timestamps: first point is first entry, subsequent points are exit times
+        times = [pd.to_datetime(trades[0]["entry_time"])]
+        for t in trades:
+            times.append(pd.to_datetime(t["exit_time"]))
+
+        # 2. Compute equity corresponding to each time point
         equity = [config.backtest.initial_capital]
         for p in pnls:
             equity.append(equity[-1] + p)
 
+        # 3. Plot the equity curve
         fig, ax = plt.subplots(figsize=(12, 5))
-        ax.plot(equity, linewidth=1)
+
+        # Pass both times (X-axis) and equity (Y-axis) to plot
+        ax.plot(times, equity, linewidth=1)
         ax.set_title("Equity Curve")
         ax.set_ylabel("Equity (USD)")
-        ax.set_xlabel("Trade #")
+        ax.set_xlabel("Date")
+
+        # Auto-rotate date labels to prevent overlap
+        fig.autofmt_xdate()
+
         ax.grid(True, alpha=0.3)
         fig.savefig(out_dir / "equity_curve.png", dpi=150, bbox_inches="tight")
         plt.close(fig)

@@ -24,7 +24,7 @@ def test_labels_in_valid_set() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    result = _compute_labels(
+    labels, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -34,7 +34,6 @@ def test_labels_in_valid_set() -> None:
         min_atr=0.0001,
     )
 
-    labels = result["labels"]
     unique_labels = np.unique(labels)
 
     # All labels should be in {-1, 0, 1}; -2 may appear for right-censored rows
@@ -55,7 +54,7 @@ def test_tp_sl_price_relationship() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    result = _compute_labels(
+    _, tp_prices, sl_prices, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -64,9 +63,6 @@ def test_tp_sl_price_relationship() -> None:
         horizon=10,
         min_atr=0.0001,
     )
-
-    tp_prices = result["tp_prices"]
-    sl_prices = result["sl_prices"]
 
     # For every bar, TP should be above close and SL below close
     for i in range(n):
@@ -89,7 +85,7 @@ def test_touched_bars_for_hold() -> None:
     low = close - 0.1
     atr = np.ones(n) * 10  # Barriers will be at +/- 15
 
-    result = _compute_labels(
+    labels, _, _, touched_bars = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -98,9 +94,6 @@ def test_touched_bars_for_hold() -> None:
         horizon=10,
         min_atr=0.0001,
     )
-
-    labels = result["labels"]
-    touched_bars = result["touched_bars"]
 
     # For Hold labels (0), touched_bar should be -1
     for i in range(n):
@@ -121,7 +114,7 @@ def test_touched_bars_for_non_hold() -> None:
     low = close - 1
     atr = np.ones(n) * 10
 
-    result = _compute_labels(
+    labels, _, _, touched_bars = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -130,9 +123,6 @@ def test_touched_bars_for_non_hold() -> None:
         horizon=10,
         min_atr=0.0001,
     )
-
-    labels = result["labels"]
-    touched_bars = result["touched_bars"]
 
     # For non-Hold labels, touched_bar should be >= 0
     for i in range(n - 10):  # Last 'horizon' bars may not have enough future
@@ -153,7 +143,7 @@ def test_zero_atr_handled() -> None:
     low = close - 5
     atr = np.zeros(n)  # Zero ATR
 
-    result = _compute_labels(
+    labels, tp_prices, sl_prices, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -164,13 +154,10 @@ def test_zero_atr_handled() -> None:
     )
 
     # Should still produce valid labels; -2 may appear for right-censored rows
-    labels = result["labels"]
     assert len(labels) == n
     assert np.all(np.isin(labels, [-2, -1, 0, 1]))
 
     # TP and SL should still be valid
-    tp_prices = result["tp_prices"]
-    sl_prices = result["sl_prices"]
     for i in range(n):
         assert tp_prices[i] > close[i]
         assert sl_prices[i] < close[i]
@@ -187,7 +174,7 @@ def test_extreme_volatility_all_long() -> None:
     low = close - 1
     atr = np.ones(n) * 10
 
-    result = _compute_labels(
+    labels, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -197,7 +184,6 @@ def test_extreme_volatility_all_long() -> None:
         min_atr=0.0001,
     )
 
-    labels = result["labels"]
     # Most labels should be Long (1)
     long_count = np.sum(labels == 1)
     assert long_count > 0, "Should have some Long labels"
@@ -214,7 +200,7 @@ def test_extreme_volatility_all_short() -> None:
     low = close - 100
     atr = np.ones(n) * 10
 
-    result = _compute_labels(
+    labels, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -224,7 +210,6 @@ def test_extreme_volatility_all_short() -> None:
         min_atr=0.0001,
     )
 
-    labels = result["labels"]
     # Most labels should be Short (-1)
     short_count = np.sum(labels == -1)
     assert short_count > 0, "Should have some Short labels"
@@ -241,7 +226,7 @@ def test_horizon_boundary() -> None:
     atr = np.ones(n) * 10
     horizon = 5
 
-    result = _compute_labels(
+    labels, _, _, touched_bars = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -250,9 +235,6 @@ def test_horizon_boundary() -> None:
         horizon=horizon,
         min_atr=0.0001,
     )
-
-    touched_bars = result["touched_bars"]
-    labels = result["labels"]
 
     # For non-Hold labels, touched_bar should be <= horizon
     # (range is i+1 to i+1+horizon, so max touched_bar = horizon)
@@ -273,7 +255,7 @@ def test_atr_multiplier_effect() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    result_small = _compute_labels(
+    labels_small, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -283,7 +265,7 @@ def test_atr_multiplier_effect() -> None:
         min_atr=0.0001,
     )
 
-    result_large = _compute_labels(
+    labels_large, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -294,8 +276,8 @@ def test_atr_multiplier_effect() -> None:
     )
 
     # Larger multiplier should result in more Hold labels (wider barriers)
-    holds_small = np.sum(result_small["labels"] == 0)
-    holds_large = np.sum(result_large["labels"] == 0)
+    holds_small = np.sum(labels_small == 0)
+    holds_large = np.sum(labels_large == 0)
 
     assert holds_large >= holds_small, (
         "Larger multiplier should produce at least as many Hold labels"
@@ -313,7 +295,7 @@ def test_no_lookahead_bias() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    result = _compute_labels(
+    labels, _, _, touched_bars = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -322,9 +304,6 @@ def test_no_lookahead_bias() -> None:
         horizon=10,
         min_atr=0.0001,
     )
-
-    touched_bars = result["touched_bars"]
-    labels = result["labels"]
 
     # Check that touched_bar is always in the future relative to current index
     for i in range(n):

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from numba import njit
 
 from thesis.config import Config
 
@@ -76,7 +77,7 @@ def generate_labels(config: Config) -> None:
     )
 
     # Compute labels
-    labels_data = _compute_labels(
+    labels_arr, tp_prices_arr, sl_prices_arr, touched_bars_arr = _compute_labels(
         close=df["close"].to_numpy(),
         high=df["high"].to_numpy(),
         low=df["low"].to_numpy(),
@@ -90,10 +91,10 @@ def generate_labels(config: Config) -> None:
     labels_df = pl.DataFrame(
         {
             "timestamp": pl.Series(df["timestamp"].to_list(), dtype=ts_dtype),
-            "label": labels_data["labels"],
-            "tp_price": labels_data["tp_prices"],
-            "sl_price": labels_data["sl_prices"],
-            "touched_bar": labels_data["touched_bars"],
+            "label": labels_arr,
+            "tp_price": tp_prices_arr,
+            "sl_price": sl_prices_arr,
+            "touched_bar": touched_bars_arr,
         }
     )
 
@@ -126,7 +127,7 @@ def generate_labels(config: Config) -> None:
 # Core labeling logic
 # ---------------------------------------------------------------------------
 
-
+@njit
 def _compute_labels(
     close: np.ndarray,
     high: np.ndarray,
@@ -135,7 +136,7 @@ def _compute_labels(
     mult: float,
     horizon: int,
     min_atr: float,
-) -> dict:
+) -> tuple:
     """
     Compute triple-barrier outcomes for each bar by setting TP/SL levels and scanning forward up to the given horizon.
 
@@ -185,12 +186,7 @@ def _compute_labels(
                 break
         labels[i] = label
 
-    return {
-        "labels": labels,
-        "tp_prices": tp_prices,
-        "sl_prices": sl_prices,
-        "touched_bars": touched_bars,
-    }
+    return labels, tp_prices, sl_prices, touched_bars
 
 
 # ---------------------------------------------------------------------------

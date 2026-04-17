@@ -149,6 +149,7 @@ def build_feature_importance_chart(
         Bar: A pyecharts Bar chart with a reversed (horizontal) axis showing the top features.
     """
     items = sorted(fi.items(), key=lambda x: x[1], reverse=True)[:top_n]
+    items = items[::-1]
     names = [n for n, _ in items]
 
     # Split into two series: static features and GRU features
