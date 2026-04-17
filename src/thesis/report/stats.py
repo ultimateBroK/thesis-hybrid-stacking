@@ -155,6 +155,19 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         # Majority baseline: accuracy if we always predict the most common class
         majority_baseline = float(max((true == lv).sum() for lv in [-1, 0, 1]) / total)
 
+        # Directional accuracy: evaluate only on non-Hold predictions
+        # Count as correct if predicted direction matches true direction
+        non_hold_mask = (true != 0) & (pred != 0)  # Both true and pred are non-Hold
+        if non_hold_mask.sum() > 0:
+            # Correct if both have same sign (both Long or both Short)
+            directional_correct = true[non_hold_mask] == pred[non_hold_mask]
+            directional_accuracy = float(directional_correct.mean())
+            # Baseline: random guess among non-hold classes (50%)
+            directional_baseline = 0.5
+        else:
+            directional_accuracy = 0.0
+            directional_baseline = 0.5
+
         # Per-class metrics: precision, recall, F1 for each class
         per_class = {}
         for lv, ln in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
@@ -188,6 +201,8 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         result: dict = {
             "total": total,
             "accuracy": accuracy,
+            "directional_accuracy": directional_accuracy,
+            "directional_baseline": directional_baseline,
             "majority_baseline": majority_baseline,
             "per_class": per_class,
             "confusion_matrix": cm,

@@ -77,17 +77,17 @@ early_stopping_rounds = 50
 # =============================================================================
 [backtest]
 initial_capital = 10000.0
-leverage = 20                       # 20:1 — affordable for 1 lot with $10k
+leverage = 30                       # 30:1 — affordable for 1 lot with $10k
 spread_ticks = 35                   # 35 ticks = $0.35 (realistic XAUUSD ECN spread)
 slippage_ticks = 5                  # 5 ticks = $0.05 per side (absorbed into spread)
 commission_per_lot = 10.0           # Round-trip commission per lot
 atr_stop_multiplier = 1.5          # ATR multiplier for stop-loss distance
 lots_per_trade = 0.15                # Fixed 0.15 lot per trade (15 oz XAUUSD)
-confidence_threshold = 0.70         # Min predicted probability to trade (0 = disabled)
+confidence_threshold = 0.6          # Min predicted probability to trade (0 = disabled)
 # Auto lot sizing (risk-based position sizing)
 auto_lot_sizing = true             # Enable dynamic lot sizing based on equity + risk %
 risk_per_trade_pct = 1.0            # Risk % of equity per trade
-min_lot_size = 0.01                  # Minimum lot size floor
+min_lot_size = 0.1                  # Minimum lot size floor
 max_lot_size = 5.0                 # Maximum lot size ceiling
 
 # =============================================================================

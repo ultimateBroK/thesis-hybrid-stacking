@@ -45,7 +45,7 @@ A technique to handle imbalanced data. If you have 60% "Flat" labels and 20% "Lo
 A fee you pay to your broker for each trade. In this project, the commission is $10 per standard lot round-trip (open + close).
 
 **Confidence Threshold**
-The minimum predicted probability required before the model takes a trade. In this project, the threshold is 0.70 (70%) — the model only trades when it is at least 70% confident. Set to 0 to disable and trade on all signals.
+The minimum predicted probability required before the model takes a trade. In this project, the threshold is 0.60 (60%) — the model only trades when it is at least 60% confident. Set to 0 to disable and trade on all signals.
 
 **Confusion Matrix**
 A table that shows how many predictions were correct and how many were wrong. The rows are the actual values, the columns are the predicted values. A perfect model would only have numbers on the diagonal.
@@ -113,10 +113,10 @@ A type of neural network designed for sequential data (like time series). It has
 ## H
 
 **Hidden States**
-The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 64 numbers (hidden states) that summarize the temporal pattern of the last 24 hours.
+The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 32 numbers (hidden states) that summarize the temporal pattern of the last 48 hours.
 
 **Horizon**
-The maximum time window for a trade. In triple barrier labeling, if the price does not hit TP or SL within the horizon (e.g., 10 bars), the trade is closed and labeled as "Flat".
+The maximum time window for a trade. In triple barrier labeling, if the price does not hit TP or SL within the horizon (e.g., 24 bars), the trade is closed and labeled as "Flat".
 
 **Hyperparameter**
 A setting you choose before training (like learning rate or number of trees). The model cannot learn these from data — you have to set them manually or use auto-tuning (Optuna).

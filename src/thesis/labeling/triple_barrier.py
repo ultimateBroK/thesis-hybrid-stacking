@@ -127,6 +127,7 @@ def generate_labels(config: Config) -> None:
 # Core labeling logic
 # ---------------------------------------------------------------------------
 
+
 @njit
 def _compute_labels(
     close: np.ndarray,

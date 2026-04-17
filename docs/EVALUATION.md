@@ -216,7 +216,7 @@ The ablation study compares three variants:
 
 ```mermaid
 flowchart TD
-    GRU["GRU<br/>trained once"] --> A["GRU-only<br/>64 features"]
+    GRU["GRU<br/>trained once"] --> A["GRU-only<br/>32 features"]
     GRU --> B["Combined<br/>64 + 11 = 75"]
     STATIC["Static features"] --> C["LightGBM-only<br/>11 features"]
     STATIC --> B
@@ -231,8 +231,8 @@ flowchart TD
 | Variant | What It Uses | What to Expect |
 |---------|-------------|----------------|
 | **LightGBM only** | 11 static features | Decent baseline, misses time patterns |
-| **GRU only** | 64 hidden states | Captures patterns but loses indicator info |
-| **Combined** | 64 GRU + 11 static | Should be the best of both worlds |
+| **GRU only** | 32 hidden states | Captures patterns but loses indicator info |
+| **Combined** | 32 GRU + 11 static | Should be the best of both worlds |
 
 ### How to Read the Comparison
 

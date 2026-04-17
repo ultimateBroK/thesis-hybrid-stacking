@@ -64,8 +64,6 @@ def build_confusion_matrix_chart(
                 max_=1,
                 is_calculable=True,
                 orient="vertical",
-                pos_right="0%",
-                pos_top="center",
                 range_color=["#FFFFFF", "#93C5FD", "#2563EB"],
             ),
             tooltip_opts=opts.TooltipOpts(trigger="item"),
@@ -76,15 +74,20 @@ def build_confusion_matrix_chart(
 
 def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
     """
-    Create a bar chart showing the distribution of prediction confidence for Long and Short predictions.
+    Create a grouped bar chart showing the distribution of prediction confidence for Long and Short predictions.
 
-    Only rows where `pred_label` equals the corresponding class are used: `pred_proba_class_1` for Long (`pred_label == 1`) and `pred_proba_class_minus1` for Short (`pred_label == -1`). Confidence values are binned into 50 equal-width intervals between 0 and 1. If the `pred_proba_class_1` column is absent, an empty `Bar` is returned.
+    Uses grouped bars to display both distributions on the same scale, normalized to relative frequency
+    so they can be compared regardless of sample size. Only rows where `pred_label` equals the
+    corresponding class are used: `pred_proba_class_1` for Long (`pred_label == 1`) and
+    `pred_proba_class_minus1` for Short (`pred_label == -1`).
 
     Parameters:
-        preds_df (pl.DataFrame): Predictions DataFrame. Must contain `pred_label` and `pred_proba_class_1`; `pred_proba_class_minus1` is also required for Short counts.
+        preds_df (pl.DataFrame): Predictions DataFrame. Must contain `pred_label` and `pred_proba_class_1`;
+            `pred_proba_class_minus1` is also required for Short counts.
 
     Returns:
-        Bar: A configured pyecharts `Bar` chart with two series ("Long confidence" and "Short confidence") showing counts per confidence bin, or an empty `Bar` if `pred_proba_class_1` is missing.
+        Bar: A configured pyecharts Bar chart with grouped bars ("Long" and "Short") showing
+            normalized confidence distributions, or an empty Bar if `pred_proba_class_1` is missing.
     """
     y_pred = preds_df["pred_label"].to_numpy()
 
@@ -100,33 +103,42 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
     long_vals = long_conf[y_pred == 1]
     short_vals = short_conf[y_pred == -1]
 
-    # Histogram bins
-    bins = np.linspace(0, 1, 51)
+    # Histogram bins - use 20 bins for cleaner visualization
+    bins = np.linspace(0, 1, 21)
     long_counts, _ = np.histogram(long_vals, bins=bins)
     short_counts, _ = np.histogram(short_vals, bins=bins)
     bin_labels = [f"{bins[i]:.2f}" for i in range(len(bins) - 1)]
+
+    # Normalize to relative frequency (percentage) for comparison
+    long_total = long_counts.sum()
+    short_total = short_counts.sum()
+    long_pct = (long_counts / long_total * 100) if long_total > 0 else long_counts
+    short_pct = (short_counts / short_total * 100) if short_total > 0 else short_counts
 
     chart = (
         Bar(init_opts=opts.InitOpts(height="500px"))
         .add_xaxis(bin_labels)
         .add_yaxis(
-            series_name="Long confidence",
-            y_axis=long_counts.tolist(),
+            series_name="Long",
+            y_axis=[round(v, 2) for v in long_pct.tolist()],
             itemstyle_opts=opts.ItemStyleOpts(color=COLORS["long"]),
             label_opts=opts.LabelOpts(is_show=False),
         )
         .add_yaxis(
-            series_name="Short confidence",
-            y_axis=short_counts.tolist(),
+            series_name="Short",
+            y_axis=[round(v, 2) for v in short_pct.tolist()],
             itemstyle_opts=opts.ItemStyleOpts(color=COLORS["short"]),
             label_opts=opts.LabelOpts(is_show=False),
         )
         .set_global_opts(
             title_opts=opts.TitleOpts(title="Prediction Confidence Distribution"),
-            xaxis_opts=opts.AxisOpts(name="Confidence"),
-            yaxis_opts=opts.AxisOpts(name="Count"),
+            xaxis_opts=opts.AxisOpts(
+                name="Confidence", axislabel_opts=opts.LabelOpts(rotate=30)
+            ),
+            yaxis_opts=opts.AxisOpts(name="Relative Frequency (%)"),
             tooltip_opts=opts.TooltipOpts(trigger="axis"),
             legend_opts=opts.LegendOpts(),
+            datazoom_opts=[opts.DataZoomOpts(type_="inside")],
         )
     )
     return chart

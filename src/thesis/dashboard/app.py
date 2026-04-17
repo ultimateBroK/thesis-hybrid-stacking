@@ -175,7 +175,7 @@ def _session_selector_fragment() -> str | None:
     st.session_state.selected_session = selected
 
     # Refresh button
-    if st.button("🔄 Refresh", use_container_width=True, key="_refresh_btn"):
+    if st.button("🔄 Refresh", width="stretch", key="_refresh_btn"):
         st.rerun()
 
     st.caption("Run `pixi run workflow` to generate new sessions")
@@ -192,6 +192,279 @@ def _render_chart(chart: object, height: str = "500px") -> None:
         st_pyecharts(chart, height=height)
     except Exception as e:
         st.warning(f"Chart render failed: {e}")
+
+
+# -----------------------------------------------------------------------------
+# Metric Zone Definitions (based on industry benchmarks)
+# -----------------------------------------------------------------------------
+
+
+def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
+    """
+    Return (color_name, zone_label, recommendation) for a given metric.
+
+    Zone colors:
+        - excellent (green): Target zone, most strategies should aim here
+        - good (light green): Acceptable zone, solid performance
+        - moderate (yellow): Marginal, needs attention
+        - poor (orange): Below average, review needed
+        - dangerous (red): Critical issues, high risk
+
+    Parameters:
+        metric_name: The metric key (e.g., 'sharpe_ratio', 'max_drawdown_pct')
+        value: The metric value
+
+    Returns:
+        Tuple of (color, zone_label, recommendation_text)
+    """
+    import math
+
+    # Handle NaN/None
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ("moderate", "N/A", "No data available")
+
+    # Sharpe Ratio (higher is better)
+    # Source: BoringEdge, LuxAlgo, Quantified Strategies
+    if metric_name == "sharpe_ratio":
+        if value < 0:
+            return ("dangerous", "Negative", "Below risk-free rate — review strategy")
+        if value < 0.5:
+            return ("dangerous", "Poor", "Below 0.5 — high risk-adjusted cost")
+        if value < 1.0:
+            return (
+                "moderate",
+                "Acceptable",
+                "0.5-1.0 — acceptable for conservative strategies",
+            )
+        if value < 1.5:
+            return ("good", "Good", "1.0-1.5 — solid risk-adjusted returns")
+        if value < 2.0:
+            return ("excellent", "Excellent", "1.5-2.0 — hedge fund target range")
+        return ("excellent", "Exceptional", ">2.0 — verify no overfitting")
+
+    # Sortino Ratio (same scale as Sharpe)
+    if metric_name == "sortino_ratio":
+        if value < 0:
+            return ("dangerous", "Negative", "Negative — below risk-free rate")
+        if value < 0.5:
+            return ("dangerous", "Poor", "Below 0.5 — excessive downside risk")
+        if value < 1.0:
+            return ("moderate", "Acceptable", "0.5-1.0 — acceptable for conservative")
+        if value < 1.5:
+            return ("good", "Good", "1.0-1.5 — solid downside-adjusted returns")
+        if value < 2.0:
+            return ("excellent", "Excellent", "1.5-2.0 — very good risk-adjusted")
+        return ("excellent", "Exceptional", ">2.0 — verify no overfitting")
+
+    # Max Drawdown (less negative is better)
+    # Source: BoringEdge, LuxAlgo (drawdown is stored as negative)
+    if metric_name == "max_drawdown_pct":
+        if value > -10:
+            return ("excellent", "Excellent", "<10% — exceptional capital preservation")
+        if value > -20:
+            return ("good", "Good", "10-20% — conservative drawdown")
+        if value > -30:
+            return ("moderate", "Moderate", "20-30% — typical for trend strategies")
+        if value > -40:
+            return ("poor", "Significant", "30-40% — high, assess suitability")
+        if value > -60:
+            return ("dangerous", "High Risk", "40-60% — aggressive drawdown")
+        return (
+            "dangerous",
+            "Critical",
+            ">60% — similar to buy & hold, question strategy viability",
+        )
+
+    # Profit Factor (higher is better)
+    # Source: LuxAlgo, Quantified Strategies
+    if metric_name == "profit_factor":
+        if value < 1.0:
+            return ("dangerous", "Losing", "<1.0 — strategy loses money")
+        if value < 1.25:
+            return ("poor", "Marginal", "1.0-1.25 — barely covers costs")
+        if value < 1.5:
+            return ("moderate", "Acceptable", "1.25-1.5 — covers costs with margin")
+        if value < 2.0:
+            return ("good", "Good", "1.5-2.0 — strong profitability")
+        if value < 3.0:
+            return ("excellent", "Excellent", "2.0-3.0 — very efficient")
+        return ("excellent", "Exceptional", ">3.0 — verify no overfitting")
+
+    # Win Rate (higher is better, but context matters)
+    # Source: BoringEdge, LuxAlgo
+    if metric_name == "win_rate_pct":
+        if value < 25:
+            return ("poor", "Low", "<25% — very low, requires large R:R")
+        if value < 35:
+            return ("moderate", "Low", "25-35% — typical for trend-following")
+        if value < 45:
+            return ("good", "Good", "35-45% — solid for trend strategies")
+        if value < 55:
+            return ("excellent", "Excellent", "45-55% — strong win rate")
+        return (
+            "excellent",
+            "Very High",
+            ">55% — verify no overfitting or data leakage",
+        )
+
+    # CAGR / Annual Return (higher is better)
+    # Source: BoringEdge
+    if metric_name in ("cagr_pct", "return_ann_pct", "return_pct"):
+        if value < 5:
+            return ("poor", "Underperforming", "<5% — underperforms inflation")
+        if value < 10:
+            return ("moderate", "Low", "5-10% — barely above index funds")
+        if value < 20:
+            return ("good", "Acceptable", "10-20% — solid hedge fund territory")
+        if value < 40:
+            return ("excellent", "Good", "20-40% — exceptional returns")
+        if value < 60:
+            return ("excellent", "Very High", "40-60% — verify not overfitted")
+        return ("dangerous", "Suspicious", ">60% — likely overfitting or short period")
+
+    # Calmar Ratio (CAGR / Max DD — higher is better)
+    # Source: BoringEdge, LuxAlgo
+    if metric_name == "calmar_ratio":
+        if value < 0:
+            return ("dangerous", "Negative", "Negative — losses exceed returns")
+        if value < 0.5:
+            return ("poor", "Weak", "<0.5 — risk outweighs reward")
+        if value < 1.0:
+            return ("moderate", "Acceptable", "0.5-1.0 — minimum acceptable threshold")
+        if value < 1.5:
+            return ("good", "Good", "1.0-1.5 — healthy risk/reward balance")
+        if value < 2.0:
+            return (
+                "excellent",
+                "Excellent",
+                "1.5-2.0 — very strong risk-adjusted returns",
+            )
+        if value < 3.0:
+            return ("excellent", "Outstanding", "2.0-3.0 — exceptional")
+        return ("excellent", "Exceptional", ">3.0 — verify no overfitting")
+
+    # SQN (System Quality Number — higher is better)
+    # Source: Van Tharp
+    if metric_name == "sqn":
+        if value < 1.0:
+            return ("poor", "Poor", "<1.0 — system has no edge")
+        if value < 2.0:
+            return ("moderate", "Average", "1.0-2.0 — average system")
+        if value < 2.5:
+            return ("good", "Good", "2.0-2.5 — good system")
+        if value < 3.0:
+            return ("excellent", "Excellent", "2.5-3.0 — excellent system")
+        return ("dangerous", "Superb?", ">3.0 — verify no overfitting")
+
+    # Risk/Reward Ratio (higher is better)
+    if metric_name == "risk_reward_ratio":
+        if value < 0.5:
+            return ("poor", "Low", "<0.5 — losses exceed wins")
+        if value < 1.0:
+            return ("moderate", "Below Avg", "0.5-1.0 — marginal")
+        if value < 1.5:
+            return ("good", "Good", "1.0-1.5 — acceptable")
+        if value < 2.0:
+            return ("excellent", "Excellent", "1.5-2.0 — strong")
+        return ("excellent", "Exceptional", ">2.0 — very efficient")
+
+    # Exposure Time (lower can be better for capital efficiency)
+    if metric_name == "exposure_time_pct":
+        if value < 20:
+            return ("excellent", "Efficient", "<20% — high capital efficiency")
+        if value < 40:
+            return ("good", "Good", "20-40% — good capital efficiency")
+        if value < 60:
+            return ("moderate", "Moderate", "40-60% — typical exposure")
+        return ("poor", "High", ">60% — significant market exposure")
+
+    # Kelly Criterion (optimal bet size — lower is safer)
+    # 0.2-0.3 is typical for trading
+    if metric_name == "kelly_criterion":
+        if value <= 0:
+            return ("dangerous", "Invalid", "0 or negative — no edge")
+        if value < 0.2:
+            return ("good", "Conservative", "<20% — conservative position sizing")
+        if value < 0.3:
+            return ("excellent", "Optimal", "20-30% — textbook optimal")
+        if value < 0.5:
+            return ("moderate", "Aggressive", "30-50% — aggressive, high variance")
+        return ("dangerous", "Dangerous", ">50% — extreme risk, unsustainable")
+
+    # Default: no zone
+    return ("moderate", "N/A", "No benchmark available")
+
+
+_ZONE_COLORS = {
+    "excellent": "#22c55e",  # green
+    "good": "#84cc16",  # lime
+    "moderate": "#eab308",  # yellow
+    "poor": "#f97316",  # orange
+    "dangerous": "#ef4444",  # red
+}
+
+
+def _render_zoned_metric(
+    col: object,
+    label: str,
+    value: float,
+    metric_key: str,
+    format_str: str = "{:.2f}",
+    unit: str = "",
+) -> None:
+    """
+    Render a metric with a color-coded zone indicator and recommendation.
+
+    Parameters:
+        col: Streamlit column object
+        label: Display label for the metric
+        value: Numeric value
+        metric_key: Key for zone lookup (e.g., 'sharpe_ratio')
+        format_str: Format string for display (e.g., '{:.2f}')
+        unit: Optional unit suffix (e.g., '%', ':1')
+    """
+    color, zone_label, recommendation = _get_metric_zone(metric_key, value)
+
+    # Render zone badge
+    hex_color = _ZONE_COLORS.get(color, "#6b7280")
+
+    col.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, {hex_color}22 0%, {hex_color}11 100%);
+            border-left: 3px solid {hex_color};
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 4px 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+        ">
+            <div>
+                <div style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #e2e8f0; line-height: 1.2;">
+                    {format_str.format(value)}{unit}
+                </div>
+            </div>
+            <div style="margin-top: 8px;">
+                <span style="
+                    background: {hex_color}33;
+                    color: {hex_color};
+                    padding: 2px 10px;
+                    border-radius: 12px;
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.03em;
+                ">{zone_label}</span>
+                <div style="font-size: 0.65rem; color: #6b7280; margin-top: 4px; line-height: 1.3;">{recommendation}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +616,7 @@ def _render_data_section(data: dict, config: object) -> None:
         st.info("No features data available.")
 
 
-def _render_model_section(data: dict) -> None:
+def _render_model_section(data: dict, session_dir: str = "") -> None:
     """
     Render the "Model Performance" section with prediction metrics and feature-importance charts.
 
@@ -367,16 +640,79 @@ def _render_model_section(data: dict) -> None:
                 f"Predictions missing columns: {required_cols - set(preds.columns)}"
             )
             return
-        # Metrics cards
+        # Compute all metrics
         y_true = preds["true_label"].to_numpy()
         y_pred = preds["pred_label"].to_numpy()
-        accuracy = float((y_true == y_pred).mean())
+        total = len(y_true)
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Accuracy", f"{accuracy:.1%}")
-        col2.metric("Test Samples", f"{len(y_true):,}")
-        col3.metric("Classes", "3 (Short/Hold/Long)")
+        # Exact-match accuracy
+        exact_acc = float((y_true == y_pred).mean())
 
+        # Directional accuracy (only non-Hold predictions)
+        non_hold_mask = (y_true != 0) & (y_pred != 0)
+        if non_hold_mask.sum() > 0:
+            dir_correct = y_true[non_hold_mask] == y_pred[non_hold_mask]
+            dir_acc = float(dir_correct.mean())
+            dir_baseline = 0.5  # Random guess for non-Hold
+        else:
+            dir_acc = 0.0
+            dir_baseline = 0.5
+
+        # Per-class metrics
+        per_class = {}
+        for cls, name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
+            true_mask = y_true == cls
+            pred_mask = y_pred == cls
+            recall = (
+                float((y_pred[true_mask] == cls).mean()) if true_mask.sum() > 0 else 0.0
+            )
+            precision = (
+                float((y_true[pred_mask] == cls).mean()) if pred_mask.sum() > 0 else 0.0
+            )
+            f1 = (
+                2 * precision * recall / (precision + recall)
+                if (precision + recall) > 0
+                else 0.0
+            )
+            per_class[name] = {
+                "true_count": int(true_mask.sum()),
+                "pred_count": int(pred_mask.sum()),
+                "recall": recall,
+                "precision": precision,
+                "f1": f1,
+            }
+
+        # === Primary Metrics Row ===
+        st.subheader("Accuracy Metrics")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric(
+            "Directional Accuracy",
+            f"{dir_acc:.1%}",
+            delta=f"+{(dir_acc - dir_baseline) * 100:.1f}pp vs random",
+        )
+        col2.metric("Exact-Match Accuracy", f"{exact_acc:.1%}")
+        col3.metric("Directional Baseline", f"{dir_baseline:.1%}")
+        col4.metric("Test Samples", f"{total:,}")
+
+        # === Per-Class Breakdown ===
+        st.subheader("Per-Class Performance")
+        cls_col1, cls_col2, cls_col3 = st.columns(3)
+        for idx, (name, metrics) in enumerate(per_class.items()):
+            col = [cls_col1, cls_col2, cls_col3][idx]
+            with col:
+                st.markdown(f"**{name}**")
+                st.caption(
+                    f"True: {metrics['true_count']:,} | Predicted: {metrics['pred_count']:,}"
+                )
+                st.progress(metrics["recall"], text=f"Recall: {metrics['recall']:.1%}")
+                st.progress(
+                    metrics["precision"], text=f"Precision: {metrics['precision']:.1%}"
+                )
+                st.progress(metrics["f1"], text=f"F1: {metrics['f1']:.2f}")
+
+        st.divider()
+
+        # === Charts ===
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Confusion Matrix")
@@ -386,15 +722,46 @@ def _render_model_section(data: dict) -> None:
             st.subheader("Confidence Distribution")
             chart = build_confidence_distribution_chart(preds)
             _render_chart(chart, height="500px")
+
+        # === Prediction Distribution ===
+        st.subheader("Prediction Distribution")
+        pred_counts = {
+            "Short": int((y_pred == -1).sum()),
+            "Hold": int((y_pred == 0).sum()),
+            "Long": int((y_pred == 1).sum()),
+        }
+        true_counts = {
+            "Short": int((y_true == -1).sum()),
+            "Hold": int((y_true == 0).sum()),
+            "Long": int((y_true == 1).sum()),
+        }
+        dist_col1, dist_col2 = st.columns(2)
+        with dist_col1:
+            st.markdown("**Actual Distribution**")
+            for name, count in true_counts.items():
+                pct = count / total * 100
+                st.markdown(f"{name}: {count:,} ({pct:.1f}%)")
+        with dist_col2:
+            st.markdown("**Predicted Distribution**")
+            for name, count in pred_counts.items():
+                pct = count / total * 100
+                st.markdown(f"{name}: {count:,} ({pct:.1f}%)")
     else:
         st.info("No predictions data available.")
 
     if fi:
-        st.subheader("Feature Importance")
+        st.subheader("LightGBM Feature Importance")
         chart = build_feature_importance_chart(fi)
         _render_chart(chart, height="600px")
     else:
         st.info("No feature importance data available.")
+
+    # SHAP summary image from reports
+    if session_dir:
+        shap_png = Path(session_dir) / "reports" / "shap_summary.png"
+        if shap_png.exists():
+            st.subheader("SHAP Summary")
+            st.image(str(shap_png), width="stretch")
 
 
 def _render_backtest_section(data: dict) -> None:
@@ -425,27 +792,144 @@ def _render_backtest_section(data: dict) -> None:
     # --- Performance Overview (bordered container) ---
     with st.container(border=True):
         st.subheader("Performance Overview")
+        st.caption(
+            "Zone indicators based on industry benchmarks for XAU/USD CFD trading"
+        )
 
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Total Return", f"{metrics.get('return_pct', 0):.2f}%")
-        col2.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}")
-        col3.metric("Max Drawdown", f"{metrics.get('max_drawdown_pct', 0):.2f}%")
-        col4.metric("Win Rate", f"{metrics.get('win_rate_pct', 0):.2f}%")
-        col5.metric("Profit Factor", f"{metrics.get('profit_factor', 0):.2f}")
+        # Pre-compute win/loss stats for row3 and cards below
+        pnls = [t["pnl"] for t in trades] if trades else []
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p <= 0]
+        rr = abs(sum(wins) / len(wins) if wins else 0) / (
+            abs(sum(losses) / len(losses)) if losses else 1
+        )
+
+        # ── Row 1: Return & Risk ──────────────────────────────────────────
+        row1_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        _render_zoned_metric(
+            row1_cols[0],
+            "Total Return",
+            metrics.get("return_pct", 0),
+            "return_pct",
+            "{:.2f}",
+            "%",
+        )
+        _render_zoned_metric(
+            row1_cols[1],
+            "CAGR",
+            metrics.get("cagr_pct", 0),
+            "cagr_pct",
+            "{:.2f}",
+            "%",
+        )
+        _render_zoned_metric(
+            row1_cols[2],
+            "Max Drawdown",
+            metrics.get("max_drawdown_pct", 0),
+            "max_drawdown_pct",
+            "{:.1f}",
+            "%",
+        )
+        _render_zoned_metric(
+            row1_cols[3],
+            "Win Rate",
+            metrics.get("win_rate_pct", 0),
+            "win_rate_pct",
+            "{:.1f}",
+            "%",
+        )
+        _render_zoned_metric(
+            row1_cols[4],
+            "Profit Factor",
+            metrics.get("profit_factor", 0),
+            "profit_factor",
+            "{:.2f}",
+        )
+
+        # ── Row 2: Risk-Adjusted & System ────────────────────────────────
+        row2_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        _render_zoned_metric(
+            row2_cols[0],
+            "Sharpe Ratio",
+            metrics.get("sharpe_ratio", 0),
+            "sharpe_ratio",
+            "{:.2f}",
+        )
+        _render_zoned_metric(
+            row2_cols[1],
+            "Sortino Ratio",
+            metrics.get("sortino_ratio", 0),
+            "sortino_ratio",
+            "{:.2f}",
+        )
+        _render_zoned_metric(
+            row2_cols[2],
+            "Calmar Ratio",
+            metrics.get("calmar_ratio", 0),
+            "calmar_ratio",
+            "{:.2f}",
+        )
+        _render_zoned_metric(
+            row2_cols[3], "SQN", metrics.get("sqn", 0), "sqn", "{:.2f}"
+        )
+        _render_zoned_metric(
+            row2_cols[4],
+            "Exposure",
+            metrics.get("exposure_time_pct", 0),
+            "exposure_time_pct",
+            "{:.1f}",
+            "%",
+        )
+
+        # ── Row 3: Trade Statistics & Risk ───────────────────────────────
+        row3_cols = st.columns([1, 1, 1, 1, 1], gap="small")
+        _render_zoned_metric(
+            row3_cols[0],
+            "Kelly Criterion",
+            metrics.get("kelly_criterion", 0),
+            "kelly_criterion",
+            "{:.3f}",
+        )
+        _render_zoned_metric(
+            row3_cols[1], "Risk/Reward", rr, "risk_reward_ratio", "1:{:.2f}"
+        )
+        _render_zoned_metric(
+            row3_cols[2],
+            "Avg Trade",
+            metrics.get("avg_trade_pct", 0),
+            "avg_trade_pct",
+            "{:.2f}",
+            "%",
+        )
+        _render_zoned_metric(
+            row3_cols[3],
+            "Best Trade",
+            metrics.get("best_trade_pct", 0),
+            "best_trade_pct",
+            "{:.2f}",
+            "%",
+        )
+        _render_zoned_metric(
+            row3_cols[4],
+            "Worst Trade",
+            metrics.get("worst_trade_pct", 0),
+            "worst_trade_pct",
+            "{:.2f}",
+            "%",
+        )
+
+        st.divider()
 
         # Win/Loss stats
         if trades:
-            pnls = [t["pnl"] for t in trades]
-            wins = [p for p in pnls if p > 0]
-            losses = [p for p in pnls if p <= 0]
             avg_win = sum(wins) / len(wins) if wins else 0
             avg_loss = sum(losses) / len(losses) if losses else 0
 
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             c1.metric("Winning Trades", f"{len(wins)}", delta=f"Avg ${avg_win:.0f}")
-            c2.metric("Losing Trades", f"{len(losses)}", delta=f"Avg ${avg_loss:.0f}")
-            rr = abs(avg_win / avg_loss) if avg_loss != 0 else 0
-            c3.metric("Risk/Reward", f"1:{rr:.2f}")
+            c2.metric(
+                "Losing Trades", f"{len(losses)}", delta=f"Avg ${abs(avg_loss):.0f}"
+            )
 
         # Detailed Metrics in expander
         with st.expander("Detailed Metrics", expanded=False):
@@ -677,7 +1161,7 @@ def _render_training_section(data: dict, session_dir: str) -> None:
 
             # Loss curve as ECharts
             loss_chart = (
-                Line(init_opts=opts.InitOpts(height="400px"))
+                Line(init_opts=opts.InitOpts(height="550px"))
                 .add_xaxis([str(e) for e in epochs])
                 .add_yaxis(
                     series_name="Train Loss",
@@ -694,16 +1178,17 @@ def _render_training_section(data: dict, session_dir: str) -> None:
                 .set_global_opts(
                     title_opts=opts.TitleOpts(title="GRU Loss Curves"),
                     xaxis_opts=opts.AxisOpts(name="Epoch"),
-                    yaxis_opts=opts.AxisOpts(name="Loss"),
+                    yaxis_opts=opts.AxisOpts(name="Loss", is_scale=True),
                     tooltip_opts=opts.TooltipOpts(trigger="axis"),
-                    legend_opts=opts.LegendOpts(),
+                    legend_opts=opts.LegendOpts(pos_right="right"),
+                    datazoom_opts=[opts.DataZoomOpts(type_="inside", xaxis_index=0)],
                 )
             )
-            _render_chart(loss_chart, height="400px")
+            _render_chart(loss_chart, height="550px")
 
             # Accuracy curve
             acc_chart = (
-                Line(init_opts=opts.InitOpts(height="400px"))
+                Line(init_opts=opts.InitOpts(height="550px"))
                 .add_xaxis([str(e) for e in epochs])
                 .add_yaxis(
                     series_name="Train Accuracy",
@@ -720,12 +1205,17 @@ def _render_training_section(data: dict, session_dir: str) -> None:
                 .set_global_opts(
                     title_opts=opts.TitleOpts(title="GRU Accuracy Curves"),
                     xaxis_opts=opts.AxisOpts(name="Epoch"),
-                    yaxis_opts=opts.AxisOpts(name="Accuracy"),
+                    yaxis_opts=opts.AxisOpts(
+                        name="Accuracy",
+                        is_scale=True,
+                        max_=1.0 if max(val_acc) > 0.9 else None,
+                    ),
                     tooltip_opts=opts.TooltipOpts(trigger="axis"),
-                    legend_opts=opts.LegendOpts(),
+                    legend_opts=opts.LegendOpts(pos_right="right"),
+                    datazoom_opts=[opts.DataZoomOpts(type_="inside", xaxis_index=0)],
                 )
             )
-            _render_chart(acc_chart, height="400px")
+            _render_chart(acc_chart, height="550px")
         else:
             st.info("No GRU training history available.")
 
@@ -756,6 +1246,126 @@ def _render_training_section(data: dict, session_dir: str) -> None:
             st.code("".join(all_lines), language="log")
     else:
         st.info("No pipeline log found for this session.")
+
+
+# ---------------------------------------------------------------------------
+# Reports Section
+# ---------------------------------------------------------------------------
+
+
+def _render_reports_section(session_dir: str) -> None:
+    """
+    Render the full Reports section showing all generated static charts and the thesis report.
+
+    Displays:
+    - Thesis report (markdown)
+    - Equity curve chart
+    - SHAP summary
+    - Backtest charts (equity drawdown, monthly returns, PnL histogram, duration vs PnL)
+    - Model charts (confusion matrix, confidence distribution, feature importance)
+    - Data charts (candlestick, feature correlation, label distribution, feature distributions)
+
+    Parameters:
+        session_dir (str): Path to the session directory.
+    """
+    st.markdown("> 🏠 Dashboard > **Reports**")
+
+    session_path = Path(session_dir)
+    reports_dir = session_path / "reports"
+
+    # --- Thesis Report ---
+    report_md_path = reports_dir / "thesis_report.md"
+    if report_md_path.exists():
+        content = report_md_path.read_text()
+        # Remove section 10 (Visual Evidence & Analytics) from display
+        section_10_marker = "## 10. Visual Evidence & Analytics"
+        if section_10_marker in content:
+            content = content.split(section_10_marker)[0]
+        st.markdown(content, unsafe_allow_html=True)
+    else:
+        st.info("No thesis report available.")
+
+    st.divider()
+
+    # --- Equity Curve ---
+    equity_png = reports_dir / "equity_curve.png"
+    if equity_png.exists():
+        st.subheader("Equity Curve")
+        st.image(str(equity_png), width="stretch")
+
+    # --- SHAP Summary ---
+    shap_png = reports_dir / "shap_summary.png"
+    if shap_png.exists():
+        st.subheader("SHAP Feature Importance")
+        st.image(str(shap_png), width="stretch")
+
+    st.divider()
+
+    # --- Backtest Charts ---
+    bt_charts_dir = reports_dir / "charts" / "backtest"
+    if bt_charts_dir.exists():
+        st.subheader("Backtest Charts")
+        cols = st.columns(2)
+        chart_files = [
+            ("equity_drawdown.png", "Equity & Drawdown"),
+            ("monthly_returns.png", "Monthly Returns"),
+            ("pnl_histogram.png", "PnL Distribution"),
+            ("duration_vs_pnl.png", "Duration vs PnL"),
+        ]
+        for idx, (fname, title) in enumerate(chart_files):
+            with cols[idx % 2]:
+                fpath = bt_charts_dir / fname
+                if fpath.exists():
+                    st.markdown(f"**{title}**")
+                    st.image(str(fpath), width="stretch")
+
+    st.divider()
+
+    # --- Model Charts ---
+    model_charts_dir = reports_dir / "charts" / "model"
+    if model_charts_dir.exists():
+        st.subheader("Model Charts")
+        cols = st.columns(2)
+        chart_files = [
+            ("confusion_matrix.png", "Confusion Matrix"),
+            ("confidence_distribution.png", "Confidence Distribution"),
+            ("feature_importance.png", "LightGBM Feature Importance"),
+        ]
+        for idx, (fname, title) in enumerate(chart_files):
+            with cols[idx % 2]:
+                fpath = model_charts_dir / fname
+                if fpath.exists():
+                    st.markdown(f"**{title}**")
+                    st.image(str(fpath), width="stretch")
+
+    st.divider()
+
+    # --- Data Charts ---
+    data_charts_dir = reports_dir / "charts" / "data"
+    if data_charts_dir.exists():
+        st.subheader("Data Charts")
+        cols = st.columns(2)
+        chart_files = [
+            ("candlestick.png", "Candlestick Chart"),
+            ("feature_correlation.png", "Feature Correlation"),
+            ("label_distribution.png", "Label Distribution"),
+            ("feature_distributions.png", "Feature Distributions"),
+        ]
+        for idx, (fname, title) in enumerate(chart_files):
+            with cols[idx % 2]:
+                fpath = data_charts_dir / fname
+                if fpath.exists():
+                    st.markdown(f"**{title}**")
+                    st.image(str(fpath), width="stretch")
+
+    # --- HTML Backtest Chart ---
+    bt_html = session_path / "backtest" / "backtest_chart.html"
+    if bt_html.exists():
+        st.divider()
+        st.subheader("Interactive Backtest Chart")
+        with open(bt_html) as f:
+            html_content = f.read()
+        st.iframe(html_content, height=1000)
 
 
 # ---------------------------------------------------------------------------
@@ -859,7 +1469,13 @@ def main() -> None:
     # ── Section Navigation ──
     section = st.sidebar.radio(
         "Navigation",
-        ["📊 Data", "🧠 Model", "🏃 Training", "💰 Backtest"],
+        [
+            "📊 Data",
+            "🧠 Model",
+            "🏃 Training",
+            "💰 Backtest",
+            "📝 Reports",
+        ],
         label_visibility="collapsed",
     )
     section_map = {
@@ -867,6 +1483,7 @@ def main() -> None:
         "🧠 Model": "Model Performance",
         "🏃 Training": "Training",
         "💰 Backtest": "Backtest Results",
+        "📝 Reports": "Reports",
     }
 
     # Load data
@@ -910,9 +1527,11 @@ def main() -> None:
     if section_name == "Data Exploration":
         _render_data_section(data, config)
     elif section_name == "Model Performance":
-        _render_model_section(data)
+        _render_model_section(data, session_path)
     elif section_name == "Training":
         _render_training_section(data, session_path)
+    elif section_name == "Reports":
+        _render_reports_section(session_path)
     else:
         _render_backtest_section(data)
 

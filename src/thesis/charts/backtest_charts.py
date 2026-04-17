@@ -214,7 +214,9 @@ def _compute_monthly_returns(
     return monthly_returns
 
 
-def build_monthly_returns_heatmap(trades: list[dict], initial_capital: float = 10_000.0) -> HeatMap:
+def build_monthly_returns_heatmap(
+    trades: list[dict], initial_capital: float = 10_000.0
+) -> HeatMap:
     """
     Create a month-by-year heatmap of percentage returns.
 
@@ -299,17 +301,17 @@ def build_rolling_sharpe_chart(
     rolling_std = np.array(
         [pnls[i : i + window].std() for i in range(len(pnls) - window + 1)]
     )
-    
+
     try:
         entry = pd.to_datetime(trades[0]["entry_time"])
         exit_ = pd.to_datetime(trades[-1]["exit_time"])
         days = max((exit_ - entry).days, 1)
         trades_per_year = len(trades) / (days / 365.25)
     except Exception:
-        trades_per_year = 100 # Fallback
-        
+        trades_per_year = 100  # Fallback
+
     annualization_factor = np.sqrt(trades_per_year)
-    
+
     with np.errstate(divide="ignore", invalid="ignore"):
         rolling_sharpe = rolling_mean / rolling_std * annualization_factor
     rolling_sharpe = np.where(rolling_std == 0, np.nan, rolling_sharpe)

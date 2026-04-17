@@ -14,7 +14,9 @@ from .data import _COLORS, _output_dir
 logger = logging.getLogger("thesis.visualize")
 
 
-def _compute_monthly_returns(trades: list[dict], initial_capital: float) -> dict[tuple[int, int], float]:
+def _compute_monthly_returns(
+    trades: list[dict], initial_capital: float
+) -> dict[tuple[int, int], float]:
     """
     Compute monthly percentage returns from trade list.
 
@@ -86,7 +88,7 @@ def _generate_backtest_charts(config: Config) -> None:
     if not trades:
         logger.warning("No trades found in backtest results")
         return
-    
+
     # --- Extract times for X-axis plotting ---
     try:
         times = [pd.to_datetime(trades[0]["entry_time"])]
@@ -95,7 +97,7 @@ def _generate_backtest_charts(config: Config) -> None:
     except Exception as e:
         logger.debug(f"Time parsing failed, falling back to indices: {e}")
         times = list(range(len(trades) + 1))
-    
+
     # --- 1. Equity Curve with Drawdown ---
     pnls = [t["pnl"] for t in trades]
     equity = [config.backtest.initial_capital]
@@ -112,9 +114,7 @@ def _generate_backtest_charts(config: Config) -> None:
 
     # Equity curve
     ax1.plot(times, equity, color=_COLORS["primary"], linewidth=1)
-    ax1.fill_between(
-        times, peak, equity_arr, alpha=0.2, color=_COLORS["danger"]
-    )
+    ax1.fill_between(times, peak, equity_arr, alpha=0.2, color=_COLORS["danger"])
     # Align metric keys with normalize_stats output
     ax1.set_title(
         f"Equity Curve — {metrics.get('num_trades', 0)} trades, "
@@ -124,9 +124,7 @@ def _generate_backtest_charts(config: Config) -> None:
     ax1.grid(True, alpha=0.3)
 
     # Drawdown
-    ax2.fill_between(
-        times, drawdown_pct, 0, color=_COLORS["danger"], alpha=0.5
-    )
+    ax2.fill_between(times, drawdown_pct, 0, color=_COLORS["danger"], alpha=0.5)
     ax2.set_ylabel("Drawdown (%)")
     ax2.set_xlabel("Date")
     ax2.grid(True, alpha=0.3)
@@ -225,7 +223,7 @@ def _generate_backtest_charts(config: Config) -> None:
         rolling_std = np.array(
             [pnls_arr[i : i + window].std() for i in range(len(pnls_arr) - window + 1)]
         )
-        
+
         # Calculate average annual trade count for proper annualization
         try:
             days_total = (times[-1] - times[0]).days
@@ -239,7 +237,9 @@ def _generate_backtest_charts(config: Config) -> None:
         fig, ax = plt.subplots(figsize=(14, 5))
         ax.plot(rolling_sharpe, color=_COLORS["secondary"], linewidth=0.8)
         ax.axhline(y=0, color="black", linewidth=0.5)
-        ax.set_title(f"Rolling Sharpe Ratio (window={window} trades, ann_factor=√{trades_per_year:.0f})")
+        ax.set_title(
+            f"Rolling Sharpe Ratio (window={window} trades, ann_factor=√{trades_per_year:.0f})"
+        )
         ax.set_xlabel("Trade Window Index")
         ax.set_ylabel("Annualized Sharpe")
         ax.grid(True, alpha=0.3)

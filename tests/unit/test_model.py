@@ -151,13 +151,19 @@ def test_sharpe_wrong_predictions() -> None:
 @pytest.mark.unit
 @pytest.mark.models
 def test_sharpe_random_predictions() -> None:
-    """Test Sharpe with random predictions (near zero)."""
+    """Test Sharpe with random directional predictions on non-hold data.
+
+    Uses only non-hold labels so that random predictions give ~50% accuracy.
+    With spread cost, random predictions will be slightly negative.
+    """
     np.random.seed(42)
-    y_true = np.random.choice([-1, 0, 1], 500, p=[0.3, 0.4, 0.3])
+    # Use only non-hold data for clean 50% random baseline
+    y_true = np.random.choice([-1, 1], 500)
     y_pred = np.random.choice([-1, 1], 500)  # Random direction
 
     sharpe = _compute_sharpe_from_predictions(y_true, y_pred)
-    # Random predictions should give Sharpe near 0
+    # Random predictions should give Sharpe near 0 (with spread cost, slightly negative)
+    # Annualized Sharpe: ~(-0.0002 / 1.0) * sqrt(500) ≈ -0.004
     assert -3.0 < sharpe < 3.0  # Reasonable range
 
 

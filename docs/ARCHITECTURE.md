@@ -25,10 +25,10 @@ flowchart LR
     C --> D["Labels<br/>Triple Barrier"]
     D --> E["Split<br/>Train/Val/Test"]
 
-    E --> F["GRU<br/>64 hidden states"]
+    E --> F["GRU<br/>32 hidden states"]
     E --> G["Static<br/>11 features"]
 
-    F --> H["LightGBM<br/>75 features"]
+    F --> H["LightGBM<br/>43 features"]
     G --> H
 
     H --> I["Backtest<br/>CFD Simulation"]
@@ -86,22 +86,22 @@ Think of it like reading a sentence — it looks at the words one by one and bui
 
 ```mermaid
 flowchart LR
-    subgraph Input["24-bar sliding window"]
+    subgraph Input["48-bar sliding window"]
         B1["Bar 1"]
         B2["Bar 2"]
         BD["..."]
-        B24["Bar 24"]
+        B48["Bar 48"]
     end
 
-    Input --> GRU["GRU<br/>2 layers × 64 hidden"]
-    GRU --> HS["64-dim<br/>hidden state"]
+    Input --> GRU["GRU<br/>2 layers × 32 hidden"]
+    GRU --> HS["32-dim<br/>hidden state"]
 
     style GRU fill:#7C3AED,color:#fff
     style HS fill:#7C3AED,color:#fff
 ```
 
-- **Input:** A sliding window of 24 hours of past data (log returns + RSI + ATR + MACD histogram).
-- **Output:** A 64-number vector (called "hidden states") that summarizes the temporal pattern.
+- **Input:** A sliding window of 48 hours of past data (log returns + RSI + ATR + MACD histogram).
+- **Output:** A 32-number vector (called "hidden states") that summarizes the temporal pattern.
 
 ### Step 2: LightGBM Decision Maker
 
@@ -110,7 +110,7 @@ It takes the GRU's output plus the original 11 technical indicators and makes th
 
 ```mermaid
 flowchart LR
-    GRU_OUT["GRU<br/>64 features"] --> COMBINE["Concatenate<br/>75 features"]
+    GRU_OUT["GRU<br/>32 features"] --> COMBINE["Concatenate<br/>43 features"]
     STATIC["Static<br/>11 features"] --> COMBINE
     COMBINE --> LGBM["LightGBM<br/>Classifier"]
     LGBM --> LONG["📈 Long"]
@@ -124,7 +124,7 @@ flowchart LR
     style SHORT fill:#DC2626,color:#fff
 ```
 
-- **Input:** 64 GRU hidden states + 11 static features = **75 features total**.
+- **Input:** 32 GRU hidden states + 11 static features = **43 features total**.
 - **Output:** A prediction — **Long** (buy), **Short** (sell), or **Flat** (hold).
 
 ### Why Hybrid?
@@ -143,7 +143,7 @@ flowchart LR
 |----------|--------|
 | **GRU instead of LSTM** | Fewer parameters (25-30% less), less overfitting on small data |
 | **No bidirectional GRU** | Prevents look-ahead bias (seeing future data) |
-| **No attention mechanism** | Not needed for short 24-bar sequences |
+| **No attention mechanism** | Not needed for short 48-bar sequences |
 | **LightGBM as the decision maker** | Better interpretability, handles mixed feature types |
 | **Polars instead of Pandas** | 10-50x faster for time-series operations |
 | **Session-based output folders** | Each run is isolated — easy to compare experiments |
@@ -237,7 +237,7 @@ flowchart TD
     T1 -->|"generate_features()"| T2["Features<br/><i>+ 11 technical indicators</i>"]
     T2 -->|"generate_labels()"| T3["Labels<br/><i>+ buy/sell/hold + TP/SL prices</i>"]
     T3 -->|"split_data()"| T4["Train ~35K | Val ~8K | Test ~19K"]
-    T4 -->|"train_model()"| T5["GRU → 64-dim hidden states<br/>LightGBM → 75-dim hybrid<br/>Test predictions"]
+    T4 -->|"train_model()"| T5["GRU → 32-dim hidden states<br/>LightGBM → 43-dim hybrid<br/>Test predictions"]
     T5 -->|"run_backtest()"| T6["Backtest<br/><i>trades, PnL, metrics</i>"]
     T6 -->|"generate_report()"| T7["Report<br/><i>markdown + charts</i>"]
 
@@ -268,7 +268,7 @@ flowchart LR
 ```
 
 1. **Purge** — Removes 25 bars at each split boundary to prevent overlap.
-2. **Embargo** — Adds 50 extra bars of gap after each boundary (~2 days, covers the 10-bar label horizon).
+2. **Embargo** — Adds 50 extra bars of gap after each boundary (~2 days, covers the 48-bar label horizon).
 3. **Correlation filtering on train only** — Feature selection uses only training data.
 
 ---

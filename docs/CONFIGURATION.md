@@ -7,7 +7,7 @@
 ## Part 1: Features — What the Model Sees
 
 Before you change any settings, you need to understand **what data the model works with**.
-The model uses **75 features** in total — 64 from the GRU and 11 static technical indicators.
+The model uses **43 features** in total — 32 from the GRU and 11 static technical indicators.
 
 ```mermaid
 flowchart LR
@@ -18,16 +18,16 @@ flowchart LR
         MACD["macd_hist"]
     end
 
-    subgraph GRU_SEQ["24-bar window"]
+    subgraph GRU_SEQ["48-bar window"]
         B1["Bar 1"]
         B2["Bar 2"]
         BD["..."]
-        B24["Bar 24"]
+        B48["Bar 48"]
     end
 
     GRU_INPUT --> GRU_SEQ
-    GRU_SEQ --> GRU["GRU<br/>2 layers × 64 hidden"]
-    GRU --> HS["64 hidden states"]
+    GRU_SEQ --> GRU["GRU<br/>2 layers × 32 hidden"]
+    GRU --> HS["32 hidden states"]
 
     subgraph STATIC["Static Features"]
         F1["rsi_14"]
@@ -43,7 +43,7 @@ flowchart LR
         F11["sess_ny_pm"]
     end
 
-    HS --> LGBM["LightGBM<br/>75 features"]
+    HS --> LGBM["LightGBM<br/>43 features"]
     STATIC --> LGBM
     LGBM --> PRED["Long / Flat / Short"]
 
@@ -74,9 +74,9 @@ These are calculated directly from price data. Each bar (1 hour) has these 11 va
 
 > **Note:** Session times are based on New York timezone and adjust for daylight saving time automatically.
 
-### GRU Features (64 hidden states)
+### GRU Features (32 hidden states)
 
-The GRU reads a sliding window of **24 consecutive bars** and produces a **64-number summary**.
+The GRU reads a sliding window of **48 consecutive bars** and produces a **32-number summary**.
 Its input is four features per bar:
 
 | # | Feature | What It Is |
@@ -86,15 +86,15 @@ Its input is four features per bar:
 | 3 | **atr_14** | Average True Range — volatility measure |
 | 4 | **macd_hist** | MACD histogram — momentum measure |
 
-The GRU's 64 hidden states capture **temporal patterns** — like trends, reversals, and cycles — that individual indicators cannot see.
+The GRU's 32 hidden states capture **temporal patterns** — like trends, reversals, and cycles — that individual indicators cannot see.
 
 ### Full Feature Space
 
 ```text
-64 GRU hidden states  +  11 static indicators  =  75 total features
+32 GRU hidden states  +  11 static indicators  =  43 total features
 ```
 
-LightGBM receives all 75 features and decides: Long, Flat, or Short.
+LightGBM receives all 43 features and decides: Long, Flat, or Short.
 
 ---
 
@@ -166,6 +166,8 @@ test_start = "2024-01-01"
 test_end = "2026-03-31 23:59:59"
 purge_bars = 25
 embargo_bars = 50
+embargo_scale_by_timeframe = true
+embargo_reference_timeframe = "1H"
 ```
 
 ```mermaid
@@ -200,7 +202,9 @@ gantt
 |-----------|---------------|--------|
 | Date ranges | Shift the boundaries | More training data = better model, but less test data = less reliable evaluation. Current: 5yr train, 1yr val, ~2yr test. |
 | `purge_bars` | Increase for more safety | Removes more data at split boundaries to prevent leakage. Default 25 = 25 hours gap. |
-| `embargo_bars` | Increase for more safety | Extra gap after purge. Default 50 = ~2 days additional gap (covers 10-bar label horizon). |
+| `embargo_bars` | Increase for more safety | Extra gap after purge. Default 50 = ~2 days additional gap (covers 24-bar label horizon). |
+| `embargo_scale_by_timeframe` | Scale embargo by timeframe | Default `true`. 50 bars at 1H ≈ 2 days; at 1D ≈ 2 months. |
+| `embargo_reference_timeframe` | Reference timeframe for embargo | Default `"1H"`. Used when scaling across timeframes. |
 
 > **Tip:** Never make the test period too short. At least 6 months of data is recommended for a meaningful backtest.
 
@@ -215,7 +219,7 @@ atr_period = 14
 macd_fast = 12
 macd_slow = 26
 macd_signal = 9
-correlation_threshold = 0.90
+correlation_threshold = 0.75
 ```
 
 | Parameter | What to Change | Effect |
@@ -232,9 +236,9 @@ correlation_threshold = 0.90
 ```toml
 [labels]
 atr_multiplier = 1.5
-horizon_bars = 10
+horizon_bars = 24
 num_classes = 3
-min_atr = 0.0001
+min_atr = 0.5
 ```
 
 ```mermaid
@@ -267,19 +271,19 @@ flowchart TD
 ```toml
 [model]
 use_optuna = true
-optuna_trials = 50
+optuna_trials = 100
 optuna_timeout = 3600
 num_leaves = 48
-max_depth = 5
+max_depth = 4
 learning_rate = 0.03
 n_estimators = 150
-min_child_samples = 150
+min_child_samples = 200
 subsample = 0.70
 subsample_freq = 5
 feature_fraction = 0.60
 reg_alpha = 0.1
-reg_lambda = 5.0
-early_stopping_rounds = 30
+reg_lambda = 10.0
+early_stopping_rounds = 50
 ```
 
 | Parameter | What It Does | What to Try |
@@ -305,9 +309,9 @@ early_stopping_rounds = 30
 ```toml
 [gru]
 input_size = 4        # log_returns + rsi_14 + atr_14 + macd_hist
-hidden_size = 64
+hidden_size = 32
 num_layers = 2
-sequence_length = 24
+sequence_length = 48
 dropout = 0.4
 learning_rate = 0.001
 batch_size = 64
@@ -318,7 +322,7 @@ patience = 10
 | Parameter | What It Does | What to Try |
 |-----------|-------------|------------|
 | `input_size` | Number of features per bar fed to GRU | Must match GRU input columns (4: log_returns, rsi_14, atr_14, macd_hist). |
-| `hidden_size` | Size of the GRU's internal memory | Larger = more capacity (64 or 128). Smaller = faster training. |
+| `hidden_size` | Size of the GRU's internal memory | Larger = more capacity (32 or 64). Smaller = faster training. |
 | `num_layers` | Number of stacked GRU layers | 1-3 is typical. More layers = deeper patterns but slower. |
 | `sequence_length` | How many past bars the GRU looks at | 12-48 is reasonable. More = longer memory but more computation. |
 | `dropout` | Randomly disables neurons during training | 0.2-0.5 is typical. Prevents overfitting. |
@@ -335,12 +339,16 @@ patience = 10
 [backtest]
 initial_capital = 10000.0
 leverage = 30                       # 30:1 — affordable for 1 lot with $10k
-spread_ticks = 30                   # 30 ticks = $0.30 (realistic XAUUSD ECN spread)
-slippage_ticks = 3                  # 3 ticks = $0.03 per side (absorbed into spread)
+spread_ticks = 35                   # 35 ticks = $0.35 (realistic XAUUSD ECN spread)
+slippage_ticks = 5                  # 5 ticks = $0.05 per side (absorbed into spread)
 commission_per_lot = 10.0           # Round-trip commission per lot
-atr_stop_multiplier = 0.75          # ATR multiplier for stop-loss distance
-lots_per_trade = 1.0                # Fixed 1 lot per trade (100 oz XAUUSD)
-confidence_threshold = 0.70         # Min predicted probability to trade (0 = disabled)
+atr_stop_multiplier = 1.5          # ATR multiplier for stop-loss distance
+lots_per_trade = 0.15                # Fixed lot size (0.15 lot = 15 oz XAUUSD)
+confidence_threshold = 0.6         # Min predicted probability to trade (0 = disabled)
+auto_lot_sizing = true             # Enable dynamic lot sizing based on equity + risk %
+risk_per_trade_pct = 1.0            # Risk % of equity per trade
+min_lot_size = 0.1                  # Minimum lot size floor
+max_lot_size = 5.0                 # Maximum lot size ceiling
 ```
 
 | Parameter | What It Does | What to Try |
@@ -352,7 +360,13 @@ confidence_threshold = 0.70         # Min predicted probability to trade (0 = di
 | `commission_per_lot` | Commission per standard lot round-trip | $10 is typical. Higher = more conservative. |
 | `atr_stop_multiplier` | Stop-loss distance as a multiple of ATR | Higher = wider stop (more room). Lower = tighter stop (cut losses faster). |
 | `lots_per_trade` | Fixed position size per trade | 1.0 = 1 lot (100 oz). Keeps sizing constant to prevent runaway. |
-| `confidence_threshold` | Minimum predicted probability to take a trade | 0 = disabled (trade on all signals). 0.70 = only trade when model is confident. |
+| `confidence_threshold` | Minimum predicted probability to take a trade | 0 = disabled (trade on all signals). 0.6 = only trade when model is confident. |
+| `auto_lot_sizing` | Enable dynamic lot sizing based on equity + risk % | Set to `true` to use risk-based position sizing. |
+| `risk_per_trade_pct` | Risk % of equity per trade | Default 1.0 = risk 1% of equity per trade. |
+| `min_lot_size` | Minimum lot size floor | Default 0.1. Prevents tiny positions. |
+| `max_lot_size` | Maximum lot size ceiling | Default 5.0. Prevents oversized positions. |
+
+> **Position sizing:** Default is now dynamic (`auto_lot_sizing = true`). Set to `false` for fixed lot sizing via `lots_per_trade`.
 
 > **Important:** Position sizing is fixed (`lots_per_trade × contract_size`). This prevents the "runaway sizing" problem where compounding equity with leverage creates unrealistic position sizes.
 
@@ -427,7 +441,7 @@ flowchart TD
     S2["Step 2<br/>Adjust atr_multiplier<br/>Try 1.0, 1.5, 2.0, 2.5"] --> S3
     S3["Step 3<br/>Adjust atr_stop_multiplier<br/>Try 0.5, 0.75, 1.0, 1.5"] --> S4
     S4["Step 4<br/>Enable Optuna<br/>use_optuna = true"] --> S5
-    S5["Step 5<br/>Adjust GRU<br/>Try sequence_length 12, 24, 36, 48"] --> S6
+    S5["Step 5<br/>Adjust GRU<br/>Try sequence_length 48, 64, 96"] --> S6
     S6["Step 6<br/>Run ablation<br/>Confirm hybrid is best"]
 
     style S1 fill:#2563EB,color:#fff

@@ -11,6 +11,13 @@ import logging
 from pathlib import Path
 
 import polars as pl
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+)
 
 from thesis.config import Config
 
@@ -37,7 +44,10 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
     ticks = ticks.with_columns(
         [
             (
-                (pl.col("ask") * pl.col("bid_volume") + pl.col("bid") * pl.col("ask_volume"))
+                (
+                    pl.col("ask") * pl.col("bid_volume")
+                    + pl.col("bid") * pl.col("ask_volume")
+                )
                 / (pl.col("ask_volume") + pl.col("bid_volume") + 1e-10)
             ).alias("mid"),
             (pl.col("ask_volume") + pl.col("bid_volume")).alias("volume"),
@@ -142,10 +152,22 @@ def prepare_data(config: Config) -> None:
 
     # Aggregate each monthly file separately — memory-efficient
     monthly_bars: list[pl.DataFrame] = []
-    for f in parquet_files:
-        logger.info("  Processing %s", f.name)
-        bars = _aggregate_file(f, group_ms)
-        monthly_bars.append(bars)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        console=None,  # Use default console
+    ) as progress:
+        task = progress.add_task(
+            f"[cyan]Aggregating {len(parquet_files)} monthly files",
+            total=len(parquet_files),
+        )
+        for f in parquet_files:
+            progress.update(task, description=f"[cyan]{f.name}")
+            bars = _aggregate_file(f, group_ms)
+            monthly_bars.append(bars)
+            progress.advance(task)
 
     # Concat small OHLCV DataFrames (tiny compared to ticks)
     ohlcv = pl.concat(monthly_bars, how="vertical").sort("timestamp")

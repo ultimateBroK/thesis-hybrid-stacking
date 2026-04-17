@@ -2,7 +2,14 @@
 """Main entry point — simplified thesis pipeline.
 
 Usage:
-    python main.py [--config CONFIG] [--force]
+    python main.py [--config CONFIG] [--session SESSION] [--stage N] [--force]
+
+Options:
+    --session SESSION   Continue from an existing session directory name
+                        (e.g., XAUUSD_H1_20260418_143052)
+    --stage N           Start pipeline from stage N (0-6). Use with --session.
+                        Default: resumes from first missing stage.
+    --force             Force re-run all stages (or stage with --stage)
 """
 
 import argparse
@@ -45,6 +52,58 @@ class _StripAnsiFormatter(logging.Formatter):
         return _ANSI_RE.sub("", super().format(record))
 
 
+def _find_session(session_name: str) -> Path | None:
+    """
+    Find an existing session directory by name.
+
+    Parameters:
+        session_name: The session directory name (e.g., XAUUSD_H1_20260418_143052)
+
+    Returns:
+        Path to the session directory if found, None otherwise.
+    """
+    results = Path("results")
+    if not results.exists():
+        return None
+
+    session_path = results / session_name
+    if session_path.exists() and (session_path / "config").exists():
+        return session_path
+
+    return None
+
+
+def _load_session_config(session_dir: Path) -> object:
+    """
+    Load configuration from an existing session directory.
+
+    Uses the session's config_snapshot.toml if available.
+
+    Parameters:
+        session_dir: Path to the session directory.
+
+    Returns:
+        Loaded configuration object with paths updated to session_dir.
+    """
+    snapshot = session_dir / "config" / "config_snapshot.toml"
+    if snapshot.exists():
+        config = load_config(str(snapshot))
+    else:
+        config = load_config()
+
+    config.paths.session_dir = str(session_dir)
+    config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
+    config.paths.predictions = str(
+        session_dir / "predictions" / "final_predictions.parquet"
+    )
+    config.paths.backtest_results = str(
+        session_dir / "backtest" / "backtest_results.json"
+    )
+    config.paths.report = str(session_dir / "reports" / "thesis_report.md")
+
+    return config
+
+
 def main() -> None:
     """
     Command-line entry point that runs the thesis ML pipeline and records a session.
@@ -56,40 +115,98 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description="Thesis ML Pipeline")
     parser.add_argument("--config", default="config.toml", help="Path to config.toml")
+    parser.add_argument(
+        "--session",
+        type=str,
+        default=None,
+        help="Continue from existing session (e.g., XAUUSD_H1_20260418_143052)",
+    )
+    parser.add_argument(
+        "--stage",
+        type=int,
+        choices=[0, 1, 2, 3, 4, 5, 6],
+        default=None,
+        help="Start from stage N (0-6). Use with --session.",
+    )
     parser.add_argument("--force", action="store_true", help="Force re-run all stages")
     parser.add_argument(
         "--ablation", action="store_true", help="Run ablation study after pipeline"
     )
     args = parser.parse_args()
 
-    # Load config first (before logging setup, so we know the session dir)
+    # Load config
     config = load_config(args.config)
+
+    # Handle force flag
     if args.force:
         config.workflow.force_rerun = True
 
-    # Create session directory and update paths
-    session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_name = f"{config.data.symbol}_{config.data.timeframe}_{session_ts}"
-    session_dir = Path("results") / session_name
+    # Determine session directory and setup
+    if args.session:
+        # Continue from existing session
+        session_dir = _find_session(args.session)
+        if session_dir is None:
+            print(f"Error: Session '{args.session}' not found in results/")
+            sys.exit(1)
 
-    # Update config paths to point to session directory
-    config.workflow.session_timestamp = session_ts
-    config.paths.session_dir = str(session_dir)
-    config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
-    config.paths.predictions = str(
-        session_dir / "predictions" / "final_predictions.parquet"
-    )
-    config.paths.backtest_results = str(
-        session_dir / "backtest" / "backtest_results.json"
-    )
-    config.paths.report = str(session_dir / "reports" / "thesis_report.md")
+        # Load existing session config
+        config = _load_session_config(session_dir)
+        session_ts = (
+            session_dir.name.split("_")[-2] + "_" + session_dir.name.split("_")[-1]
+        )
+        config.workflow.session_timestamp = session_ts
 
-    # Create session subdirectories
-    for subdir in ["config", "models", "predictions", "reports", "backtest", "logs"]:
-        (session_dir / subdir).mkdir(parents=True, exist_ok=True)
+        # If --stage specified, disable stages before the target stage
+        if args.stage is not None:
+            if args.stage <= 0:
+                config.workflow.run_data_pipeline = False
+            if args.stage <= 1:
+                config.workflow.run_feature_engineering = False
+            if args.stage <= 2:
+                config.workflow.run_label_generation = False
+            if args.stage <= 3:
+                config.workflow.run_data_splitting = False
+            if args.stage <= 4:
+                config.workflow.run_model_training = False
+            if args.stage < 5:
+                config.workflow.run_backtest = False
+            if args.stage < 6:
+                config.workflow.run_reporting = False
 
-    # Save config snapshot
-    shutil.copy2(args.config, session_dir / "config" / "config_snapshot.toml")
+        log_mode = "a"  # Append to existing log
+    else:
+        # Create new session directory
+        session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_name = f"{config.data.symbol}_{config.data.timeframe}_{session_ts}"
+        session_dir = Path("results") / session_name
+
+        # Update config paths to point to session directory
+        config.workflow.session_timestamp = session_ts
+        config.paths.session_dir = str(session_dir)
+        config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
+        config.paths.predictions = str(
+            session_dir / "predictions" / "final_predictions.parquet"
+        )
+        config.paths.backtest_results = str(
+            session_dir / "backtest" / "backtest_results.json"
+        )
+        config.paths.report = str(session_dir / "reports" / "thesis_report.md")
+
+        # Create session subdirectories
+        for subdir in [
+            "config",
+            "models",
+            "predictions",
+            "reports",
+            "backtest",
+            "logs",
+        ]:
+            (session_dir / subdir).mkdir(parents=True, exist_ok=True)
+
+        # Save config snapshot
+        shutil.copy2(args.config, session_dir / "config" / "config_snapshot.toml")
+
+        log_mode = "w"  # New log file
 
     # Logging setup — Rich for console, plain for file
     from rich.logging import RichHandler
@@ -97,8 +214,10 @@ def main() -> None:
     from thesis.ui import console as _console
 
     _log_fmt = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
-    file_handler = logging.FileHandler(session_dir / "logs" / "pipeline.log", mode="w")
-    file_handler.setFormatter(_StripAnsiFormatter(_log_fmt))
+    plain_file_handler = logging.FileHandler(
+        session_dir / "logs" / "pipeline.log", mode=log_mode
+    )
+    plain_file_handler.setFormatter(_StripAnsiFormatter(_log_fmt))
 
     logging.basicConfig(
         level=logging.INFO,
@@ -114,7 +233,7 @@ def main() -> None:
                 log_time_format="[%H:%M:%S]",
                 markup=True,
             ),
-            file_handler,
+            plain_file_handler,
         ],
     )
     logger = logging.getLogger("thesis")
@@ -122,6 +241,10 @@ def main() -> None:
     logger.info("Config loaded: %s", args.config)
     logger.info("Symbol: %s, Timeframe: %s", config.data.symbol, config.data.timeframe)
     logger.info("Session directory: %s", session_dir)
+    if args.session:
+        logger.info("Resuming session: %s", args.session)
+        if args.stage is not None:
+            logger.info("Starting from stage: %d", args.stage)
 
     # Track pipeline timing
     t_start = time.monotonic()
@@ -143,35 +266,43 @@ def main() -> None:
     finally:
         elapsed = round(time.monotonic() - t_start, 2)
 
-    # Save session_info.json manifest
-    session_info = {
-        "symbol": config.data.symbol,
-        "timeframe": config.data.timeframe,
-        "session_timestamp": session_ts,
-        "pipeline_duration_seconds": elapsed,
-        "pipeline_ok": pipeline_ok,
-        "data_range": {
-            "train": [
-                str(config.splitting.train_start),
-                str(config.splitting.train_end),
-            ],
-            "val": [str(config.splitting.val_start), str(config.splitting.val_end)],
-            "test": [str(config.splitting.test_start), str(config.splitting.test_end)],
-        },
-        "force_rerun": config.workflow.force_rerun,
-        "random_seed": config.workflow.random_seed,
-    }
-    session_info_path = session_dir / "config" / "session_info.json"
-    with open(session_info_path, "w") as f:
-        json.dump(session_info, f, indent=2)
-    logger.info("Session info saved: %s", session_info_path)
+    # Save session_info.json manifest (only for new sessions)
+    if not args.session:
+        session_info = {
+            "symbol": config.data.symbol,
+            "timeframe": config.data.timeframe,
+            "session_timestamp": session_ts,
+            "pipeline_duration_seconds": elapsed,
+            "pipeline_ok": pipeline_ok,
+            "log_files": {
+                "plain": "logs/pipeline.log",
+            },
+            "data_range": {
+                "train": [
+                    str(config.splitting.train_start),
+                    str(config.splitting.train_end),
+                ],
+                "val": [str(config.splitting.val_start), str(config.splitting.val_end)],
+                "test": [
+                    str(config.splitting.test_start),
+                    str(config.splitting.test_end),
+                ],
+            },
+            "force_rerun": config.workflow.force_rerun,
+            "random_seed": config.workflow.random_seed,
+        }
+        session_info_path = session_dir / "config" / "session_info.json"
+        with open(session_info_path, "w") as f:
+            json.dump(session_info, f, indent=2)
+        logger.info("Session info saved: %s", session_info_path)
 
     logger.info(
-        "Done. Results saved to: %s (%.1fs) [%s]",
+        "Done. Results: %s (%.1fs) [%s]",
         session_dir,
         elapsed,
         "OK" if pipeline_ok else "FAILED",
     )
+    logger.info("Log: %s", plain_file_handler.baseFilename)
     sys.exit(0 if pipeline_ok else 1)
 
 

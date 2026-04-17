@@ -16,7 +16,7 @@
 
 ### Models
 
-- [x] **GRU feature extractor** — 2-layer GRU, 64 hidden units, 24-bar sequences
+- [x] **GRU feature extractor** — 2-layer GRU, 32 hidden units, 48-bar sequences
 - [x] **LightGBM classifier** — Tuned hyperparameters with class weight balancing
 - [x] **Hybrid training pipeline** — GRU hidden states + static features → LightGBM
 - [x] **SHAP feature importance** — Interpretability analysis of the hybrid model

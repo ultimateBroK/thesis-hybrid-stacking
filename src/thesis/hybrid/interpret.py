@@ -39,6 +39,7 @@ def _compute_shap(
     try:
         import shap
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
@@ -76,13 +77,15 @@ def _compute_shap(
             plt.figure(figsize=(10, 8))
 
             # Use bar plot for per-class feature importance with clear legend for 3 classes
+            rng = np.random.default_rng(config.workflow.random_seed)
             shap.summary_plot(
                 shap_values,
                 X_sample,
                 feature_names=feature_cols,
                 plot_type="bar",
                 class_names=["Short", "Hold", "Long"],  # Class indices 0, 1, 2
-                show=False
+                show=False,
+                rng=rng,
             )
 
             # Custom title for clarity

@@ -77,6 +77,7 @@ def load_session_data(config: Config) -> dict[str, Any]:
             session_dir: configured session directory (or falsy value),
             ohlcv: DataFrame or `None` if the OHLCV parquet is missing,
             features: DataFrame or `None` if the features parquet is missing,
+            test: DataFrame or `None` if the test parquet is missing (used for manual backtest),
             labels: DataFrame or `None` if the labels parquet is missing,
             predictions: DataFrame or `None` if the predictions parquet is missing,
             backtest_results: parsed JSON object or `None` if missing,
@@ -98,6 +99,10 @@ def load_session_data(config: Config) -> dict[str, Any]:
     data["features"] = (
         pl.read_parquet(features_path) if features_path.exists() else None
     )
+
+    # Test data (for manual backtesting)
+    test_path = Path(config.paths.test_data)
+    data["test"] = pl.read_parquet(test_path) if test_path.exists() else None
 
     # Labels
     labels_path = Path(config.paths.labels)

@@ -448,9 +448,7 @@ def run_ablation(config: Config) -> None:
     logger.info("=== VARIANT B: GRU-only (direct predictions) ===")
     gru_preds = np.argmax(gru_softmax, axis=1)
     trading_signals = gru_preds - 1  # 0,1,2 -> -1,0,1
-    logger.info(
-        "GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean()
-    )
+    logger.info("GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean())
 
     preds_path_b = session_dir / "predictions" / "ablation_gru_only.parquet"
     _save_preds(

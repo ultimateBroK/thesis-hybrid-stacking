@@ -161,8 +161,8 @@ pixi run ablation
 ```mermaid
 flowchart TD
     A["Train GRU once"] --> B["LightGBM-only<br/><i>11 features</i>"]
-    A --> C["GRU-only<br/><i>64 hidden states</i>"]
-    A --> D["Combined<br/><i>75 features</i>"]
+    A --> C["GRU-only<br/><i>32 hidden states</i>"]
+    A --> D["Combined<br/><i>43 features</i>"]
     B --> E["Compare<br/>Sharpe / Return / Drawdown"]
     C --> E
     D --> E

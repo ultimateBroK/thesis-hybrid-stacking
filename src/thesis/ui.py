@@ -4,6 +4,8 @@ Provides a single Console instance, styled Progress factories,
 and helper functions for consistent terminal output across all stages.
 """
 
+import logging
+
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -15,7 +17,6 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.panel import Panel
-
 from rich.text import Text
 
 # ---------------------------------------------------------------------------
@@ -51,9 +52,11 @@ STAGE_LABELS: dict[int, str] = {
 # UI helpers
 # ---------------------------------------------------------------------------
 def stage_header(stage: int, total: int = 6) -> None:
-    """Print a visually distinct stage banner."""
+    """Print a visually distinct stage banner via console (Rich) and logger."""
+    _logger = logging.getLogger("thesis")
     style = STAGE_STYLES.get(stage, "bold")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
+    # Rich console output for visual display
     console.print()
     console.rule(
         Text(f"  STAGE {stage}/{total}  ·  {label}  ", style=style),
@@ -61,12 +64,20 @@ def stage_header(stage: int, total: int = 6) -> None:
         characters="─",
     )
     console.print()
+    # Logger output for file capture
+    _logger.info("")
+    _logger.info("STAGE %d/%d | %s", stage, total, label)
+    _logger.info("")
 
 
 def stage_skip(stage: int, reason: str) -> None:
-    """Print a dim skip line."""
+    """Print a dim skip line via console (Rich) and logger."""
+    _logger = logging.getLogger("thesis")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
+    # Rich console output
     console.print(Text(f"  ⊘ SKIP {label}: {reason}", style="dim"))
+    # Logger output for file capture
+    _logger.info("SKIP %s | %s", label, reason)
 
 
 def training_progress(label: str, total: float, **fields: float) -> Progress:

@@ -180,10 +180,17 @@ def _train_fixed(
     return model
 
 
+# Default bars per year for H1 timeframe (approx 23h/day × 365 days)
+_H1_BARS_PER_YEAR = 8400
+
+
 def _compute_sharpe_from_predictions(
     y_true: np.ndarray,
     y_pred_proba: np.ndarray,
     confidence_threshold: float = 0.0,
+    spread_cost: float = 0.0002,
+    annualize: bool = False,
+    bars_per_year: int = _H1_BARS_PER_YEAR,
 ) -> float:
     """
     Compute Sharpe Ratio from prediction labels using a simplified trade simulation.
@@ -191,14 +198,21 @@ def _compute_sharpe_from_predictions(
     Simulates fixed-lot trades based on predicted direction vs actual direction.
     Uses simplified returns without full backtesting.py overhead for fast Optuna evaluation.
 
+    The return model accounts for spread cost (2-way round-trip) which affects
+    the breakeven win rate: for a 2bps spread, breakeven = 1/(1+spread) ≈ 49.9%
+
     Parameters:
         y_true: True labels (-1, 0, 1)
         y_pred_proba: Predicted class probabilities (3 columns for classes -1, 0, 1),
                       or 1D array of hard class predictions.
         confidence_threshold: Minimum probability threshold to trade (0 = trade all)
+        spread_cost: Round-trip spread cost as fraction of notional (default 2bps).
+                     Includes both spread and slippage. Breakeven win rate ≈ 1/(1+spread_cost).
+        annualize: If True, annualize Sharpe using bars_per_year (default True).
+        bars_per_year: Number of bars per year for annualization (default 8400 for H1).
 
     Returns:
-        Sharpe Ratio (annualized), or 0.0 if insufficient trades.
+        Sharpe Ratio (annualized if annualize=True), or 0.0 if insufficient trades.
     """
     # Handle 1D hard predictions by converting to probability format
     if y_pred_proba.ndim == 1:
@@ -231,9 +245,12 @@ def _compute_sharpe_from_predictions(
         return 0.0
 
     correct = y_pred == y_true
-    # Simple return: +1 for correct direction, -1 for wrong direction
-    # (actual P&L would depend on price move, but for direction this is a proxy)
-    direction_returns = np.where(correct, 1.0, -1.0)
+
+    # Cost-aware returns: account for spread/slippage cost
+    # Correct trade: entry price - spread_cost (round-trip)
+    # Wrong trade: entry price - 1 - spread_cost (lose full pip + spread)
+    # Net: +1 on correct, -1 on wrong, minus spread on every trade
+    direction_returns = np.where(correct, 1.0 - spread_cost, -1.0 - spread_cost)
 
     # Remove hold periods (zeros)
     returns = direction_returns[mask]
@@ -241,16 +258,23 @@ def _compute_sharpe_from_predictions(
     if len(returns) < 10:
         return 0.0
 
-    # Annualization factor (1H bars → ~8760 bars/year)
-    annualization = np.sqrt(8760 / len(returns))
-
     mean_ret = np.mean(returns)
-    std_ret = np.std(returns)
+    std_ret = np.std(returns, ddof=1)
 
     if std_ret == 0:
         return 0.0
 
-    sharpe = (mean_ret / std_ret) * annualization
+    sharpe = mean_ret / std_ret
+    n_trades = len(returns)
+
+    # Annualize only when actual trade count is known (e.g., final backtest).
+    # During Optuna CV we return unannualized Sharpe to avoid inflated estimates
+    # from using theoretical bars_per_year instead of actual trades per year.
+    if annualize and n_trades > 0:
+        # Use actual trade count for annualization (known in backtest context)
+        trades_per_year = min(bars_per_year, n_trades * 2)  # cap at bars_per_year
+        sharpe = sharpe * np.sqrt(trades_per_year)
+
     return float(sharpe)
 
 

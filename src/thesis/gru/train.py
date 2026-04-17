@@ -252,11 +252,13 @@ def train_gru(
             else:
                 patience_counter += 1
                 if patience_counter >= gru_cfg.patience:
-                    logger.info(
-                        "Early stop at epoch %d (patience=%d)",
-                        epoch + 1,
-                        gru_cfg.patience,
-                    )
+                    # Only log "early stop" if we actually stopped before the last epoch
+                    if epoch + 1 < gru_cfg.epochs:
+                        logger.info(
+                            "Early stop at epoch %d (patience=%d)",
+                            epoch + 1,
+                            gru_cfg.patience,
+                        )
                     break
 
     # Summary

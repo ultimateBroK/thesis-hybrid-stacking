@@ -201,7 +201,7 @@ class HybridGRUStrategy(Strategy):
                 confidence = float(self.proba_short[-1])
             else:
                 return  # Hold — do nothing
-            
+
             if confidence < self.confidence_threshold:
                 return  # Below threshold — skip trade
 
@@ -219,12 +219,13 @@ class HybridGRUStrategy(Strategy):
             self._entry_bar["long"] = len(self.data)
             sl_price = proxy_entry_price - (atr * self.atr_stop_mult)
             self.buy(size=size, sl=sl_price)
-            
+
         elif signal == -1 and not self.position:
             # Flat → enter short
             self._entry_bar["short"] = len(self.data)
             sl_price = proxy_entry_price + (atr * self.atr_stop_mult)
             self.sell(size=size, sl=sl_price)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -310,7 +311,7 @@ def _trades_to_list(
                 "direction": "long" if size > 0 else "short",
                 "entry_price": float(row.get("EntryPrice", 0)),
                 "exit_price": float(row.get("ExitPrice", 0)),
-                "size": size,
+                "lot_size": lots,
                 "pnl": float(row.get("PnL", 0)),
                 "return_pct": float(row.get("ReturnPct", 0)) * 100,
                 "commission": round(commission, 2),
@@ -566,3 +567,97 @@ def run_backtest_from_data(
     pdf = _prepare_df(test_df, preds_df)
     stats, _ = _run_bt(pdf, config)
     return _normalize_stats(stats)
+
+
+def run_backtest_manual(
+    test_df: pl.DataFrame,
+    preds_df: pl.DataFrame,
+    *,
+    leverage: float = 100.0,
+    lots_per_trade: float = 0.15,
+    confidence_threshold: float = 0.0,
+    spread_ticks: int = 35,
+    slippage_ticks: int = 5,
+    commission_per_lot: float = 10.0,
+    atr_stop_multiplier: float = 0.75,
+    auto_lot_sizing: bool = False,
+    risk_per_trade_pct: float = 1.0,
+    min_lot_size: float = 0.1,
+    max_lot_size: float = 10.0,
+    horizon_bars: int = 10,
+    contract_size: int = 100,
+    tick_size: float = 0.01,
+    initial_capital: float = 10_000.0,
+) -> tuple[dict, list[dict]]:
+    """
+    Run a backtest with manually specified parameters (no Config object required).
+
+    This function is designed for interactive use in dashboards where parameters can be
+    tuned without modifying the config file.
+
+    Parameters:
+        test_df: Market/test data with OHLCV columns and `atr_14`.
+        preds_df: Predictions with `timestamp` and `pred_label` (optionally `pred_proba_*`).
+        leverage: CFD leverage ratio (default 100).
+        lots_per_trade: Fixed lot size per trade when auto_lot_sizing=False.
+        confidence_threshold: Minimum prediction probability to trade (0 = disabled).
+        spread_ticks: Spread in ticks (default 35 = $0.35 for XAUUSD).
+        slippage_ticks: Slippage in ticks (default 5 = $0.05).
+        commission_per_lot: Commission per lot in dollars (default $10).
+        atr_stop_multiplier: ATR multiplier for stop-loss distance (default 0.75).
+        auto_lot_sizing: If True, calculate lot size based on risk parameters.
+        risk_per_trade_pct: Risk per trade as percentage of equity (default 1%).
+        min_lot_size: Minimum lot size when auto_lot_sizing=True.
+        max_lot_size: Maximum lot size when auto_lot_sizing=True.
+        horizon_bars: Time-based exit after N bars (default 10, matches config.labels).
+        contract_size: Units per lot (default 100 oz for XAUUSD).
+        tick_size: Price tick size in dollars (default 0.01).
+        initial_capital: Starting capital for the backtest.
+
+    Returns:
+        Tuple of (metrics dict, trades list). Metrics contains normalized performance
+        metrics; trades is a list of per-trade records.
+    """
+    pdf = _prepare_df(test_df, preds_df)
+
+    # Compute spread as relative rate
+    median_price = float(pdf["Close"].median())
+    spread_total = (spread_ticks + slippage_ticks) * tick_size / median_price
+
+    def commission_fn(order_size: float, price: float) -> float:
+        lots = abs(order_size) / contract_size
+        return lots * commission_per_lot
+
+    margin = 1.0 / leverage
+
+    bt = Backtest(
+        pdf,
+        HybridGRUStrategy,
+        cash=initial_capital,
+        spread=spread_total,
+        commission=commission_fn,
+        margin=margin,
+        exclusive_orders=True,
+        finalize_trades=True,
+    )
+
+    stats = bt.run(
+        atr_stop_mult=atr_stop_multiplier,
+        lots_per_trade=lots_per_trade,
+        confidence_threshold=confidence_threshold,
+        contract_size=contract_size,
+        horizon_bars=horizon_bars,
+        auto_lot_sizing=auto_lot_sizing,
+        risk_per_trade_pct=risk_per_trade_pct,
+        min_lot_size=min_lot_size,
+        max_lot_size=max_lot_size,
+    )
+
+    metrics = _normalize_stats(stats)
+    trades = _trades_to_list(
+        stats["_trades"],
+        commission_per_lot=commission_per_lot,
+        contract_size=contract_size,
+    )
+
+    return metrics, trades
