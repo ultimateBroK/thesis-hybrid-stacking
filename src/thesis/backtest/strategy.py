@@ -503,6 +503,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
         margin=margin,
         exclusive_orders=True,
         finalize_trades=True,
+        fractional_unit=1.0,  # Disable fractional price scaling (prices are in USD already)
     )
 
     stats = bt.run(
@@ -731,6 +732,7 @@ def run_backtest_manual(
         margin=margin,
         exclusive_orders=True,
         finalize_trades=True,
+        fractional_unit=1.0,  # Disable fractional price scaling
     )
 
     stats = bt.run(
