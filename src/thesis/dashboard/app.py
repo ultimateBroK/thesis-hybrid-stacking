@@ -202,32 +202,32 @@ def _render_chart(chart: object, height: str = "500px") -> None:
 def _is_extreme_value(metric_name: str, value: float) -> tuple[bool, float]:
     """
     Check if a metric value is extreme and return threshold info.
-    
+
     Args:
         metric_name: Name of the metric (e.g., 'recovery_factor', 'sharpe_ratio')
         value: Original metric value
-        
+
     Returns:
         Tuple of (is_extreme: bool, threshold: float)
     """
     # Define maximum reasonable thresholds for metrics prone to extreme values
     extreme_thresholds = {
-        "recovery_factor": 20.0,      # Above 20 is unrealistic
-        "sharpe_ratio": 10.0,         # Above 10 is suspicious
-        "sortino_ratio": 20.0,        # Above 20 is unrealistic  
-        "calmar_ratio": 15.0,         # Above 15 is suspicious
-        "profit_factor": 10.0,        # Above 10 is unrealistic
-        "sqn": 5.0,                   # Above 5 indicates overfitting
-        "kelly_criterion": 0.8,       # Above 80% is overly aggressive
-        "return_pct": 1000.0,         # Above 1000% return is suspicious
-        "cagr_pct": 500.0,            # Above 500% CAGR is unrealistic
-        "return_ann_pct": 500.0,      # Above 500% annual return is suspicious
+        "recovery_factor": 20.0,  # Above 20 is unrealistic
+        "sharpe_ratio": 10.0,  # Above 10 is suspicious
+        "sortino_ratio": 20.0,  # Above 20 is unrealistic
+        "calmar_ratio": 15.0,  # Above 15 is suspicious
+        "profit_factor": 10.0,  # Above 10 is unrealistic
+        "sqn": 5.0,  # Above 5 indicates overfitting
+        "kelly_criterion": 0.8,  # Above 80% is overly aggressive
+        "return_pct": 1000.0,  # Above 1000% return is suspicious
+        "cagr_pct": 500.0,  # Above 500% CAGR is unrealistic
+        "return_ann_pct": 500.0,  # Above 500% annual return is suspicious
     }
-    
+
     # Get threshold for this metric, default to no filtering
-    threshold = extreme_thresholds.get(metric_name, float('inf'))
+    threshold = extreme_thresholds.get(metric_name, float("inf"))
     is_extreme = value > threshold
-    
+
     return is_extreme, threshold
 
 
@@ -259,10 +259,14 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
 
     # Check for extreme values
     is_extreme, threshold = _is_extreme_value(metric_name, value)
-    
+
     # Special handling for extreme values
     if is_extreme:
-        return ("dangerous", "Extreme", f"Value {value:.1f} exceeds threshold {threshold:.1f} — verify for overfitting/data issues")
+        return (
+            "dangerous",
+            "Extreme",
+            f"Value {value:.1f} exceeds threshold {threshold:.1f} — verify for overfitting/data issues",
+        )
 
     # ========== Sharpe Ratio ==========
     # Higher is better. XAUUSD: 0.5-2.0 is realistic, >3.0 is suspicious.
@@ -358,7 +362,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 50:
             return ("excellent", "Excellent", "30-50% — exceptional performance")
         return ("dangerous", "Suspicious", ">50% — verify for overfitting")
-    
+
     # Total Return (different scale - entire period)
     if metric_name == "return_pct":
         if value < 0:
@@ -405,7 +409,6 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
             return ("good", "Good", "2.0-3.0 — good system quality")
         return ("excellent", "Excellent", ">3.0 — excellent system")
 
-    
     # ========== Exposure Time ==========
     # XAUUSD trades 24/5. 30-60% is target range.
     if metric_name == "exposure_time_pct":
@@ -464,7 +467,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 500:
             return ("good", "Good", "$200-500 — strong average wins")
         return ("excellent", "High", ">$500 — excellent win size")
-    
+
     if metric_name == "avg_loss":
         value = abs(value)  # Use absolute value for comparison
         if value < 50:
@@ -489,7 +492,11 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     # ========== Commissions ==========
     # Commission cost — context depends on account size and trade count.
     if metric_name == "commissions":
-        return ("moderate", "Cost", "Compare to total return — should be <5% of profits")
+        return (
+            "moderate",
+            "Cost",
+            "Compare to total return — should be <5% of profits",
+        )
 
     # ========== Avg Trade % ==========
     # Average trade return as %. Context: timeframe and strategy.
@@ -1062,7 +1069,7 @@ def _render_backtest_section(data: dict) -> None:
         _render_zoned_metric(
             profit_cols[4],
             "Kelly Criterion",
-            metrics.get("kelly_criterion", 0) * 100,
+            metrics.get("kelly_criterion", 0),
             "kelly_criterion",
             "{:.1f}",
             "%",

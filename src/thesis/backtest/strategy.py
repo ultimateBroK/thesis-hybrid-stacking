@@ -11,7 +11,8 @@ from pathlib import Path
 
 import pandas as pd
 import polars as pl
-from backtesting import Backtest, Strategy
+from backtesting import Strategy
+from backtesting.lib import FractionalBacktest
 
 from thesis.config import Config
 
@@ -59,6 +60,12 @@ class HybridGRUStrategy(Strategy):
     risk_per_trade_pct = 1.0
     min_lot_size = 0.1
     max_lot_size = 10.0
+    # Enhanced auto lot sizing parameters
+    enable_performance_adjustment = True
+    enable_volatility_adjustment = True
+    max_capital_risk_pct = 10.0
+    performance_multiplier = 1.2
+    performance_reduction = 0.8
 
     def init(self) -> None:
         """
@@ -66,6 +73,9 @@ class HybridGRUStrategy(Strategy):
 
         Registers `signals` from `data.pred_label` and `ATR` from `data.atr_14` with the backtesting indicator system, and sets an internal `_has_proba` flag indicating whether per-class probability columns exist. If probability columns are present, registers `proba_short` (`pred_proba_class_minus1`), `proba_hold` (`pred_proba_class_0`), and `proba_long` (`pred_proba_class_1`) as indicators.
         """
+        # Track initial capital for auto lot sizing calculations
+        self._initial_capital = self.equity
+
         self.signals = self.I(lambda: self.data.pred_label, name="signals", plot=False)
         self.atr = self.I(lambda: self.data.atr_14, name="ATR", plot=True)
         # Probabilities — may not exist if predictions lack proba columns
@@ -92,16 +102,16 @@ class HybridGRUStrategy(Strategy):
 
     def _calc_lot_size(self, atr: float, entry_price: float) -> float:
         """
-        Calculate lot size based on current equity and risk parameters.
+        Calculate dynamic lot size based on risk management rules and initial capital balance.
 
-        Uses the formula:
-            lot_size = (equity * risk_pct / 100) / (atr_stop_distance * contract_size)
-
-        Where atr_stop_distance = atr * atr_stop_mult (the dollar distance to stop loss).
+        Improved algorithm that considers:
+        - Initial capital for proportional scaling
+        - Current equity performance
+        - ATR-based volatility adjustment
+        - Maximum drawdown protection
 
         Args:
-            atr: Current ATR value in price units
-            entry_price: Entry price for the trade
+            atr: Current ATR value for stop loss calculation
 
         Returns:
             Lot size, clamped between min_lot_size and max_lot_size
@@ -109,21 +119,53 @@ class HybridGRUStrategy(Strategy):
         if not self.auto_lot_sizing:
             return self.lots_per_trade
 
-        # Risk amount in dollars
+        # Base risk amount in dollars (percentage of current equity)
         risk_amount = self.equity * (self.risk_per_trade_pct / 100.0)
+
+        # Performance adjustment factor based on equity vs initial capital
+        # If equity is growing, allow slightly larger positions
+        # If equity is declining, reduce position size
+        performance_adjustment = 1.0
+        if self.enable_performance_adjustment:
+            performance_ratio = self.equity / self._initial_capital
+            performance_adjustment = min(
+                self.performance_multiplier,
+                max(self.performance_reduction, performance_ratio),
+            )
+
+        # Volatility adjustment based on ATR relative to price
+        # Higher ATR (more volatility) = smaller position size
+        volatility_adjustment = 1.0
+        if self.enable_volatility_adjustment:
+            current_price = (
+                self.data.Close[-1] if hasattr(self.data, "Close") else 2000.0
+            )
+            atr_ratio = atr / current_price
+            volatility_adjustment = min(1.0, max(0.5, 1.0 - (atr_ratio - 0.01) * 10))
+
+        # Apply adjustments to risk amount
+        adjusted_risk_amount = (
+            risk_amount * performance_adjustment * volatility_adjustment
+        )
 
         # Stop loss distance in dollars per unit
         # For gold: ATR is in price units (USD), contract_size = 100 oz per lot
         stop_distance_dollars = atr * self.atr_stop_mult
 
-        # Risk per lot = stop distance * contract size
+        # Risk per lot = stop distance * contract_size
         risk_per_lot = stop_distance_dollars * self.contract_size
 
-        if risk_per_lot <= 0 or risk_amount <= 0:
+        if risk_per_lot <= 0 or adjusted_risk_amount <= 0:
             return self.lots_per_trade  # Fallback to fixed
 
         # Calculate lot size
-        lot_size = risk_amount / risk_per_lot
+        lot_size = adjusted_risk_amount / risk_per_lot
+
+        # Additional safety: limit maximum lot size based on initial capital
+        # Never risk more than max_capital_risk_pct% of initial capital on a single trade
+        max_risk_per_trade = self._initial_capital * (self.max_capital_risk_pct / 100.0)
+        max_lot_by_capital = max_risk_per_trade / risk_per_lot
+        lot_size = min(lot_size, max_lot_by_capital)
 
         # Clamp to configured bounds
         lot_size = max(self.min_lot_size, min(self.max_lot_size, lot_size))
@@ -267,39 +309,39 @@ def _normalize_stats(stats: pd.Series) -> dict:
         out[key] = v
 
     # Calculate recovery factor: Net Profit / Max Drawdown
-    # Use absolute dollar amounts, not percentages
-    # Net profit in dollars: (equity_final - initial_capital)
-    # Max drawdown in dollars: max_drawdown_pct * initial_capital / 100
+    # Use absolute dollar amounts, referenced against peak equity (not initial capital)
     equity_final = out.get("equity_final", 0)
-    initial_capital = 10000.0  # Default initial capital
+    equity_peak = out.get("equity_peak", equity_final)
+    initial_capital = 10000.0  # Default initial capital (only for net profit reference)
     max_dd_pct = out.get("max_drawdown_pct", 0)
-    
+
     net_profit_dollars = equity_final - initial_capital
-    max_dd_dollars = abs(max_dd_pct * initial_capital / 100)
-    
+    # Max drawdown is a % of PEAK equity, not initial capital
+    max_dd_dollars = abs(max_dd_pct / 100) * equity_peak
+
     if max_dd_dollars > 0:
         recovery_factor = net_profit_dollars / max_dd_dollars
     else:
         recovery_factor = 0.0
-    
+
     out["recovery_factor"] = recovery_factor
-    
+
     # Calculate avg_win and avg_loss from trades data
     # These are not provided by backtesting.py natively, so we calculate manually
     trades_df = stats.get("_trades", pd.DataFrame())
     if not trades_df.empty and "PnL" in trades_df.columns:
         wins = trades_df[trades_df["PnL"] > 0]["PnL"]
         losses = trades_df[trades_df["PnL"] <= 0]["PnL"]
-        
+
         avg_win = float(wins.mean()) if not wins.empty else 0.0
         avg_loss = float(losses.mean()) if not losses.empty else 0.0
-        
+
         out["avg_win"] = avg_win
         out["avg_loss"] = avg_loss
     else:
         out["avg_win"] = 0.0
         out["avg_loss"] = 0.0
-    
+
     return out
 
 
@@ -416,7 +458,7 @@ def _prepare_df(test_df: pl.DataFrame, preds_df: pl.DataFrame) -> pd.DataFrame:
     return pdf
 
 
-def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
+def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBacktest]:
     """
     Run a backtest on prepared market and prediction data using HybridGRUStrategy, with spread, commission, and margin derived from the provided configuration.
 
@@ -452,7 +494,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
     # Margin: 1/leverage
     margin = 1.0 / bc.leverage
 
-    bt = Backtest(
+    bt = FractionalBacktest(
         pdf,
         HybridGRUStrategy,
         cash=bc.initial_capital,
@@ -473,6 +515,11 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, Backtest]:
         risk_per_trade_pct=bc.risk_per_trade_pct,
         min_lot_size=bc.min_lot_size,
         max_lot_size=bc.max_lot_size,
+        enable_performance_adjustment=bc.enable_performance_adjustment,
+        enable_volatility_adjustment=bc.enable_volatility_adjustment,
+        max_capital_risk_pct=bc.max_capital_risk_pct,
+        performance_multiplier=bc.performance_multiplier,
+        performance_reduction=bc.performance_reduction,
     )
     return stats, bt
 
@@ -608,8 +655,8 @@ def run_backtest_manual(
     test_df: pl.DataFrame,
     preds_df: pl.DataFrame,
     *,
-    leverage: float = 100.0,
-    lots_per_trade: float = 0.15,
+    leverage: int = 100,
+    lots_per_trade: float = 1.0,
     confidence_threshold: float = 0.0,
     spread_ticks: int = 35,
     slippage_ticks: int = 5,
@@ -619,6 +666,11 @@ def run_backtest_manual(
     risk_per_trade_pct: float = 1.0,
     min_lot_size: float = 0.1,
     max_lot_size: float = 10.0,
+    enable_performance_adjustment: bool = True,
+    enable_volatility_adjustment: bool = True,
+    max_capital_risk_pct: float = 10.0,
+    performance_multiplier: float = 1.2,
+    performance_reduction: float = 0.8,
     horizon_bars: int = 10,
     contract_size: int = 100,
     tick_size: float = 0.01,
@@ -644,6 +696,11 @@ def run_backtest_manual(
         risk_per_trade_pct: Risk per trade as percentage of equity (default 1%).
         min_lot_size: Minimum lot size when auto_lot_sizing=True.
         max_lot_size: Maximum lot size when auto_lot_sizing=True.
+        enable_performance_adjustment: Adjust position size based on equity performance.
+        enable_volatility_adjustment: Reduce size during high volatility periods.
+        max_capital_risk_pct: Maximum % of initial capital to risk per trade.
+        performance_multiplier: Max position size increase when performing well.
+        performance_reduction: Min position size when underperforming.
         horizon_bars: Time-based exit after N bars (default 10, matches config.labels).
         contract_size: Units per lot (default 100 oz for XAUUSD).
         tick_size: Price tick size in dollars (default 0.01).
@@ -665,7 +722,7 @@ def run_backtest_manual(
 
     margin = 1.0 / leverage
 
-    bt = Backtest(
+    bt = FractionalBacktest(
         pdf,
         HybridGRUStrategy,
         cash=initial_capital,
@@ -686,6 +743,11 @@ def run_backtest_manual(
         risk_per_trade_pct=risk_per_trade_pct,
         min_lot_size=min_lot_size,
         max_lot_size=max_lot_size,
+        enable_performance_adjustment=enable_performance_adjustment,
+        enable_volatility_adjustment=enable_volatility_adjustment,
+        max_capital_risk_pct=max_capital_risk_pct,
+        performance_multiplier=performance_multiplier,
+        performance_reduction=performance_reduction,
     )
 
     metrics = _normalize_stats(stats)

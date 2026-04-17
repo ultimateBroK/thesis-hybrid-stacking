@@ -120,6 +120,18 @@ class BacktestConfig:
     risk_per_trade_pct: float = 1.0  # Risk % of equity per trade
     min_lot_size: float = 0.1  # Minimum lot size floor
     max_lot_size: float = 10.0  # Maximum lot size ceiling
+    # Enhanced auto lot sizing parameters
+    enable_performance_adjustment: bool = (
+        True  # Adjust position size based on equity performance
+    )
+    enable_volatility_adjustment: bool = (
+        True  # Reduce size during high volatility periods
+    )
+    max_capital_risk_pct: float = 10.0  # Maximum % of initial capital to risk per trade
+    performance_multiplier: float = (
+        1.2  # Max position size increase when performing well
+    )
+    performance_reduction: float = 0.8  # Min position size when underperforming
 
 
 @dataclass
