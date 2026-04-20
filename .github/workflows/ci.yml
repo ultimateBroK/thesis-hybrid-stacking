@@ -59,6 +59,7 @@ jobs:
       - name: Run all tests with coverage
         run: |
           pixi run pytest tests/ -v \
+            --cov-config=.coveragerc \
             --cov=src/thesis \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
