@@ -300,8 +300,27 @@ def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
         .add(
             series_name="Labels",
             data_pair=data_pairs,
-            rosetype="radius",
-            label_opts=opts.LabelOpts(formatter="{b}: {c} ({d}%)"),
+            radius="75%",
+            label_opts=opts.LabelOpts(
+                formatter="{name|{b}}\n{count|{c}} {per|{d}%}",
+                position="outside",
+                rich={
+                    "name": {
+                        "fontSize": 14,
+                        "fontWeight": "bold",
+                        "padding": [0, 0, 4, 0],
+                    },
+                    "count": {
+                        "fontSize": 12,
+                        "color": "#666",
+                    },
+                    "per": {
+                        "fontSize": 12,
+                        "fontWeight": "bold",
+                        "color": "#333",
+                    },
+                },
+            ),
         )
         .set_colors([COLORS["short"], COLORS["flat"], COLORS["long"]])
         .set_global_opts(

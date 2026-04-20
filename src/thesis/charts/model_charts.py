@@ -55,7 +55,7 @@ def build_confusion_matrix_chart(
             series_name="Confusion",
             yaxis_data=display_labels,
             value=data,
-            label_opts=opts.LabelOpts(is_show=True, formatter="{c}"),
+            label_opts=opts.LabelOpts(is_show=True),
         )
         .set_global_opts(
             title_opts=opts.TitleOpts(title="Normalized Confusion Matrix (Test Set)"),
@@ -64,9 +64,13 @@ def build_confusion_matrix_chart(
                 max_=1,
                 is_calculable=True,
                 orient="vertical",
+                pos_right="0%",
+                pos_top="center",
                 range_color=["#FFFFFF", "#93C5FD", "#2563EB"],
             ),
-            tooltip_opts=opts.TooltipOpts(trigger="item"),
+            tooltip_opts=opts.TooltipOpts(
+                trigger="item",
+            ),
         )
     )
     return chart
@@ -138,7 +142,15 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
             yaxis_opts=opts.AxisOpts(name="Relative Frequency (%)"),
             tooltip_opts=opts.TooltipOpts(trigger="axis"),
             legend_opts=opts.LegendOpts(),
-            datazoom_opts=[opts.DataZoomOpts(type_="inside")],
+            datazoom_opts=[
+                opts.DataZoomOpts(
+                    is_show=False,
+                    type_="slider",
+                    range_start=0,
+                    range_end=100,
+                ),
+                opts.DataZoomOpts(type_="inside", range_start=0, range_end=100),
+            ],
         )
     )
     return chart
@@ -193,5 +205,71 @@ def build_feature_importance_chart(
             tooltip_opts=opts.TooltipOpts(trigger="axis"),
             legend_opts=opts.LegendOpts(),
         )
+    )
+    return chart
+
+
+def build_shap_chart(shap_data: dict, top_n: int = 20) -> Bar:
+    """
+    Build a horizontal stacked bar chart showing mean absolute SHAP values per class.
+
+    Produces a reversed-axis (horizontal) bar chart where each feature row shows
+    stacked bars for each class (Short, Hold, Long), representing the mean |SHAP|
+    contribution. Features are sorted by total importance descending.
+
+    Parameters:
+        shap_data (dict): SHAP values JSON with keys ``features``, ``class_names``,
+            and ``mean_abs_shap`` (list of lists, one per class).
+        top_n (int): Maximum number of features to display.
+
+    Returns:
+        Bar: A pyecharts horizontal stacked Bar chart, or empty Bar if data is invalid.
+    """
+    features = shap_data.get("features", [])
+    class_names = shap_data.get("class_names", ["Short", "Hold", "Long"])
+    mean_abs_shap = shap_data.get("mean_abs_shap", [])
+
+    if not features or not mean_abs_shap:
+        return Bar()
+
+    # Compute total importance per feature for sorting
+    totals = [
+        sum(cls_vals[i] for cls_vals in mean_abs_shap) for i in range(len(features))
+    ]
+    sorted_indices = sorted(
+        range(len(features)), key=lambda i: totals[i], reverse=True
+    )[:top_n]
+    sorted_indices = sorted_indices[::-1]  # Reverse for horizontal bar (bottom = highest)
+
+    sorted_features = [features[i] for i in sorted_indices]
+    class_colors = [COLORS["short"], COLORS["flat"], COLORS["long"]]
+
+    chart = Bar(init_opts=opts.InitOpts(height="600px"))
+    chart.add_xaxis(sorted_features)
+
+    for cls_idx, cls_name in enumerate(class_names):
+        if cls_idx < len(mean_abs_shap):
+            cls_vals = mean_abs_shap[cls_idx]
+            y_data = [round(cls_vals[i], 4) for i in sorted_indices]
+        else:
+            y_data = [0] * len(sorted_features)
+        chart.add_yaxis(
+            series_name=cls_name,
+            y_axis=y_data,
+            stack="shap",
+            label_opts=opts.LabelOpts(is_show=False),
+            itemstyle_opts=opts.ItemStyleOpts(
+                color=class_colors[cls_idx]
+                if cls_idx < len(class_colors)
+                else COLORS["primary"]
+            ),
+        )
+
+    chart.reversal_axis().set_global_opts(
+        title_opts=opts.TitleOpts(title="SHAP Feature Importance by Class"),
+        xaxis_opts=opts.AxisOpts(name="Mean |SHAP Value|"),
+        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=9)),
+        tooltip_opts=opts.TooltipOpts(trigger="axis"),
+        legend_opts=opts.LegendOpts(),
     )
     return chart

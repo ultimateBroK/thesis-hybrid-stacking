@@ -34,6 +34,7 @@ from .model_charts import (
     build_confidence_distribution_chart,
     build_confusion_matrix_chart,
     build_feature_importance_chart,
+    build_shap_chart,
 )
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     "build_confusion_matrix_chart",
     "build_confidence_distribution_chart",
     "build_feature_importance_chart",
+    "build_shap_chart",
     # Backtest charts
     "build_equity_drawdown_chart",
     "build_pnl_histogram_chart",

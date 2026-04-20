@@ -32,6 +32,124 @@ logger = logging.getLogger("thesis.hybrid.train")
 _console = Console()
 
 
+def _normalize_label(lbl: int) -> str:
+    """Normalize negative labels to string form: -1 -> 'minus1'."""
+    if lbl < 0:
+        return f"minus{abs(lbl)}"
+    return str(lbl)
+
+
+def _align_splits_with_sequences(
+    train_df: pl.DataFrame,
+    val_df: pl.DataFrame,
+    test_df: pl.DataFrame,
+    train_hidden: np.ndarray,
+    val_hidden: np.ndarray,
+    test_hidden: np.ndarray,
+    seq_len: int,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Align DataFrames with GRU sequence outputs.
+
+    Args:
+        train_df: Full training DataFrame.
+        val_df: Full validation DataFrame.
+        test_df: Full test DataFrame.
+        train_hidden: GRU hidden states for training.
+        val_hidden: GRU hidden states for validation.
+        test_hidden: GRU hidden states for test.
+        seq_len: GRU sequence length.
+
+    Returns:
+        Tuple of (train_aligned, val_aligned, test_aligned) DataFrames.
+    """
+    train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
+    val_aligned = val_df.slice(seq_len - 1, len(val_hidden))
+    test_aligned = test_df.slice(seq_len - 1, len(test_hidden))
+    logger.info(
+        "Aligned: train=%d val=%d test=%d",
+        len(train_aligned),
+        len(val_aligned),
+        len(test_aligned),
+    )
+    return train_aligned, val_aligned, test_aligned
+
+
+def _build_hybrid_matrix(
+    train_hidden: np.ndarray,
+    val_hidden: np.ndarray,
+    test_hidden: np.ndarray,
+    train_aligned: pl.DataFrame,
+    val_aligned: pl.DataFrame,
+    test_aligned: pl.DataFrame,
+    static_cols: list[str],
+    hidden_size: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
+    """Build hybrid feature matrices combining GRU hidden states with static features.
+
+    Args:
+        train_hidden: GRU hidden states for training.
+        val_hidden: GRU hidden states for validation.
+        test_hidden: GRU hidden states for test.
+        train_aligned: Aligned training DataFrame.
+        val_aligned: Aligned validation DataFrame.
+        test_aligned: Aligned test DataFrame.
+        static_cols: List of static feature column names.
+        hidden_size: GRU hidden size (number of GRU features).
+
+    Returns:
+        Tuple of (X_train, X_val, X_test, feature_names).
+    """
+    gru_feat_names = [f"gru_h{i}" for i in range(hidden_size)]
+    all_feature_cols = gru_feat_names + static_cols
+
+    X_train = np.concatenate(
+        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    X_val = np.concatenate(
+        [val_hidden, val_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    X_test = np.concatenate(
+        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    return X_train, X_val, X_test, all_feature_cols
+
+
+def _save_predictions(
+    test_aligned: pl.DataFrame,
+    y_test: np.ndarray,
+    preds: np.ndarray,
+    proba: np.ndarray,
+    class_order: list,
+    preds_path: Path,
+) -> None:
+    """Save predictions as Parquet and CSV files.
+
+    Args:
+        test_aligned: Aligned test DataFrame with timestamps.
+        y_test: True labels.
+        preds: Predicted labels.
+        proba: Prediction probabilities.
+        class_order: Class order mapping.
+        preds_path: Destination path for Parquet file.
+    """
+    proba_cols = {
+        f"pred_proba_class_{_normalize_label(cls)}": proba[:, idx]
+        for idx, cls in enumerate(class_order)
+    }
+    preds_df = pl.DataFrame(
+        {
+            "timestamp": test_aligned["timestamp"],
+            "true_label": y_test,
+            "pred_label": preds.astype(np.int32),
+            **proba_cols,
+        }
+    )
+    preds_path.parent.mkdir(parents=True, exist_ok=True)
+    preds_df.write_parquet(preds_path)
+    csv_path = preds_path.with_suffix(".csv")
+    preds_df.write_csv(csv_path)
+
+
 def train_model(config: Config) -> None:
     """
     Orchestrates training of a hybrid GRU feature extractor and LightGBM classifier, evaluates on the test split, and saves models, predictions, and artifacts.
@@ -84,31 +202,28 @@ def train_model(config: Config) -> None:
 
     # --- 2. Align DataFrames with GRU sequences ---
     seq_len = config.gru.sequence_length
-    train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
-    val_aligned = val_df.slice(seq_len - 1, len(val_hidden))
-    test_aligned = test_df.slice(seq_len - 1, len(test_hidden))
-
-    logger.info(
-        "Aligned: train=%d val=%d test=%d",
-        len(train_aligned),
-        len(val_aligned),
-        len(test_aligned),
+    train_aligned, val_aligned, test_aligned = _align_splits_with_sequences(
+        train_df,
+        val_df,
+        test_df,
+        train_hidden,
+        val_hidden,
+        test_hidden,
+        seq_len,
     )
 
     # --- 3. Build hybrid feature matrix ---
     static_cols = [c for c in train_aligned.columns if c not in _EXCLUDE_COLS]
     hidden_size = config.gru.hidden_size
-    gru_feat_names = [f"gru_h{i}" for i in range(hidden_size)]
-    all_feature_cols = gru_feat_names + static_cols
-
-    X_train = np.concatenate(
-        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_val = np.concatenate(
-        [val_hidden, val_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_test = np.concatenate(
-        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
+    X_train, X_val, X_test, all_feature_cols = _build_hybrid_matrix(
+        train_hidden,
+        val_hidden,
+        test_hidden,
+        train_aligned,
+        val_aligned,
+        test_aligned,
+        static_cols,
+        hidden_size,
     )
 
     y_train = train_aligned["label"].to_numpy().astype(np.int32)
@@ -198,35 +313,9 @@ def train_model(config: Config) -> None:
     _console.print(table)
     logger.info("Test accuracy: %.4f", acc)
 
-    class_order = model.classes_.tolist()  # e.g. [-1, 0, 1]
-
-    def _normalize_label(lbl: int) -> str:
-        """Normalize negative labels to string form: -1 -> 'minus1'."""
-        if lbl < 0:
-            return f"minus{abs(lbl)}"
-        return str(lbl)
-
-    proba_cols = {
-        f"pred_proba_class_{_normalize_label(cls)}": proba[:, idx]
-        for idx, cls in enumerate(class_order)
-    }
-
-    preds_df = pl.DataFrame(
-        {
-            "timestamp": test_aligned["timestamp"],
-            "true_label": y_test,
-            "pred_label": preds.astype(np.int32),
-            **proba_cols,
-        }
-    )
-
+    class_order = model.classes_.tolist()
     preds_path = Path(config.paths.predictions)
-    preds_path.parent.mkdir(parents=True, exist_ok=True)
-    preds_df.write_parquet(preds_path)
-
-    # CSV mirror
-    csv_path = preds_path.with_suffix(".csv")
-    preds_df.write_csv(csv_path)
+    _save_predictions(test_aligned, y_test, preds, proba, class_order, preds_path)
 
     # --- 6. SHAP ---
     _console.print(

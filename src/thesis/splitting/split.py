@@ -44,74 +44,24 @@ def split_data(config: Config) -> None:
     df = pl.read_parquet(labels_path)
     logger.info("Total rows: %d", len(df))
 
-    ts_dtype = df["timestamp"].dtype
-
-    # Parse date boundaries
-    bounds = {}
-    for key in (
-        "train_start",
-        "train_end",
-        "val_start",
-        "val_end",
-        "test_start",
-        "test_end",
-    ):
-        bounds[key] = (
-            pl.lit(getattr(config.splitting, key)).str.to_datetime().cast(ts_dtype)
-        )
-
-    train_df = df.filter(
-        (pl.col("timestamp") >= bounds["train_start"])
-        & (pl.col("timestamp") <= bounds["train_end"])
-    )
-    val_df = df.filter(
-        (pl.col("timestamp") >= bounds["val_start"])
-        & (pl.col("timestamp") <= bounds["val_end"])
-    )
-    test_df = df.filter(
-        (pl.col("timestamp") >= bounds["test_start"])
-        & (pl.col("timestamp") <= bounds["test_end"])
-    )
-
+    bounds = _parse_date_bounds(df, config)
+    train_df, val_df, test_df = _filter_splits_by_dates(df, bounds)
     logger.info(
         "Raw split — train: %d, val: %d, test: %d",
         len(train_df),
         len(val_df),
         len(test_df),
     )
-
-    # Purge & embargo
-    purge = config.splitting.purge_bars
-    embargo = config.splitting.embargo_bars
-    if purge > 0 or embargo > 0:
-        train_df, val_df, test_df = _apply_purge_embargo(
-            train_df, val_df, test_df, purge, embargo
-        )
-        logger.info(
-            "After purge (%d) + embargo (%d) — train: %d, val: %d, test: %d",
-            purge,
-            embargo,
-            len(train_df),
-            len(val_df),
-            len(test_df),
-        )
-
-    # Correlation filtering (train-only computation)
+    train_df, val_df, test_df = _apply_purge_and_embargo(
+        train_df, val_df, test_df, config
+    )
     if config.features.correlation_threshold < 1.0:
         train_df, val_df, test_df = _drop_correlated(
             train_df, val_df, test_df, config.features.correlation_threshold
         )
-
-    # Log class distribution
     for name, split in [("Train", train_df), ("Val", val_df), ("Test", test_df)]:
         _log_distribution(name, split)
-
-    # Save
-    for tag, data in [("train", train_df), ("val", val_df), ("test", test_df)]:
-        path = Path(getattr(config.paths, f"{tag}_data"))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data.write_parquet(path)
-        logger.info("Saved %s: %s (%d rows)", tag, path, len(data))
+    _save_split_files(config, train_df, val_df, test_df)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +122,76 @@ def _apply_purge_embargo(
         logger.warning("Test set is smaller than purge + embargo size!")
 
     return train, val, test
+
+
+def _parse_date_bounds(df: pl.DataFrame, config: Config) -> dict:
+    """Parse date boundary strings from config into typed Polars expressions."""
+    ts_dtype = df["timestamp"].dtype
+    bounds = {}
+    for key in (
+        "train_start",
+        "train_end",
+        "val_start",
+        "val_end",
+        "test_start",
+        "test_end",
+    ):
+        bounds[key] = (
+            pl.lit(getattr(config.splitting, key)).str.to_datetime().cast(ts_dtype)
+        )
+    return bounds
+
+
+def _filter_splits_by_dates(
+    df: pl.DataFrame, bounds: dict
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Filter dataframe into train/val/test splits by date boundaries."""
+    train_df = df.filter(
+        (pl.col("timestamp") >= bounds["train_start"])
+        & (pl.col("timestamp") <= bounds["train_end"])
+    )
+    val_df = df.filter(
+        (pl.col("timestamp") >= bounds["val_start"])
+        & (pl.col("timestamp") <= bounds["val_end"])
+    )
+    test_df = df.filter(
+        (pl.col("timestamp") >= bounds["test_start"])
+        & (pl.col("timestamp") <= bounds["test_end"])
+    )
+    return train_df, val_df, test_df
+
+
+def _apply_purge_and_embargo(
+    train_df: pl.DataFrame, val_df: pl.DataFrame, test_df: pl.DataFrame, config: Config
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Apply purge and embargo, log the result, and return modified splits."""
+    purge = config.splitting.purge_bars
+    embargo = config.splitting.embargo_bars
+    if purge <= 0 and embargo <= 0:
+        return train_df, val_df, test_df
+    train_df, val_df, test_df = _apply_purge_embargo(
+        train_df, val_df, test_df, purge, embargo
+    )
+    logger.info(
+        "After purge (%d) + embargo (%d) — train: %d, val: %d, test: %d",
+        purge,
+        embargo,
+        len(train_df),
+        len(val_df),
+        len(test_df),
+    )
+    return train_df, val_df, test_df
+
+
+def _save_split_files(
+    config: Config, train_df: pl.DataFrame, val_df: pl.DataFrame, test_df: pl.DataFrame
+) -> None:
+    """Write train/val/test DataFrames to their configured parquet paths."""
+    for tag, data in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        path = Path(getattr(config.paths, f"{tag}_data"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data.write_parquet(path)
+        logger.info("Saved %s: %s (%d rows)", tag, path, len(data))
 
 
 # ---------------------------------------------------------------------------

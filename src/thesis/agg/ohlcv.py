@@ -94,6 +94,90 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
     return ohlcv
 
 
+def _parse_timeframe_to_ms(timeframe: str) -> int:
+    """Parse config timeframe string to milliseconds.
+
+    Args:
+        timeframe: Timeframe string like "1H", "4H", "5MIN", "1D".
+
+    Returns:
+        Timeframe in milliseconds.
+
+    Raises:
+        ValueError: If timeframe format is unsupported or invalid.
+    """
+    tf = timeframe.upper()
+    if tf.endswith("H"):
+        hours = int(tf[:-1])
+        if hours <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': hours must be > 0")
+        return hours * 3_600_000
+    elif tf.endswith("MIN") or tf.endswith("M"):
+        minutes = int(tf.replace("MIN", "").replace("M", ""))
+        if minutes <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': minutes must be > 0")
+        return minutes * 60_000
+    elif tf in ("D", "1D"):
+        return 86_400_000
+    else:
+        raise ValueError(f"Unsupported timeframe: {tf}")
+
+
+def _aggregate_monthly_files(
+    parquet_files: list[Path],
+    group_ms: int,
+) -> list[pl.DataFrame]:
+    """Aggregate monthly tick files into OHLCV bars.
+
+    Args:
+        parquet_files: List of monthly parquet file paths.
+        group_ms: Bar size in milliseconds for grouping.
+
+    Returns:
+        List of OHLCV DataFrames, one per input file.
+    """
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        console=None,
+    ) as progress:
+        task = progress.add_task(
+            f"[cyan]Aggregating {len(parquet_files)} monthly files",
+            total=len(parquet_files),
+        )
+        monthly_bars: list[pl.DataFrame] = []
+        for f in parquet_files:
+            progress.update(task, description=f"[cyan]{f.name}")
+            bars = _aggregate_file(f, group_ms)
+            monthly_bars.append(bars)
+            progress.advance(task)
+        return monthly_bars
+
+
+def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
+    """Concat, deduplicate, and filter OHLCV bars.
+
+    Args:
+        ohlcv: Concatenated OHLCV DataFrame.
+
+    Returns:
+        Tuple of (filtered DataFrame, number of dropped bars).
+    """
+    ohlcv = ohlcv.unique(subset=["timestamp"], keep="first").sort("timestamp")
+    n_before = len(ohlcv)
+    ohlcv = ohlcv.filter(
+        (pl.col("timestamp").dt.year() >= 2000)
+        & (pl.col("timestamp").dt.year() <= 2100)
+    )
+    n_after = len(ohlcv)
+    dropped = n_before - n_after
+    if dropped > 0:
+        logger.warning("Dropped %d bars with corrupted timestamps", dropped)
+    return ohlcv, dropped
+
+
 def prepare_data(config: Config) -> None:
     """
     Prepare OHLCV bars from raw monthly tick parquet files and write the resulting parquet to the configured output path.
@@ -133,57 +217,16 @@ def prepare_data(config: Config) -> None:
 
     logger.info("Found %d tick files in %s", len(parquet_files), raw_dir)
 
-    # Determine timeframe in milliseconds for grouping
-    tf = config.data.timeframe.upper()
-    if tf.endswith("H"):
-        hours = int(tf[:-1])
-        if hours <= 0:
-            raise ValueError(f"Invalid timeframe '{tf}': hours must be > 0")
-        group_ms = hours * 3_600_000
-    elif tf.endswith("MIN") or tf.endswith("M"):
-        minutes = int(tf.replace("MIN", "").replace("M", ""))
-        if minutes <= 0:
-            raise ValueError(f"Invalid timeframe '{tf}': minutes must be > 0")
-        group_ms = minutes * 60_000
-    elif tf in ("D", "1D"):
-        group_ms = 86_400_000
-    else:
-        raise ValueError(f"Unsupported timeframe: {tf}")
+    group_ms = _parse_timeframe_to_ms(config.data.timeframe)
 
     # Aggregate each monthly file separately — memory-efficient
-    monthly_bars: list[pl.DataFrame] = []
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        console=None,  # Use default console
-    ) as progress:
-        task = progress.add_task(
-            f"[cyan]Aggregating {len(parquet_files)} monthly files",
-            total=len(parquet_files),
-        )
-        for f in parquet_files:
-            progress.update(task, description=f"[cyan]{f.name}")
-            bars = _aggregate_file(f, group_ms)
-            monthly_bars.append(bars)
-            progress.advance(task)
+    monthly_bars = _aggregate_monthly_files(parquet_files, group_ms)
 
     # Concat small OHLCV DataFrames (tiny compared to ticks)
     ohlcv = pl.concat(monthly_bars, how="vertical").sort("timestamp")
 
-    # Remove duplicate bar timestamps (boundary overlap between months)
-    ohlcv = ohlcv.unique(subset=["timestamp"], keep="first").sort("timestamp")
-
-    # Filter out bars with corrupted timestamps (year outside 2000-2100)
-    n_before = len(ohlcv)
-    ohlcv = ohlcv.filter(
-        (pl.col("timestamp").dt.year() >= 2000)
-        & (pl.col("timestamp").dt.year() <= 2100)
-    )
-    n_after = len(ohlcv)
-    if n_before != n_after:
-        logger.warning("Dropped %d bars with corrupted timestamps", n_before - n_after)
+    # Remove duplicate bar timestamps and filter corrupted years
+    ohlcv, _ = _deduplicate_and_filter(ohlcv)
 
     logger.info("OHLCV bars: %d (timeframe=%s)", len(ohlcv), config.data.timeframe)
     logger.info(

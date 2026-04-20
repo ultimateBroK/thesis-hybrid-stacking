@@ -43,6 +43,7 @@ from thesis.charts import (  # noqa: E402
     build_monthly_returns_heatmap,
     build_pnl_histogram_chart,
     build_rolling_sharpe_chart,
+    build_shap_chart,
     load_session_data,
 )
 from thesis.config import load_config  # noqa: E402
@@ -580,6 +581,7 @@ def _render_zoned_metric(
             border-radius: 8px;
             padding: 12px 14px;
             margin: 4px 0;
+            min-height: 110px;
             height: 100%;
             display: flex;
             flex-direction: column;
@@ -587,8 +589,8 @@ def _render_zoned_metric(
             box-sizing: border-box;
         ">
             <div>
-                <div style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
-                <div style="font-size: 1.5rem; font-weight: 700; color: #e2e8f0; line-height: 1.2;">
+                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">
                     {format_str.format(value)}{unit}{display_suffix}
                 </div>
             </div>
@@ -603,8 +605,47 @@ def _render_zoned_metric(
                     text-transform: uppercase;
                     letter-spacing: 0.03em;
                 ">{zone_label}</span>
-                <div style="font-size: 0.65rem; color: #6b7280; margin-top: 4px; line-height: 1.3;">{recommendation}</div>
+                <div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{recommendation}</div>
             </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_metric_card(
+    col: object,
+    label: str,
+    value: str,
+    caption: str | None,
+    color: str,
+) -> None:
+    """Render a styled metric card with gradient background and accent border."""
+    caption_html = (
+        f'<div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{caption}</div>'
+        if caption
+        else ""
+    )
+    col.markdown(
+        f"""
+        <div style="
+            background: linear-gradient(135deg, {color}22 0%, {color}11 100%);
+            border-left: 3px solid {color};
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 4px 0;
+            min-height: 90px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+        ">
+            <div>
+                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">{value}</div>
+            </div>
+            {caption_html}
         </div>
         """,
         unsafe_allow_html=True,
@@ -827,16 +868,39 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
             }
 
         # === Primary Metrics Row ===
-        st.subheader("Accuracy Metrics")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric(
-            "Directional Accuracy",
-            f"{dir_acc:.1%}",
-            delta=f"+{(dir_acc - dir_baseline) * 100:.1f}pp vs random",
-        )
-        col2.metric("Exact-Match Accuracy", f"{exact_acc:.1%}")
-        col3.metric("Directional Baseline", f"{dir_baseline:.1%}")
-        col4.metric("Test Samples", f"{total:,}")
+        with st.container(border=True):
+            st.subheader("Accuracy Metrics")
+            st.caption("Model prediction accuracy against test set labels")
+
+            acc_cols = st.columns(4, gap="small")
+            _render_metric_card(
+                acc_cols[0],
+                "Directional Accuracy",
+                f"{dir_acc:.1%}",
+                f"+{(dir_acc - dir_baseline) * 100:.1f}pp vs random",
+                "#3b82f6",
+            )
+            _render_metric_card(
+                acc_cols[1],
+                "Exact-Match Accuracy",
+                f"{exact_acc:.1%}",
+                None,
+                "#8b5cf6",
+            )
+            _render_metric_card(
+                acc_cols[2],
+                "Directional Baseline",
+                f"{dir_baseline:.1%}",
+                "Random guess baseline",
+                "#6b7280",
+            )
+            _render_metric_card(
+                acc_cols[3],
+                "Test Samples",
+                f"{total:,}",
+                None,
+                "#10b981",
+            )
 
         # === Per-Class Breakdown ===
         st.subheader("Per-Class Performance")
@@ -879,17 +943,33 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
             "Hold": int((y_true == 0).sum()),
             "Long": int((y_true == 1).sum()),
         }
-        dist_col1, dist_col2 = st.columns(2)
-        with dist_col1:
-            st.markdown("**Actual Distribution**")
-            for name, count in true_counts.items():
-                pct = count / total * 100
-                st.markdown(f"{name}: {count:,} ({pct:.1f}%)")
-        with dist_col2:
-            st.markdown("**Predicted Distribution**")
-            for name, count in pred_counts.items():
-                pct = count / total * 100
-                st.markdown(f"{name}: {count:,} ({pct:.1f}%)")
+        labels = list(true_counts.keys())
+        actual_vals = [true_counts[k] for k in labels]
+        predicted_vals = [pred_counts[k] for k in labels]
+        dist_chart = (
+            Bar(init_opts=opts.InitOpts(height="400px"))
+            .add_xaxis(labels)
+            .add_yaxis(
+                series_name="Actual",
+                y_axis=actual_vals,
+                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["primary"]),
+                label_opts=opts.LabelOpts(is_show=True, position="top"),
+            )
+            .add_yaxis(
+                series_name="Predicted",
+                y_axis=predicted_vals,
+                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["secondary"]),
+                label_opts=opts.LabelOpts(is_show=True, position="top"),
+            )
+            .set_global_opts(
+                title_opts=opts.TitleOpts(title="Actual vs Predicted Label Distribution"),
+                xaxis_opts=opts.AxisOpts(name="Label"),
+                yaxis_opts=opts.AxisOpts(name="Count"),
+                tooltip_opts=opts.TooltipOpts(trigger="axis"),
+                legend_opts=opts.LegendOpts(),
+            )
+        )
+        _render_chart(dist_chart, height="400px")
     else:
         st.info("No predictions data available.")
 
@@ -900,8 +980,13 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
     else:
         st.info("No feature importance data available.")
 
-    # SHAP summary image from reports
-    if session_dir:
+    # SHAP summary — interactive pyecharts chart (fallback to PNG)
+    shap_data = data.get("shap_values")
+    if shap_data:
+        st.subheader("SHAP Summary")
+        chart = build_shap_chart(shap_data)
+        _render_chart(chart, height="600px")
+    elif session_dir:
         shap_png = Path(session_dir) / "reports" / "shap_summary.png"
         if shap_png.exists():
             st.subheader("SHAP Summary")
@@ -1157,6 +1242,7 @@ def _render_backtest_section(data: dict) -> None:
                 border-radius: 8px;
                 padding: 12px 14px;
                 margin: 4px 0;
+                min-height: 110px;
                 height: 100%;
                 display: flex;
                 flex-direction: column;
@@ -1164,8 +1250,8 @@ def _render_backtest_section(data: dict) -> None:
                 box-sizing: border-box;
             ">
                 <div>
-                    <div style="font-size: 0.7rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Period</div>
-                    <div style="font-size: 1.5rem; font-weight: 700; color: #e2e8f0; line-height: 1.2;">
+                    <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Period</div>
+                    <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">
                         {metrics.get("start", "N/A")[:10]}<br/>→ {metrics.get("end", "N/A")[:10]}
                     </div>
                 </div>
@@ -1180,7 +1266,7 @@ def _render_backtest_section(data: dict) -> None:
                         text-transform: uppercase;
                         letter-spacing: 0.03em;
                     ">Duration</span>
-                    <div style="font-size: 0.65rem; color: #6b7280; margin-top: 4px; line-height: 1.3;">Trading period</div>
+                    <div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">Trading period</div>
                 </div>
             </div>
             """,
@@ -1251,7 +1337,15 @@ def _render_backtest_section(data: dict) -> None:
                 yaxis_opts=opts.AxisOpts(name="PnL (USD)"),
                 tooltip_opts=opts.TooltipOpts(trigger="axis"),
                 legend_opts=opts.LegendOpts(is_show=False),
-                datazoom_opts=[opts.DataZoomOpts(type_="inside")],
+                datazoom_opts=[
+                    opts.DataZoomOpts(
+                        is_show=False,
+                        type_="slider",
+                        range_start=0,
+                        range_end=100,
+                    ),
+                    opts.DataZoomOpts(type_="inside", range_start=0, range_end=100),
+                ],
             )
         )
         _render_chart(returns_chart, height="400px")
@@ -1382,20 +1476,47 @@ def _render_training_section(data: dict, session_dir: str) -> None:
         lgbm_info = history.get("lightgbm", {})
 
         if gru_history:
-            st.subheader("GRU Training Progress")
-            epochs = [e["epoch"] for e in gru_history]
-            train_loss = [e["train_loss"] for e in gru_history]
-            val_loss = [e["val_loss"] for e in gru_history]
-            train_acc = [e["train_acc"] for e in gru_history]
-            val_acc = [e["val_acc"] for e in gru_history]
+            with st.container(border=True):
+                st.subheader("GRU Training Progress")
+                st.caption("GRU neural network training curves and best epoch metrics")
 
-            # Metric summary cards
-            best_epoch = max(gru_history, key=lambda e: e["val_acc"])
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Best Val Accuracy", f"{best_epoch['val_acc']:.2%}")
-            c2.metric("Best Epoch", f"{best_epoch['epoch']}")
-            c3.metric("Final Train Loss", f"{gru_history[-1]['train_loss']:.4f}")
-            c4.metric("Final Val Loss", f"{gru_history[-1]['val_loss']:.4f}")
+                epochs = [e["epoch"] for e in gru_history]
+                train_loss = [e["train_loss"] for e in gru_history]
+                val_loss = [e["val_loss"] for e in gru_history]
+                train_acc = [e["train_acc"] for e in gru_history]
+                val_acc = [e["val_acc"] for e in gru_history]
+
+                # Metric summary cards
+                best_epoch = max(gru_history, key=lambda e: e["val_acc"])
+                gru_cols = st.columns(4, gap="small")
+                _render_metric_card(
+                    gru_cols[0],
+                    "Best Val Accuracy",
+                    f"{best_epoch['val_acc']:.2%}",
+                    f"Epoch {best_epoch['epoch']}",
+                    "#22c55e",
+                )
+                _render_metric_card(
+                    gru_cols[1],
+                    "Best Epoch",
+                    f"{best_epoch['epoch']}",
+                    f"Val acc: {best_epoch['val_acc']:.2%}",
+                    "#3b82f6",
+                )
+                _render_metric_card(
+                    gru_cols[2],
+                    "Final Train Loss",
+                    f"{gru_history[-1]['train_loss']:.4f}",
+                    f"Started: {gru_history[0]['train_loss']:.4f}",
+                    "#f59e0b",
+                )
+                _render_metric_card(
+                    gru_cols[3],
+                    "Final Val Loss",
+                    f"{gru_history[-1]['val_loss']:.4f}",
+                    f"Best: {best_epoch['val_loss']:.4f}",
+                    "#ef4444",
+                )
 
             # Loss curve as ECharts
             loss_chart = (
@@ -1419,7 +1540,21 @@ def _render_training_section(data: dict, session_dir: str) -> None:
                     yaxis_opts=opts.AxisOpts(name="Loss", is_scale=True),
                     tooltip_opts=opts.TooltipOpts(trigger="axis"),
                     legend_opts=opts.LegendOpts(pos_right="right"),
-                    datazoom_opts=[opts.DataZoomOpts(type_="inside", xaxis_index=0)],
+                    datazoom_opts=[
+                        opts.DataZoomOpts(
+                            is_show=False,
+                            type_="slider",
+                            xaxis_index=0,
+                            range_start=0,
+                            range_end=100,
+                        ),
+                        opts.DataZoomOpts(
+                            type_="inside",
+                            xaxis_index=0,
+                            range_start=0,
+                            range_end=100,
+                        ),
+                    ],
                 )
             )
             _render_chart(loss_chart, height="550px")
@@ -1450,7 +1585,21 @@ def _render_training_section(data: dict, session_dir: str) -> None:
                     ),
                     tooltip_opts=opts.TooltipOpts(trigger="axis"),
                     legend_opts=opts.LegendOpts(pos_right="right"),
-                    datazoom_opts=[opts.DataZoomOpts(type_="inside", xaxis_index=0)],
+                    datazoom_opts=[
+                        opts.DataZoomOpts(
+                            is_show=False,
+                            type_="slider",
+                            xaxis_index=0,
+                            range_start=0,
+                            range_end=100,
+                        ),
+                        opts.DataZoomOpts(
+                            type_="inside",
+                            xaxis_index=0,
+                            range_start=0,
+                            range_end=100,
+                        ),
+                    ],
                 )
             )
             _render_chart(acc_chart, height="550px")
@@ -1458,11 +1607,32 @@ def _render_training_section(data: dict, session_dir: str) -> None:
             st.info("No GRU training history available.")
 
         if lgbm_info:
-            st.subheader("LightGBM Configuration")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Best Iteration", f"{lgbm_info.get('best_iteration', 'N/A')}")
-            c2.metric("Features", f"{lgbm_info.get('n_features', 'N/A')}")
-            c3.metric("Classes", f"{lgbm_info.get('n_classes', 'N/A')}")
+            with st.container(border=True):
+                st.subheader("LightGBM Configuration")
+                st.caption("Gradient boosting model training parameters and results")
+
+                lgbm_cols = st.columns(3, gap="small")
+                _render_metric_card(
+                    lgbm_cols[0],
+                    "Best Iteration",
+                    f"{lgbm_info.get('best_iteration', 'N/A')}",
+                    "Optimal boosting round",
+                    "#22c55e",
+                )
+                _render_metric_card(
+                    lgbm_cols[1],
+                    "Features",
+                    f"{lgbm_info.get('n_features', 'N/A')}",
+                    "Input feature count",
+                    "#3b82f6",
+                )
+                _render_metric_card(
+                    lgbm_cols[2],
+                    "Classes",
+                    f"{lgbm_info.get('n_classes', 'N/A')}",
+                    "Target labels",
+                    "#8b5cf6",
+                )
     else:
         st.info("No training history file found for this session.")
 
@@ -1532,10 +1702,18 @@ def _render_reports_section(session_dir: str) -> None:
         st.image(str(equity_png), width="stretch")
 
     # --- SHAP Summary ---
-    shap_png = reports_dir / "shap_summary.png"
-    if shap_png.exists():
+    shap_json_path = reports_dir / "shap_values.json"
+    if shap_json_path.exists():
+        with open(shap_json_path) as f:
+            shap_data = json.load(f)
         st.subheader("SHAP Feature Importance")
-        st.image(str(shap_png), width="stretch")
+        chart = build_shap_chart(shap_data)
+        _render_chart(chart, height="600px")
+    else:
+        shap_png = reports_dir / "shap_summary.png"
+        if shap_png.exists():
+            st.subheader("SHAP Feature Importance")
+            st.image(str(shap_png), width="stretch")
 
     st.divider()
 
@@ -1704,18 +1882,8 @@ def main() -> None:
         st.error("No session results found. Run `pixi run workflow` first.")
         return
 
-    # ── Section Navigation ──
-    section = st.sidebar.radio(
-        "Navigation",
-        [
-            "📊 Data",
-            "🧠 Model",
-            "🏃 Training",
-            "💰 Backtest",
-            "📝 Reports",
-        ],
-        label_visibility="collapsed",
-    )
+    # ── Centered Compact Navigation ──
+    sections = ["📊 Data", "🧠 Model", "🏃 Training", "💰 Backtest", "📝 Reports"]
     section_map = {
         "📊 Data": "Data Exploration",
         "🧠 Model": "Model Performance",
@@ -1723,6 +1891,22 @@ def main() -> None:
         "💰 Backtest": "Backtest Results",
         "📝 Reports": "Reports",
     }
+
+    # Get current selection from session state
+    current_section = st.session_state.get("nav_section", "📊 Data")
+
+    # Center the navigation with outer spacers
+    left_spacer, nav_center, right_spacer = st.columns([0.2, 0.6, 0.2])
+    with nav_center:
+        nav_cols = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
+        for i, sec in enumerate(sections):
+            with nav_cols[i]:
+                btn_type = "primary" if sec == current_section else "secondary"
+                if st.button(sec, key=f"nav_{sec}", type=btn_type, use_container_width=True):
+                    st.session_state.nav_section = sec
+                    st.rerun()
+
+    section = st.session_state.get("nav_section", "📊 Data")
 
     # Load data
     session_path = str(Path("results") / selected)

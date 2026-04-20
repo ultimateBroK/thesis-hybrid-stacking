@@ -337,17 +337,139 @@ def _determine_best(comparison: dict[str, dict]) -> str:
     return max(scores, key=lambda k: scores[k])
 
 
+def _run_variant_a(
+    test_aligned: pl.DataFrame,
+    y_test_aligned: np.ndarray,
+    train_aligned: pl.DataFrame,
+    val_aligned: pl.DataFrame,
+    y_train_aligned: np.ndarray,
+    y_val_aligned: np.ndarray,
+    static_cols: list[str],
+    config: Config,
+    session_dir: Path,
+) -> dict:
+    """Run variant A: LightGBM-only (static features)."""
+    logger.info("=== VARIANT A: LightGBM-only (static features) ===")
+    X_train_a = train_aligned.select(static_cols).to_numpy()
+    X_val_a = val_aligned.select(static_cols).to_numpy()
+    X_test_a = test_aligned.select(static_cols).to_numpy()
+
+    cw_a = _compute_class_weights(y_train_aligned)
+    model_a = _train_lgbm(
+        X_train_a, y_train_aligned, X_val_a, y_val_aligned, cw_a, config, static_cols
+    )
+    proba_a = model_a.predict_proba(_wrap_np(X_test_a, static_cols))
+    preds_a = model_a.classes_[np.argmax(proba_a, axis=1)]
+    logger.info("LightGBM-only accuracy: %.4f", (preds_a == y_test_aligned).mean())
+
+    preds_path_a = session_dir / "predictions" / "ablation_lgbm_only.parquet"
+    _save_preds(
+        test_aligned["timestamp"],
+        y_test_aligned,
+        preds_a,
+        proba_a,
+        preds_path_a,
+        class_order=[int(x) for x in model_a.classes_.tolist()],
+    )
+    preds_df_a = pl.read_parquet(preds_path_a)
+    metrics_a = _run_backtest_for(test_aligned, preds_df_a, config, "LightGBM-only")
+    return {"metrics": metrics_a, "feature_count": len(static_cols)}
+
+
+def _run_variant_b(
+    test_aligned: pl.DataFrame,
+    y_test_aligned: np.ndarray,
+    gru_softmax: np.ndarray,
+    hidden_size: int,
+    config: Config,
+    session_dir: Path,
+) -> dict:
+    """Run variant B: GRU-only (direct softmax predictions)."""
+    logger.info("=== VARIANT B: GRU-only (direct predictions) ===")
+    gru_preds = np.argmax(gru_softmax, axis=1)
+    trading_signals = gru_preds - 1  # 0,1,2 -> -1,0,1
+    logger.info("GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean())
+
+    preds_path_b = session_dir / "predictions" / "ablation_gru_only.parquet"
+    _save_preds(
+        test_aligned["timestamp"],
+        y_test_aligned,
+        trading_signals,
+        gru_softmax,
+        preds_path_b,
+    )
+    preds_df_b = pl.read_parquet(preds_path_b)
+    metrics_b = _run_backtest_for(test_aligned, preds_df_b, config, "GRU-only")
+    return {"metrics": metrics_b, "feature_count": hidden_size}
+
+
+def _run_variant_c(
+    test_aligned: pl.DataFrame,
+    y_test_aligned: np.ndarray,
+    train_hidden: np.ndarray,
+    val_hidden: np.ndarray,
+    test_hidden: np.ndarray,
+    train_aligned: pl.DataFrame,
+    val_aligned: pl.DataFrame,
+    y_train_aligned: np.ndarray,
+    y_val_aligned: np.ndarray,
+    static_cols: list[str],
+    hidden_size: int,
+    config: Config,
+    session_dir: Path,
+) -> dict:
+    """Run variant C: Combined (GRU hidden states + static features -> LightGBM)."""
+    logger.info("=== VARIANT C: Combined (GRU + LightGBM) ===")
+    gru_feat_names = [f"gru_h{i}" for i in range(hidden_size)]
+    all_feature_cols = gru_feat_names + static_cols
+
+    X_train_c = np.concatenate(
+        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    X_val_c = np.concatenate(
+        [val_hidden, val_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    X_test_c = np.concatenate(
+        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
+    )
+
+    logger.info(
+        "Hybrid features: %d (%d GRU + %d static)",
+        len(all_feature_cols),
+        hidden_size,
+        len(static_cols),
+    )
+
+    cw_c = _compute_class_weights(y_train_aligned)
+    model_c = _train_lgbm(
+        X_train_c,
+        y_train_aligned,
+        X_val_c,
+        y_val_aligned,
+        cw_c,
+        config,
+        all_feature_cols,
+    )
+    proba_c = model_c.predict_proba(_wrap_np(X_test_c, all_feature_cols))
+    preds_c = model_c.classes_[np.argmax(proba_c, axis=1)]
+    logger.info("Combined accuracy: %.4f", (preds_c == y_test_aligned).mean())
+
+    preds_path_c = session_dir / "predictions" / "ablation_combined.parquet"
+    _save_preds(
+        test_aligned["timestamp"],
+        y_test_aligned,
+        preds_c,
+        proba_c,
+        preds_path_c,
+        class_order=[int(x) for x in model_c.classes_.tolist()],
+    )
+    preds_df_c = pl.read_parquet(preds_path_c)
+    metrics_c = _run_backtest_for(test_aligned, preds_df_c, config, "Combined")
+    return {"metrics": metrics_c, "feature_count": len(all_feature_cols)}
+
+
 def run_ablation(config: Config) -> None:
-    """
-    Run all ablation variants and save comparison results to JSON.
-
-    Executes three model variants (LGBM-only, GRU-only, Combined) on the test set,
-    computes backtest metrics for each, logs a comparison table, identifies the best
-    variant, and saves results to the session directory.
-
-    Parameters:
-        config: Application configuration with paths, model, and backtest settings.
-    """
+    """Run all ablation variants and save comparison results to JSON."""
     import torch
 
     train_path = Path(config.paths.train_data)
@@ -396,7 +518,7 @@ def run_ablation(config: Config) -> None:
     y_val_aligned = val_aligned["label"].to_numpy().astype(np.int32)
     y_test_aligned = test_aligned["label"].to_numpy().astype(np.int32)
 
-    # GRU softmax probabilities via trained classifier head (variant B)
+    # GRU softmax probabilities for variant B
     gru_model.eval()
     gru_classifier.eval()
     with torch.no_grad():
@@ -409,107 +531,41 @@ def run_ablation(config: Config) -> None:
     static_cols = [c for c in train_aligned.columns if c not in _EXCLUDE_COLS]
     hidden_size = config.gru.hidden_size
 
-    # Variant A: LightGBM-only
-    logger.info("=== VARIANT A: LightGBM-only (static features) ===")
-    logger.info("Static features (%d): %s", len(static_cols), static_cols)
-
-    X_train_a = train_aligned.select(static_cols).to_numpy()
-    X_val_a = val_aligned.select(static_cols).to_numpy()
-    X_test_a = test_aligned.select(static_cols).to_numpy()
-
-    cw_a = _compute_class_weights(y_train_aligned)
-    model_a = _train_lgbm(
-        X_train_a,
+    # Run variants
+    result_a = _run_variant_a(
+        test_aligned,
+        y_test_aligned,
+        train_aligned,
+        val_aligned,
         y_train_aligned,
-        X_val_a,
         y_val_aligned,
-        cw_a,
-        config,
         static_cols,
-    )
-    proba_a = model_a.predict_proba(_wrap_np(X_test_a, static_cols))
-    preds_a = model_a.classes_[np.argmax(proba_a, axis=1)]
-    logger.info("LightGBM-only accuracy: %.4f", (preds_a == y_test_aligned).mean())
-
-    preds_path_a = session_dir / "predictions" / "ablation_lgbm_only.parquet"
-    _save_preds(
-        test_aligned["timestamp"],
-        y_test_aligned,
-        preds_a,
-        proba_a,
-        preds_path_a,
-        class_order=[int(x) for x in model_a.classes_.tolist()],
-    )
-    preds_df_a = pl.read_parquet(preds_path_a)
-    metrics_a = _run_backtest_for(test_aligned, preds_df_a, config, "LightGBM-only")
-    result_a = {"metrics": metrics_a, "feature_count": len(static_cols)}
-
-    # Variant B: GRU-only
-    logger.info("=== VARIANT B: GRU-only (direct predictions) ===")
-    gru_preds = np.argmax(gru_softmax, axis=1)
-    trading_signals = gru_preds - 1  # 0,1,2 -> -1,0,1
-    logger.info("GRU-only accuracy: %.4f", (trading_signals == y_test_aligned).mean())
-
-    preds_path_b = session_dir / "predictions" / "ablation_gru_only.parquet"
-    _save_preds(
-        test_aligned["timestamp"],
-        y_test_aligned,
-        trading_signals,
-        gru_softmax,
-        preds_path_b,
-    )
-    preds_df_b = pl.read_parquet(preds_path_b)
-    metrics_b = _run_backtest_for(test_aligned, preds_df_b, config, "GRU-only")
-    result_b = {"metrics": metrics_b, "feature_count": hidden_size}
-
-    # Variant C: Combined
-    logger.info("=== VARIANT C: Combined (GRU + LightGBM) ===")
-    gru_feat_names = [f"gru_h{i}" for i in range(hidden_size)]
-    all_feature_cols = gru_feat_names + static_cols
-
-    X_train_c = np.concatenate(
-        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_val_c = np.concatenate(
-        [val_hidden, val_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_test_c = np.concatenate(
-        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
-    )
-
-    logger.info(
-        "Hybrid features: %d (%d GRU + %d static)",
-        len(all_feature_cols),
-        hidden_size,
-        len(static_cols),
-    )
-
-    cw_c = _compute_class_weights(y_train_aligned)
-    model_c = _train_lgbm(
-        X_train_c,
-        y_train_aligned,
-        X_val_c,
-        y_val_aligned,
-        cw_c,
         config,
-        all_feature_cols,
+        session_dir,
     )
-    proba_c = model_c.predict_proba(_wrap_np(X_test_c, all_feature_cols))
-    preds_c = model_c.classes_[np.argmax(proba_c, axis=1)]
-    logger.info("Combined accuracy: %.4f", (preds_c == y_test_aligned).mean())
-
-    preds_path_c = session_dir / "predictions" / "ablation_combined.parquet"
-    _save_preds(
-        test_aligned["timestamp"],
+    result_b = _run_variant_b(
+        test_aligned,
         y_test_aligned,
-        preds_c,
-        proba_c,
-        preds_path_c,
-        class_order=[int(x) for x in model_c.classes_.tolist()],
+        gru_softmax,
+        hidden_size,
+        config,
+        session_dir,
     )
-    preds_df_c = pl.read_parquet(preds_path_c)
-    metrics_c = _run_backtest_for(test_aligned, preds_df_c, config, "Combined")
-    result_c = {"metrics": metrics_c, "feature_count": len(all_feature_cols)}
+    result_c = _run_variant_c(
+        test_aligned,
+        y_test_aligned,
+        train_hidden,
+        val_hidden,
+        test_hidden,
+        train_aligned,
+        val_aligned,
+        y_train_aligned,
+        y_val_aligned,
+        static_cols,
+        hidden_size,
+        config,
+        session_dir,
+    )
 
     comparison = {
         "lgbm_only": result_a,

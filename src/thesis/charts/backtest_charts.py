@@ -72,9 +72,18 @@ def build_equity_drawdown_chart(
             legend_opts=opts.LegendOpts(is_show=False),
             datazoom_opts=[
                 opts.DataZoomOpts(
-                    type_="slider", xaxis_index=[0, 1], pos_bottom="4%", height=28
+                    is_show=False,
+                    type_="slider",
+                    xaxis_index=[0, 1],
+                    range_start=0,
+                    range_end=100,
                 ),
-                opts.DataZoomOpts(type_="inside", xaxis_index=[0, 1]),
+                opts.DataZoomOpts(
+                    type_="inside",
+                    xaxis_index=[0, 1],
+                    range_start=0,
+                    range_end=100,
+                ),
             ],
         )
     )
@@ -349,7 +358,15 @@ def build_rolling_sharpe_chart(
             xaxis_opts=opts.AxisOpts(name="Trade #"),
             yaxis_opts=opts.AxisOpts(name="Annualized Sharpe"),
             tooltip_opts=opts.TooltipOpts(trigger="axis"),
-            datazoom_opts=[opts.DataZoomOpts(type_="inside")],
+            datazoom_opts=[
+                opts.DataZoomOpts(
+                    is_show=False,
+                    type_="slider",
+                    range_start=0,
+                    range_end=100,
+                ),
+                opts.DataZoomOpts(type_="inside", range_start=0, range_end=100),
+            ],
         )
     )
     return chart

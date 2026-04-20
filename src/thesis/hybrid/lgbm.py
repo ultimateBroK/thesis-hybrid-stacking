@@ -184,6 +184,63 @@ def _train_fixed(
 _H1_BARS_PER_YEAR = 8400
 
 
+def _convert_hard_to_proba(y_pred: np.ndarray) -> np.ndarray:
+    """Convert 1D hard class predictions to 3-column probability matrix.
+
+    Args:
+        y_pred: 1D array of hard class labels (-1, 0, 1).
+
+    Returns:
+        2D array of shape (n, 3) with one-hot encoded probabilities.
+    """
+    n = len(y_pred)
+    proba = np.zeros((n, 3), dtype=np.float64)
+    for i, pred in enumerate(y_pred):
+        if pred == -1:
+            proba[i, 0] = 1.0
+        elif pred == 0:
+            proba[i, 1] = 1.0
+        else:
+            proba[i, 2] = 1.0
+    return proba
+
+
+def _apply_confidence_filter(
+    y_pred: np.ndarray,
+    max_probs: np.ndarray,
+    confidence_threshold: float,
+) -> np.ndarray:
+    """Apply confidence threshold by forcing low-confidence predictions to Hold.
+
+    Args:
+        y_pred: Predicted class indices.
+        max_probs: Confidence values (max probability per sample).
+        confidence_threshold: Minimum confidence to trade.
+
+    Returns:
+        Modified predictions where low-confidence are set to 0 (Hold).
+    """
+    y_pred = y_pred.copy()
+    y_pred[max_probs < confidence_threshold] = 0
+    return y_pred
+
+
+def _compute_trade_returns(
+    correct: np.ndarray,
+    spread_cost: float,
+) -> np.ndarray:
+    """Compute cost-aware returns from correct/incorrect predictions.
+
+    Args:
+        correct: Boolean array indicating winning trades.
+        spread_cost: Round-trip spread cost fraction.
+
+    Returns:
+        Array of returns per trade.
+    """
+    return np.where(correct, 1.0 - spread_cost, -1.0 - spread_cost)
+
+
 def _compute_sharpe_from_predictions(
     y_true: np.ndarray,
     y_pred_proba: np.ndarray,
@@ -214,46 +271,21 @@ def _compute_sharpe_from_predictions(
     Returns:
         Sharpe Ratio (annualized if annualize=True), or 0.0 if insufficient trades.
     """
-    # Handle 1D hard predictions by converting to probability format
     if y_pred_proba.ndim == 1:
-        n = len(y_pred_proba)
-        proba = np.zeros((n, 3), dtype=np.float64)
-        for i, pred in enumerate(y_pred_proba):
-            if pred == -1:
-                proba[i, 0] = 1.0
-            elif pred == 0:
-                proba[i, 1] = 1.0
-            else:  # pred == 1
-                proba[i, 2] = 1.0
-        y_pred_proba = proba
+        y_pred_proba = _convert_hard_to_proba(y_pred_proba)
 
-    # 1. Find the class with highest probability and its confidence value
     max_probs = np.max(y_pred_proba, axis=1)
     pred_indices = np.argmax(y_pred_proba, axis=1)
-
-    # 2. Map index (0, 1, 2) back to original labels (-1, 0, 1).
-    # LightGBM always sorts classes, so the default order is [-1, 0, 1]
     classes = np.array([-1, 0, 1])
     y_pred = classes[pred_indices]
+    y_pred = _apply_confidence_filter(y_pred, max_probs, confidence_threshold)
 
-    # 3. Apply confidence threshold: if confidence is below threshold, force to Hold (0)
-    y_pred[max_probs < confidence_threshold] = 0
-
-    # Filter to non-hold predictions only
     mask = y_pred != 0
     if mask.sum() < 10:
         return 0.0
 
     correct = y_pred == y_true
-
-    # Cost-aware returns: account for spread/slippage cost
-    # Correct trade: entry price - spread_cost (round-trip)
-    # Wrong trade: entry price - 1 - spread_cost (lose full pip + spread)
-    # Net: +1 on correct, -1 on wrong, minus spread on every trade
-    direction_returns = np.where(correct, 1.0 - spread_cost, -1.0 - spread_cost)
-
-    # Remove hold periods (zeros)
-    returns = direction_returns[mask]
+    returns = _compute_trade_returns(correct, spread_cost)[mask]
 
     if len(returns) < 10:
         return 0.0

@@ -98,6 +98,28 @@ def _compute_shap(
             out.parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(out, dpi=150, bbox_inches="tight")
             plt.close()
+
+            # Save SHAP values as JSON for interactive pyecharts rendering
+            n_features = min(20, len(feature_cols))
+            mean_abs_shap = []
+            for sv in shap_values:
+                mean_abs_shap.append(
+                    np.abs(sv).mean(axis=0).tolist()[:n_features]
+                )
+            shap_json = {
+                "features": feature_cols[:n_features],
+                "class_names": ["Short", "Hold", "Long"],
+                "mean_abs_shap": mean_abs_shap,
+            }
+            if config.paths.session_dir:
+                json_out = (
+                    Path(config.paths.session_dir) / "reports" / "shap_values.json"
+                )
+            else:
+                json_out = Path("results/shap_values.json")
+            with open(json_out, "w") as f:
+                json.dump(shap_json, f, indent=2)
+
             progress.update(task, advance=1)
 
         shap_time = time.perf_counter() - shap_start

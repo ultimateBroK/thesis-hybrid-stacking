@@ -8,6 +8,7 @@ import csv
 import json
 import logging
 from pathlib import Path
+from typing import Callable
 
 import pandas as pd
 import polars as pl
@@ -274,6 +275,49 @@ class HybridGRUStrategy(Strategy):
 # ---------------------------------------------------------------------------
 
 
+def _extract_recovery_factor(
+    equity_final: float,
+    equity_peak: float,
+    max_dd_pct: float,
+    initial_capital: float = 10_000.0,
+) -> float:
+    """Compute recovery factor = net_profit / max_drawdown_dollars.
+
+    Args:
+        equity_final: Final equity value from backtest.
+        equity_peak: Peak equity reached during backtest.
+        max_dd_pct: Maximum drawdown as percentage of peak equity.
+        initial_capital: Starting capital (default 10_000).
+
+    Returns:
+        Recovery factor (0.0 if max_drawdown is zero or negative).
+    """
+    net_profit = equity_final - initial_capital
+    max_dd_dollars = abs(max_dd_pct / 100) * equity_peak
+    if max_dd_dollars > 0:
+        return net_profit / max_dd_dollars
+    return 0.0
+
+
+def _compute_avg_win_loss(trades_df: pd.DataFrame) -> tuple[float, float]:
+    """Compute average win and average loss from trades DataFrame.
+
+    Args:
+        trades_df: DataFrame with PnL column from backtesting.py stats.
+
+    Returns:
+        Tuple of (avg_win, avg_loss). Returns (0.0, 0.0) if DataFrame is empty
+        or PnL column is missing.
+    """
+    if trades_df.empty or "PnL" not in trades_df.columns:
+        return 0.0, 0.0
+    wins = trades_df[trades_df["PnL"] > 0]["PnL"]
+    losses = trades_df[trades_df["PnL"] <= 0]["PnL"]
+    avg_win = float(wins.mean()) if not wins.empty else 0.0
+    avg_loss = float(losses.mean()) if not losses.empty else 0.0
+    return avg_win, avg_loss
+
+
 def _normalize_stats(stats: pd.Series) -> dict:
     """
     Convert a Backtesting.py statistics Series into a dictionary with snake_case keys.
@@ -309,38 +353,18 @@ def _normalize_stats(stats: pd.Series) -> dict:
         out[key] = v
 
     # Calculate recovery factor: Net Profit / Max Drawdown
-    # Use absolute dollar amounts, referenced against peak equity (not initial capital)
     equity_final = out.get("equity_final", 0)
     equity_peak = out.get("equity_peak", equity_final)
-    initial_capital = 10000.0  # Default initial capital (only for net profit reference)
     max_dd_pct = out.get("max_drawdown_pct", 0)
-
-    net_profit_dollars = equity_final - initial_capital
-    # Max drawdown is a % of PEAK equity, not initial capital
-    max_dd_dollars = abs(max_dd_pct / 100) * equity_peak
-
-    if max_dd_dollars > 0:
-        recovery_factor = net_profit_dollars / max_dd_dollars
-    else:
-        recovery_factor = 0.0
-
-    out["recovery_factor"] = recovery_factor
+    out["recovery_factor"] = _extract_recovery_factor(
+        equity_final, equity_peak, max_dd_pct
+    )
 
     # Calculate avg_win and avg_loss from trades data
-    # These are not provided by backtesting.py natively, so we calculate manually
     trades_df = stats.get("_trades", pd.DataFrame())
-    if not trades_df.empty and "PnL" in trades_df.columns:
-        wins = trades_df[trades_df["PnL"] > 0]["PnL"]
-        losses = trades_df[trades_df["PnL"] <= 0]["PnL"]
-
-        avg_win = float(wins.mean()) if not wins.empty else 0.0
-        avg_loss = float(losses.mean()) if not losses.empty else 0.0
-
-        out["avg_win"] = avg_win
-        out["avg_loss"] = avg_loss
-    else:
-        out["avg_win"] = 0.0
-        out["avg_loss"] = 0.0
+    avg_win, avg_loss = _compute_avg_win_loss(trades_df)
+    out["avg_win"] = avg_win
+    out["avg_loss"] = avg_loss
 
     return out
 
@@ -458,53 +482,96 @@ def _prepare_df(test_df: pl.DataFrame, preds_df: pl.DataFrame) -> pd.DataFrame:
     return pdf
 
 
-def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBacktest]:
-    """
-    Run a backtest on prepared market and prediction data using HybridGRUStrategy, with spread, commission, and margin derived from the provided configuration.
+def _compute_spread_rate(
+    bc: "Config.BacktestConfig",
+    dc: "Config.DataConfig",
+    median_price: float,
+) -> float:
+    """Convert tick-based spread to relative rate for backtesting.py.
 
-    Parameters:
-        pdf (pd.DataFrame): Pandas DataFrame indexed by timestamp containing market columns required by backtesting.py (Open, High, Low, Close, Volume) and strategy inputs (e.g., `pred_label`, `atr_14`).
-        config (Config): Configuration object with `backtest` and `data` sections that supply cost parameters, contract sizing, leverage, initial capital, and strategy parameters.
+    Args:
+        bc: Backtest configuration with spread_ticks and slippage_ticks.
+        dc: Data configuration with tick_size.
+        median_price: Median close price used as normalization denominator.
 
     Returns:
-        tuple[pd.Series, Backtest]: A pair where the first element is the backtesting statistics as a pandas Series and the second is the Backtest instance used to run the strategy.
+        Relative spread rate as a fraction (e.g., 0.0003 for 3 pips on XAUUSD).
     """
-    bc = config.backtest
-    dc = config.data
+    total_ticks = bc.spread_ticks + bc.slippage_ticks
+    return total_ticks * dc.tick_size / median_price
 
-    # Spread: absolute ticks → relative rate
-    median_price = float(pdf["Close"].median())
-    spread_total = (bc.spread_ticks + bc.slippage_ticks) * dc.tick_size / median_price
 
-    # Commission: callable for per-lot model
+def _build_commission_fn(
+    bc: "Config.BacktestConfig",
+    dc: "Config.DataConfig",
+) -> "Callable[[float, float], float]":
+    """Build a commission function closure for backtesting.py.
+
+    Args:
+        bc: Backtest configuration with commission_per_lot.
+        dc: Data configuration with contract_size.
+
+    Returns:
+        A commission function that takes (order_size, price) and returns commission.
+    """
+
     def commission_fn(order_size: float, price: float) -> float:
-        """
-        Calculate commission for an order based on the number of lots and configured per-lot commission.
-
-        Parameters:
-                order_size (float): Signed order size in base units; absolute value is divided by the configured contract size to get lots.
-                price (float): Order price (ignored by this calculation; included for compatibility).
-
-        Returns:
-                commission (float): Commission amount in the same currency as `bc.commission_per_lot`.
-        """
         lots = abs(order_size) / dc.contract_size
         return lots * bc.commission_per_lot
 
-    # Margin: 1/leverage
-    margin = 1.0 / bc.leverage
+    return commission_fn
 
-    bt = FractionalBacktest(
+
+def _init_backtest(
+    pdf: pd.DataFrame,
+    bc: "Config.BacktestConfig",
+    dc: "Config.DataConfig",
+    spread: float,
+    commission_fn: "Callable[[float, float], float]",
+) -> FractionalBacktest:
+    """Construct a FractionalBacktest instance without running it.
+
+    Args:
+        pdf: Prepared pandas DataFrame with price and prediction columns.
+        bc: Backtest configuration.
+        dc: Data configuration.
+        spread: Pre-computed relative spread rate.
+        commission_fn: Commission function from _build_commission_fn.
+
+    Returns:
+        Configured FractionalBacktest instance ready for .run().
+    """
+    margin = 1.0 / bc.leverage
+    return FractionalBacktest(
         pdf,
         HybridGRUStrategy,
         cash=bc.initial_capital,
-        spread=spread_total,
+        spread=spread,
         commission=commission_fn,
         margin=margin,
         exclusive_orders=True,
         finalize_trades=True,
-        fractional_unit=1.0,  # Disable fractional price scaling (prices are in USD already)
+        fractional_unit=1.0,
     )
+
+
+def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBacktest]:
+    """Run a backtest using HybridGRUStrategy with extracted helpers.
+
+    Args:
+        pdf: Prepared DataFrame with market data and predictions.
+        config: Application configuration with backtest and data sections.
+
+    Returns:
+        Tuple of (backtest statistics Series, Backtest instance).
+    """
+    bc = config.backtest
+    dc = config.data
+
+    median_price = float(pdf["Close"].median())
+    spread = _compute_spread_rate(bc, dc, median_price)
+    commission_fn = _build_commission_fn(bc, dc)
+    bt = _init_backtest(pdf, bc, dc, spread, commission_fn)
 
     stats = bt.run(
         atr_stop_mult=bc.atr_stop_multiplier,
@@ -526,6 +593,114 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
 
 
 # ---------------------------------------------------------------------------
+# Result Persistence Helpers
+# ---------------------------------------------------------------------------
+
+
+def _save_json_results(
+    metrics: dict,
+    trades: list[dict],
+    out_path: Path,
+) -> None:
+    """Save backtest results as JSON.
+
+    Args:
+        metrics: Normalized metrics from _normalize_stats.
+        trades: List of trade records from _trades_to_list.
+        out_path: Destination path for JSON file.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump({"metrics": metrics, "trades": trades}, f, indent=2, default=str)
+    logger.info("Backtest results saved: %s", out_path)
+
+
+def _save_trade_details_csv(trades: list[dict], out_dir: Path) -> None:
+    """Save per-trade records as CSV.
+
+    Args:
+        trades: List of trade dictionaries.
+        out_dir: Parent directory for output CSV.
+    """
+    if not trades:
+        return
+    csv_path = out_dir / "trades_detail.csv"
+    fieldnames = list(trades[0].keys())
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(trades)
+    logger.info("Trade details CSV saved: %s (%d trades)", csv_path, len(trades))
+
+
+def _save_equity_curve_csv(
+    trades: list[dict],
+    out_dir: Path,
+    initial_capital: float = 10_000.0,
+) -> None:
+    """Save equity curve as CSV with running peak and drawdown.
+
+    Args:
+        trades: List of trade dictionaries with pnl and exit_time.
+        out_dir: Parent directory for output CSV.
+        initial_capital: Starting capital for equity calculation.
+    """
+    if not trades:
+        return
+    eq_path = out_dir / "equity_curve.csv"
+    equity = initial_capital
+    with open(eq_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["trade_num", "exit_time", "pnl", "equity", "drawdown_pct"])
+        peak = initial_capital
+        for i, t in enumerate(trades, 1):
+            equity += t["pnl"]
+            peak = max(peak, equity)
+            dd_pct = (equity - peak) / peak * 100 if peak > 0 else 0.0
+            writer.writerow(
+                [
+                    i,
+                    t.get("exit_time", ""),
+                    round(t["pnl"], 2),
+                    round(equity, 2),
+                    round(dd_pct, 4),
+                ]
+            )
+    logger.info("Equity curve CSV saved: %s", eq_path)
+
+
+def _save_bokeh_chart(
+    bt: FractionalBacktest,
+    stats: pd.Series,
+    session_dir: Path | None,
+) -> None:
+    """Save Bokeh HTML chart for the backtest.
+
+    Args:
+        bt: Backtest instance with .plot() method.
+        stats: Backtest statistics Series (checked for trade count).
+        session_dir: Session directory for chart output; if None, skips chart.
+    """
+    if not session_dir:
+        return
+    if len(stats["_trades"]) == 0:
+        logger.info("No trades — skipping Bokeh chart")
+        return
+    chart_dir = session_dir / "backtest"
+    chart_dir.mkdir(parents=True, exist_ok=True)
+    chart_path = chart_dir / "backtest_chart.html"
+    bt.plot(
+        filename=str(chart_path),
+        open_browser=False,
+        plot_equity=True,
+        plot_drawdown=True,
+        plot_trades=True,
+        resample="2h",
+    )
+    logger.info("Bokeh chart saved: %s", chart_path)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -542,7 +717,6 @@ def run_backtest(config: Config) -> None:
     """
     test_path = Path(config.paths.test_data)
     preds_path = Path(config.paths.predictions)
-
     if not test_path.exists():
         raise FileNotFoundError(f"Test data not found: {test_path}")
     if not preds_path.exists():
@@ -555,7 +729,6 @@ def run_backtest(config: Config) -> None:
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
     stats, bt = _run_bt(pdf, config)
 
-    # Extract results
     metrics = _normalize_stats(stats)
     trades = _trades_to_list(
         stats["_trades"],
@@ -563,72 +736,24 @@ def run_backtest(config: Config) -> None:
         contract_size=config.data.contract_size,
     )
 
-    # Save JSON
     out_path = Path(config.paths.backtest_results)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w") as f:
-        json.dump({"metrics": metrics, "trades": trades}, f, indent=2, default=str)
-    logger.info("Backtest results saved: %s", out_path)
+    _save_json_results(metrics, trades, out_path)
 
-    # Save trade details CSV
     if trades:
-        csv_path = out_path.parent / "trades_detail.csv"
-        fieldnames = list(trades[0].keys())
-        with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(trades)
-        logger.info("Trade details CSV saved: %s (%d trades)", csv_path, len(trades))
-
-        # Save equity curve CSV
-        eq_path = out_path.parent / "equity_curve.csv"
+        _save_trade_details_csv(trades, out_path.parent)
         initial_capital = (
             config.backtest.initial_capital
             if hasattr(config.backtest, "initial_capital")
             else 10_000.0
         )
-        equity = initial_capital
-        with open(eq_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["trade_num", "exit_time", "pnl", "equity", "drawdown_pct"])
-            peak = initial_capital
-            for i, t in enumerate(trades, 1):
-                equity += t["pnl"]
-                peak = max(peak, equity)
-                dd_pct = (equity - peak) / peak * 100 if peak > 0 else 0.0
-                writer.writerow(
-                    [
-                        i,
-                        t.get("exit_time", ""),
-                        round(t["pnl"], 2),
-                        round(equity, 2),
-                        round(dd_pct, 4),
-                    ]
-                )
-        logger.info("Equity curve CSV saved: %s", eq_path)
+        _save_equity_curve_csv(trades, out_path.parent, initial_capital)
 
-    # Log key metrics
     logger.info("=== BACKTEST RESULTS ===")
     for k, v in metrics.items():
         logger.info("  %s: %s", k, v)
 
-    # Save Bokeh HTML chart
     session_dir = Path(config.paths.session_dir) if config.paths.session_dir else None
-    if session_dir and len(stats["_trades"]) > 0:
-        chart_dir = session_dir / "backtest"
-        chart_dir.mkdir(parents=True, exist_ok=True)
-        chart_path = chart_dir / "backtest_chart.html"
-        bt.plot(
-            filename=str(chart_path),
-            open_browser=False,
-            plot_equity=True,
-            plot_drawdown=True,
-            plot_trades=True,
-            resample="2h",
-        )
-        logger.info("Bokeh chart saved: %s", chart_path)
-    elif session_dir:
-        logger.info("No trades — skipping Bokeh chart")
+    _save_bokeh_chart(bt, stats, session_dir)
 
 
 def run_backtest_from_data(

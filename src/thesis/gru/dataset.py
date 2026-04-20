@@ -98,46 +98,62 @@ def prepare_sequences(
     if exclude_cols is None:
         exclude_cols = frozenset()
 
-    # Compute log returns if not present
-    if "log_returns" not in df.columns:
-        df = df.with_columns(pl.col("close").log().diff().alias("log_returns"))
-        # Fill first null
-        df = df.fill_null(strategy="forward").fill_null(0.0)
+    df = _ensure_log_returns(df)
+    _validate_gru_cols(df, gru_cols)
 
-    # Ensure gru_cols exist
-    for col in gru_cols:
-        if col not in df.columns:
-            raise ValueError(f"GRU input column '{col}' not found in DataFrame")
-
-    # Extract GRU input values
     gru_data = df.select(gru_cols).to_numpy()
-
-    # Build sequences using sliding window
     n_rows = len(df)
     n_samples = n_rows - sequence_length + 1
-
     if n_samples <= 0:
         raise ValueError(
             f"DataFrame has {n_rows} rows, need at least {sequence_length} "
             f"for sequence_length={sequence_length}"
         )
 
-    # Efficient sliding window using stride tricks
     sequences = _sliding_windows(gru_data, sequence_length)
+    labels = _extract_labels(df, label_col, sequence_length)
+    static_cols = _identify_static_cols(df, gru_cols, exclude_cols, label_col)
 
-    # Extract labels (aligned to end of each window)
-    has_labels = label_col in df.columns
-    labels = None
-    if has_labels:
-        label_values = df[label_col].to_numpy()
-        labels = label_values[sequence_length - 1 :]
+    return sequences, labels, static_cols
 
-    # Identify static feature columns (everything except excluded + GRU inputs)
+
+def _ensure_log_returns(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute log_returns column if not present in DataFrame."""
+    if "log_returns" not in df.columns:
+        return df.with_columns(
+            pl.col("close")
+            .log()
+            .diff()
+            .fill_null(strategy="forward")
+            .fill_null(0.0)
+            .alias("log_returns")
+        )
+    return df
+
+
+def _validate_gru_cols(df: pl.DataFrame, gru_cols: list[str]) -> None:
+    """Raise ValueError if any requested GRU column is missing."""
+    for col in gru_cols:
+        if col not in df.columns:
+            raise ValueError(f"GRU input column '{col}' not found in DataFrame")
+
+
+def _extract_labels(
+    df: pl.DataFrame, label_col: str, sequence_length: int
+) -> np.ndarray | None:
+    """Extract labels aligned to the end of each sliding window."""
+    if label_col not in df.columns:
+        return None
+    return df[label_col].to_numpy()[sequence_length - 1 :]
+
+
+def _identify_static_cols(
+    df: pl.DataFrame, gru_cols: list[str], exclude_cols: frozenset[str], label_col: str
+) -> list[str]:
+    """Identify columns that are neither GRU inputs nor excluded."""
     gru_col_set = set(gru_cols)
-    static_cols = [
+    return [
         c
         for c in df.columns
         if c not in exclude_cols and c not in gru_col_set and c != label_col
     ]
-
-    return sequences, labels, static_cols

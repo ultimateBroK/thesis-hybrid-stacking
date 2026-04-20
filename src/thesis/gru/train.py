@@ -28,6 +28,128 @@ from thesis.gru.inference import extract_hidden_states
 logger = logging.getLogger("thesis.gru.train")
 
 
+def _build_model_and_classifier(
+    config: Config,
+    device: torch.device,
+) -> tuple[GRUExtractor, nn.Linear]:
+    """Build GRU model and classification head.
+
+    Args:
+        config: Application configuration.
+        device: Target device for model placement.
+
+    Returns:
+        Tuple of (GRUExtractor, nn.Linear classifier).
+    """
+    gru_cfg = config.gru
+    model = GRUExtractor(
+        input_size=gru_cfg.input_size,
+        hidden_size=gru_cfg.hidden_size,
+        num_layers=gru_cfg.num_layers,
+        dropout=gru_cfg.dropout,
+    ).to(device)
+
+    num_classes = config.labels.num_classes
+    classifier = nn.Linear(gru_cfg.hidden_size, num_classes).to(device)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info(
+        "GRU: %d params, %d layers, hidden=%d, device=%s",
+        total_params,
+        gru_cfg.num_layers,
+        gru_cfg.hidden_size,
+        device,
+    )
+    return model, classifier
+
+
+def _train_epoch(
+    model: GRUExtractor,
+    classifier: nn.Linear,
+    train_loader: DataLoader,
+    criterion: nn.CrossEntropyLoss,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+) -> tuple[float, float]:
+    """Run one training epoch.
+
+    Args:
+        model: GRU feature extractor.
+        classifier: Linear classification head.
+        train_loader: Training data loader.
+        criterion: Loss function.
+        optimizer: Optimizer.
+        device: Target device.
+
+    Returns:
+        Tuple of (average_loss, accuracy).
+    """
+    model.train()
+    classifier.train()
+    train_loss = 0.0
+    train_correct = 0
+    train_total = 0
+
+    for batch_x, batch_y in train_loader:
+        batch_x = batch_x.to(device)
+        batch_y = batch_y.to(device)
+
+        hidden = model(batch_x)
+        logits = classifier(hidden)
+
+        loss = criterion(logits, batch_y)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        train_loss += loss.item() * len(batch_x)
+        train_correct += (logits.argmax(dim=1) == batch_y).sum().item()
+        train_total += len(batch_y)
+
+    return train_loss / train_total, train_correct / train_total
+
+
+def _validate_epoch(
+    model: GRUExtractor,
+    classifier: nn.Linear,
+    val_loader: DataLoader,
+    criterion: nn.CrossEntropyLoss,
+    device: torch.device,
+) -> tuple[float, float]:
+    """Run one validation epoch.
+
+    Args:
+        model: GRU feature extractor.
+        classifier: Linear classification head.
+        val_loader: Validation data loader.
+        criterion: Loss function.
+        device: Target device.
+
+    Returns:
+        Tuple of (average_loss, accuracy).
+    """
+    model.eval()
+    classifier.eval()
+    val_loss = 0.0
+    val_correct = 0
+    val_total = 0
+
+    with torch.no_grad():
+        for batch_x, batch_y in val_loader:
+            batch_x = batch_x.to(device)
+            batch_y = batch_y.to(device)
+
+            hidden = model(batch_x)
+            logits = classifier(hidden)
+
+            loss = criterion(logits, batch_y)
+            val_loss += loss.item() * len(batch_x)
+            val_correct += (logits.argmax(dim=1) == batch_y).sum().item()
+            val_total += len(batch_y)
+
+    return val_loss / val_total, val_correct / val_total
+
+
 def train_gru(
     config: Config,
     train_df: pl.DataFrame,
@@ -110,25 +232,7 @@ def train_gru(
 
     # Build model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = GRUExtractor(
-        input_size=gru_cfg.input_size,
-        hidden_size=gru_cfg.hidden_size,
-        num_layers=gru_cfg.num_layers,
-        dropout=gru_cfg.dropout,
-    ).to(device)
-
-    # Classification head for training only
-    num_classes = config.labels.num_classes
-    classifier = nn.Linear(gru_cfg.hidden_size, num_classes).to(device)
-
-    total_params = sum(p.numel() for p in model.parameters())
-    logger.info(
-        "GRU: %d params, %d layers, hidden=%d, device=%s",
-        total_params,
-        gru_cfg.num_layers,
-        gru_cfg.hidden_size,
-        device,
-    )
+    model, classifier = _build_model_and_classifier(config, device)
 
     # Optimizer
     optimizer = torch.optim.Adam(
@@ -172,54 +276,12 @@ def train_gru(
         )
 
         for epoch in range(gru_cfg.epochs):
-            # Train
-            model.train()
-            classifier.train()
-            train_loss = 0.0
-            train_correct = 0
-            train_total = 0
-
-            for batch_x, batch_y in train_loader:
-                batch_x = batch_x.to(device)
-                batch_y = batch_y.to(device)
-
-                hidden = model(batch_x)
-                logits = classifier(hidden)
-
-                loss = criterion(logits, batch_y)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-                train_loss += loss.item() * len(batch_x)
-                train_correct += (logits.argmax(dim=1) == batch_y).sum().item()
-                train_total += len(batch_y)
-
-            train_loss /= train_total
-
-            # Validate
-            model.eval()
-            classifier.eval()
-            val_loss = 0.0
-            val_correct = 0
-            val_total = 0
-
-            with torch.no_grad():
-                for batch_x, batch_y in val_loader:
-                    batch_x = batch_x.to(device)
-                    batch_y = batch_y.to(device)
-
-                    hidden = model(batch_x)
-                    logits = classifier(hidden)
-
-                    loss = criterion(logits, batch_y)
-                    val_loss += loss.item() * len(batch_x)
-                    val_correct += (logits.argmax(dim=1) == batch_y).sum().item()
-                    val_total += len(batch_y)
-
-            val_loss /= val_total
-            val_acc = val_correct / val_total
-            train_acc = train_correct / train_total
+            train_loss, train_acc = _train_epoch(
+                model, classifier, train_loader, criterion, optimizer, device
+            )
+            val_loss, val_acc = _validate_epoch(
+                model, classifier, val_loader, criterion, device
+            )
 
             history.append(
                 {
@@ -252,7 +314,6 @@ def train_gru(
             else:
                 patience_counter += 1
                 if patience_counter >= gru_cfg.patience:
-                    # Only log "early stop" if we actually stopped before the last epoch
                     if epoch + 1 < gru_cfg.epochs:
                         logger.info(
                             "Early stop at epoch %d (patience=%d)",

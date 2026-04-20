@@ -242,35 +242,30 @@ def _add_new_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
-    """
-    Compute previous-day pivot levels and add a bounded pivot_position column.
+    """Compute previous-day pivot levels and add a bounded pivot_position column."""
+    trading_day_expr = _to_ny_trading_day(df)
+    pivots = _build_pivot_table(df, trading_day_expr)
+    df = df.with_columns(trading_day_expr.alias("_trading_day"))
+    df = df.join(
+        pivots, left_on="_trading_day", right_on="_trading_day", how="left"
+    ).drop("_trading_day")
+    return _compute_pivot_position(df)
 
-    Calculates daily pivot, R1, and S1 from the previous trading day and joins them to each row,
-    then computes pivot_position = (close - prev_s1) / (prev_r1 - prev_s1) clipped to [0.0, 1.0].
 
-    Trading day is calculated in America/New_York timezone with a +7h offset, so the trading day
-    runs from 7pm NY time to 7pm NY time next day. This correctly handles the pivot calculation
-    for the FX market close which occurs at 5pm NY.
-
-    Parameters:
-        df (pl.DataFrame): Input OHLCV dataframe with at least `timestamp`, `high`, `low`, and `close` columns.
-
-    Returns:
-        pl.DataFrame: The input dataframe with an added `pivot_position` column (float) and without the intermediate previous-day pivot columns.
-    """
+def _to_ny_trading_day(df: pl.DataFrame) -> pl.Expr:
+    """Convert timestamp column to NY trading-day expression (7pm NY = start of trading day)."""
     ts = pl.col("timestamp")
-
     if df["timestamp"].dtype.time_zone is None:
-        ts_ny = ts.dt.replace_time_zone("UTC").dt.convert_time_zone("America/New_York")
-    else:
-        ts_ny = ts.dt.convert_time_zone("America/New_York")
+        ts = ts.dt.replace_time_zone("UTC")
+    ts_ny = ts.dt.convert_time_zone("America/New_York")
+    return (ts_ny + pl.duration(hours=7)).dt.truncate("1d")
 
-    trading_day = (ts_ny + pl.duration(hours=7)).dt.truncate("1d")
 
-    df = df.with_columns(trading_day.alias("_trading_day"))
-
+def _build_pivot_table(df: pl.DataFrame, trading_day_expr: pl.Expr) -> pl.DataFrame:
+    """Build previous-day pivot/R1/S1 lookup table for pivot_position computation."""
+    df_with_day = df.with_columns(trading_day_expr.alias("_trading_day"))
     daily = (
-        df.group_by("_trading_day")
+        df_with_day.group_by("_trading_day")
         .agg(
             [
                 pl.col("high").max().alias("day_high"),
@@ -280,21 +275,26 @@ def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
         )
         .sort("_trading_day")
     )
-
     pivot = (daily["day_high"] + daily["day_low"] + daily["day_close"]) / 3.0
     r1 = 2.0 * pivot - daily["day_low"]
     s1 = 2.0 * pivot - daily["day_high"]
+    return (
+        daily.with_columns([pivot.alias("pivot"), r1.alias("r1"), s1.alias("s1")])
+        .select(["_trading_day", "pivot", "r1", "s1"])
+        .with_columns(
+            [
+                pl.col("pivot").shift(1).alias("prev_pivot"),
+                pl.col("r1").shift(1).alias("prev_r1"),
+                pl.col("s1").shift(1).alias("prev_s1"),
+            ]
+        )
+        .select(["_trading_day", "prev_pivot", "prev_r1", "prev_s1"])
+    )
 
-    daily = daily.with_columns(
-        [
-            pivot.alias("pivot"),
-            r1.alias("r1"),
-            s1.alias("s1"),
-        ]
-    ).select(["_trading_day", "pivot", "r1", "s1"])
 
-    # Shift by 1 day — use *previous* day's pivots (no look-ahead)
-    daily = daily.with_columns(
+def _shift_pivots_by_one_day(daily: pl.DataFrame) -> pl.DataFrame:
+    """Shift daily pivots by one day to align with the next trading day (no look-ahead)."""
+    return daily.with_columns(
         [
             pl.col("pivot").shift(1).alias("prev_pivot"),
             pl.col("r1").shift(1).alias("prev_r1"),
@@ -302,17 +302,17 @@ def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
         ]
     ).select(["_trading_day", "prev_pivot", "prev_r1", "prev_s1"])
 
-    df = df.join(daily, on="_trading_day", how="left").drop("_trading_day")
 
-    # Pivot position: bounded [0, 1]
-    close = pl.col("close")
-    df = df.with_columns(
-        ((close - pl.col("prev_s1")) / (pl.col("prev_r1") - pl.col("prev_s1") + 1e-10))
+def _compute_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
+    """Compute bounded pivot_position and drop intermediate pivot columns."""
+    return df.with_columns(
+        (
+            (pl.col("close") - pl.col("prev_s1"))
+            / (pl.col("prev_r1") - pl.col("prev_s1") + 1e-10)
+        )
         .clip(0.0, 1.0)
         .alias("pivot_position")
     ).drop(["prev_pivot", "prev_r1", "prev_s1"])
-
-    return df
 
 
 def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:

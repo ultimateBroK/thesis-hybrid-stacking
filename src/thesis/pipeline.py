@@ -17,6 +17,37 @@ from thesis.plots import generate_all_charts
 logger = logging.getLogger("thesis.pipeline")
 
 
+def _run_stage(
+    stage_num: int,
+    config: Config,
+    flag_name: str,
+    cache_path: str | Path | None,
+    work_fn: callable,
+) -> None:
+    """Execute a pipeline stage with cache checking.
+
+    Args:
+        stage_num: Stage number for display.
+        config: Application configuration.
+        flag_name: Name of the workflow flag in config (e.g., 'run_data_pipeline').
+        cache_path: Path to check for cached output; if None, always runs.
+        work_fn: Function to call if stage should run.
+    """
+    flag = getattr(config.workflow, flag_name, False)
+    if not flag:
+        stage_skip(stage_num, "disabled")
+        return
+
+    if cache_path is not None:
+        cache_path = Path(cache_path)
+        if not config.workflow.force_rerun and cache_path.exists():
+            stage_skip(stage_num, f"cached ({cache_path.name})")
+            return
+
+    stage_header(stage_num)
+    work_fn(config)
+
+
 def run_pipeline(config: Config) -> None:
     """Execute the full thesis pipeline sequentially.
 
@@ -32,78 +63,35 @@ def run_pipeline(config: Config) -> None:
     Args:
         config: Loaded application configuration.
     """
-    force = config.workflow.force_rerun
-
     # Stage 0: Prepare OHLCV from raw ticks
-    if config.workflow.run_data_pipeline:
-        ohlcv_path = Path(config.paths.ohlcv)
-        if force or not ohlcv_path.exists():
-            stage_header(0)
-            prepare_data(config)
-        else:
-            stage_skip(0, f"OHLCV exists ({ohlcv_path.name})")
-    else:
-        stage_skip(0, "disabled")
+    _run_stage(0, config, "run_data_pipeline", config.paths.ohlcv, prepare_data)
 
     # Stage 1: Features
-    if config.workflow.run_feature_engineering:
-        features_path = Path(config.paths.features)
-        if force or not features_path.exists():
-            stage_header(1)
-            generate_features(config)
-        else:
-            stage_skip(1, f"Features exist ({features_path.name})")
-    else:
-        stage_skip(1, "disabled")
+    _run_stage(
+        1, config, "run_feature_engineering", config.paths.features, generate_features
+    )
 
     # Stage 2: Labels
-    if config.workflow.run_label_generation:
-        labels_path = Path(config.paths.labels)
-        if force or not labels_path.exists():
-            stage_header(2)
-            generate_labels(config)
-        else:
-            stage_skip(2, f"Labels exist ({labels_path.name})")
-    else:
-        stage_skip(2, "disabled")
+    _run_stage(2, config, "run_label_generation", config.paths.labels, generate_labels)
 
     # Stage 3: Split
-    if config.workflow.run_data_splitting:
-        train_path = Path(config.paths.train_data)
-        if force or not train_path.exists():
-            stage_header(3)
-            split_data(config)
-        else:
-            stage_skip(3, f"Splits exist ({train_path.name})")
-    else:
-        stage_skip(3, "disabled")
+    _run_stage(3, config, "run_data_splitting", config.paths.train_data, split_data)
 
     # Stage 4: Model training
-    if config.workflow.run_model_training:
-        model_path = Path(config.paths.model)
-        preds_path = Path(config.paths.predictions)
-        if force or not model_path.exists() or not preds_path.exists():
-            stage_header(4)
-            train_model(config)
-        else:
-            stage_skip(4, f"Model exists ({model_path.name})")
-    else:
-        stage_skip(4, "disabled")
+    def _run_train() -> None:
+        train_model(config)
+
+    _run_stage(4, config, "run_model_training", None, lambda cfg: _run_train())
 
     # Stage 5: Backtest
-    if config.workflow.run_backtest:
-        stage_header(5)
-        run_backtest(config)
-    else:
-        stage_skip(5, "disabled")
+    _run_stage(5, config, "run_backtest", None, run_backtest)
 
     # Stage 6: Report
-    if config.workflow.run_reporting:
-        stage_header(6)
+    def _run_report() -> None:
         generate_report(config)
         generate_all_charts(config)
-    else:
-        stage_skip(6, "disabled")
+
+    _run_stage(6, config, "run_reporting", None, lambda cfg: _run_report())
 
     console.print()
     console.rule("[bold green]✓ Pipeline Complete[/]")

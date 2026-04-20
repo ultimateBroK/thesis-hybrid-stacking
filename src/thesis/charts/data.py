@@ -1,13 +1,16 @@
 """Shared data loading and constants for interactive ECharts charts."""
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
-from thesis.config import Config
+if TYPE_CHECKING:
+    from thesis.config import Config
 
 logger = logging.getLogger("thesis.charts")
 
@@ -65,7 +68,7 @@ def _get_feature_cols(df: pl.DataFrame) -> list[str]:
 # --- Data Loading -------------------------------------------------------------
 
 
-def load_session_data(config: Config) -> dict[str, Any]:
+def load_session_data(config: "Config") -> dict[str, Any]:
     """
     Load all parquet and JSON artifacts required for charting.
 
@@ -143,6 +146,17 @@ def load_session_data(config: Config) -> dict[str, Any]:
             data["feature_importance"] = json.load(f)
     else:
         data["feature_importance"] = {}
+
+    # SHAP values (JSON)
+    if config.paths.session_dir:
+        shap_path = Path(config.paths.session_dir) / "reports" / "shap_values.json"
+    else:
+        shap_path = Path("results/shap_values.json")
+    if shap_path.exists():
+        with open(shap_path) as f:
+            data["shap_values"] = json.load(f)
+    else:
+        data["shap_values"] = None
 
     logger.info("Session data loaded from %s", config.paths.session_dir or "default")
     return data

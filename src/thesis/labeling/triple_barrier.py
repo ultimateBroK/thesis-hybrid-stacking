@@ -43,11 +43,7 @@ def generate_labels(config: Config) -> None:
     """
     features_path = Path(config.paths.features)
     ohlcv_path = Path(config.paths.ohlcv)
-
-    if not features_path.exists():
-        raise FileNotFoundError(f"Features not found: {features_path}")
-    if not ohlcv_path.exists():
-        raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
+    _validate_paths(features_path, ohlcv_path)
 
     logger.info("Loading features: %s", features_path)
     df_feat = pl.read_parquet(features_path)
@@ -57,7 +53,6 @@ def generate_labels(config: Config) -> None:
         ["timestamp", "open", "high", "low", "close"]
     )
 
-    # Join on timestamp
     df = df_feat.join(df_ohlcv, on="timestamp", how="inner")
     logger.info("Joined rows: %d", len(df))
 
@@ -65,28 +60,51 @@ def generate_labels(config: Config) -> None:
     if atr_col not in df.columns:
         raise ValueError(f"{atr_col} not in features. Run feature engineering first.")
 
-    mult = config.labels.atr_multiplier
-    horizon = config.labels.horizon_bars
-    min_atr = config.labels.min_atr
-
-    logger.info(
-        "Triple-barrier params: mult=%.2f, horizon=%d, min_atr=%.6f",
-        mult,
-        horizon,
-        min_atr,
-    )
-
-    # Compute labels
     labels_arr, tp_prices_arr, sl_prices_arr, touched_bars_arr = _compute_labels(
         close=df["close"].to_numpy(),
         high=df["high"].to_numpy(),
         low=df["low"].to_numpy(),
         atr=df[atr_col].to_numpy(),
-        mult=mult,
-        horizon=horizon,
-        min_atr=min_atr,
+        mult=config.labels.atr_multiplier,
+        horizon=config.labels.horizon_bars,
+        min_atr=config.labels.min_atr,
     )
 
+    logger.info(
+        "Triple-barrier params: mult=%.2f, horizon=%d, min_atr=%.6f",
+        config.labels.atr_multiplier,
+        config.labels.horizon_bars,
+        config.labels.min_atr,
+    )
+
+    df = _merge_label_columns(
+        df, labels_arr, tp_prices_arr, sl_prices_arr, touched_bars_arr
+    )
+    df = _replace_censored_with_hold(df)
+    _log_distribution(df)
+
+    out_path = Path(config.paths.labels)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.write_parquet(out_path)
+    logger.info("Labels saved: %s (%d rows)", out_path, len(df))
+
+
+def _validate_paths(features_path: Path, ohlcv_path: Path) -> None:
+    """Validate that required input paths exist."""
+    if not features_path.exists():
+        raise FileNotFoundError(f"Features not found: {features_path}")
+    if not ohlcv_path.exists():
+        raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
+
+
+def _merge_label_columns(
+    df: pl.DataFrame,
+    labels_arr: np.ndarray,
+    tp_prices_arr: np.ndarray,
+    sl_prices_arr: np.ndarray,
+    touched_bars_arr: np.ndarray,
+) -> pl.DataFrame:
+    """Build and join label columns into the main dataframe."""
     ts_dtype = df["timestamp"].dtype
     labels_df = pl.DataFrame(
         {
@@ -97,30 +115,20 @@ def generate_labels(config: Config) -> None:
             "touched_bar": touched_bars_arr,
         }
     )
+    return df.join(labels_df, on="timestamp", how="left")
 
-    df = df.join(labels_df, on="timestamp", how="left")
 
-    # Replace censored markers (-2) with Hold (0) — conservative for training
+def _replace_censored_with_hold(df: pl.DataFrame) -> pl.DataFrame:
+    """Replace censored label markers (-2) with Hold (0) — conservative for training."""
     n_censored = int((df["label"] == -2).sum())
-    if n_censored > 0:
-        df = df.with_columns(
-            pl.when(pl.col("label") == -2)
-            .then(pl.lit(0))
-            .otherwise(pl.col("label"))
-            .alias("label")
-        )
-        logger.info(
-            "Right-censored rows (near end, insufficient horizon): %d — set to Hold (0)",
-            n_censored,
-        )
-
-    # Log distribution
-    _log_distribution(df)
-
-    out_path = Path(config.paths.labels)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(out_path)
-    logger.info("Labels saved: %s (%d rows)", out_path, len(df))
+    if n_censored <= 0:
+        return df
+    return df.with_columns(
+        pl.when(pl.col("label") == -2)
+        .then(pl.lit(0))
+        .otherwise(pl.col("label"))
+        .alias("label")
+    )
 
 
 # ---------------------------------------------------------------------------
