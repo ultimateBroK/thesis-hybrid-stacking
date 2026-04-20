@@ -4,6 +4,8 @@ Provides HTML-based metric cards with zone-colored gradient backgrounds
 and recommendation badges. Depends on zones.py for classification.
 """
 
+import html
+
 from thesis.dashboard.zones import _ZONE_COLORS, _get_metric_zone, _is_extreme_value
 
 
@@ -30,6 +32,11 @@ def _render_zoned_metric(
 
     hex_color = _ZONE_COLORS.get(color, "#6b7280")
     display_suffix = " ⚠️" if is_extreme else ""
+    safe_label = html.escape(label)
+    safe_value = html.escape(format_str.format(value))
+    safe_unit = html.escape(unit)
+    safe_zone = html.escape(zone_label)
+    safe_rec = html.escape(recommendation)
 
     col.markdown(
         f"""
@@ -47,9 +54,9 @@ def _render_zoned_metric(
             box-sizing: border-box;
         ">
             <div>
-                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
+                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{safe_label}</div>
                 <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">
-                    {format_str.format(value)}{unit}{display_suffix}
+                    {safe_value}{safe_unit}{display_suffix}
                 </div>
             </div>
             <div style="margin-top: 8px;">
@@ -62,8 +69,8 @@ def _render_zoned_metric(
                     font-weight: 700;
                     text-transform: uppercase;
                     letter-spacing: 0.03em;
-                ">{zone_label}</span>
-                <div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{recommendation}</div>
+                ">{safe_zone}</span>
+                <div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{safe_rec}</div>
             </div>
         </div>
         """,
@@ -87,8 +94,10 @@ def _render_metric_card(
         caption: Optional caption text below the value.
         color: CSS color string for the gradient accent.
     """
+    safe_label = html.escape(label)
+    safe_value = html.escape(value)
     caption_html = (
-        f'<div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{caption}</div>'
+        f'<div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{html.escape(caption)}</div>'
         if caption
         else ""
     )
@@ -108,8 +117,8 @@ def _render_metric_card(
             box-sizing: border-box;
         ">
             <div>
-                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{label}</div>
-                <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">{value}</div>
+                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{safe_label}</div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">{safe_value}</div>
             </div>
             {caption_html}
         </div>

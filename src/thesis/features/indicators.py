@@ -38,7 +38,7 @@ def generate_features(config: Config) -> None:
 
     Loads OHLCV data from config.paths.ohlcv, computes technical indicators and normalized/session features, forward-fills remaining nulls (then replaces any remaining nulls with 0.0), writes the enriched bars to config.paths.features, and saves a sidecar JSON file listing the produced feature column names (excluding core/label columns).
 
-    Parameters:
+    Args:
         config (Config): Application configuration containing input/output paths and feature parameters.
 
     Raises:
@@ -113,7 +113,7 @@ def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """
     Compute Wilder-style Relative Strength Index (RSI) and append it as a column.
 
-    Parameters:
+    Args:
         df (pl.DataFrame): Input OHLCV dataframe containing a `close` column.
         config (Config): Configuration object with `features.rsi_period` specifying the RSI period.
 
@@ -172,7 +172,7 @@ def _compute_atr_expr(period: int) -> pl.Expr:
     """
     Compute an expression for the Average True Range (ATR) smoothed using a Wilder-style exponential moving average.
 
-    Parameters:
+    Args:
         period (int): Lookback period used for ATR smoothing.
 
     Returns:
@@ -204,7 +204,7 @@ def _add_new_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     - Session indicator columns: `sess_asia`, `sess_london`, `sess_overlap`, `sess_ny_pm` (America/New_York, DST-aware).
     - `atr_percentile`: rolling rank of ATR_{p} over a 50-bar window scaled to [0, 1].
 
-    Parameters:
+    Args:
         config (Config): Configuration object; `config.features.atr_period` determines which ATR column (`atr_{p}`) is used.
 
     Returns:
@@ -325,7 +325,7 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
     - sess_overlap: 8–11
     - sess_ny_pm: 12–17
 
-    Parameters:
+    Args:
         df (pl.DataFrame): Input OHLCV bars containing a "timestamp" column.
 
     Returns:
@@ -359,7 +359,7 @@ def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
     """
     Write a JSON sidecar file next to the given features path named "<features_path>.feature_list.json" containing the feature column names.
 
-    Parameters:
+    Args:
         features_path (Path): Path to the features output file; the sidecar file is created by replacing this path's suffix with ".feature_list.json".
         feature_cols (list[str]): Ordered list of feature column names to write to the sidecar.
     """

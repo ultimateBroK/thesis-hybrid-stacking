@@ -27,7 +27,7 @@ def generate_labels(config: Config) -> None:
 
     Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes triple-barrier labels using `config.labels` parameters (`atr_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `tp_price`, `sl_price`, `touched_bar`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
 
-    Parameters:
+    Args:
         config (Config): Application configuration containing:
             - paths.features: path to features parquet
             - paths.ohlcv: path to OHLCV parquet
@@ -209,7 +209,7 @@ def _log_distribution(df: pl.DataFrame) -> None:
 
     If the `label` column is not present the function returns without logging. Each logged line reports the label value, its absolute count, and its percentage of the dataframe rows.
 
-    Parameters:
+    Args:
         df (pl.DataFrame): DataFrame expected to contain a `label` column.
     """
     if "label" not in df.columns:

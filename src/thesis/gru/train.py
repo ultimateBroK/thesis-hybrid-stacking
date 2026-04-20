@@ -9,6 +9,7 @@ import numpy as np
 import polars as pl
 import torch
 import torch.nn as nn
+from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -23,7 +24,7 @@ from thesis.config import Config
 from thesis.gru.arch import GRUExtractor
 from thesis.gru.dataset import SequenceDataset, prepare_sequences
 from thesis.gru.inference import extract_hidden_states
-from thesis.ui import console
+
 
 logger = logging.getLogger("thesis.gru.train")
 
@@ -261,7 +262,7 @@ def train_gru(
         TextColumn("[green]v_acc={task.fields[v_acc]:.3f}"),
         TimeElapsedColumn(),
         transient=False,
-        console=console,
+        console=Console(stderr=True),
     )
 
     with progress:

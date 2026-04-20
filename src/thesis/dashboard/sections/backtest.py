@@ -52,9 +52,8 @@ def _render_backtest_section(data: dict) -> None:
         pnls = [t["pnl"] for t in trades] if trades else []
         wins = [p for p in pnls if p > 0]
         losses = [p for p in pnls if p <= 0]
-        rr = abs(sum(wins) / len(wins) if wins else 0) / (
-            abs(sum(losses) / len(losses)) if losses else 1
-        )
+        avg_loss_abs = abs(sum(losses) / len(losses)) if losses else 0
+        rr = abs(sum(wins) / len(wins)) / avg_loss_abs if avg_loss_abs > 0 else 0.0
 
         st.markdown("**📊 Key Performance Indicators**")
         kpi_cols = st.columns(5, gap="small")
@@ -166,7 +165,7 @@ def _render_backtest_section(data: dict) -> None:
         _render_zoned_metric(
             profit_cols[4],
             "Kelly Criterion",
-            metrics.get("kelly_criterion", 0),
+            metrics.get("kelly_criterion", 0) * 100,
             "kelly_criterion",
             "{:.1f}",
             "%",

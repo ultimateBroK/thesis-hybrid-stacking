@@ -55,9 +55,9 @@ flowchart LR
     B --> C["Features<br/>11 indicators"]
     C --> D["Labels<br/>Triple Barrier"]
     D --> E["Split<br/>Train/Val/Test"]
-    E --> F["GRU<br/>64 hidden"]
+    E --> F["GRU<br/>32 hidden"]
     E --> G["Static<br/>11 features"]
-    F --> H["LightGBM<br/>75 features"]
+    F --> H["LightGBM<br/>43 features"]
     G --> H
     H --> I["Backtest<br/>CFD Sim"]
     H --> J["Report<br/>Charts"]
@@ -65,8 +65,8 @@ flowchart LR
 
 The hybrid model works in two steps:
 
-1. **GRU** reads 24 hours of price history and outputs a **64-number summary** of temporal patterns.
-2. **LightGBM** combines those 64 numbers with **11 technical indicators** (75 features total) and predicts: **Long**, **Flat**, or **Short**.
+1. **GRU** reads 48 hours of price history and outputs a **32-number summary** of temporal patterns.
+2. **LightGBM** combines those 32 numbers with **11 technical indicators** (43 features total) and predicts: **Long**, **Flat**, or **Short**.
 
 ---
 
@@ -92,8 +92,8 @@ The hybrid model works in two steps:
 | Asset | XAU/USD (Gold / US Dollar) |
 | Timeframe | 1 hour (H1) |
 | Data range | January 2018 – March 2026 |
-| Model | GRU (64-dim) → LightGBM (75 features) |
-| Features | 11 technical indicators + 64 GRU hidden states |
+| Model | GRU (32-dim) → LightGBM (43 features) |
+| Features | 11 technical indicators + 32 GRU hidden states |
 | Labels | Triple Barrier (Long / Flat / Short) |
 | Charts | 12 static (matplotlib) + interactive (Streamlit/ECharts) |
 | Backtest | CFD with spread, commission, leverage, risk management |
@@ -158,7 +158,7 @@ Xây dựng pipeline end-to-end dự báo tín hiệu giao dịch **CFD Vàng (X
 
 ```mermaid
 flowchart LR
-    GRU["GRU<br/>(chuỗi 24 nến)"] -->|"64 hidden"| Stack
+    GRU["GRU<br/>(chuỗi 48 nến)"] -->|"32 hidden"| Stack
     LGB["LightGBM<br/>(11 features)"] -->|"xác suất"| Stack
     Stack["Hybrid Model"] --> Pred["3 nhãn<br/>Mua / Trung tính / Bán"]
 ```
@@ -195,7 +195,7 @@ flowchart LR
 
 - **Take Profit:** `Close[t] + 1.5 × ATR`
 - **Stop Loss:** `Close[t] - 1.5 × ATR`
-- **Horizon:** h = 10 nến
+- **Horizon:** h = 24 nến
 
 ## Tiến độ thực hiện
 

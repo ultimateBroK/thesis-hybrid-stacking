@@ -44,13 +44,15 @@ def _compute_avg_win_loss(trades_df: pd.DataFrame) -> tuple[float, float]:
     if trades_df.empty or "PnL" not in trades_df.columns:
         return 0.0, 0.0
     wins = trades_df[trades_df["PnL"] > 0]["PnL"]
-    losses = trades_df[trades_df["PnL"] <= 0]["PnL"]
+    losses = trades_df[trades_df["PnL"] < 0]["PnL"]
     avg_win = float(wins.mean()) if not wins.empty else 0.0
     avg_loss = float(losses.mean()) if not losses.empty else 0.0
     return avg_win, avg_loss
 
 
-def _normalize_stats(stats: pd.Series) -> dict:
+def _normalize_stats(
+    stats: pd.Series, initial_capital: float = 10_000.0
+) -> dict:
     """Convert a Backtesting.py statistics Series into a snake_case dict.
 
     Omits keys that begin with an underscore and normalizes display-style keys
@@ -64,6 +66,8 @@ def _normalize_stats(stats: pd.Series) -> dict:
 
     Args:
         stats: Series-like statistics object produced by Backtesting.py.
+        initial_capital: Starting capital for recovery factor computation
+            (default 10_000).
 
     Returns:
         Dictionary of normalized metric names to their original values.
@@ -93,7 +97,7 @@ def _normalize_stats(stats: pd.Series) -> dict:
     equity_peak = out.get("equity_peak", equity_final)
     max_dd_pct = out.get("max_drawdown_pct", 0)
     out["recovery_factor"] = _extract_recovery_factor(
-        equity_final, equity_peak, max_dd_pct
+        equity_final, equity_peak, max_dd_pct, initial_capital=initial_capital
     )
 
     trades_df = stats.get("_trades", pd.DataFrame())

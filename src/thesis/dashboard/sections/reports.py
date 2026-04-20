@@ -33,7 +33,7 @@ def _render_reports_section(session_dir: str) -> None:
         section_10_marker = "## 10. Visual Evidence & Analytics"
         if section_10_marker in content:
             content = content.split(section_10_marker)[0]
-        st.markdown(content, unsafe_allow_html=True)
+        st.markdown(content)
     else:
         st.info("No thesis report available.")
 

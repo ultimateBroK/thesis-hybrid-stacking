@@ -39,7 +39,7 @@ def _output_dir(config: Config, subdir: str) -> Path:
     )
     d = base / "reports" / "charts" / subdir
     d.mkdir(parents=True, exist_ok=True)
-    return d
+    return d.resolve()
 
 
 def _plot_candlestick(df: pl.DataFrame, config: Config, out: Path) -> None:

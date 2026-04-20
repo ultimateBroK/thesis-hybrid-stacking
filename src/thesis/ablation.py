@@ -48,7 +48,7 @@ def _train_lgbm(
     applies class weighting for imbalanced data, and uses early stopping
     based on validation set performance.
 
-    Parameters:
+    Args:
         X_train: Training feature matrix.
         y_train: Training labels.
         X_val: Validation feature matrix.
@@ -105,7 +105,7 @@ def _save_preds(
     Converts raw model outputs (labels and probabilities) into a consistent
     DataFrame format with standardized column names for downstream processing.
 
-    Parameters:
+    Args:
         timestamps: Series of timestamps corresponding to each prediction.
         y_true: Ground truth labels.
         preds: Predicted labels.
@@ -148,7 +148,7 @@ def _time_span_years(df: pl.DataFrame) -> float:
     Calculates the elapsed time between the first and last timestamp
     in the dataframe, expressed in years. Used for annualizing Sharpe ratio.
 
-    Parameters:
+    Args:
         df: DataFrame with a 'timestamp' column.
 
     Returns:
@@ -178,7 +178,7 @@ def _compute_annualized_sharpe(
     Calculates the Sharpe ratio using trade-level returns, annualized by
     the number of trades per year (derived from the test set time span).
 
-    Parameters:
+    Args:
         trades_df: DataFrame with 'ReturnPct' column containing per-trade returns.
         test_df: DataFrame with 'timestamp' column to compute the time span.
 
@@ -223,7 +223,7 @@ def _run_backtest_for(
     from a specific variant (LGBM-only, GRU-only, or Combined), then
     overrides the Sharpe ratio with a properly annualized trade-based calculation.
 
-    Parameters:
+    Args:
         test_df: Test set DataFrame with features and labels.
         preds_df: DataFrame with predictions and probabilities.
         config: Application configuration for backtest parameters.
@@ -242,7 +242,7 @@ def _run_backtest_for(
 
     pdf = _prepare_df(test, preds)
     stats, _ = _run_bt(pdf, config)
-    metrics = _normalize_stats(stats)
+    metrics = _normalize_stats(stats, initial_capital=config.backtest.initial_capital)
 
     trades_df = stats["_trades"]
     annual_sharpe, trades_per_year = _compute_annualized_sharpe(trades_df, test)
@@ -272,7 +272,7 @@ def _log_comparison(comparison: dict[str, dict]) -> None:
     Sharpe, drawdown, profit factor) for all three variants: LGBM-only, GRU-only,
     and Combined.
 
-    Parameters:
+    Args:
         comparison: Dictionary keyed by variant name ('lgbm_only', 'gru_only', 'combined'),
             each containing a 'metrics' dict and 'feature_count'.
     """
@@ -322,7 +322,7 @@ def _determine_best(comparison: dict[str, dict]) -> str:
     the name of the best performer. If Sharpe ratios are equal, the variant
     with more trades is preferred (better statistical significance).
 
-    Parameters:
+    Args:
         comparison: Dictionary keyed by variant name, each containing 'metrics'
             with 'sharpe_ratio' and 'num_trades'.
 

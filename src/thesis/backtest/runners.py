@@ -247,7 +247,7 @@ def run_backtest(config: Config) -> None:
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
     stats, bt = _run_bt(pdf, config)
 
-    metrics = _normalize_stats(stats)
+    metrics = _normalize_stats(stats, initial_capital=config.backtest.initial_capital)
     trades = _trades_to_list(
         stats["_trades"],
         commission_per_lot=config.backtest.commission_per_lot,
@@ -292,7 +292,7 @@ def run_backtest_from_data(
     """
     pdf = _prepare_df(test_df, preds_df)
     stats, _ = _run_bt(pdf, config)
-    return _normalize_stats(stats)
+    return _normalize_stats(stats, initial_capital=config.backtest.initial_capital)
 
 
 def run_backtest_manual(
@@ -394,7 +394,7 @@ def run_backtest_manual(
         performance_reduction=performance_reduction,
     )
 
-    metrics = _normalize_stats(stats)
+    metrics = _normalize_stats(stats, initial_capital=initial_capital)
     trades = _trades_to_list(
         stats["_trades"],
         commission_per_lot=commission_per_lot,

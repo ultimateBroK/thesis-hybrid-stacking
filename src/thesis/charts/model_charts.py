@@ -1,11 +1,15 @@
 """Model performance interactive ECharts: confusion matrix, confidence, feature importance."""
 
+import logging
+
 import numpy as np
 import polars as pl
 from pyecharts import options as opts
 from pyecharts.charts import Bar, HeatMap
 
 from .data import COLORS
+
+logger = logging.getLogger("thesis.charts.model_charts")
 
 
 def build_confusion_matrix_chart(
@@ -84,6 +88,8 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
         A pyecharts `Bar` chart with normalized long/short confidence
         distributions, or an empty chart when required columns are missing.
     """
+    if "pred_label" not in preds_df.columns:
+        return Bar()
     y_pred = preds_df["pred_label"].to_numpy()
 
     if "pred_proba_class_1" not in preds_df.columns:
@@ -215,6 +221,17 @@ def build_shap_chart(shap_data: dict, top_n: int = 20) -> Bar:
 
     if not features or not mean_abs_shap:
         return Bar()
+
+    # Validate that SHAP array lengths match feature count
+    for cls_idx, cls_vals in enumerate(mean_abs_shap):
+        if len(cls_vals) != len(features):
+            logger.warning(
+                "SHAP class %d has %d values but %d features — skipping chart",
+                cls_idx,
+                len(cls_vals),
+                len(features),
+            )
+            return Bar()
 
     # Compute total importance per feature for sorting
     totals = [

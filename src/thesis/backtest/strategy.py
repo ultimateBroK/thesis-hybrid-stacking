@@ -23,12 +23,12 @@ class HybridGRUStrategy(Strategy):
     Confidence filtering: when confidence_threshold > 0, only trade
     when the predicted class probability exceeds the threshold.
 
-    Stop-loss: managed manually via market orders (no sl= parameter)
-    to avoid backtesting.py's built-in tie-break bias when both TP and
-    SL are hit on the same bar (the framework always attributes the
-    exit to the Long side). Manual tracking also allows using a
-    max(atr, min_atr) floor to prevent unrealistic stops in low-ATR
-    regimes.
+    Stop-loss: set via backtesting.py's native ``sl=`` parameter on
+    buy()/sell() calls. The stop price is computed as entry_price ±
+    (ATR × atr_stop_mult), floored by min_atr to prevent unrealistic
+    stops in low-ATR regimes. A manual stop-check fallback also closes
+    positions when the open/low/high crosses the tracked stop level,
+    providing conservative detection against brief pierces.
 
     Attributes:
         atr_stop_mult: ATR multiplier for stop-loss distance.
