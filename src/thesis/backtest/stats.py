@@ -50,9 +50,7 @@ def _compute_avg_win_loss(trades_df: pd.DataFrame) -> tuple[float, float]:
     return avg_win, avg_loss
 
 
-def _normalize_stats(
-    stats: pd.Series, initial_capital: float = 10_000.0
-) -> dict:
+def _normalize_stats(stats: pd.Series, initial_capital: float = 10_000.0) -> dict:
     """Convert a Backtesting.py statistics Series into a snake_case dict.
 
     Omits keys that begin with an underscore and normalizes display-style keys

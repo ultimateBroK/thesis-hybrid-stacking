@@ -83,7 +83,9 @@ def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    top = dict(sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:20])
+    top = dict(
+        sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:20]
+    )
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.barh(list(top.keys()), list(top.values()))
     ax.set_title("Feature Importance (Top 20)")

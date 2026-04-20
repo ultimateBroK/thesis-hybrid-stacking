@@ -110,9 +110,7 @@ class BacktestConfig:
     lots_per_trade: float = (
         0.15  # fixed lot size per trade (used when auto_lot_sizing=False)
     )
-    confidence_threshold: float = (
-        0.6  # min predicted probability to act (0 = disabled)
-    )
+    confidence_threshold: float = 0.6  # min predicted probability to act (0 = disabled)
     contract_size: int = 100
     tick_size: float = 0.01
     # Auto lot sizing (risk-based position sizing)
