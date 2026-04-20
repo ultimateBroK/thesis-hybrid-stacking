@@ -101,8 +101,14 @@ def _apply_purge_embargo(
     """Remove bars at split boundaries to prevent label leakage.
 
     Args:
+        train: Training split before purge.
+        val: Validation split before purge.
+        test: Test split before purge/embargo.
         purge: Bars to remove from ends of each split (covers label lookahead).
         embargo: Additional bars to remove from start of test set.
+
+    Returns:
+        The purged train/val/test splits.
     """
 
     if len(train) > purge:
@@ -125,7 +131,16 @@ def _apply_purge_embargo(
 
 
 def _parse_date_bounds(df: pl.DataFrame, config: Config) -> dict:
-    """Parse date boundary strings from config into typed Polars expressions."""
+    """Parse split boundary timestamps into Polars literals.
+
+    Args:
+        df: Input labeled dataframe used to inherit timestamp dtype.
+        config: Application configuration containing split boundary strings.
+
+    Returns:
+        A mapping of split boundary names to Polars datetime literals cast to the
+        same dtype as `df["timestamp"]`.
+    """
     ts_dtype = df["timestamp"].dtype
     bounds = {}
     for key in (
@@ -145,7 +160,15 @@ def _parse_date_bounds(df: pl.DataFrame, config: Config) -> dict:
 def _filter_splits_by_dates(
     df: pl.DataFrame, bounds: dict
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Filter dataframe into train/val/test splits by date boundaries."""
+    """Filter labeled rows into train/validation/test splits.
+
+    Args:
+        df: Labeled dataset containing a `timestamp` column.
+        bounds: Parsed datetime boundaries for train/val/test intervals.
+
+    Returns:
+        Tuple of `(train_df, val_df, test_df)`.
+    """
     train_df = df.filter(
         (pl.col("timestamp") >= bounds["train_start"])
         & (pl.col("timestamp") <= bounds["train_end"])
@@ -164,7 +187,17 @@ def _filter_splits_by_dates(
 def _apply_purge_and_embargo(
     train_df: pl.DataFrame, val_df: pl.DataFrame, test_df: pl.DataFrame, config: Config
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Apply purge and embargo, log the result, and return modified splits."""
+    """Apply configured purge and embargo rules to split datasets.
+
+    Args:
+        train_df: Training split.
+        val_df: Validation split.
+        test_df: Test split.
+        config: Application configuration with purge/embargo parameters.
+
+    Returns:
+        Tuple of `(train_df, val_df, test_df)` after purge/embargo.
+    """
     purge = config.splitting.purge_bars
     embargo = config.splitting.embargo_bars
     if purge <= 0 and embargo <= 0:
@@ -186,7 +219,14 @@ def _apply_purge_and_embargo(
 def _save_split_files(
     config: Config, train_df: pl.DataFrame, val_df: pl.DataFrame, test_df: pl.DataFrame
 ) -> None:
-    """Write train/val/test DataFrames to their configured parquet paths."""
+    """Write split datasets to configured parquet output paths.
+
+    Args:
+        config: Application configuration containing split output paths.
+        train_df: Training split dataframe.
+        val_df: Validation split dataframe.
+        test_df: Test split dataframe.
+    """
     for tag, data in [("train", train_df), ("val", val_df), ("test", test_df)]:
         path = Path(getattr(config.paths, f"{tag}_data"))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -200,15 +240,11 @@ def _save_split_files(
 
 
 def _log_distribution(name: str, df: pl.DataFrame) -> None:
-    """
-    Log class distribution for a dataset split.
+    """Log label class distribution for one split.
 
-    Logs the count and percentage of each label class (-1=Short, 0=Hold, 1=Long)
-    in the given DataFrame. Used during pipeline execution to verify class balance.
-
-    Parameters:
-        name: Name of the split (e.g., 'train', 'val', 'test') for logging purposes.
-        df: DataFrame expected to contain a 'label' column.
+    Args:
+        name: Human-readable split name for log messages.
+        df: Split dataframe that may contain a `label` column.
     """
     if "label" not in df.columns:
         return

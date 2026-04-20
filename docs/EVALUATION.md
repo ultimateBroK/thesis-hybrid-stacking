@@ -533,7 +533,7 @@ Use this table to understand if your metrics are in a healthy range. These are *
 | **Sortino Ratio** | < 0.5 | 0.5 – 1.5 | 1.5 – 2.5 | > 2.5 (verify if > 4.0) |
 | **Profit Factor** | < 1.2 | 1.2 – 1.5 | 1.5 – 2.0 | > 2.0 (⚠️ >3.0 suspicious for XAUUSD) |
 | **Win Rate** | < 35% | 35 – 45% | 45 – 55% | > 55% (⚠️ >65% suspicious for trend-following) |
-| **Return %** | < 0% | 0 – 10% | 10 – 30% | > 30% (⚠️ >50% needs verification) |
+| **Return %** | < 0% | 0 – 50% | 50 – 200% | 200 – 500% (⚠️ >500% verify) |
 
 ### Risk Management Metrics
 
@@ -542,7 +542,7 @@ Use this table to understand if your metrics are in a healthy range. These are *
 | **Max Drawdown %** | > 35% | 20 – 35% | 10 – 20% | < 10% |
 | **Calmar Ratio** | < 0.5 | 0.5 – 1.0 | 1.0 – 2.0 | > 2.0 |
 | **Recovery Factor** | < 1.0 | 1.0 – 2.0 | 2.0 – 4.0 | > 4.0 |
-| **Kelly Criterion** | Negative | 0 – 0.15 | 0.15 – 0.25 | > 0.25 (⚠️ >0.4 dangerous) |
+| **Kelly Criterion** | Negative | 0 – 0.15 | 0.15 – 0.25 | 0.25 – 0.40 (⚠️ >0.40 dangerous) |
 
 ### Trading Activity Metrics
 
@@ -559,8 +559,8 @@ Use this table to understand if your metrics are in a healthy range. These are *
 |--------|----------------|-------------|--------------|------------|
 | **Alpha %** | < 0% | 0 – 5% | 5 – 15% | > 15% |
 | **Beta** | > 1.3 or < -0.2 | 0.7 – 1.3 | 0.3 – 0.7 | < 0.3 |
-| **Volatility (Ann) %** | > 45% | 25 – 45% | 15 – 25% | < 15% |
-| **CAGR %** | < 5% | 5 – 15% | 15 – 30% | > 30% (⚠️ >50% verify) |
+| **Volatility (Ann) %** | > 35% | 20 – 35% | 10 – 20% | < 10% |
+| **CAGR %** | < 5% | 5 – 15% | 15 – 30% | 30 – 50% (⚠️ >50% verify) |
 | **vs Buy & Hold Vol** | > 1.5x | 1.0 – 1.5x | 0.6 – 1.0x | < 0.6x |
 
 > **How to read this table**: If your metric is in the "Warning Zone", investigate what went wrong. "Acceptable" means the model works but has room for improvement. "Target" is where you want to be. "Excellent" is great but be suspicious if everything is in "Excellent" — it could mean overfitting.

@@ -25,13 +25,21 @@ _COLORS = {
 
 
 def _output_dir(config: Config, subdir: str) -> Path:
-    """Get output directory for chart category."""
+    """Create and return the output directory for static charts.
+
+    Args:
+        config: Application configuration containing session paths.
+        subdir: Chart category subdirectory name.
+
+    Returns:
+        Absolute output path for the requested chart category.
+    """
     base = (
         Path(config.paths.session_dir) if config.paths.session_dir else Path("results")
     )
     d = base / "reports" / "charts" / subdir
     d.mkdir(parents=True, exist_ok=True)
-    return d
+    return d.resolve()
 
 
 def _plot_candlestick(df: pl.DataFrame, config: Config, out: Path) -> None:
@@ -175,7 +183,11 @@ _EXCLUDED_FEATURE_COLS = frozenset(
 
 
 def _generate_data_charts(config: Config) -> None:
-    """Generate data exploration charts."""
+    """Generate static data-exploration charts for report assets.
+
+    Args:
+        config: Application configuration containing input/output paths.
+    """
     import matplotlib
 
     matplotlib.use("Agg")

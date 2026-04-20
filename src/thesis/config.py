@@ -50,7 +50,7 @@ class SplittingConfig:
     test_end: str = "2026-03-31 23:59:59"
     purge_bars: int = 25
     embargo_bars: int = 50
-    embargo_scale_by_timeframe: bool = False
+    embargo_scale_by_timeframe: bool = True
     embargo_reference_timeframe: str = "1H"
 
 
@@ -63,7 +63,7 @@ class FeaturesConfig:
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
-    correlation_threshold: float = 0.90
+    correlation_threshold: float = 0.75
 
 
 @dataclass
@@ -71,9 +71,9 @@ class LabelsConfig:
     """Triple-barrier label parameters (single ATR multiplier, no sessions)."""
 
     atr_multiplier: float = 1.5
-    horizon_bars: int = 10
+    horizon_bars: int = 24
     num_classes: int = 3
-    min_atr: float = 0.0001
+    min_atr: float = 0.5
 
 
 @dataclass
@@ -82,19 +82,19 @@ class LGBMConfig:
 
     # LightGBM
     use_optuna: bool = True
-    optuna_trials: int = 50
+    optuna_trials: int = 100
     optuna_timeout: int = 3600
     num_leaves: int = 48
-    max_depth: int = 5
+    max_depth: int = 4
     learning_rate: float = 0.03
     n_estimators: int = 150
-    min_child_samples: int = 150
+    min_child_samples: int = 200
     subsample: float = 0.70
     subsample_freq: int = 5
     feature_fraction: float = 0.60
     reg_alpha: float = 0.1
-    reg_lambda: float = 5.0
-    early_stopping_rounds: int = 30
+    reg_lambda: float = 10.0
+    early_stopping_rounds: int = 50
 
 
 @dataclass
@@ -103,23 +103,21 @@ class BacktestConfig:
 
     initial_capital: float = 10_000.0
     leverage: int = 30  # margin = 1/leverage
-    spread_ticks: float = 30.0  # → spread param (relative)
-    slippage_ticks: float = 3.0  # absorbed into spread
+    spread_ticks: float = 35.0  # → spread param (relative)
+    slippage_ticks: float = 5.0  # absorbed into spread
     commission_per_lot: float = 10.0  # → callable commission
-    atr_stop_multiplier: float = 0.75
+    atr_stop_multiplier: float = 1.5
     lots_per_trade: float = (
-        1.0  # fixed lot size per trade (used when auto_lot_sizing=False)
+        0.15  # fixed lot size per trade (used when auto_lot_sizing=False)
     )
-    confidence_threshold: float = (
-        0.70  # min predicted probability to act (0 = disabled)
-    )
+    confidence_threshold: float = 0.6  # min predicted probability to act (0 = disabled)
     contract_size: int = 100
     tick_size: float = 0.01
     # Auto lot sizing (risk-based position sizing)
-    auto_lot_sizing: bool = False  # Calculate lot size from equity + risk %
+    auto_lot_sizing: bool = True  # Calculate lot size from equity + risk %
     risk_per_trade_pct: float = 1.0  # Risk % of equity per trade
     min_lot_size: float = 0.1  # Minimum lot size floor
-    max_lot_size: float = 10.0  # Maximum lot size ceiling
+    max_lot_size: float = 5.0  # Maximum lot size ceiling
     # Enhanced auto lot sizing parameters
     enable_performance_adjustment: bool = (
         True  # Adjust position size based on equity performance
@@ -139,9 +137,9 @@ class GRUConfig:
     """GRU feature extractor parameters."""
 
     input_size: int = 4  # log_returns + rsi_14 + atr_14 + macd_hist
-    hidden_size: int = 64
+    hidden_size: int = 32
     num_layers: int = 2
-    sequence_length: int = 24
+    sequence_length: int = 48
     dropout: float = 0.4
     learning_rate: float = 0.001
     batch_size: int = 64

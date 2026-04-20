@@ -11,18 +11,14 @@ logger = logging.getLogger("thesis.report.stats")
 
 
 def _load_parquet_stats(path: Path) -> dict | None:
-    """
-    Load basic stats from a parquet file without loading full data.
+    """Load lightweight statistics from a parquet file.
 
-    Reads only row/column metadata to provide a lightweight summary of the file contents.
-    Useful for quickly checking file size and date range without loading entire datasets.
-
-    Parameters:
-        path: Path to the parquet file to inspect.
+    Args:
+        path: Path to the parquet file.
 
     Returns:
-        Dictionary with 'rows', 'columns', and optionally 'date_range' (tuple of min/max timestamps),
-        or None if the file doesn't exist or cannot be read.
+        A dictionary containing row count, column names, and optional timestamp
+        date range, or `None` when the file is missing or unreadable.
     """
     if not path.exists():
         return None
@@ -41,18 +37,14 @@ def _load_parquet_stats(path: Path) -> dict | None:
 
 
 def _load_label_distribution(labels_path: Path) -> dict | None:
-    """
-    Load label class distribution from labels parquet.
+    """Compute class distribution from the labels parquet file.
 
-    Computes the count and percentage of each label class (-1=Short, 0=Hold, 1=Long)
-    in the dataset. Used for reporting class balance in the thesis document.
-
-    Parameters:
+    Args:
         labels_path: Path to the labels parquet file.
 
     Returns:
-        Dictionary mapping class names ('Short', 'Hold', 'Long') to (count, percentage) tuples,
-        plus a 'total' key with the total row count. Returns None if file doesn't exist or cannot be read.
+        A dictionary with class counts/percentages for `Short`, `Hold`, and
+        `Long`, plus `total`; returns `None` when unavailable.
     """
     if not labels_path.exists():
         return None
@@ -70,19 +62,14 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
 
 
 def _load_split_stats(config: Config) -> dict:
-    """
-    Load row counts and label distributions per split (train/val/test).
+    """Load split-level dataset statistics for train/val/test files.
 
-    Reads the train, validation, and test parquet files specified in the config,
-    and collects basic statistics for each: row count, column count, date range,
-    and per-class label distribution.
-
-    Parameters:
-        config: Application configuration with paths to train_data, val_data, and test_data.
+    Args:
+        config: Application configuration containing split parquet paths.
 
     Returns:
-        Dictionary keyed by split name ('train', 'val', 'test'), each containing
-        'rows', 'columns', 'date_range', and optionally 'label_distribution'.
+        Dictionary keyed by split name with row counts, column counts, optional
+        date ranges, and optional label distributions.
     """
     splits = {}
     for name, path_str in [
@@ -115,21 +102,16 @@ def _load_split_stats(config: Config) -> dict:
 
 
 def _load_prediction_stats(preds_path: Path) -> dict | None:
-    """
-    Load model prediction performance statistics from predictions parquet.
+    """Compute prediction quality statistics from a predictions parquet file.
 
-    Computes overall accuracy, per-class precision/recall/F1, confusion matrix,
-    and optionally high-confidence accuracy (predictions where max probability >= 70%%).
-    This provides a comprehensive classification performance summary for the thesis report.
-
-    Parameters:
-        preds_path: Path to the predictions parquet file containing
-            'true_label', 'pred_label', and optionally probability columns.
+    Args:
+        preds_path: Path to predictions parquet containing `true_label`,
+            `pred_label`, and optional class-probability columns.
 
     Returns:
-        Dictionary with 'total', 'accuracy', 'majority_baseline', 'per_class' metrics,
-        'confusion_matrix', and optionally 'high_confidence' stats.
-        Returns None if file doesn't exist or cannot be read.
+        A dictionary with overall accuracy, directional accuracy, baselines,
+        per-class metrics, confusion matrix, and optional high-confidence stats;
+        returns `None` if the file is unavailable or unreadable.
     """
     if not preds_path.exists():
         return None

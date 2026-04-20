@@ -87,9 +87,6 @@ __pycache__/
 
 # Test artifacts
 .pytest_cache/
-.coverage
-coverage.xml
-.coveragerc
 htmlcov/
 .tox/
 
@@ -132,5 +129,4 @@ AGENTS.md
 
 codedb.snapshot
 .weave/
-htmlcov/
 .tox/

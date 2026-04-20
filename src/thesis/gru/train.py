@@ -9,6 +9,7 @@ import numpy as np
 import polars as pl
 import torch
 import torch.nn as nn
+from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -18,12 +19,12 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from torch.utils.data import DataLoader
-from rich.console import Console
 
 from thesis.config import Config
 from thesis.gru.arch import GRUExtractor
 from thesis.gru.dataset import SequenceDataset, prepare_sequences
 from thesis.gru.inference import extract_hidden_states
+
 
 logger = logging.getLogger("thesis.gru.train")
 
@@ -155,23 +156,22 @@ def train_gru(
     train_df: pl.DataFrame,
     val_df: pl.DataFrame,
 ) -> tuple[GRUExtractor, nn.Linear, np.ndarray, np.ndarray, list[dict[str, float]]]:
-    """
-    Train a GRU feature extractor as a classifier and return per-sample hidden states for downstream LightGBM.
+    """Train a GRU classifier and extract hidden-state features.
 
-    Trains a GRUExtractor backbone together with a temporary linear classification head using cross-entropy loss, applies early stopping by validation loss, restores the best checkpoint, and extracts hidden-state features for both training and validation splits.
+    The GRU backbone is trained with a temporary linear head using
+    cross-entropy loss and early stopping on validation loss. The best
+    checkpoint is restored before hidden states are extracted for downstream
+    LightGBM training.
 
-    Parameters:
-        config (Config): Application configuration containing GRU hyperparameters and label info.
-        train_df (pl.DataFrame): Time-series training data to convert into fixed-length GRU sequences.
-        val_df (pl.DataFrame): Time-series validation data to convert into fixed-length GRU sequences.
+    Args:
+        config: Application configuration containing GRU and labeling settings.
+        train_df: Training split as a time-series DataFrame.
+        val_df: Validation split as a time-series DataFrame.
 
     Returns:
-        tuple: A 5-tuple containing:
-            - model (GRUExtractor): The trained GRU feature extractor with the best checkpoint loaded.
-            - classifier (nn.Linear): The trained linear classification head (best checkpoint loaded).
-            - train_hidden (np.ndarray): Array of per-sample hidden states extracted from training sequences.
-            - val_hidden (np.ndarray): Array of per-sample hidden states extracted from validation sequences.
-            - history (list[dict[str, float]]): Per-epoch metrics including 'epoch', 'train_loss', 'train_acc', 'val_loss', and 'val_acc' (losses and accuracies rounded).
+        A tuple containing ``(model, classifier, train_hidden, val_hidden,
+        history)`` where ``train_hidden`` and ``val_hidden`` are extracted GRU
+        embeddings and ``history`` stores per-epoch train/validation metrics.
     """
     gru_cfg = config.gru
     gru_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]

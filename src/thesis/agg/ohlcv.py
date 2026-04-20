@@ -25,15 +25,16 @@ logger = logging.getLogger("thesis.prepare")
 
 
 def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
-    """
-    Aggregate a monthly tick Parquet file into OHLCV bars aligned to the specified millisecond bar size.
+    """Aggregate one monthly tick parquet file into OHLCV bars.
 
-    Parameters:
-        file_path (Path): Path to a monthly tick Parquet file containing at least the columns `timestamp`, `bid`, `ask`, `ask_volume`, and `bid_volume`.
-        group_ms (int): Bar size in milliseconds used to floor tick timestamps to bar boundaries.
+    Args:
+        file_path: Path to a monthly tick parquet file with `timestamp`, `bid`,
+            `ask`, `ask_volume`, and `bid_volume` columns.
+        group_ms: Bar size in milliseconds used to align ticks to bar boundaries.
 
     Returns:
-        pl.DataFrame: DataFrame with columns `timestamp`, `open`, `high`, `low`, `close`, `volume`, `tick_count`, and `avg_spread`. Rows correspond to bars whose timestamps are the bar boundary datetimes; ticks with years outside 2000–2100 are excluded.
+        A Polars DataFrame with `timestamp`, `open`, `high`, `low`, `close`,
+        `volume`, `tick_count`, and `avg_spread` columns.
     """
     ticks = pl.read_parquet(
         file_path,
@@ -179,17 +180,19 @@ def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
 
 
 def prepare_data(config: Config) -> None:
-    """
-    Prepare OHLCV bars from raw monthly tick parquet files and write the resulting parquet to the configured output path.
+    """Prepare OHLCV bars from raw tick parquet files.
 
-    Reads all parquet files under config.paths.data_raw, aggregates ticks into OHLCV bars using the timeframe in config.data.timeframe, concatenates and deduplicates monthly results, filters bars with years outside 2000–2100, and writes the final dataset to config.paths.ohlcv.
+    Reads monthly tick files from the configured raw directory, aggregates them
+    into OHLCV bars at `config.data.timeframe`, removes duplicates, filters
+    corrupted timestamps, and writes the result to `config.paths.ohlcv`.
 
-    Parameters:
-        config (Config): Application configuration. `config.data.timeframe` controls bar size and accepts hourly (e.g., "1H", "4H"), minute (e.g., "1MIN", "5M"), or daily ("D" or "1D") formats.
+    Args:
+        config: Application configuration.
 
     Raises:
-        FileNotFoundError: If the raw data directory is missing or contains no parquet files (unless the output already exists, in which case the function returns).
-        ValueError: If `config.data.timeframe` uses an unsupported format.
+        FileNotFoundError: If raw parquet files are unavailable and no cached
+            OHLCV output exists.
+        ValueError: If the configured timeframe is unsupported.
     """
     raw_dir = Path(config.paths.data_raw)
     ohlcv_path = Path(config.paths.ohlcv)

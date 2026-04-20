@@ -20,15 +20,14 @@ logger = logging.getLogger("thesis.hybrid.lgbm")
 
 
 def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
-    """
-    Convert a NumPy feature matrix into a pandas DataFrame with the given column names to preserve feature names.
+    """Wrap a NumPy matrix as a pandas DataFrame.
 
-    Parameters:
-        X (np.ndarray): 2-D array of shape (n_samples, n_features) containing feature values.
-        feature_cols (list[str]): Column names to assign to the DataFrame; length must equal the number of columns in `X`.
+    Args:
+        X: Feature matrix of shape ``(n_samples, n_features)``.
+        feature_cols: Feature names aligned to matrix columns.
 
     Returns:
-        pandas.DataFrame: DataFrame representation of `X` with columns named according to `feature_cols`.
+        A pandas DataFrame preserving feature names for LightGBM.
     """
     import pandas as pd
 
@@ -60,13 +59,13 @@ _EXCLUDE_COLS = frozenset(
 
 
 def _compute_class_weights(y: np.ndarray) -> dict[int, float]:
-    """
-    Compute balanced class weights for multiclass labels.
+    """Compute balanced class weights for multiclass labels.
 
-    Calculates weights inversely proportional to class frequencies so that each class contributes equally during training. The returned mapping uses integer class labels as keys and their corresponding weight as float values.
+    Args:
+        y: Target labels.
 
     Returns:
-        class_weights (dict[int, float]): Mapping from class label to its computed weight.
+        Mapping from class label to balanced class weight.
     """
     from sklearn.utils.class_weight import compute_class_weight
 
@@ -84,20 +83,19 @@ def _train_fixed(
     config: Config,
     feature_cols: list[str],
 ) -> Any:
-    """
-    Train a LightGBM multiclass classifier using fixed hyperparameters from `config` and early stopping on the provided validation set.
+    """Train LightGBM with fixed hyperparameters.
 
-    Parameters:
-        X_train (np.ndarray): Training feature matrix.
-        y_train (np.ndarray): Training labels.
-        X_val (np.ndarray): Validation feature matrix used for early stopping.
-        y_val (np.ndarray): Validation labels.
-        class_weights (dict[int, float]): Mapping from class index to weight used for `class_weight`.
-        config (Config): Configuration containing model hyperparameters and workflow settings.
-        feature_cols (list[str]): Column names applied to feature matrices to preserve feature names for LightGBM.
+    Args:
+        X_train: Training feature matrix.
+        y_train: Training labels.
+        X_val: Validation feature matrix.
+        y_val: Validation labels.
+        class_weights: Balanced class weights.
+        config: Resolved application configuration.
+        feature_cols: Ordered feature names.
 
     Returns:
-        model: Trained `lightgbm.LGBMClassifier` instance with the fitted state (including `best_iteration_`).
+        Fitted ``lightgbm.LGBMClassifier`` model.
     """
     import lightgbm as lgb
 
@@ -147,11 +145,10 @@ def _train_fixed(
         task = progress.add_task("iter", total=m.n_estimators, v_loss=0.0)
 
         def _progress_cb(env: Any) -> None:
-            """
-            Advance the Rich progress task by one iteration and set the `v_loss` field from the LightGBM callback environment.
+            """Update progress bar from LightGBM callback state.
 
-            Parameters:
-                env (Any): LightGBM callback environment; `env.evaluation_result_list[0][2]` is used as the validation loss when available, otherwise `0.0`.
+            Args:
+                env: LightGBM callback environment.
             """
             progress.update(
                 task,
@@ -249,27 +246,18 @@ def _compute_sharpe_from_predictions(
     annualize: bool = False,
     bars_per_year: int = _H1_BARS_PER_YEAR,
 ) -> float:
-    """
-    Compute Sharpe Ratio from prediction labels using a simplified trade simulation.
+    """Compute Sharpe ratio from predicted class probabilities.
 
-    Simulates fixed-lot trades based on predicted direction vs actual direction.
-    Uses simplified returns without full backtesting.py overhead for fast Optuna evaluation.
-
-    The return model accounts for spread cost (2-way round-trip) which affects
-    the breakeven win rate: for a 2bps spread, breakeven = 1/(1+spread) ≈ 49.9%
-
-    Parameters:
-        y_true: True labels (-1, 0, 1)
-        y_pred_proba: Predicted class probabilities (3 columns for classes -1, 0, 1),
-                      or 1D array of hard class predictions.
-        confidence_threshold: Minimum probability threshold to trade (0 = trade all)
-        spread_cost: Round-trip spread cost as fraction of notional (default 2bps).
-                     Includes both spread and slippage. Breakeven win rate ≈ 1/(1+spread_cost).
-        annualize: If True, annualize Sharpe using bars_per_year (default True).
-        bars_per_year: Number of bars per year for annualization (default 8400 for H1).
+    Args:
+        y_true: True labels in ``{-1, 0, 1}``.
+        y_pred_proba: Class probabilities or hard class predictions.
+        confidence_threshold: Minimum confidence required to trade.
+        spread_cost: Round-trip transaction cost fraction.
+        annualize: Whether to annualize Sharpe.
+        bars_per_year: Bars used for annualization.
 
     Returns:
-        Sharpe Ratio (annualized if annualize=True), or 0.0 if insufficient trades.
+        Sharpe ratio, or ``0.0`` when trades are insufficient.
     """
     if y_pred_proba.ndim == 1:
         y_pred_proba = _convert_hard_to_proba(y_pred_proba)
@@ -319,20 +307,19 @@ def _train_optuna(
     config: Config,
     feature_cols: list[str],
 ) -> Any:
-    """
-    Perform an Optuna hyperparameter search for a LightGBM multiclass classifier using time-series cross-validation optimizing for Sharpe Ratio, then train and return a final LightGBM model using the best-found parameters.
+    """Tune and train LightGBM with Optuna.
 
-    Parameters:
-        X_train (np.ndarray): Training feature matrix.
-        y_train (np.ndarray): Training labels.
-        X_val (np.ndarray): Validation feature matrix used for early stopping of final model.
-        y_val (np.ndarray): Validation labels.
-        class_weights (dict[int, float]): Mapping from class index to weight applied during training.
-        config (Config): Configuration object controlling randomness, Optuna budget, early stopping, and related training settings.
-        feature_cols (list[str]): Column names used to wrap NumPy feature matrices so LightGBM preserves feature names.
+    Args:
+        X_train: Training feature matrix.
+        y_train: Training labels.
+        X_val: Validation feature matrix.
+        y_val: Validation labels.
+        class_weights: Balanced class weights.
+        config: Resolved application configuration.
+        feature_cols: Ordered feature names.
 
     Returns:
-        model: A fitted LightGBM classifier trained on the provided training set and validated using the supplied validation set.
+        Fitted ``lightgbm.LGBMClassifier`` model with best Optuna params.
     """
     import lightgbm as lgb
     import optuna
@@ -342,16 +329,13 @@ def _train_optuna(
     seed = config.workflow.random_seed
 
     def objective(trial: Any) -> float:
-        """
-        Evaluate hyperparameters proposed by an Optuna `trial` using 3-fold time-series cross-validation and return the mean Sharpe Ratio.
+        """Score a trial using time-series CV Sharpe ratio.
 
-        Optimizes for trading performance (Sharpe Ratio) rather than classification accuracy (F1).
-
-        Parameters:
-            trial: An Optuna trial object that suggests hyperparameter values for a LightGBM multiclass classifier.
+        Args:
+            trial: Optuna trial proposing hyperparameters.
 
         Returns:
-            float: Mean Sharpe Ratio across the three TimeSeriesSplit folds.
+            Mean Sharpe ratio across CV folds.
         """
         params = {
             "num_leaves": trial.suggest_int("num_leaves", 20, 150),
@@ -415,14 +399,14 @@ def _train_optuna(
         def _optuna_cb(
             study: optuna.study.Study, trial: optuna.trial.FrozenTrial
         ) -> None:
-            """
-            Update the external Rich progress task and store a new best Sharpe when the study improves.
+            """Update Optuna progress tracking after each trial.
 
-            Parameters:
-                study: The Optuna study to read the current best value from.
-                trial: The trial that just finished (unused except for callback signature).
+            Args:
+                study: Optuna study state.
+                trial: Completed trial.
             """
             nonlocal best_sharpe
+            _ = trial
             if study.best_value > best_sharpe:
                 best_sharpe = study.best_value
             progress.update(task, advance=1, best_sharpe=best_sharpe)
@@ -468,11 +452,10 @@ def _train_optuna(
         task = progress.add_task("iter", total=n_est, v_loss=0.0)
 
         def _progress_cb(env: Any) -> None:
-            """
-            Advance the Rich progress task by one iteration and set the `v_loss` field from the LightGBM callback environment.
+            """Update final-model progress from callback state.
 
-            Parameters:
-                env: LightGBM callback environment; `env.evaluation_result_list[0][2]` is used as the validation loss when available, otherwise `0.0`.
+            Args:
+                env: LightGBM callback environment.
             """
             progress.update(
                 task,

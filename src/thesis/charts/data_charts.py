@@ -18,12 +18,14 @@ def _downsample_ohlcv(df: pl.DataFrame, max_bars: int) -> pl.DataFrame:
     """
     Reduce an OHLCV DataFrame to at most `max_bars` rows by aggregating contiguous rows into fixed-size groups.
 
-    Parameters:
-        df (pl.DataFrame): Input OHLCV time series with columns `timestamp`, `open`, `high`, `low`, `close`, and optionally `volume`.
-        max_bars (int): Maximum number of bars to retain after downsampling.
+    Args:
+        df: Input OHLCV time series with `timestamp`, `open`, `high`, `low`,
+            `close`, and optionally `volume`.
+        max_bars: Maximum number of bars to retain after downsampling.
 
     Returns:
-        pl.DataFrame: Aggregated OHLCV DataFrame with at most `max_bars` rows. For each group:
+        Aggregated OHLCV DataFrame with at most `max_bars` rows. For each
+        group:
             - `timestamp`: first timestamp in the group
             - `open`: first open price in the group
             - `high`: maximum high price in the group
@@ -62,13 +64,14 @@ def build_candlestick_chart(
     The chart is laid out as price (top) and volume (bottom) with a visible slider and inside data zoom.
     Downsamples `df` when its row count exceeds `max_bars` to limit rendered bars.
 
-    Parameters:
-        df (pl.DataFrame): OHLCV data. `timestamp` may be temporal or UTF-8 strings.
-        config (Config): Application configuration used for chart title (expects `config.data.symbol` and `config.data.timeframe`).
-        max_bars (int): Maximum number of bars to render before downsampling.
+    Args:
+        df: OHLCV data. `timestamp` may be temporal or UTF-8 strings.
+        config: Application configuration used for chart title.
+        max_bars: Maximum number of bars to render before downsampling.
 
     Returns:
-        tuple[Grid, dict]: A tuple containing the pyecharts `Grid` chart and an info dict with keys:
+        A tuple containing the pyecharts `Grid` chart and an info dict with
+        keys:
             - `total_bars`: original number of rows in `df`
             - `displayed_bars`: number of bars actually rendered (after downsampling)
             - `downsampled`: `true` if downsampling was applied, `false` otherwise
@@ -216,16 +219,13 @@ def build_candlestick_chart(
 
 
 def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
-    """
-    Builds a correlation heatmap for numeric feature columns.
+    """Build an interactive correlation heatmap for feature columns.
 
-    Selects numeric feature columns (falls back to numeric dtypes if fewer than two detected features), computes pairwise Pearson correlations, and renders them as a pyecharts HeatMap using a blue-white-red diverging colormap mapped to the range -1..1.
-
-    Parameters:
-        df (pl.DataFrame): DataFrame containing timestamp and feature columns.
+    Args:
+        df: Feature dataframe used to compute pairwise correlations.
 
     Returns:
-        HeatMap: pyecharts HeatMap chart of the correlation matrix with values rounded to three decimals.
+        A pyecharts `HeatMap` chart of the correlation matrix.
     """
     feature_cols = _get_feature_cols(df)
     if len(feature_cols) < 2:
@@ -278,13 +278,13 @@ def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
 
 
 def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
-    """Build triple-barrier label distribution pie chart.
+    """Build a pie chart for triple-barrier label distribution.
 
     Args:
-        df: Labels DataFrame with 'label' column.
+        df: Labels dataframe containing a `label` column.
 
     Returns:
-        pyecharts Pie chart.
+        A pyecharts `Pie` chart.
     """
     labels = df["label"].to_numpy()
     counts = {k: int((labels == k).sum()) for k in [-1, 0, 1]}
@@ -333,16 +333,13 @@ def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
 
 
 def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
-    """
-    Build a tabbed chart of per-feature 50-bin histograms.
+    """Build tabbed histograms for feature distributions.
 
-    Each tab contains a bar chart showing the histogram counts for one feature; features with no non-null values are skipped. Bin labels use bin centers formatted to two decimal places.
-
-    Parameters:
-        df (pl.DataFrame): Polars DataFrame containing feature columns to plot.
+    Args:
+        df: Feature dataframe used to compute per-column histograms.
 
     Returns:
-        Tab: A pyecharts Tab where each tab is a Bar chart of a feature's histogram.
+        A pyecharts `Tab` containing one histogram bar chart per feature.
     """
     feature_cols = _get_feature_cols(df)
     tab = Tab()

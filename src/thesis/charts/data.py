@@ -53,14 +53,13 @@ EXCLUDED_FEATURE_COLS: frozenset[str] = frozenset(
 
 
 def _get_feature_cols(df: pl.DataFrame) -> list[str]:
-    """
-    Compute the dataframe column names that should be treated as features by excluding metadata and OHLCV-related columns.
+    """Return feature columns excluding non-feature metadata fields.
 
-    Parameters:
-        df (pl.DataFrame): Input dataframe whose columns will be filtered.
+    Args:
+        df: Input dataframe.
 
     Returns:
-        list[str]: Column names from `df` that are not in `EXCLUDED_FEATURE_COLS`, preserving the dataframe's column order.
+        Ordered list of feature column names.
     """
     return [c for c in df.columns if c not in EXCLUDED_FEATURE_COLS]
 
@@ -69,24 +68,14 @@ def _get_feature_cols(df: pl.DataFrame) -> list[str]:
 
 
 def load_session_data(config: "Config") -> dict[str, Any]:
-    """
-    Load all parquet and JSON artifacts required for charting.
+    """Load session artifacts required by interactive chart builders.
 
-    Parameters:
-        config (Config): Runtime configuration containing paths used to locate session artifacts.
+    Args:
+        config: Runtime configuration containing artifact paths.
 
     Returns:
-        data (dict[str, Any]): Mapping with keys:
-            session_dir: configured session directory (or falsy value),
-            ohlcv: DataFrame or `None` if the OHLCV parquet is missing,
-            features: DataFrame or `None` if the features parquet is missing,
-            test: DataFrame or `None` if the test parquet is missing (used for manual backtest),
-            labels: DataFrame or `None` if the labels parquet is missing,
-            predictions: DataFrame or `None` if the predictions parquet is missing,
-            backtest_results: parsed JSON object or `None` if missing,
-            trades: list of trades (defaults to `[]` when backtest results are missing),
-            metrics: dict of metrics (defaults to `{}` when backtest results are missing),
-            feature_importance: dict parsed from JSON (defaults to `{}` when missing).
+        Dictionary with loaded dataframes and JSON artifacts used across data,
+        model, and backtest chart tabs.
     """
     data: dict[str, Any] = {}
 

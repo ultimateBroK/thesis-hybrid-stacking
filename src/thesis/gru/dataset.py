@@ -11,6 +11,12 @@ class SequenceDataset(Dataset):
 
     Each sample is a window of (sequence_length, input_size) values
     from the GRU input columns, plus the corresponding label.
+
+    Args:
+        sequences: Array of shape ``(n_samples, sequence_length, n_features)``
+            containing precomputed GRU sequences.
+        labels: Optional array of shape ``(n_samples,)`` containing labels
+            aligned with ``sequences``.
     """
 
     def __init__(
@@ -18,12 +24,16 @@ class SequenceDataset(Dataset):
         sequences: np.ndarray,
         labels: np.ndarray | None = None,
     ) -> None:
-        """
-        Initialize the dataset with precomputed GRU input sequences and optional labels.
+        """Initialize the dataset.
 
-        Parameters:
-            sequences (np.ndarray): 3-D array shaped (n_samples, sequence_length, n_features) containing GRU input sequences. Stored internally as a PyTorch float tensor (copy is made).
-            labels (np.ndarray | None): Optional 1-D array of labels of length n_samples. If provided, stored internally as a PyTorch long tensor (copy is made); if omitted, labels are set to None.
+        Args:
+            sequences: 3D array shaped ``(n_samples, sequence_length,
+                n_features)``. Stored internally as a float tensor copy.
+            labels: Optional 1D array of labels with length ``n_samples``.
+                Stored internally as a long tensor copy when provided.
+
+        Returns:
+            None.
         """
         self.sequences = torch.from_numpy(sequences.copy()).float()
         self.labels = (
@@ -31,20 +41,22 @@ class SequenceDataset(Dataset):
         )
 
     def __len__(self) -> int:
-        """
-        Return the number of sequences (samples) in the dataset.
+        """Return the number of available samples.
 
         Returns:
-                length (int): Number of samples available.
+            Number of samples in the dataset.
         """
         return len(self.sequences)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor | None]:
-        """
-        Retrieve the sequence (and optional label) at the given index.
+        """Retrieve a single sequence sample.
+
+        Args:
+            idx: Sample index.
 
         Returns:
-            (sequence, label): `sequence` is the sequence tensor at `idx`; `label` is the corresponding label tensor if labels were provided, otherwise `None`.
+            A tuple of ``(sequence, label)`` where ``label`` is ``None`` when
+            labels were not provided.
         """
         if self.labels is not None:
             return self.sequences[idx], self.labels[idx]
@@ -52,15 +64,15 @@ class SequenceDataset(Dataset):
 
 
 def _sliding_windows(data: np.ndarray, window: int) -> np.ndarray:
-    """
-    Construct a 3D sliding-window view over a 2D array.
+    """Construct a 3D sliding-window view over a 2D array.
 
-    Parameters:
-        data (np.ndarray): 2D array with shape (n_rows, n_features).
-        window (int): Length of each sliding window.
+    Args:
+        data: 2D array with shape ``(n_rows, n_features)``.
+        window: Length of each sliding window.
 
     Returns:
-        np.ndarray: 3D array with shape (n_samples, window, n_features), where n_samples = n_rows - window + 1. The returned array is a view into `data` (no copy).
+        View array with shape ``(n_samples, window, n_features)`` where
+        ``n_samples = n_rows - window + 1``.
     """
     n_rows, n_features = data.shape
     n_samples = n_rows - window + 1
@@ -118,7 +130,14 @@ def prepare_sequences(
 
 
 def _ensure_log_returns(df: pl.DataFrame) -> pl.DataFrame:
-    """Compute log_returns column if not present in DataFrame."""
+    """Ensure that ``log_returns`` exists in the input DataFrame.
+
+    Args:
+        df: Input DataFrame expected to contain a ``close`` column.
+
+    Returns:
+        DataFrame that includes a ``log_returns`` column.
+    """
     if "log_returns" not in df.columns:
         return df.with_columns(
             pl.col("close")
@@ -132,7 +151,18 @@ def _ensure_log_returns(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _validate_gru_cols(df: pl.DataFrame, gru_cols: list[str]) -> None:
-    """Raise ValueError if any requested GRU column is missing."""
+    """Validate that all requested GRU input columns are present.
+
+    Args:
+        df: DataFrame containing candidate GRU columns.
+        gru_cols: Ordered list of required GRU input column names.
+
+    Returns:
+        None.
+
+    Raises:
+        ValueError: If any requested GRU column is missing.
+    """
     for col in gru_cols:
         if col not in df.columns:
             raise ValueError(f"GRU input column '{col}' not found in DataFrame")
@@ -141,7 +171,17 @@ def _validate_gru_cols(df: pl.DataFrame, gru_cols: list[str]) -> None:
 def _extract_labels(
     df: pl.DataFrame, label_col: str, sequence_length: int
 ) -> np.ndarray | None:
-    """Extract labels aligned to the end of each sliding window."""
+    """Extract labels aligned to the end index of each sequence.
+
+    Args:
+        df: Input DataFrame.
+        label_col: Label column name.
+        sequence_length: Sliding-window size.
+
+    Returns:
+        Label array aligned with generated windows, or ``None`` when
+        ``label_col`` does not exist.
+    """
     if label_col not in df.columns:
         return None
     return df[label_col].to_numpy()[sequence_length - 1 :]
@@ -150,7 +190,17 @@ def _extract_labels(
 def _identify_static_cols(
     df: pl.DataFrame, gru_cols: list[str], exclude_cols: frozenset[str], label_col: str
 ) -> list[str]:
-    """Identify columns that are neither GRU inputs nor excluded."""
+    """Identify non-GRU feature columns for downstream static features.
+
+    Args:
+        df: Input DataFrame.
+        gru_cols: GRU input column names.
+        exclude_cols: Columns to exclude explicitly.
+        label_col: Label column name.
+
+    Returns:
+        Ordered list of static feature column names.
+    """
     gru_col_set = set(gru_cols)
     return [
         c

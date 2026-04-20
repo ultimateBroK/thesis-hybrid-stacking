@@ -1,0 +1,9 @@
+[run]
+source = src/thesis
+omit =
+    src/thesis/dashboard/*
+    src/thesis/ablation.py
+
+[report]
+fail_under = 70
+show_missing = true

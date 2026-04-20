@@ -8,7 +8,6 @@ from pathlib import Path
 import joblib
 import numpy as np
 import polars as pl
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
@@ -27,13 +26,20 @@ from thesis.hybrid.lgbm import (
     _train_optuna,
     _wrap_np,
 )
+from thesis.ui import console
 
 logger = logging.getLogger("thesis.hybrid.train")
-_console = Console()
 
 
 def _normalize_label(lbl: int) -> str:
-    """Normalize negative labels to string form: -1 -> 'minus1'."""
+    """Normalize a class label for probability column naming.
+
+    Args:
+        lbl: Integer class label.
+
+    Returns:
+        A string-safe label where negatives are prefixed with ``minus``.
+    """
     if lbl < 0:
         return f"minus{abs(lbl)}"
     return str(lbl)
@@ -151,14 +157,16 @@ def _save_predictions(
 
 
 def train_model(config: Config) -> None:
-    """
-    Orchestrates training of a hybrid GRU feature extractor and LightGBM classifier, evaluates on the test split, and saves models, predictions, and artifacts.
+    """Train and evaluate the hybrid GRU + LightGBM model.
 
-    Parameters:
-        config (Config): Application configuration containing paths for data, model, and predictions, plus GRU and LightGBM training settings.
+    This stage trains the GRU feature extractor, builds hybrid features,
+    trains LightGBM, saves artifacts, and computes interpretation outputs.
+
+    Args:
+        config: Resolved application configuration.
 
     Raises:
-        FileNotFoundError: If any of the required split files (train/val/test) do not exist.
+        FileNotFoundError: If required split parquet files are missing.
     """
     stage_start = time.perf_counter()
 
@@ -182,7 +190,7 @@ def train_model(config: Config) -> None:
     )
 
     # --- 1. Train GRU feature extractor ---
-    _console.print(
+    console.print(
         Panel(
             "Stage 4.1: [bold]GRU Feature Extractor[/]", style="magenta", padding=(0, 2)
         )
@@ -239,7 +247,7 @@ def train_model(config: Config) -> None:
 
     # --- 4. Train LightGBM ---
     method = "Optuna" if config.model.use_optuna else "Fixed"
-    _console.print(
+    console.print(
         Panel(
             f"Stage 4.2: [bold]LightGBM[/] ({method})", style="magenta", padding=(0, 2)
         )
@@ -279,7 +287,7 @@ def train_model(config: Config) -> None:
         json.dump(training_history, f, indent=2)
 
     # --- 5. Generate test predictions ---
-    _console.print(
+    console.print(
         Panel(
             "Stage 4.3: [bold]Predictions & Evaluation[/]",
             style="magenta",
@@ -310,7 +318,7 @@ def train_model(config: Config) -> None:
                 str((preds == cls).sum()),
             )
 
-    _console.print(table)
+    console.print(table)
     logger.info("Test accuracy: %.4f", acc)
 
     class_order = model.classes_.tolist()
@@ -318,7 +326,7 @@ def train_model(config: Config) -> None:
     _save_predictions(test_aligned, y_test, preds, proba, class_order, preds_path)
 
     # --- 6. SHAP ---
-    _console.print(
+    console.print(
         Panel(
             "Stage 4.4: [bold]SHAP Feature Importance[/]",
             style="magenta",
@@ -332,7 +340,7 @@ def train_model(config: Config) -> None:
 
     # Final summary panel
     stage_time = time.perf_counter() - stage_start
-    _console.print(
+    console.print(
         Panel(
             f"[bold green]Stage 4 complete[/]\n"
             f"  Accuracy: [bold]{acc:.4f}[/]\n"

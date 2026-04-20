@@ -36,7 +36,18 @@ def _drop_correlated(
     test: pl.DataFrame,
     threshold: float,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Drop features with absolute correlation > *threshold* (train-only)."""
+    """Drop highly correlated features using train-set correlations only.
+
+    Args:
+        train: Training dataframe used to compute feature correlations.
+        val: Validation dataframe to apply the same feature drop list.
+        test: Test dataframe to apply the same feature drop list.
+        threshold: Absolute correlation threshold above which a feature is
+            removed.
+
+    Returns:
+        Tuple of `(train, val, test)` with correlated features removed.
+    """
     feature_cols = [c for c in train.columns if c not in _EXCLUDE_COLS]
     if len(feature_cols) < 2:
         return train, val, test

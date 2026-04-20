@@ -14,7 +14,11 @@ logger = logging.getLogger("thesis.visualize")
 
 
 def _generate_model_charts(config: Config) -> None:
-    """Generate model performance charts."""
+    """Generate static model-performance charts from test predictions.
+
+    Args:
+        config: Application configuration containing artifact paths.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
