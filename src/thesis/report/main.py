@@ -20,7 +20,14 @@ logger = logging.getLogger("thesis.report")
 
 
 def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None:
-    """Generate and save the equity curve chart from trade history."""
+    """Render and save an equity curve image from trade history.
+
+    Args:
+        trades: Backtest trade records containing `entry_time`, `exit_time`, and
+            `pnl` keys.
+        config: Application configuration containing initial capital.
+        out_dir: Directory where `equity_curve.png` is written.
+    """
     if not trades:
         return
 
@@ -45,7 +52,15 @@ def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> Non
 def _build_equity_series(
     trades: list[dict], initial_capital: float
 ) -> tuple[list, list]:
-    """Build timestamp and equity lists from trade history."""
+    """Build timestamp and cumulative equity series from trades.
+
+    Args:
+        trades: Backtest trade list ordered by execution time.
+        initial_capital: Starting account equity.
+
+    Returns:
+        A tuple of `(times, equity)` lists suitable for plotting.
+    """
     times = [pd.to_datetime(trades[0]["entry_time"])]
     equity = [initial_capital]
     for t in trades:
@@ -55,7 +70,12 @@ def _build_equity_series(
 
 
 def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
-    """Generate feature importance chart if data is available."""
+    """Render and save a top-20 feature-importance chart.
+
+    Args:
+        feature_importance: Mapping of feature name to importance score.
+        out_dir: Directory where `feature_importance.png` is written.
+    """
     if not feature_importance:
         return
     import matplotlib
@@ -74,7 +94,15 @@ def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
 
 
 def _load_feature_importance(config: Config, out_dir: Path) -> dict:
-    """Load feature importance from JSON if available."""
+    """Load feature-importance JSON from session report outputs.
+
+    Args:
+        config: Application configuration containing session paths.
+        out_dir: Report output directory used as fallback base path.
+
+    Returns:
+        Parsed feature-importance mapping, or an empty dict when unavailable.
+    """
     fi_path = (
         Path(config.paths.session_dir) / "reports" / "feature_importance.json"
         if config.paths.session_dir
@@ -87,7 +115,14 @@ def _load_feature_importance(config: Config, out_dir: Path) -> dict:
 
 
 def _load_ablation_results(config: Config) -> dict:
-    """Load ablation results from JSON if available."""
+    """Load ablation-study results for the current session.
+
+    Args:
+        config: Application configuration containing session paths.
+
+    Returns:
+        Parsed ablation results, or an empty dict when unavailable.
+    """
     if not config.paths.session_dir:
         return {}
     abl_path = Path(config.paths.session_dir) / "reports" / "ablation_results.json"

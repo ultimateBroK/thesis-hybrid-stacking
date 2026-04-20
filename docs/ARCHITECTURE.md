@@ -187,7 +187,10 @@ thesis/
 │   │   ├── lgbm.py
 │   │   └── interpret.py
 │   ├── backtest/            # CFD trading simulation (Stage 5)
-│   │   └── strategy.py
+│   │   ├── strategy.py      # HybridGRUStrategy class
+│   │   ├── runners.py       # Backtest execution + public API
+│   │   ├── stats.py         # Metrics normalization
+│   │   └── persistence.py   # JSON/CSV/Bokeh output
 │   ├── report/              # Report generation (Stage 6)
 │   │   ├── main.py
 │   │   ├── builder.py
@@ -202,7 +205,16 @@ thesis/
 │   │   ├── model_charts.py
 │   │   └── backtest_charts.py
 │   └── dashboard/           # Streamlit dashboard
-│       └── app.py
+│       ├── app.py            # Main orchestration shell
+│       ├── zones.py          # Metric zone classification
+│       ├── cards.py          # Metric card HTML rendering
+│       ├── sessions.py       # Session discovery & selector
+│       └── sections/         # Dashboard page sections
+│           ├── data.py
+│           ├── model.py
+│           ├── backtest.py
+│           ├── training.py
+│           └── reports.py
 │
 ├── tests/                   # Test suite
 │   ├── conftest.py

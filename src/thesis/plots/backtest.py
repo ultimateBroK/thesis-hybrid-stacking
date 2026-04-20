@@ -72,7 +72,15 @@ def _chart_equity_drawdown(
     times: list,
     out: Path,
 ) -> None:
-    """Generate equity curve with drawdown subplot chart."""
+    """Generate a two-panel equity and drawdown chart.
+
+    Args:
+        trades: Backtest trade list containing `pnl` values.
+        metrics: Backtest metrics dictionary for title annotation.
+        config: Application configuration containing initial capital.
+        times: X-axis time values for equity/drawdown plotting.
+        out: Output directory where `equity_drawdown.png` is written.
+    """
     import matplotlib.pyplot as plt
 
     pnls = [t["pnl"] for t in trades]
@@ -112,7 +120,13 @@ def _chart_pnl_histogram(
     metrics: dict,
     out: Path,
 ) -> None:
-    """Generate win/loss PnL histogram chart."""
+    """Generate a histogram comparing winning and losing trade PnL.
+
+    Args:
+        trades: Backtest trade list containing `pnl` values.
+        metrics: Backtest metrics dictionary for title annotation.
+        out: Output directory where `pnl_histogram.png` is written.
+    """
     import matplotlib.pyplot as plt
 
     pnls = [t["pnl"] for t in trades]
@@ -147,7 +161,13 @@ def _chart_monthly_returns(
     config: Config,
     out: Path,
 ) -> None:
-    """Generate monthly returns heatmap chart."""
+    """Generate a monthly returns heatmap image.
+
+    Args:
+        trades: Backtest trade list.
+        config: Application configuration containing initial capital.
+        out: Output directory where `monthly_returns.png` is written.
+    """
     import matplotlib.pyplot as plt
 
     monthly = _compute_monthly_returns(trades, config.backtest.initial_capital)
@@ -208,7 +228,13 @@ def _chart_rolling_sharpe(
     times: list,
     out: Path,
 ) -> None:
-    """Generate rolling Sharpe ratio chart."""
+    """Generate a rolling Sharpe-ratio chart over trade windows.
+
+    Args:
+        trades: Backtest trade list containing `pnl` values.
+        times: Time values used to estimate annualization factor.
+        out: Output directory where `rolling_sharpe.png` is written.
+    """
     import matplotlib.pyplot as plt
 
     pnls = [t["pnl"] for t in trades]
@@ -246,7 +272,12 @@ def _chart_rolling_sharpe(
 
 
 def _chart_duration_pnl(trades: list[dict], out: Path) -> None:
-    """Generate trade duration vs PnL scatter chart."""
+    """Generate a scatter plot of trade duration versus PnL.
+
+    Args:
+        trades: Backtest trade list with entry/exit times and `pnl`.
+        out: Output directory where `duration_vs_pnl.png` is written.
+    """
     import matplotlib.pyplot as plt
 
     durations = []
@@ -280,7 +311,11 @@ def _chart_duration_pnl(trades: list[dict], out: Path) -> None:
 
 
 def _generate_backtest_charts(config: Config) -> None:
-    """Generate all backtest analysis charts by delegating to chart helpers."""
+    """Generate all static backtest-analysis charts.
+
+    Args:
+        config: Application configuration containing backtest artifact paths.
+    """
     import matplotlib
 
     matplotlib.use("Agg")

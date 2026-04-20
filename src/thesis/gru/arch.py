@@ -24,17 +24,17 @@ class GRUExtractor(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.3,
     ) -> None:
-        """
-        Initialize the GRUExtractor module and configure its GRU layer.
+        """Initialize the GRU extractor module.
 
-        Parameters:
-            input_size (int): Number of expected features in the input at each time step.
-            hidden_size (int): Dimensionality of the GRU hidden state.
-            num_layers (int): Number of stacked GRU layers.
-            dropout (float): Dropout probability applied between GRU layers when `num_layers` > 1; ignored (treated as 0.0) when `num_layers` == 1.
+        Args:
+            input_size: Number of expected features at each timestep.
+            hidden_size: Dimensionality of the GRU hidden state.
+            num_layers: Number of stacked GRU layers.
+            dropout: Dropout probability applied between GRU layers when
+                ``num_layers > 1``.
 
-        Notes:
-            Stores `hidden_size` and `num_layers` as attributes and constructs `self.gru` with `batch_first=True`.
+        Returns:
+            None.
         """
         super().__init__()
         self.hidden_size = hidden_size
@@ -49,14 +49,14 @@ class GRUExtractor(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Encode a batched sequence and return the final hidden state from the last GRU layer.
+        """Encode a batched sequence into final hidden states.
 
-        Parameters:
-            x (torch.Tensor): Input tensor shaped (batch, seq_len, input_size).
+        Args:
+            x: Input tensor with shape ``(batch, seq_len, input_size)``.
 
         Returns:
-            torch.Tensor: Final hidden state from the last GRU layer shaped (batch, hidden_size).
+            Final hidden state from the last GRU layer with shape
+            ``(batch, hidden_size)``.
         """
         _, hidden = self.gru(x)
         # hidden shape: (num_layers, batch, hidden_size)

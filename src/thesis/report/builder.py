@@ -22,7 +22,18 @@ def _build_markdown(
     feature_importance: dict,
     ablation: dict,
 ) -> str:
-    """Build a comprehensive markdown report with plain-language explanations."""
+    """Build the full thesis markdown report text.
+
+    Args:
+        config: Runtime configuration used to render parameterized sections.
+        metrics: Backtest metrics dictionary.
+        trades: Trade list used for trade-level summaries.
+        feature_importance: Feature-importance mapping used in model analysis.
+        ablation: Ablation-study results for variant comparison.
+
+    Returns:
+        Complete markdown report content.
+    """
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     session = config.paths.session_dir or "N/A"
 
@@ -789,7 +800,15 @@ _VERDICT_THRESHOLDS = {
 
 
 def _verdict(key: str, value: float) -> str:
-    """Return verdict emoji based on metric thresholds."""
+    """Map a metric value to a verdict emoji.
+
+    Args:
+        key: Metric name used to select threshold rules.
+        value: Metric value to evaluate.
+
+    Returns:
+        Verdict emoji (`✅`, `🟡`, `❌`, or `⚪` when unavailable).
+    """
     if (
         key not in _VERDICT_THRESHOLDS
         or value is None
@@ -814,7 +833,15 @@ def _verdict(key: str, value: float) -> str:
 
 
 def _get_verdict_level(key: str, value: float) -> str:
-    """Return verdict level: 'good', 'ok', or 'poor'."""
+    """Map a metric value to a qualitative verdict level.
+
+    Args:
+        key: Metric name used to select threshold rules.
+        value: Metric value to evaluate.
+
+    Returns:
+        One of `good`, `ok`, `poor`, or `neutral`.
+    """
     if (
         key not in _VERDICT_THRESHOLDS
         or value is None
@@ -968,7 +995,16 @@ _EXPLANATIONS = {
 
 
 def _get_explanation(key: str, value: float) -> str:
-    """Return explanation sentence based on metric value quality."""
+    """Return human-readable explanation text for a metric value.
+
+    Args:
+        key: Metric name.
+        value: Metric value.
+
+    Returns:
+        Explanation sentence describing metric quality, or an empty string when
+        no explanation template exists.
+    """
     level = _get_verdict_level(key, value)
     if key not in _EXPLANATIONS:
         return ""
@@ -988,7 +1024,15 @@ def _metric(
     label: str,
     fmt: str = "f2",
 ) -> None:
-    """Append a formatted metric line if the key exists."""
+    """Append a formatted metric bullet to markdown lines.
+
+    Args:
+        lines: Mutable markdown line buffer.
+        metrics: Metrics dictionary to read from.
+        key: Metric key to render.
+        label: Display label for the rendered metric.
+        fmt: Formatter key from `_METRIC_FMT`.
+    """
     if key not in metrics:
         return
     val = metrics[key]

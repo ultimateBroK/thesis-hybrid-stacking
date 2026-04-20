@@ -12,17 +12,14 @@ def build_confusion_matrix_chart(
     true: np.ndarray,
     pred: np.ndarray,
 ) -> HeatMap:
-    """
-    Builds a normalized 3×3 confusion matrix heatmap for labels Short (-1), Hold (0), and Long (1).
+    """Build a normalized confusion-matrix heatmap for 3-class labels.
 
-    The matrix is row-normalized so each true-label row sums to 1; cell values are rounded to three decimals and shown on the heatmap.
-
-    Parameters:
-        true: Array of true labels encoded as -1, 0, or 1; must align in length with `pred`.
-        pred: Array of predicted labels encoded as -1, 0, or 1; must align in length with `true`.
+    Args:
+        true: Ground-truth labels encoded as `-1`, `0`, or `1`.
+        pred: Predicted labels encoded as `-1`, `0`, or `1`.
 
     Returns:
-        A pyecharts HeatMap configured to display the normalized confusion matrix with labeled cells, axis display labels, item tooltips, and a blue visual color scale from 0 to 1.
+        A pyecharts `HeatMap` showing row-normalized confusion values.
     """
     labels_order = [-1, 0, 1]
     display_labels = ["Short (-1)", "Hold (0)", "Long (1)"]
@@ -77,21 +74,15 @@ def build_confusion_matrix_chart(
 
 
 def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
-    """
-    Create a grouped bar chart showing the distribution of prediction confidence for Long and Short predictions.
+    """Build grouped confidence-distribution bars for long/short predictions.
 
-    Uses grouped bars to display both distributions on the same scale, normalized to relative frequency
-    so they can be compared regardless of sample size. Only rows where `pred_label` equals the
-    corresponding class are used: `pred_proba_class_1` for Long (`pred_label == 1`) and
-    `pred_proba_class_minus1` for Short (`pred_label == -1`).
-
-    Parameters:
-        preds_df (pl.DataFrame): Predictions DataFrame. Must contain `pred_label` and `pred_proba_class_1`;
-            `pred_proba_class_minus1` is also required for Short counts.
+    Args:
+        preds_df: Prediction dataframe containing predicted labels and class
+            probabilities.
 
     Returns:
-        Bar: A configured pyecharts Bar chart with grouped bars ("Long" and "Short") showing
-            normalized confidence distributions, or an empty Bar if `pred_proba_class_1` is missing.
+        A pyecharts `Bar` chart with normalized long/short confidence
+        distributions, or an empty chart when required columns are missing.
     """
     y_pred = preds_df["pred_label"].to_numpy()
 
@@ -160,17 +151,14 @@ def build_feature_importance_chart(
     fi: dict[str, float],
     top_n: int = 20,
 ) -> Bar:
-    """
-    Build a horizontal bar chart showing the top feature importances.
-
-    Splits features into "Static Features" and "GRU Features" based on names that start with "gru_" and displays their contributions as two stacked series for the top `top_n` features.
+    """Build a horizontal top-N feature-importance chart.
 
     Args:
-        fi (dict[str, float]): Mapping from feature name to importance score.
-        top_n (int): Number of top features to display.
+        fi: Mapping from feature name to importance score.
+        top_n: Number of top-ranked features to display.
 
     Returns:
-        Bar: A pyecharts Bar chart with a reversed (horizontal) axis showing the top features.
+        A pyecharts `Bar` chart with stacked GRU/static contributions.
     """
     items = sorted(fi.items(), key=lambda x: x[1], reverse=True)[:top_n]
     items = items[::-1]
@@ -210,20 +198,16 @@ def build_feature_importance_chart(
 
 
 def build_shap_chart(shap_data: dict, top_n: int = 20) -> Bar:
-    """
-    Build a horizontal stacked bar chart showing mean absolute SHAP values per class.
+    """Build a stacked horizontal SHAP-importance chart by class.
 
-    Produces a reversed-axis (horizontal) bar chart where each feature row shows
-    stacked bars for each class (Short, Hold, Long), representing the mean |SHAP|
-    contribution. Features are sorted by total importance descending.
-
-    Parameters:
-        shap_data (dict): SHAP values JSON with keys ``features``, ``class_names``,
-            and ``mean_abs_shap`` (list of lists, one per class).
-        top_n (int): Maximum number of features to display.
+    Args:
+        shap_data: SHAP payload containing feature names, class names, and
+            mean absolute SHAP arrays.
+        top_n: Number of top features to display.
 
     Returns:
-        Bar: A pyecharts horizontal stacked Bar chart, or empty Bar if data is invalid.
+        A pyecharts `Bar` chart showing class-wise mean |SHAP| values, or an
+        empty chart when SHAP input is incomplete.
     """
     features = shap_data.get("features", [])
     class_names = shap_data.get("class_names", ["Short", "Hold", "Long"])
@@ -239,7 +223,9 @@ def build_shap_chart(shap_data: dict, top_n: int = 20) -> Bar:
     sorted_indices = sorted(
         range(len(features)), key=lambda i: totals[i], reverse=True
     )[:top_n]
-    sorted_indices = sorted_indices[::-1]  # Reverse for horizontal bar (bottom = highest)
+    sorted_indices = sorted_indices[
+        ::-1
+    ]  # Reverse for horizontal bar (bottom = highest)
 
     sorted_features = [features[i] for i in sorted_indices]
     class_colors = [COLORS["short"], COLORS["flat"], COLORS["long"]]

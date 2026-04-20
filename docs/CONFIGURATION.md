@@ -349,6 +349,12 @@ auto_lot_sizing = true             # Enable dynamic lot sizing based on equity +
 risk_per_trade_pct = 1.0            # Risk % of equity per trade
 min_lot_size = 0.1                  # Minimum lot size floor
 max_lot_size = 5.0                 # Maximum lot size ceiling
+# Enhanced auto lot sizing
+enable_performance_adjustment = true  # Scale size with equity performance
+enable_volatility_adjustment = true   # Reduce size in high volatility
+max_capital_risk_pct = 10.0          # Max % of initial capital per trade
+performance_multiplier = 1.2         # Max size increase when performing well
+performance_reduction = 0.8          # Min size when underperforming
 ```
 
 | Parameter | What It Does | What to Try |
@@ -365,6 +371,11 @@ max_lot_size = 5.0                 # Maximum lot size ceiling
 | `risk_per_trade_pct` | Risk % of equity per trade | Default 1.0 = risk 1% of equity per trade. |
 | `min_lot_size` | Minimum lot size floor | Default 0.1. Prevents tiny positions. |
 | `max_lot_size` | Maximum lot size ceiling | Default 5.0. Prevents oversized positions. |
+| `enable_performance_adjustment` | Scale position size with equity performance | When `true`, increases size when equity grows, decreases when it shrinks. |
+| `enable_volatility_adjustment` | Reduce size during high volatility | When `true`, reduces position size when ATR is high relative to price. |
+| `max_capital_risk_pct` | Maximum % of initial capital risked per trade | Safety cap independent of equity-based calculation. Default 10%. |
+| `performance_multiplier` | Maximum position size increase factor | Caps how much sizing can grow during winning streaks. Default 1.2. |
+| `performance_reduction` | Minimum position size reduction factor | Floor for how small sizing can shrink during drawdowns. Default 0.8. |
 
 > **Position sizing:** Default is now dynamic (`auto_lot_sizing = true`). Set to `false` for fixed lot sizing via `lots_per_trade`.
 

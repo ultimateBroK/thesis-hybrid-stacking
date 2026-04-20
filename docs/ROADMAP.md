@@ -12,7 +12,7 @@
 - [x] **Feature engineering** — 11 technical indicators (RSI, ATR, MACD, ATR ratio, price distance, pivot position, ATR percentile, 4 session dummies)
 - [x] **Label generation** — Triple Barrier method with ATR-based take-profit and stop-loss
 - [x] **Data splitting** — Train/validation/test with purge and embargo (anti-leakage)
-- [x] **Correlation filtering** — Automatic removal of highly correlated features (>0.90) computed on train set only
+- [x] **Correlation filtering** — Automatic removal of highly correlated features (>0.75) computed on train set only
 
 ### Models
 
@@ -34,7 +34,7 @@
 - [x] **Model charts** — Confusion matrix, confidence distribution, feature importance
 - [x] **Backtest charts** — Equity curve, drawdown, trade analysis
 - [x] **Thesis report** — Auto-generated markdown report with all metrics and charts
-- [x] **Interactive Streamlit dashboard** — ECharts-based visualization on :8501 (`src/thesis/dashboard/app.py`)
+- [x] **Interactive Streamlit dashboard** — Modular ECharts-based visualization on :8501 (see `src/thesis/dashboard/`)
 
 ### Infrastructure
 
@@ -77,7 +77,7 @@
 
 ### Documentation & Research
 
-- [ ] **API documentation** — Auto-generated docs from docstrings
+- [x] **API documentation** — Google-style docstrings on all public functions across all modules
 - [ ] **Experiment log** — Track all experiments with parameters and results
 - [ ] **Literature comparison** — Compare results with published research benchmarks
 - [ ] **Statistical significance tests** — Add Diebold-Mariano or similar tests for model comparison
@@ -93,7 +93,7 @@
 | Evaluation | 4 | 5 | 9 |
 | Visualization | 5 | 0 | 5 |
 | Infrastructure | 9 | 3 | 12 |
-| Documentation | 0 | 4 | 4 |
-| **Total** | **27** | **18** | **45** |
+| Documentation | 1 | 3 | 4 |
+| **Total** | **28** | **17** | **45** |
 
-> **Overall: 60% complete** — The core research pipeline is fully functional. Pending items are enhancements and production features.
+> **Overall: 62% complete** — The core research pipeline is fully functional. Pending items are enhancements and production features.

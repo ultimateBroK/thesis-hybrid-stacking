@@ -232,7 +232,8 @@ def _run_backtest_for(
     Returns:
         Dictionary with backtest metrics including annualized Sharpe.
     """
-    from thesis.backtest.strategy import _normalize_stats, _prepare_df, _run_bt
+    from thesis.backtest.runners import _prepare_df, _run_bt
+    from thesis.backtest.stats import _normalize_stats
 
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))

@@ -79,6 +79,7 @@ def run_pipeline(config: Config) -> None:
 
     # Stage 4: Model training
     def _run_train() -> None:
+        """Run model training with current config."""
         train_model(config)
 
     _run_stage(4, config, "run_model_training", None, lambda cfg: _run_train())
@@ -88,6 +89,7 @@ def run_pipeline(config: Config) -> None:
 
     # Stage 6: Report
     def _run_report() -> None:
+        """Generate report and all static charts."""
         generate_report(config)
         generate_all_charts(config)
 
