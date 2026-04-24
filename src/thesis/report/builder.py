@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 
 from thesis.config import Config
+from thesis.zones import _get_metric_zone
 from thesis.report.stats import (
     _load_parquet_stats,
     _load_label_distribution,
@@ -45,41 +46,117 @@ def _build_markdown(
         "",
         "---",
         "",
-        "## How to Read This Report",
-        "",
-        "This report tests whether a machine learning system can predict the direction",
-        "of gold (XAU/USD) price movements and profit from those predictions.",
-        "",
-        "Think of it like a weather forecast, but for financial markets:",
-        "- The **model** looks at past price patterns and predicts whether gold will go **up**, **down**, or **stay flat**",
-        "- The **backtest** simulates what would have happened if we traded based on those predictions",
-        "- The **confidence filter** ensures we only trade when the model is very sure about its prediction",
-        "",
-        "### Verdict Icons",
-        "",
-        "| Icon | Meaning |",
-        "|------|---------|",
-        "| ✅ | Good — above the acceptable threshold |",
-        "| 🟡 | Warning — needs improvement |",
-        "| ❌ | Poor — below acceptable threshold |",
-        "",
-        "---",
-        "",
-        "## Table of Contents",
-        "",
-        "1. [Data & Features](#1-data--features)",
-        "2. [Labeling Strategy](#2-labeling-strategy)",
-        "3. [Train/Test Split](#3-traintest-split)",
-        "4. [Model Architecture](#4-model-architecture)",
-        "5. [Feature Importance](#5-feature-importance)",
-        "6. [Model Accuracy](#6-model-accuracy)",
-        "7. [Trading Simulation](#7-trading-simulation)",
-        "8. [Ablation Study](#8-ablation-study)",
-        "9. [Conclusion](#9-conclusion)",
-        "",
-        "---",
+        "## 📊 Quick Summary",
         "",
     ]
+
+    # Calculate overall verdict from key metrics using 5-zone system
+    if metrics:
+        ret = float(metrics.get("return_pct", 0))
+        sharpe = float(metrics.get("sharpe_ratio", 0))
+        max_dd = float(metrics.get("max_drawdown_pct", 0))
+        wr = float(metrics.get("win_rate_pct", 0))
+        pf = float(metrics.get("profit_factor", 0))
+
+        # Count by zone color
+        positive_count = 0
+        warning_count = 0
+        negative_count = 0
+
+        for key, value in [
+            ("return_pct", ret),
+            ("sharpe_ratio", sharpe),
+            ("max_drawdown_pct", max_dd),
+            ("win_rate_pct", wr),
+            ("profit_factor", pf),
+        ]:
+            zone = _get_verdict_level(key, value)
+            if zone in ("excellent", "good"):
+                positive_count += 1
+            elif zone == "moderate":
+                warning_count += 1
+            else:
+                negative_count += 1
+
+        total_indicators = 5
+        positive_pct = positive_count / total_indicators * 100
+
+        if positive_pct >= 80 and negative_count == 0:
+            overall_verdict = "✅ EXCELLENT"
+            overall_color = "🟢"
+        elif positive_pct >= 60 and negative_count == 0:
+            overall_verdict = "✅ GOOD"
+            overall_color = "🟢"
+        elif negative_count <= 1:
+            overall_verdict = "🟡 NEEDS IMPROVEMENT"
+            overall_color = "🟡"
+        else:
+            overall_verdict = "🔴 POOR"
+            overall_color = "🔴"
+
+        lines.append(f"**Overall Result**: {overall_color} {overall_verdict}")
+        lines.append("")
+        lines.append(
+            f"**Key Metrics**: {positive_count} positive | "
+            f"{warning_count} warning | {negative_count} negative"
+        )
+        lines.append("")
+        lines.append("| Metric | Value | Status |")
+        lines.append("|--------|-------|--------|")
+        lines.append(f"| Return | {ret:.1f}% | {_verdict('return_pct', ret)} |")
+        lines.append(
+            f"| Sharpe Ratio | {sharpe:.2f} | {_verdict('sharpe_ratio', sharpe)} |"
+        )
+        lines.append(
+            f"| Max Drawdown | {max_dd:.1f}% | {_verdict('max_drawdown_pct', max_dd)} |"
+        )
+        lines.append(f"| Win Rate | {wr:.1f}% | {_verdict('win_rate_pct', wr)} |")
+        lines.append(f"| Profit Factor | {pf:.2f} | {_verdict('profit_factor', pf)} |")
+        lines.append("")
+        lines.append("---")
+
+        lines.append("")
+
+    lines.extend(
+        [
+            "## How to Read This Report",
+            "",
+            "This report tests whether a machine learning system can predict the direction",
+            "of gold (XAU/USD) price movements and profit from those predictions.",
+            "",
+            "Think of it like a weather forecast, but for financial markets:",
+            "- The **model** looks at past price patterns and predicts whether gold will go **up**, **down**, or **stay flat**",
+            "- The **backtest** simulates what would have happened if we traded based on those predictions",
+            "- The **confidence filter** ensures we only trade when the model is very sure about its prediction",
+            "",
+            "### Verdict Icons",
+            "",
+            "| Icon | Meaning |",
+            "|------|---------|",
+            "| ✅ | Excellent — above benchmark |",
+            "| 🟢 | Good — solid performance |",
+            "| 🟡 | Moderate — needs attention |",
+            "| 🟠 | Poor — below benchmark |",
+            "| 🔴 | Dangerous — critical issues or verify overfitting |",
+            "",
+            "---",
+            "",
+            "## Table of Contents",
+            "",
+            "1. [Data & Features](#1-data--features)",
+            "2. [Labeling Strategy](#2-labeling-strategy)",
+            "3. [Train/Test Split](#3-traintest-split)",
+            "4. [Model Architecture](#4-model-architecture)",
+            "5. [Feature Importance](#5-feature-importance)",
+            "6. [Model Accuracy](#6-model-accuracy)",
+            "7. [Trading Simulation](#7-trading-simulation)",
+            "8. [Ablation Study](#8-ablation-study)",
+            "9. [Conclusion](#9-conclusion)",
+            "",
+            "---",
+            "",
+        ]
+    )
 
     # ==================================================================
     # 1. DATA & FEATURES
@@ -767,230 +844,185 @@ _METRIC_FMT = {
     "dollar": lambda v: f"${v:,.2f}",
     "s": lambda v: str(v),
 }
-
-
-# ---------------------------------------------------------------------------
-# Verdict and explanation helpers
-# ---------------------------------------------------------------------------
-
-# Threshold definitions: (key, higher_is_better, poor, ok, good)
-_VERDICT_THRESHOLDS = {
-    # Performance
-    "return_pct": (True, -100, 0, 20),
-    "return_ann_pct": (True, -50, 5, 15),
-    "cagr_pct": (True, -50, 5, 15),
-    "sharpe_ratio": (True, 0, 1.0, 2.0),
-    "sortino_ratio": (True, 0, 1.5, 2.5),
-    "calmar_ratio": (True, 0, 1.0, 2.0),
-    # Risk
-    "max_drawdown_pct": (False, 30, 15, 5),  # lower is better
-    "avg_drawdown_pct": (False, 20, 10, 5),
-    "volatility_ann_pct": (False, 100, 50, 20),
-    # Trade quality
-    "win_rate_pct": (True, 30, 45, 55),
-    "profit_factor": (True, 1.0, 1.5, 2.0),
-    "expectancy_pct": (True, -1, 0.5, 1.5),
-    "sqn": (True, 0, 1.5, 2.5),
-    "kelly_criterion": (True, 0.1, 0.25, 0.4),
-    "avg_trade_pct": (True, -1, 0.5, 1.5),
-    # Model accuracy
-    "accuracy": (True, 0.35, 0.45, 0.55),
-    "directional_accuracy": (True, 0.45, 0.55, 0.65),
+# Zone → emoji mapping — mirrors zones.py color names
+_ZONE_EMOJI = {
+    "excellent": "✅",
+    "good": "🟢",
+    "moderate": "🟡",
+    "poor": "🟠",
+    "dangerous": "🔴",
 }
 
 
 def _verdict(key: str, value: float) -> str:
-    """Map a metric value to a verdict emoji.
+    """Map a metric value to a verdict emoji using the 5-zone system.
+
+    Delegates to ``zones._get_metric_zone`` for threshold logic so the
+    report and dashboard always agree.
 
     Args:
         key: Metric name used to select threshold rules.
         value: Metric value to evaluate.
 
     Returns:
-        Verdict emoji (`✅`, `🟡`, `❌`, or `⚪` when unavailable).
+        Verdict emoji (✅, 🟢, 🟡, 🟠, 🔴, or ⚪ when unavailable).
     """
-    if (
-        key not in _VERDICT_THRESHOLDS
-        or value is None
-        or (isinstance(value, float) and value != value)
-    ):  # NaN check
+    if value is None or (isinstance(value, float) and value != value):
         return "⚪"
-    higher_is_better, poor_thresh, ok_thresh, good_thresh = _VERDICT_THRESHOLDS[key]
-    if higher_is_better:
-        if value >= good_thresh:
-            return "✅"
-        elif value >= ok_thresh:
-            return "🟡"
-        else:
-            return "❌"
-    else:  # lower is better (drawdown, volatility)
-        if value <= good_thresh:
-            return "✅"
-        elif value <= ok_thresh:
-            return "🟡"
-        else:
-            return "❌"
+    color, _label, _rec = _get_metric_zone(key, value)
+    return _ZONE_EMOJI.get(color, "⚪")
 
 
 def _get_verdict_level(key: str, value: float) -> str:
-    """Map a metric value to a qualitative verdict level.
+    """Map a metric value to a qualitative zone name.
 
     Args:
         key: Metric name used to select threshold rules.
         value: Metric value to evaluate.
 
     Returns:
-        One of `good`, `ok`, `poor`, or `neutral`.
+        One of ``excellent``, ``good``, ``moderate``, ``poor``,
+        ``dangerous``, or ``neutral``.
     """
-    if (
-        key not in _VERDICT_THRESHOLDS
-        or value is None
-        or (isinstance(value, float) and value != value)
-    ):
+    if value is None or (isinstance(value, float) and value != value):
         return "neutral"
-    higher_is_better, poor_thresh, ok_thresh, good_thresh = _VERDICT_THRESHOLDS[key]
-    if higher_is_better:
-        if value >= good_thresh:
-            return "good"
-        elif value >= ok_thresh:
-            return "ok"
-        else:
-            return "poor"
-    else:
-        if value <= good_thresh:
-            return "good"
-        elif value <= ok_thresh:
-            return "ok"
-        else:
-            return "poor"
+    color, _label, _rec = _get_metric_zone(key, value)
+    return color
 
 
-_EXPLANATIONS = {
-    # Performance
+_EXPLANATIONS: dict[str, tuple[str, ...]] = {
+    # Performance — beginner-friendly, one per zone level
     "return_pct": (
-        "Total return — excellent profit generation",
-        "Total return — decent but could be better",
-        "Total return — below expectations",
+        "Excellent — strategy more than doubled capital",
+        "Good — strategy delivered solid growth",
+        "Moderate — strategy grew capital modestly",
+        "Poor — minimal growth over the test period",
+        "Dangerous — verify for data issues or overfitting",
     ),
     "return_ann_pct": (
-        "Annualized return — excellent growth",
-        "Annualized return — acceptable growth",
-        "Annualized return — insufficient growth",
+        "Excellent yearly growth — well above market average",
+        "Good yearly growth — above market average",
+        "Moderate yearly growth — conservative but positive",
+        "Poor — underperforms inflation",
+        "Dangerous — suspiciously high, verify for overfitting",
     ),
     "cagr_pct": (
-        "CAGR — strong compound growth",
-        "CAGR — moderate compound growth",
-        "CAGR — weak compound growth",
+        "Strong compound growth — well above benchmarks",
+        "Good compound growth — above benchmarks",
+        "Moderate compound growth — conservative",
+        "Poor — weak compound growth",
+        "Dangerous — suspiciously high, verify for overfitting",
     ),
     # Risk
     "sharpe_ratio": (
-        "Sharpe — excellent risk-adjusted returns",
-        "Sharpe — decent risk-adjusted returns",
-        "Sharpe — poor risk-adjusted returns",
+        "Excellent — good returns with low risk",
+        "Good — acceptable returns for the risk taken",
+        "Moderate — returns barely justify the risk",
+        "Poor — returns don't justify the risk",
+        "Dangerous — negative or suspicious, review strategy",
     ),
     "sortino_ratio": (
-        "Sortino — excellent downside protection",
-        "Sortino — decent downside protection",
-        "Sortino — weak downside protection",
+        "Excellent — downside risk well controlled",
+        "Good — solid downside-adjusted returns",
+        "Moderate — downside risk is elevated",
+        "Poor — excessive downside risk",
+        "Dangerous — negative or near-zero downside protection",
     ),
     "calmar_ratio": (
-        "Calmar — excellent return per drawdown unit",
-        "Calmar — decent return per drawdown unit",
-        "Calmar — poor return per drawdown unit",
+        "Excellent — strong returns despite drawdowns",
+        "Good — healthy risk/reward balance",
+        "Moderate — minimum acceptable risk/reward",
+        "Poor — risk outweighs reward",
+        "Dangerous — losses exceed returns",
     ),
     "max_drawdown_pct": (
-        "Max drawdown — well controlled",
-        "Max drawdown — moderate risk",
-        "Max drawdown — significant risk exposure",
+        "Excellent — losses stayed small, strong capital preservation",
+        "Good — losses were manageable and conservative",
+        "Moderate — typical for volatile XAUUSD",
+        "Poor — high drawdown, assess suitability",
+        "Dangerous — critical drawdown, question viability",
     ),
     "avg_drawdown_pct": (
-        "Avg drawdown — typical losses well controlled",
-        "Avg drawdown — acceptable typical losses",
-        "Avg drawdown — larger-than-ideal typical losses",
+        "Excellent — typical losses stayed very small",
+        "Good — typical losses were manageable",
+        "Moderate — typical for XAUUSD volatility",
+        "Poor — high average drawdown",
+        "Dangerous — persistent deep losses",
     ),
     "volatility_ann_pct": (
-        "Volatility — steady returns",
-        "Volatility — moderate fluctuations",
-        "Volatility — high uncertainty",
+        "Excellent — steady, predictable returns",
+        "Good — acceptable volatility range",
+        "Moderate — elevated risk from volatility",
+        "Poor — excessive volatility",
+        "Dangerous — extremely volatile, high uncertainty",
     ),
     # Trade quality
     "win_rate_pct": (
-        "Win rate — excellent trade success",
-        "Win rate — decent trade success",
-        "Win rate — needs improvement",
+        "Excellent — strong win rate for XAUUSD",
+        "Good — solid win rate",
+        "Moderate — typical for trend-following strategies",
+        "Poor — low win rate, requires large R:R",
+        "Dangerous — suspiciously high, verify for overfitting",
     ),
     "profit_factor": (
-        "Profit factor — strong winning trades outweigh losses",
-        "Profit factor — acceptable win/loss ratio",
-        "Profit factor — losses outweigh wins",
+        "Excellent — very efficient profitability",
+        "Good — strong profitability for XAUUSD",
+        "Moderate — covers costs with some margin",
+        "Poor — barely covers costs or losing money",
+        "Dangerous — verify for overfitting or data issues",
     ),
     "expectancy_pct": (
-        "Expectancy — positive edge per trade",
-        "Expectancy — marginal edge per trade",
-        "Expectancy — negative edge per trade",
+        "Excellent — strong per-trade edge",
+        "Good — solid per-trade edge",
+        "Moderate — small per-trade edge",
+        "Poor — negative expected value per trade",
+        "Dangerous — consistently losing per trade",
     ),
     "sqn": (
-        "SQN — excellent system robustness",
-        "SQN — decent system robustness",
-        "SQN — system needs refinement",
+        "Excellent — very robust strategy",
+        "Good — good system quality",
+        "Moderate — acceptable for XAUUSD",
+        "Poor — system has no edge",
+        "Dangerous — strategy is unprofitable",
     ),
     "kelly_criterion": (
-        "Kelly — conservative position sizing",
-        "Kelly — moderate position sizing",
-        "Kelly — aggressive position sizing",
+        "Excellent — textbook optimal position sizing for XAUUSD",
+        "Good — balanced, safe position sizing",
+        "Moderate — review sizing (conservative or aggressive)",
+        "Poor — no statistical edge detected",
+        "Dangerous — very aggressive sizing, risk of ruin",
     ),
     "avg_trade_pct": (
-        "Avg trade — strong positive returns",
-        "Avg trade — acceptable returns",
-        "Avg trade — weak returns",
-    ),
-    "best_trade_pct": (
-        "Best trade — excellent single trade capture",
-        "Best trade — decent capture",
-        "Best trade — underwhelming",
-    ),
-    "worst_trade_pct": (
-        "Worst trade — well-protected downside",
-        "Worst trade — acceptable loss",
-        "Worst trade — large loss exposure",
-    ),
-    "avg_trade_duration": (
-        "Duration — trades held appropriately",
-        "Duration — acceptable hold time",
-        "Duration — unusually short/long",
-    ),
-    "exposure_time_pct": (
-        "Exposure — selective trading",
-        "Exposure — moderate market participation",
-        "Exposure — overtraded",
+        "Excellent — strong average profit per trade",
+        "Good — solid average profit per trade",
+        "Moderate — small per-trade edge",
+        "Poor — average trade loses money",
+        "Dangerous — consistent per-trade losses",
     ),
     # Model accuracy
     "accuracy": (
-        "Accuracy — excellent predictions",
-        "Accuracy — decent predictions",
-        "Accuracy — poor predictions",
+        "Excellent — predictions are very accurate",
+        "Good — predictions are above average",
+        "Moderate — predictions are near random",
+        "Poor — predictions are not accurate enough",
+        "Dangerous — model has no predictive power",
     ),
     "directional_accuracy": (
-        "Directional accuracy — excellent signal quality",
-        "Directional accuracy — decent signal quality",
-        "Directional accuracy — poor signal quality",
+        "Excellent — direction predictions are very accurate",
+        "Good — direction predictions are above average",
+        "Moderate — direction predictions are near random",
+        "Poor — direction predictions are not accurate enough",
+        "Dangerous — model cannot predict direction",
     ),
-    # Other
-    "commissions": (
-        "Commissions — low trading costs",
-        "Commissions — moderate trading costs",
-        "Commissions — high trading costs",
-    ),
-    "num_trades": (
-        "Trade count — healthy activity level",
-        "Trade count — acceptable activity",
-        "Trade count — too few/too many",
-    ),
-    "equity_peak": (
-        "Account peak — strong capital high",
-        "Account peak — decent capital high",
-        "Account peak — low capital high",
-    ),
+}
+
+# Index mapping from zone name to explanation tuple position
+_ZONE_INDEX = {
+    "excellent": 0,
+    "good": 1,
+    "moderate": 2,
+    "poor": 3,
+    "dangerous": 4,
 }
 
 
@@ -1009,12 +1041,10 @@ def _get_explanation(key: str, value: float) -> str:
     if key not in _EXPLANATIONS:
         return ""
     explanations = _EXPLANATIONS[key]
-    if level == "good":
-        return explanations[0]
-    elif level == "ok":
-        return explanations[1]
-    else:
-        return explanations[2]
+    idx = _ZONE_INDEX.get(level, 2)
+    if idx < len(explanations):
+        return explanations[idx]
+    return explanations[-1]
 
 
 def _metric(

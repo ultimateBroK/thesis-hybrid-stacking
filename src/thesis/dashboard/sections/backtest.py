@@ -165,10 +165,10 @@ def _render_backtest_section(data: dict) -> None:
         _render_zoned_metric(
             profit_cols[4],
             "Kelly Criterion",
-            metrics.get("kelly_criterion", 0) * 100,
+            metrics.get("kelly_criterion", 0),
             "kelly_criterion",
-            "{:.1f}",
-            "%",
+            "{:.1%}",
+            "",
         )
 
         st.markdown("**📈 Trade Analysis**")

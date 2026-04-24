@@ -106,30 +106,13 @@ class BacktestConfig:
     spread_ticks: float = 35.0  # → spread param (relative)
     slippage_ticks: float = 5.0  # absorbed into spread
     commission_per_lot: float = 10.0  # → callable commission
-    atr_stop_multiplier: float = 1.5
-    lots_per_trade: float = (
-        0.15  # fixed lot size per trade (used when auto_lot_sizing=False)
+    atr_stop_multiplier: float = 1.0
+    lots_per_trade: float = 0.2  # fixed lot size per trade
+    confidence_threshold: float = (
+        0.65  # min predicted probability to act (0 = disabled)
     )
-    confidence_threshold: float = 0.6  # min predicted probability to act (0 = disabled)
     contract_size: int = 100
     tick_size: float = 0.01
-    # Auto lot sizing (risk-based position sizing)
-    auto_lot_sizing: bool = True  # Calculate lot size from equity + risk %
-    risk_per_trade_pct: float = 1.0  # Risk % of equity per trade
-    min_lot_size: float = 0.1  # Minimum lot size floor
-    max_lot_size: float = 5.0  # Maximum lot size ceiling
-    # Enhanced auto lot sizing parameters
-    enable_performance_adjustment: bool = (
-        True  # Adjust position size based on equity performance
-    )
-    enable_volatility_adjustment: bool = (
-        True  # Reduce size during high volatility periods
-    )
-    max_capital_risk_pct: float = 10.0  # Maximum % of initial capital to risk per trade
-    performance_multiplier: float = (
-        1.2  # Max position size increase when performing well
-    )
-    performance_reduction: float = 0.8  # Min position size when underperforming
 
 
 @dataclass

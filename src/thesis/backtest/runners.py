@@ -198,15 +198,6 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
         confidence_threshold=bc.confidence_threshold,
         contract_size=dc.contract_size,
         horizon_bars=config.labels.horizon_bars,
-        auto_lot_sizing=bc.auto_lot_sizing,
-        risk_per_trade_pct=bc.risk_per_trade_pct,
-        min_lot_size=bc.min_lot_size,
-        max_lot_size=bc.max_lot_size,
-        enable_performance_adjustment=bc.enable_performance_adjustment,
-        enable_volatility_adjustment=bc.enable_volatility_adjustment,
-        max_capital_risk_pct=bc.max_capital_risk_pct,
-        performance_multiplier=bc.performance_multiplier,
-        performance_reduction=bc.performance_reduction,
     )
     return stats, bt
 
@@ -300,21 +291,12 @@ def run_backtest_manual(
     preds_df: pl.DataFrame,
     *,
     leverage: int = 100,
-    lots_per_trade: float = 1.0,
+    lots_per_trade: float = 0.2,
     confidence_threshold: float = 0.0,
     spread_ticks: int = 35,
     slippage_ticks: int = 5,
     commission_per_lot: float = 10.0,
-    atr_stop_multiplier: float = 0.75,
-    auto_lot_sizing: bool = False,
-    risk_per_trade_pct: float = 1.0,
-    min_lot_size: float = 0.1,
-    max_lot_size: float = 10.0,
-    enable_performance_adjustment: bool = True,
-    enable_volatility_adjustment: bool = True,
-    max_capital_risk_pct: float = 10.0,
-    performance_multiplier: float = 1.2,
-    performance_reduction: float = 0.8,
+    atr_stop_multiplier: float = 1.0,
     horizon_bars: int = 10,
     contract_size: int = 100,
     tick_size: float = 0.01,
@@ -330,21 +312,12 @@ def run_backtest_manual(
         preds_df: Predictions with timestamp and pred_label (optionally
             pred_proba_* columns).
         leverage: CFD leverage ratio (default 100).
-        lots_per_trade: Fixed lot size per trade when auto_lot_sizing=False.
+        lots_per_trade: Fixed lot size per trade.
         confidence_threshold: Minimum prediction probability to trade (0 = disabled).
         spread_ticks: Spread in ticks (default 35 = $0.35 for XAUUSD).
         slippage_ticks: Slippage in ticks (default 5 = $0.05).
         commission_per_lot: Commission per lot in dollars (default $10).
-        atr_stop_multiplier: ATR multiplier for stop-loss distance (default 0.75).
-        auto_lot_sizing: If True, calculate lot size based on risk parameters.
-        risk_per_trade_pct: Risk per trade as percentage of equity (default 1%).
-        min_lot_size: Minimum lot size when auto_lot_sizing=True.
-        max_lot_size: Maximum lot size when auto_lot_sizing=True.
-        enable_performance_adjustment: Adjust position size based on equity performance.
-        enable_volatility_adjustment: Reduce size during high volatility periods.
-        max_capital_risk_pct: Maximum % of initial capital to risk per trade.
-        performance_multiplier: Max position size increase when performing well.
-        performance_reduction: Min position size when underperforming.
+        atr_stop_multiplier: ATR multiplier for stop-loss distance (default 1.0).
         horizon_bars: Time-based exit after N bars (default 10).
         contract_size: Units per lot (default 100 oz for XAUUSD).
         tick_size: Price tick size in dollars (default 0.01).
@@ -383,15 +356,6 @@ def run_backtest_manual(
         confidence_threshold=confidence_threshold,
         contract_size=contract_size,
         horizon_bars=horizon_bars,
-        auto_lot_sizing=auto_lot_sizing,
-        risk_per_trade_pct=risk_per_trade_pct,
-        min_lot_size=min_lot_size,
-        max_lot_size=max_lot_size,
-        enable_performance_adjustment=enable_performance_adjustment,
-        enable_volatility_adjustment=enable_volatility_adjustment,
-        max_capital_risk_pct=max_capital_risk_pct,
-        performance_multiplier=performance_multiplier,
-        performance_reduction=performance_reduction,
     )
 
     metrics = _normalize_stats(stats, initial_capital=initial_capital)
