@@ -113,7 +113,7 @@ def _compute_spread_rate(
         median_price: Median close price used as normalization denominator.
 
     Returns:
-        Relative spread rate as a fraction (e.g., 0.0003 for 3 pips on XAUUSD).
+        Relative spread rate as a fraction.
     """
     total_ticks = bc.spread_ticks + bc.slippage_ticks
     return total_ticks * dc.tick_size / median_price
@@ -314,12 +314,12 @@ def run_backtest_manual(
         leverage: CFD leverage ratio (default 100).
         lots_per_trade: Fixed lot size per trade.
         confidence_threshold: Minimum prediction probability to trade (0 = disabled).
-        spread_ticks: Spread in ticks (default 35 = $0.35 for XAUUSD).
-        slippage_ticks: Slippage in ticks (default 5 = $0.05).
-        commission_per_lot: Commission per lot in dollars (default $10).
+        spread_ticks: Spread in ticks.
+        slippage_ticks: Slippage in ticks.
+        commission_per_lot: Commission per lot.
         atr_stop_multiplier: ATR multiplier for stop-loss distance (default 1.0).
         horizon_bars: Time-based exit after N bars (default 10).
-        contract_size: Units per lot (default 100 oz for XAUUSD).
+        contract_size: Units per lot.
         tick_size: Price tick size in dollars (default 0.01).
         initial_capital: Starting capital for the backtest.
 

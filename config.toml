@@ -1,4 +1,4 @@
-# Hybrid Stacking (LightGBM) — XAU/USD H1 Trading Signals
+# Hybrid Stacking (LightGBM) — Trading Signal Configuration
 # Bachelor's Thesis: Nguyen Duc Hieu | Advisor: Hoang Quoc Dung
 
 # =============================================================================
@@ -8,7 +8,7 @@
 symbol = "XAUUSD"
 timeframe = "1H"
 market_tz = "America/New_York"
-start_date = "2018-01-01"
+start_date = "2013-01-01"
 end_date = "2026-03-31"
 tick_size = 0.01
 contract_size = 100
@@ -22,16 +22,16 @@ download_skip_current_month = true  # Skip current month (incomplete data)
 # SPLITTING
 # =============================================================================
 [splitting]
-train_start = "2018-01-01"
-train_end = "2022-12-31 23:59:59"    # 5 years: diverse market regimes
-val_start = "2023-01-01"              # 1 year: transition period
-val_end = "2023-12-31 23:59:59"
-test_start = "2024-01-01"             # OOS: gold bull run $2000→$3000+
+train_start = "2013-01-01"
+train_end = "2022-03-31 23:59:59"
+val_start = "2022-04-01"
+val_end = "2024-03-31 23:59:59"
+test_start = "2024-04-01"
 test_end = "2026-03-31 23:59:59"
 purge_bars = 25
-embargo_bars = 50                     # ~2 days — conservative vs 10-bar label horizon
+embargo_bars = 50                     # gap between train and validation sets
 embargo_scale_by_timeframe = true     # Keep same elapsed embargo duration when timeframe changes
-embargo_reference_timeframe = "1H"   # 50 bars is defined at 1H; e.g. 1D -> ~2 bars
+embargo_reference_timeframe = "1H"   # base timeframe for embargo duration
 
 # =============================================================================
 # FEATURES
@@ -77,19 +77,19 @@ early_stopping_rounds = 50
 # =============================================================================
 [backtest]
 initial_capital = 10000.0
-leverage = 30                       # 30:1 — affordable for 1 lot with $10k
-spread_ticks = 35                   # 35 ticks = $0.35 (realistic XAUUSD ECN spread)
-slippage_ticks = 5                  # 5 ticks = $0.05 per side (absorbed into spread)
+leverage = 30                       # CFD leverage ratio
+spread_ticks = 35                   # spread in ticks
+slippage_ticks = 5                  # slippage in ticks
 commission_per_lot = 10.0           # Round-trip commission per lot
 atr_stop_multiplier = 1.0          # ATR multiplier for stop-loss distance
-lots_per_trade = 0.2                # Fixed 0.2 lot per trade (20 oz XAUUSD)
+lots_per_trade = 0.2                # fixed lot size per trade
 confidence_threshold = 0.55         # Min predicted probability to trade (0 = disabled)
 
 # =============================================================================
 # GRU — Feature Extractor
 # =============================================================================
 [gru]
-input_size = 4        # log_returns + rsi_14 + atr_14 + macd_hist
+input_size = 4        # number of GRU input features
 hidden_size = 32
 num_layers = 2
 sequence_length = 48

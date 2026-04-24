@@ -789,8 +789,8 @@ def _build_markdown(
                 f"Without leverage, return would be ~{unleveraged:.0f}%."
             )
         caveats.append(
-            "The test period includes gold's historic bull run ($2,000 → $3,000+), "
-            "which provided a strong tailwind."
+            "The test period includes a significant market trend, "
+            "which may have provided favorable conditions."
         )
         caveats.append(f"Maximum drawdown was {abs(max_dd_val):.1f}%.")
         lines.append("**Important caveats**: " + " ".join(caveats))
@@ -938,14 +938,14 @@ _EXPLANATIONS: dict[str, tuple[str, ...]] = {
     "max_drawdown_pct": (
         "Excellent — losses stayed small, strong capital preservation",
         "Good — losses were manageable and conservative",
-        "Moderate — typical for volatile XAUUSD",
+        "Moderate — typical for volatile instruments",
         "Poor — high drawdown, assess suitability",
         "Dangerous — critical drawdown, question viability",
     ),
     "avg_drawdown_pct": (
         "Excellent — typical losses stayed very small",
         "Good — typical losses were manageable",
-        "Moderate — typical for XAUUSD volatility",
+        "Moderate — typical for this volatility level",
         "Poor — high average drawdown",
         "Dangerous — persistent deep losses",
     ),
@@ -958,7 +958,7 @@ _EXPLANATIONS: dict[str, tuple[str, ...]] = {
     ),
     # Trade quality
     "win_rate_pct": (
-        "Excellent — strong win rate for XAUUSD",
+        "Excellent — strong win rate",
         "Good — solid win rate",
         "Moderate — typical for trend-following strategies",
         "Poor — low win rate, requires large R:R",
@@ -966,7 +966,7 @@ _EXPLANATIONS: dict[str, tuple[str, ...]] = {
     ),
     "profit_factor": (
         "Excellent — very efficient profitability",
-        "Good — strong profitability for XAUUSD",
+        "Good — strong profitability",
         "Moderate — covers costs with some margin",
         "Poor — barely covers costs or losing money",
         "Dangerous — verify for overfitting or data issues",
@@ -981,12 +981,12 @@ _EXPLANATIONS: dict[str, tuple[str, ...]] = {
     "sqn": (
         "Excellent — very robust strategy",
         "Good — good system quality",
-        "Moderate — acceptable for XAUUSD",
+        "Moderate — acceptable system quality",
         "Poor — system has no edge",
         "Dangerous — strategy is unprofitable",
     ),
     "kelly_criterion": (
-        "Excellent — textbook optimal position sizing for XAUUSD",
+        "Excellent — textbook optimal position sizing",
         "Good — balanced, safe position sizing",
         "Moderate — review sizing (conservative or aggressive)",
         "Poor — no statistical edge detected",

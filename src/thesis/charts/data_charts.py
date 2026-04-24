@@ -119,9 +119,9 @@ def build_candlestick_chart(
 
     kline = (
         Kline()
-        .add_xaxis(timestamps)
+        .add_xaxis(xaxis_data=timestamps)
         .add_yaxis(
-            series_name="Price",
+            series_name=f"{config.data.symbol}",
             y_axis=kline_data,
             itemstyle_opts=opts.ItemStyleOpts(
                 color=COLORS["long"],
@@ -134,63 +134,103 @@ def build_candlestick_chart(
             title_opts=opts.TitleOpts(
                 title=f"{config.data.symbol} Candlestick ({config.data.timeframe})"
             ),
-            legend_opts=opts.LegendOpts(pos_top="1%", pos_right="10%"),
+            legend_opts=opts.LegendOpts(
+                is_show=False, pos_bottom=10, pos_left="center"
+            ),
             yaxis_opts=opts.AxisOpts(
-                is_scale=True, splitarea_opts=opts.SplitAreaOpts(is_show=False)
+                is_scale=True,
+                splitarea_opts=opts.SplitAreaOpts(is_show=False),
+                splitline_opts=opts.SplitLineOpts(is_show=False),
             ),
             xaxis_opts=opts.AxisOpts(is_show=False),
             tooltip_opts=opts.TooltipOpts(
                 trigger="axis",
                 axis_pointer_type="cross",
+                background_color="rgba(245, 245, 245, 0.8)",
+                border_width=1,
+                border_color="#ccc",
+                textstyle_opts=opts.TextStyleOpts(color="#000"),
             ),
             datazoom_opts=[
                 opts.DataZoomOpts(
-                    is_show=True,
-                    type_="slider",
-                    xaxis_index=[0, 1],
-                    pos_bottom="4%",
-                    height=28,
-                ),
-                opts.DataZoomOpts(
+                    is_show=False,
                     type_="inside",
                     xaxis_index=[0, 1],
+                    range_start=50,
+                    range_end=100,
+                ),
+                opts.DataZoomOpts(
+                    is_show=True,
+                    xaxis_index=[0, 1],
+                    type_="slider",
+                    pos_top="85%",
+                    range_start=50,
+                    range_end=100,
                 ),
             ],
+            visualmap_opts=opts.VisualMapOpts(
+                is_show=False,
+                dimension=2,
+                series_index=5,
+                is_piecewise=True,
+                pieces=[
+                    {"value": 1, "color": COLORS["long"]},
+                    {"value": -1, "color": COLORS["short"]},
+                ],
+            ),
+            axispointer_opts=opts.AxisPointerOpts(
+                is_show=True,
+                link=[{"xAxisIndex": "all"}],
+                label=opts.LabelOpts(background_color="#777"),
+            ),
+            brush_opts=opts.BrushOpts(
+                x_axis_index="all",
+                brush_link="all",
+                out_of_brush={"colorAlpha": 0.1},
+                brush_type="lineX",
+            ),
         )
     )
 
-    # Volume bar chart - split into up/down volumes using stack
+    # Volume bar chart - single series with color based on price direction
     if volumes is not None:
-        up_volumes = [
-            float(v) if closes[i] >= opens[i] else 0 for i, v in enumerate(volumes)
-        ]
-        down_volumes = [
-            float(v) if closes[i] < opens[i] else 0 for i, v in enumerate(volumes)
+        # Format: [index, volume, direction]
+        volume_data = [
+            [i, float(volumes[i]), 1 if closes[i] >= opens[i] else -1]
+            for i in range(len(volumes))
         ]
         bar = (
             Bar()
-            .add_xaxis(timestamps)
+            .add_xaxis(xaxis_data=timestamps)
             .add_yaxis(
-                series_name="Up Volume",
-                y_axis=up_volumes,
-                stack="volume",
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["long"]),
-                label_opts=opts.LabelOpts(is_show=False),
-            )
-            .add_yaxis(
-                series_name="Down Volume",
-                y_axis=down_volumes,
-                stack="volume",
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["short"]),
+                series_name="Volume",
+                y_axis=volume_data,
+                xaxis_index=1,
+                yaxis_index=1,
                 label_opts=opts.LabelOpts(is_show=False),
             )
             .set_global_opts(
-                yaxis_opts=opts.AxisOpts(
-                    splitarea_opts=opts.SplitAreaOpts(is_show=False),
-                ),
                 xaxis_opts=opts.AxisOpts(
-                    is_show=True,
-                    axislabel_opts=opts.LabelOpts(is_show=True, font_size=10, margin=8),
+                    type_="category",
+                    is_scale=True,
+                    grid_index=1,
+                    boundary_gap=False,
+                    axisline_opts=opts.AxisLineOpts(is_on_zero=False),
+                    axistick_opts=opts.AxisTickOpts(is_show=False),
+                    splitline_opts=opts.SplitLineOpts(is_show=False),
+                    axislabel_opts=opts.LabelOpts(is_show=False),
+                    split_number=20,
+                    min_="dataMin",
+                    max_="dataMax",
+                ),
+                yaxis_opts=opts.AxisOpts(
+                    grid_index=1,
+                    is_scale=True,
+                    split_number=2,
+                    axislabel_opts=opts.LabelOpts(is_show=False),
+                    axisline_opts=opts.AxisLineOpts(is_show=False),
+                    axistick_opts=opts.AxisTickOpts(is_show=False),
+                    splitline_opts=opts.SplitLineOpts(is_show=False),
                 ),
                 legend_opts=opts.LegendOpts(is_show=False),
             )
@@ -198,15 +238,24 @@ def build_candlestick_chart(
     else:
         bar = Bar()
 
+    # Grid with clear separation between price and volume
     grid = (
-        Grid(init_opts=opts.InitOpts(height="700px"))
+        Grid(
+            init_opts=opts.InitOpts(
+                width="1000px",
+                height="800px",
+                animation_opts=opts.AnimationOpts(animation=False),
+            )
+        )
         .add(
             kline,
-            grid_opts=opts.GridOpts(pos_top="5%", pos_bottom="25%"),
+            grid_opts=opts.GridOpts(pos_left="10%", pos_right="8%", height="50%"),
         )
         .add(
             bar,
-            grid_opts=opts.GridOpts(pos_top="72%", pos_bottom="12%"),
+            grid_opts=opts.GridOpts(
+                pos_left="10%", pos_right="8%", pos_top="63%", height="16%"
+            ),
         )
     )
 

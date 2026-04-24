@@ -809,61 +809,72 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
+    # Load defaults from config.toml (all args optional when config exists)
+    defaults = _get_download_defaults_from_config()
+
     parser.add_argument(
         "--symbol",
-        required=True,
+        default=defaults["symbol"] if defaults else None,
         help="Instrument symbol to download (see list below)",
     )
     parser.add_argument(
         "--asset-class",
         choices=["fx", "crypto", "index"],
-        default="fx",
-        help="Asset class — controls trading-hour assumptions (default: fx)",
+        default=defaults.get("asset_class", "fx") if defaults else "fx",
+        help="Asset class — controls trading-hour assumptions",
     )
     parser.add_argument(
         "--start-year",
         type=int,
-        required=True,
+        default=defaults.get("start_year") if defaults else None,
         help="Start year",
     )
     parser.add_argument(
         "--start-month",
         type=int,
-        required=True,
+        default=defaults.get("start_month") if defaults else None,
         help="Start month 1-12",
     )
     parser.add_argument(
         "--end-year",
         type=int,
-        default=None,
-        help="End year (default: current year)",
+        default=defaults.get("end_year") if defaults else None,
+        help="End year (default: from config.toml or current year)",
     )
     parser.add_argument(
         "--end-month",
         type=int,
-        default=None,
-        help="End month (default: current month)",
+        default=defaults.get("end_month") if defaults else None,
+        help="End month (default: from config.toml or current month)",
     )
     parser.add_argument(
         "--concurrency",
         type=int,
-        default=8,
-        help="Parallel downloads (default: 8)",
+        default=defaults.get("concurrency", 8) if defaults else 8,
+        help="Parallel downloads",
     )
     parser.add_argument(
         "--force",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Force re-verify existing months (default: False)",
+        default=defaults.get("force", False) if defaults else False,
+        help="Force re-verify existing months",
     )
     parser.add_argument(
         "--skip-current-month",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Skip checking/repairing current month (default: False)",
+        default=defaults.get("skip_current_month", False) if defaults else False,
+        help="Skip checking/repairing current month",
     )
 
     args = parser.parse_args()
+
+    # Validate required args when no config defaults
+    if not args.symbol:
+        parser.error("--symbol is required when config.toml is unavailable")
+    if not args.start_year:
+        parser.error("--start-year is required when config.toml is unavailable")
+    if not args.start_month:
+        parser.error("--start-month is required when config.toml is unavailable")
 
     # Configure logging
     logging.basicConfig(

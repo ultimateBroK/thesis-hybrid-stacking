@@ -1,7 +1,7 @@
-"""Metric zone definitions for XAU/USD CFD backtest benchmarks.
+"""Metric zone definitions for CFD backtest benchmarks.
 
 Provides zone classification (excellent/good/moderate/poor/dangerous) for
-backtest metrics based on industry benchmarks and real-world XAUUSD ranges.
+backtest metrics based on industry benchmarks.
 
 This module has no Streamlit dependency — all functions are pure Python
 and can be unit-tested independently.
@@ -43,13 +43,13 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     """Return (color_name, zone_label, recommendation) for a given metric.
 
     Zone colors:
-        - excellent (green): Target zone for XAUUSD.
+        - excellent (green): Target zone.
         - good (light green): Acceptable zone, solid performance.
         - moderate (yellow): Marginal, needs attention.
         - poor (orange): Below average, review needed.
         - dangerous (red): Critical issues, high risk.
 
-    All zones are XAUUSD 1H optimized based on real-world benchmarks.
+    All zones are optimized based on industry benchmarks.
 
     Args:
         metric_name: The metric key (e.g., 'sharpe_ratio', 'max_drawdown_pct').
@@ -75,12 +75,12 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 0:
             return ("dangerous", "Negative", "Below risk-free rate — review strategy")
         if value < 0.5:
-            return ("dangerous", "Poor", "<0.5 — high risk-adjusted cost for XAUUSD")
+            return ("dangerous", "Poor", "<0.5 — high risk-adjusted cost")
         if value < 1.0:
             return (
                 "moderate",
                 "Acceptable",
-                "0.5-1.0 — acceptable for XAUUSD strategies",
+                "0.5-1.0 — acceptable risk-adjusted returns",
             )
         if value < 2.0:
             return ("good", "Good", "1.0-2.0 — solid risk-adjusted returns")
@@ -90,7 +90,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
                 "Excellent",
                 "2.0-3.0 — hedge fund target (verify no overfitting)",
             )
-        return ("dangerous", "Suspicious", ">3.0 — verify no overfitting for XAUUSD")
+        return ("dangerous", "Suspicious", ">3.0 — verify no overfitting")
 
     # ========== Sortino Ratio ==========
     if metric_name == "sortino_ratio":
@@ -99,7 +99,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 0.5:
             return ("dangerous", "Poor", "<0.5 — excessive downside risk")
         if value < 1.5:
-            return ("moderate", "Acceptable", "0.5-1.5 — acceptable for XAUUSD")
+            return ("moderate", "Acceptable", "0.5-1.5 — acceptable downside-adjusted returns")
         if value < 2.5:
             return ("good", "Good", "1.5-2.5 — solid downside-adjusted returns")
         if value < 4.0:
@@ -111,9 +111,9 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value > -10:
             return ("excellent", "Excellent", "<10% — exceptional capital preservation")
         if value > -20:
-            return ("good", "Good", "10-20% — conservative drawdown for XAUUSD")
+            return ("good", "Good", "10-20% — conservative drawdown")
         if value > -35:
-            return ("moderate", "Moderate", "20-35% — typical for volatile XAUUSD")
+            return ("moderate", "Moderate", "20-35% — typical for volatile instruments")
         if value > -50:
             return ("poor", "Significant", "35-50% — high, assess suitability")
         return ("dangerous", "Critical", ">50% — aggressive, question viability")
@@ -127,19 +127,19 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 1.5:
             return ("moderate", "Acceptable", "1.2-1.5 — covers costs with margin")
         if value < 2.0:
-            return ("good", "Good", "1.5-2.0 — strong profitability for XAUUSD")
+            return ("good", "Good", "1.5-2.0 — strong profitability")
         if value < 3.0:
             return ("excellent", "Excellent", "2.0-3.0 — very efficient")
-        return ("dangerous", "Suspicious", ">3.0 — verify no overfitting for XAUUSD")
+        return ("dangerous", "Suspicious", ">3.0 — verify no overfitting")
 
     # ========== Win Rate ==========
     if metric_name == "win_rate_pct":
         if value < 35:
-            return ("poor", "Low", "<35% — requires large R:R for XAUUSD")
+            return ("poor", "Low", "<35% — requires large risk/reward ratio")
         if value < 45:
             return ("moderate", "Acceptable", "35-45% — typical for trend-following")
         if value < 55:
-            return ("good", "Good", "45-55% — solid win rate for XAUUSD")
+            return ("good", "Good", "45-55% — solid win rate")
         if value < 65:
             return ("excellent", "Excellent", "55-65% — strong (verify if >65%)")
         return ("dangerous", "Suspicious", ">65% — verify no overfitting")
@@ -195,7 +195,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 1.0:
             return ("poor", "Poor", "<1.0 — system has no edge")
         if value < 1.5:
-            return ("moderate", "Average", "1.0-1.5 — acceptable for XAUUSD")
+            return ("moderate", "Average", "1.0-1.5 — acceptable system quality")
         if value < 2.0:
             return ("moderate", "Average", "1.5-2.0 — acceptable system")
         if value < 3.0:
@@ -209,7 +209,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 30:
             return ("moderate", "Low", "15-30% — conservative exposure")
         if value < 60:
-            return ("good", "Good", "30-60% — typical XAUUSD exposure")
+            return ("good", "Good", "30-60% — typical market exposure")
         if value < 80:
             return ("moderate", "High", "60-80% — significant market commitment")
         return ("poor", "Overexposed", ">80% — almost always in trade")
@@ -221,7 +221,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 0.15:
             return ("moderate", "Conservative", "<15% — conservative position sizing")
         if value < 0.25:
-            return ("good", "Optimal", "15-25% — textbook optimal for XAUUSD")
+            return ("good", "Optimal", "15-25% — textbook optimal sizing")
         if value < 0.4:
             return ("moderate", "Aggressive", "25-40% — aggressive, high variance")
         return ("dangerous", "Very Aggressive", ">40% — very aggressive, high risk")
@@ -249,22 +249,22 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     # ========== Avg Win / Avg Loss ==========
     if metric_name == "avg_win":
         if value < 50:
-            return ("poor", "Low", "<$50 — small wins, may not cover costs")
+            return ("poor", "Low", "<1% of initial capital — small wins, may not cover costs")
         if value < 200:
-            return ("moderate", "Moderate", "$50-200 — decent win size")
+            return ("moderate", "Moderate", "1-4% of initial capital — decent win size")
         if value < 500:
-            return ("good", "Good", "$200-500 — strong average wins")
-        return ("excellent", "High", ">$500 — excellent win size")
+            return ("good", "Good", "4-10% of initial capital — strong average wins")
+        return ("excellent", "High", ">10% of initial capital — excellent win size")
 
     if metric_name == "avg_loss":
         value = abs(value)
         if value < 50:
-            return ("excellent", "Low", "<$50 — excellent risk control")
+            return ("excellent", "Low", "<1% of initial capital — excellent risk control")
         if value < 200:
-            return ("good", "Moderate", "$50-200 — reasonable losses")
+            return ("good", "Moderate", "1-4% of initial capital — reasonable losses")
         if value < 500:
-            return ("moderate", "High", "$200-500 — large average losses")
-        return ("poor", "Severe", ">$500 — concerning loss size")
+            return ("moderate", "High", "4-10% of initial capital — large average losses")
+        return ("poor", "Severe", ">10% of initial capital — concerning loss size")
 
     # ========== Equity Final ==========
     if metric_name == "equity_final":
@@ -353,7 +353,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value > -10:
             return ("good", "Good", "-5% to -10% — conservative")
         if value > -15:
-            return ("moderate", "Moderate", "-10% to -15% — typical for XAUUSD")
+            return ("moderate", "Moderate", "-10% to -15% — typical average drawdown")
         return ("poor", "High", "≤-15% — high average drawdown")
 
     return ("moderate", "Neutral", "No benchmark available")

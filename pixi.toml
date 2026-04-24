@@ -7,7 +7,7 @@ version = "0.1.0"
 
 [tasks]
 # Data ingestion
-data = "python scripts/data_download.py --symbol XAUUSD --start-year 2018"
+data = "python scripts/data_download.py --skip-current-month"
 
 # Pipeline execution
 workflow = "python main.py"

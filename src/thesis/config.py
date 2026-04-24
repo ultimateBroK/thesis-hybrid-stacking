@@ -27,7 +27,7 @@ class DataConfig:
     symbol: str = "XAUUSD"
     timeframe: str = "1H"
     market_tz: str = "America/New_York"
-    start_date: str = "2018-01-01"
+    start_date: str = "2013-01-01"
     end_date: str = "2026-03-31"
     tick_size: float = 0.01
     contract_size: int = 100
@@ -42,11 +42,11 @@ class DataConfig:
 class SplittingConfig:
     """Train / val / test date ranges and leakage prevention."""
 
-    train_start: str = "2018-01-01"
-    train_end: str = "2022-12-31 23:59:59"
-    val_start: str = "2023-01-01"
-    val_end: str = "2023-12-31 23:59:59"
-    test_start: str = "2024-01-01"
+    train_start: str = "2013-01-01"
+    train_end: str = "2022-03-31 23:59:59"
+    val_start: str = "2022-04-01"
+    val_end: str = "2024-03-31 23:59:59"
+    test_start: str = "2024-04-01"
     test_end: str = "2026-03-31 23:59:59"
     purge_bars: int = 25
     embargo_bars: int = 50
@@ -104,7 +104,7 @@ class BacktestConfig:
     initial_capital: float = 10_000.0
     leverage: int = 30  # margin = 1/leverage
     spread_ticks: float = 35.0  # → spread param (relative)
-    slippage_ticks: float = 5.0  # absorbed into spread
+    slippage_ticks: float = 5.0
     commission_per_lot: float = 10.0  # → callable commission
     atr_stop_multiplier: float = 1.0
     lots_per_trade: float = 0.2  # fixed lot size per trade
@@ -164,7 +164,7 @@ class PathsConfig:
     predictions: str = "data/predictions/final_predictions.parquet"
     backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
-    session_dir: str = ""  # Set at runtime, e.g. "results/XAUUSD_1H_20260414_042000"
+    session_dir: str = ""  # Set at runtime by pipeline
 
 
 # ---------------------------------------------------------------------------

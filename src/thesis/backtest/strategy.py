@@ -33,7 +33,7 @@ class HybridGRUStrategy(Strategy):
         lots_per_trade: Fixed lot size per trade.
         confidence_threshold: Minimum class probability to trade (0 = disabled).
         min_atr: Floor to prevent microscopic stops in low-vol regimes.
-        contract_size: Units per lot (e.g., 100 oz for XAUUSD).
+        contract_size: Units per lot.
         horizon_bars: Max bars to hold (0 = hold until opposite signal/stop).
     """
 

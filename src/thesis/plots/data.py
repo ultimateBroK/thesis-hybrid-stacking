@@ -74,8 +74,11 @@ def _plot_candlestick(df: pl.DataFrame, config: Config, out: Path) -> None:
     closes = df["close"].to_numpy().astype(float)
 
     fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(16, 9), height_ratios=[3, 1], sharex=True
+        2, 1, figsize=(16, 12), height_ratios=[4, 1.5], sharex=True
     )
+
+    # Add spacing between price and volume charts
+    fig.subplots_adjust(hspace=0.05)
 
     # Remove grid for clean candlestick look
     ax1.grid(False)
