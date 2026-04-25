@@ -91,3 +91,16 @@ embargo_reference_timeframe = "1H"
 
     cfg = load_config(cfg_file)
     assert cfg.splitting.embargo_bars == 50
+
+
+def test_data_config_has_download_max_retries():
+    """Test that DataConfig has download_max_retries attribute."""
+    cfg = load_config(Path(__file__).parent.parent / "config.toml")
+    assert hasattr(cfg.data, "download_max_retries")
+    assert cfg.data.download_max_retries > 0
+
+
+def test_download_max_retries_default_value():
+    """Test download_max_retries default value from config.toml."""
+    cfg = load_config(Path(__file__).parent.parent / "config.toml")
+    assert cfg.data.download_max_retries == 7

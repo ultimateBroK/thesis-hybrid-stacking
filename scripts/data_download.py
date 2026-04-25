@@ -1,897 +1,763 @@
-"""Download implementation for the Dukascopy ingestion pipeline."""
+#!/usr/bin/env python3
+"""Download tick data using dukascopy-python library.
+
+Downloads historical tick data from Dukascopy for any supported instrument,
+saving as monthly parquet files with verify & repair support.
+
+Defaults are resolved from ``config.toml`` when available.
+
+Usage:
+    pixi run python scripts/data_download.py
+    pixi run python scripts/data_download.py --workers 4
+    pixi run python scripts/data_download.py --force
+    pixi run python scripts/data_download.py --no-verify
+    pixi run python scripts/data_download.py --instrument XAG/USD --asset-class fx
+"""
 
 from __future__ import annotations
 
-# Add src directory to path for imports when running as script  # noqa: E402
-import sys  # noqa: E402
-from pathlib import Path  # noqa: E402
+import argparse
+import calendar
+import json
+import logging
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import datetime, timezone
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
-src_dir = Path(__file__).resolve().parent.parent / "src"  # noqa: E402
-if src_dir.exists() and str(src_dir) not in sys.path:  # noqa: E402
-    sys.path.insert(0, str(src_dir))  # noqa: E402
+# Add src/ to path for thesis module imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-import argparse  # noqa: E402
-import asyncio  # noqa: E402
-import logging  # noqa: E402
-import calendar  # noqa: E402
-from dataclasses import dataclass  # noqa: E402
-from datetime import date, datetime, timezone  # noqa: E402
-import json  # noqa: E402
-import lzma  # noqa: E402
-import random  # noqa: E402
-import struct  # noqa: E402
-import aiohttp  # noqa: E402
-import polars as pl  # noqa: E402
+import polars as pl
+import dukascopy_python
+from dukascopy_python.instruments import INSTRUMENT_FX_METALS_XAU_USD
+
+from thesis.config import load_config
 
 logger = logging.getLogger(__name__)
-BASE_URL = "https://datafeed.dukascopy.com/datafeed"
+
+# Constants for dukascopy-python
+INTERVAL_TICK = dukascopy_python.INTERVAL_TICK
+OFFER_SIDE_BID = dukascopy_python.OFFER_SIDE_BID
 
 
 # ---------------------------------------------------------------------------
-# Lightweight paths helper (self-contained — no dependency on thesis.config)
+# State tracking
 # ---------------------------------------------------------------------------
 
-
-@dataclass(frozen=True)
-class ProjectPaths:
-    """Minimal path resolver for the download pipeline."""
-
-    data_raw_base: Path = Path("data/raw")
-
-    def raw_data_dir(self, symbol: str) -> Path:
-        """
-        Get the raw-tick data directory path for the given filesystem-safe symbol.
-
-        Parameters:
-            symbol (str): Filesystem-safe symbol (e.g., with '/' replaced by '_') used as the directory name under the raw data base.
-
-        Returns:
-            Path: Path to the symbol's raw-tick directory (data_raw_base / symbol).
-        """
-        return self.data_raw_base / symbol
-
-    def state_file(self, symbol: str) -> Path:
-        """
-        Get the filesystem path to the download-state JSON file for the given symbol.
-
-        Parameters:
-            symbol (str): Filesystem-safe symbol (e.g., slashes replaced with underscores).
-
-        Returns:
-            Path: Path to 'download_state.json' located under the project's raw data directory for the symbol.
-        """
-        return self.data_raw_base / symbol / "download_state.json"
+STATE_FILE = "download_state.json"
 
 
-DEFAULT_PATHS = ProjectPaths()
-
-
-def _fs_symbol(symbol: str) -> str:
-    """Return a filesystem-safe symbol for directory and file names.
-
-    Replaces ``/`` with ``_`` so that composite instrument names
-    (e.g. ``BASE/QUOTE``) produce valid directory and file names.
-    """
-    return symbol.replace("/", "_")
-
-
-# Display-name → Dukascopy data-feed symbol mappings.
-# Add entries here when an instrument's URL symbol differs from its
-# display name.  Keys are the canonical name passed via --symbol;
-# values are what Dukascopy's datafeed expects in the URL path.
-SYMBOL_OVERRIDES: dict[str, str] = {}
-
-
-def _download_symbol(symbol: str) -> str:
-    """
-    Select the Dukascopy feed symbol corresponding to a canonical symbol.
-
-    If an explicit mapping exists in SYMBOL_OVERRIDES that mapping is returned; otherwise, if the canonical symbol contains a slash (`/`) the substring before the slash is returned; if neither condition applies, the original symbol is returned.
-
-    Returns:
-        str: The symbol to use in Dukascopy URL paths.
-    """
-    if symbol in SYMBOL_OVERRIDES:
-        return SYMBOL_OVERRIDES[symbol]
-    if "/" in symbol:
-        return symbol.split("/")[0]
-    return symbol
-
-
-@dataclass(frozen=True)
-class DownloadRuntimeConfig:
-    """Immutable runtime config for Dukascopy tick downloader."""
-
-    symbol: str
-    download_symbol: str  # Symbol for URL construction (may differ from fs name)
-    start_year: int
-    start_month: int
-    end_year: int | None
-    end_month: int | None
-    asset_class: str
-    concurrency: int
-    force: bool
-    skip_current_month: bool
-    output_dir: Path
-    state_file: Path
-
-
-def build_download_config(
-    symbol: str,
-    start_year: int,
-    start_month: int,
-    asset_class: str,
-    concurrency: int,
-    force: bool,
-    *,
-    end_year: int | None = None,
-    end_month: int | None = None,
-    skip_current_month: bool = False,
-    paths: ProjectPaths = DEFAULT_PATHS,
-) -> DownloadRuntimeConfig:
-    """
-    Create a DownloadRuntimeConfig with filesystem-safe output/state paths and the Dukascopy download symbol resolved.
-
-    Parameters:
-        symbol (str): Canonical symbol provided by the user (may contain '/' characters).
-        start_year (int): First year to include.
-        start_month (int): First month to include (1-12).
-        asset_class (str): Asset class identifier (e.g., "fx", "crypto", "index").
-        concurrency (int): Maximum concurrent HTTP downloads.
-        force (bool): If true, ignore existing files/state and re-download.
-        end_year (int | None): Optional final year to include.
-        end_month (int | None): Optional final month to include (1-12).
-        skip_current_month (bool): If true, omit processing the current month.
-        paths (ProjectPaths): Project path helpers used to compute output and state file locations.
-
-    Returns:
-        DownloadRuntimeConfig: Immutable runtime configuration with `download_symbol`, `output_dir`, and `state_file` populated.
-    """
-    fs_sym = _fs_symbol(symbol)
-    return DownloadRuntimeConfig(
-        symbol=symbol,
-        download_symbol=_download_symbol(symbol),
-        start_year=start_year,
-        start_month=start_month,
-        end_year=end_year,
-        end_month=end_month,
-        asset_class=asset_class,
-        concurrency=concurrency,
-        force=force,
-        skip_current_month=skip_current_month,
-        output_dir=paths.raw_data_dir(fs_sym),
-        state_file=paths.state_file(fs_sym),
-    )
-
-
-def list_available_raw_months(
-    symbol: str,
-    *,
-    paths: ProjectPaths = DEFAULT_PATHS,
-) -> list[tuple[int, int]]:
-    """
-    List available months for which raw parquet files exist for a symbol.
-
-    Scans the raw-data directory for files named `YYYY-MM.parquet` and returns the parsed (year, month) tuples sorted in ascending order.
-
-    Parameters:
-        symbol (str): Canonical symbol; slashes are converted to a filesystem-safe form before locating the directory.
-        paths (ProjectPaths): Paths helper used to locate the symbol's raw data directory (defaults to DEFAULT_PATHS).
-
-    Returns:
-        list[tuple[int, int]]: Sorted list of (year, month) tuples found in the raw directory; empty if the directory does not exist or no matching files are found.
-    """
-    raw_dir = paths.raw_data_dir(_fs_symbol(symbol))
-    if not raw_dir.exists():
-        return []
-    result: list[tuple[int, int]] = []
-    for p in raw_dir.glob("????-??.parquet"):
-        stem = p.stem
-        if len(stem) == 7 and stem[4] == "-":
-            try:
-                y, m = int(stem[:4]), int(stem[5:7])
-                if 1 <= m <= 12:
-                    result.append((y, m))
-            except ValueError:
-                continue
-    return sorted(result)
-
-
-def load_state(state_file: Path) -> dict[str, dict[str, int]]:
+def load_state(state_path: Path) -> dict[str, dict[str, int]]:
     """Read the downloaded-month tracking state from disk."""
-    if state_file.exists() and state_file.stat().st_size > 0:
+    if state_path.exists() and state_path.stat().st_size > 0:
         try:
-            with state_file.open() as handle:
-                data = json.load(handle)
-            if isinstance(data, list):
-                migrated = {key: {"rows": -1, "missing_hours": 0} for key in data}
-                save_state(state_file, migrated)
-                logger.info(
-                    "Migrated state file to new format (%d entries)", len(migrated)
-                )
-                return migrated
-            return data
+            with state_path.open() as f:
+                return json.load(f)
         except json.JSONDecodeError:
-            logger.warning(
-                "State file %s is corrupted/empty, starting fresh", state_file
-            )
-            return {}
+            logger.warning("State file %s is corrupted, starting fresh", state_path)
     return {}
 
 
-def save_state(state_file: Path, state: dict[str, dict[str, int]]) -> None:
+def save_state(state_path: Path, state: dict[str, dict[str, int]]) -> None:
     """Persist the month-tracking state dictionary as JSON."""
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    with state_file.open("w") as handle:
-        json.dump(state, handle, indent=2, sort_keys=True)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    with state_path.open("w") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
 
 
-def migrate_old_markers(
-    output_dir: Path,
-    state_file: Path,
-    state: dict[str, dict[str, int]],
-) -> dict[str, dict[str, int]]:
-    """Absorb old `*.parquet.complete` files into the JSON state file."""
-    if not output_dir.exists():
-        return state
-
-    old_markers = list(output_dir.glob("*.parquet.complete"))
-    for marker in old_markers:
-        key = marker.name.replace(".parquet.complete", "")
-        state.setdefault(key, {"rows": -1, "missing_hours": 0})
-        marker.unlink()
-    if old_markers:
-        logger.info("Migrated %d old markers -> %s", len(old_markers), state_file)
-    return state
+# ---------------------------------------------------------------------------
+# Hour-coverage verification
+# ---------------------------------------------------------------------------
 
 
-def parse_hour(
-    raw: bytes, year: int, month: int, day: int, hour: int
-) -> pl.DataFrame | None:
-    """Decode raw Dukascopy bi5 bytes into a tick dataframe."""
-    if not raw:
-        return None
+def _trading_hour_slots(
+    year: int, month: int, asset_class: str = "fx"
+) -> list[tuple[int, int]]:
+    """Return expected (day, hour) slots for a month.
 
-    base_ms = int(
-        datetime(year, month, day, hour, tzinfo=timezone.utc).timestamp() * 1000
-    )
-    chunk = 20
-    records = [
-        (
-            base_ms + struct.unpack_from(">I", raw, i)[0],
-            struct.unpack_from(">I", raw, i + 4)[0] / 1000.0,
-            struct.unpack_from(">I", raw, i + 8)[0] / 1000.0,
-            struct.unpack_from(">f", raw, i + 12)[0],
-            struct.unpack_from(">f", raw, i + 16)[0],
-        )
-        for i in range(0, len(raw) - chunk + 1, chunk)
-    ]
-    if not records:
-        return None
-    return pl.DataFrame(
-        records,
-        schema=["timestamp_ms", "ask", "bid", "ask_volume", "bid_volume"],
-        orient="row",
-    )
-
-
-def to_datetime_df(df: pl.DataFrame) -> pl.DataFrame:
-    """Convert an epoch-based tick dataframe into canonical timestamp columns."""
-    return df.with_columns(
-        pl.from_epoch("timestamp_ms", time_unit="ms")
-        .dt.cast_time_unit("ms")
-        .alias("timestamp")
-    ).select(["timestamp", "ask", "bid", "ask_volume", "bid_volume"])
-
-
-async def _fetch_one(
-    session: aiohttp.ClientSession,
-    semaphore: asyncio.Semaphore,
-    config: DownloadRuntimeConfig,
-    year: int,
-    month_idx: int,
-    day: int,
-    hour: int,
-    month: int,
-) -> pl.DataFrame | None | str:
+    For FX: skip Saturday entirely; on Sunday only include hours >= 21 UTC.
+    For crypto: all 24 hours every day.
     """
-    Download, decompress, and parse a single Dukascopy hourly bi5 file for a specific datetime slot.
+    days_in_month = calendar.monthrange(year, month)[1]
+    if asset_class == "crypto":
+        return [(d, h) for d in range(1, days_in_month + 1) for h in range(24)]
 
-    Attempts up to four HTTP fetch/decompress/parse attempts with backoff. Returns parsed tick data when successful, `None` when the remote file is absent (HTTP 404), or the string `'TIMEOUT'` when all attempts fail.
+    slots: list[tuple[int, int]] = []
+    for d in range(1, days_in_month + 1):
+        wd = calendar.weekday(year, month, d)
+        if wd == 5:  # Saturday — no trading
+            continue
+        if wd == 6:  # Sunday — market opens at 21:00 UTC
+            slots.extend((d, h) for h in range(21, 24))
+        else:
+            slots.extend((d, h) for h in range(24))
+    return slots
 
-    Parameters:
-        month_idx (int): Zero-based month component used in the Dukascopy URL path (0 == January).
-        month (int): One-based calendar month used for parsing and downstream metadata (1 == January).
+
+def _check_hour_coverage(
+    df: pl.DataFrame, year: int, month: int, asset_class: str = "fx"
+) -> tuple[int, int]:
+    """Check which expected trading-hour slots are missing from *df*.
 
     Returns:
-        pl.DataFrame | None | str: `pl.DataFrame` containing parsed tick records for the hour; `None` if the server returned 404 (no file for that hour); or the string `'TIMEOUT'` if all retries were exhausted without a successful parse.
+        (missing_count, confirmed_absent) where *confirmed_absent* equals
+        *missing_count* (we cannot HEAD-check the JSON3 API, so all gaps
+        are treated as potentially absent on the server until repair proves
+        otherwise).
     """
-    url = f"{BASE_URL}/{config.download_symbol}/{year:04d}/{month_idx:02d}/{day:02d}/{hour:02d}h_ticks.bi5"
-    async with semaphore:
-        for attempt in range(4):
-            try:
-                async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    if response.status == 404:
-                        return None
-                    if response.status in (429, 503):
-                        await asyncio.sleep(min(2**attempt, 16) + random.random())
-                        continue
-                    compressed = await response.read()
-                try:
-                    raw = lzma.decompress(compressed)
-                except lzma.LZMAError:
-                    await asyncio.sleep(0.5 * (attempt + 1))
-                    continue
-                return parse_hour(raw, year, month, day, hour)
-            except (asyncio.TimeoutError, aiohttp.ClientError):
-                if attempt < 3:
-                    await asyncio.sleep(min(2**attempt, 8) * 0.5 + random.random())
-    return "TIMEOUT"
+    expected = set(_trading_hour_slots(year, month, asset_class))
+    if len(df) == 0:
+        return len(expected), len(expected)
 
-
-async def _fetch_hours_async(
-    config: DownloadRuntimeConfig,
-    slots: list[tuple[int, int, int, int]],
-    month: int,
-) -> tuple[list[pl.DataFrame], int]:
-    """Execute asynchronous downloads over multiple hourly slots."""
-    semaphore = asyncio.Semaphore(config.concurrency)
-    connector = aiohttp.TCPConnector(limit=config.concurrency, ttl_dns_cache=300)
-    headers = {"User-Agent": "Mozilla/5.0"}
-
-    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
-        results = await asyncio.gather(
-            *[
-                _fetch_one(
-                    session, semaphore, config, year, month_idx, day, hour, month
-                )
-                for year, month_idx, day, hour in slots
-            ]
-        )
-
-    frames: list[pl.DataFrame] = []
-    timed_out = 0
-    for result in results:
-        if result is None:
-            continue
-        if isinstance(result, str):
-            timed_out += 1
-            continue
-        frames.append(result)
-    return frames, timed_out
-
-
-def fetch_hours(
-    config: DownloadRuntimeConfig,
-    slots: list[tuple[int, int, int, int]],
-    month: int,
-) -> tuple[list[pl.DataFrame], int]:
-    """Public sync interface that runs the async downloader under the hood."""
-    if not slots:
-        return [], 0
-    frames, timed_out = asyncio.run(_fetch_hours_async(config, slots, month))
-    if timed_out:
-        logger.warning("%d hours timed out (will retry on next run)", timed_out)
-    return frames, timed_out
-
-
-def all_slots(
-    config: DownloadRuntimeConfig, year: int, month: int
-) -> list[tuple[int, int, int, int]]:
-    """Return all tradeable hour slots for a month."""
-    month_idx = month - 1
-    days_in_month = calendar.monthrange(year, month)[1]
-    if config.asset_class == "crypto":
-        return [
-            (year, month_idx, day, hour)
-            for day in range(1, days_in_month + 1)
-            for hour in range(24)
-        ]
-    return [
-        (year, month_idx, day, hour)
-        for day in range(1, days_in_month + 1)
-        for hour in range(24)
-        if date(year, month, day).weekday() != 5
-        and not (date(year, month, day).weekday() == 6 and hour < 21)
-    ]
-
-
-def weekday_slots(
-    config: DownloadRuntimeConfig,
-    year: int,
-    month: int,
-) -> list[tuple[int, int, int, int]]:
-    """Return Mon-Fri slots, or 24/7 slots for crypto, for repair checks."""
-    month_idx = month - 1
-    days_in_month = calendar.monthrange(year, month)[1]
-    if config.asset_class == "crypto":
-        return [
-            (year, month_idx, day, hour)
-            for day in range(1, days_in_month + 1)
-            for hour in range(24)
-        ]
-    return [
-        (year, month_idx, day, hour)
-        for day in range(1, days_in_month + 1)
-        if date(year, month, day).weekday() < 5
-        for hour in range(24)
-    ]
-
-
-def repair_month(
-    config: DownloadRuntimeConfig,
-    year: int,
-    month: int,
-    file_path: Path,
-) -> tuple[int, int]:
-    """Detect and patch missing weekday-hour slots in an existing parquet file."""
-    df = pl.read_parquet(file_path)
     covered = set(
         df.with_columns(
             [
-                pl.col("timestamp").dt.day().alias("_day"),
-                pl.col("timestamp").dt.hour().alias("_hour"),
+                pl.col("timestamp").dt.day().alias("_d"),
+                pl.col("timestamp").dt.hour().alias("_h"),
             ]
         )
-        .select(["_day", "_hour"])
+        .select(["_d", "_h"])
         .unique()
         .rows()
     )
+    missing = expected - covered
+    return len(missing), len(missing)
 
-    missing = [
-        (year, month_idx, day, hour)
-        for year, month_idx, day, hour in weekday_slots(config, year, month)
-        if (day, hour) not in covered
-    ]
-    if not missing:
-        return len(df), 0
 
-    logger.info("-> %d weekday-hour slots missing, fetching...", len(missing))
-    new_frames, _ = fetch_hours(config, missing, month)
-    if new_frames:
-        added = sum(len(frame) for frame in new_frames)
-        # Ensure consistent datetime precision (milliseconds) for all frames
-        df = (
-            pl.concat(
+def _repair_missing_hours(
+    df: pl.DataFrame,
+    year: int,
+    month: int,
+    asset_class: str,
+    instrument: str,
+    max_retries: int,
+) -> tuple[pl.DataFrame, int, int]:
+    """Attempt to re-fetch data for missing hour slots and merge into *df*.
+
+    Returns:
+        (merged_df, rows_added, still_missing)
+    """
+    expected = set(_trading_hour_slots(year, month, asset_class))
+    if len(df) > 0:
+        covered = set(
+            df.with_columns(
                 [
-                    df.with_columns(pl.col("timestamp").cast(pl.Datetime("ms"))),
-                    *[
-                        to_datetime_df(frame).with_columns(
-                            pl.col("timestamp").cast(pl.Datetime("ms"))
-                        )
-                        for frame in new_frames
-                    ],
+                    pl.col("timestamp").dt.day().alias("_d"),
+                    pl.col("timestamp").dt.hour().alias("_h"),
                 ]
             )
+            .select(["_d", "_h"])
+            .unique()
+            .rows()
+        )
+    else:
+        covered = set()
+
+    missing_slots = sorted(expected - covered)
+    if not missing_slots:
+        return df, 0, 0
+
+    logger.info("  Repairing %d missing hour slots...", len(missing_slots))
+
+    patch_frames: list[pl.DataFrame] = []
+    still_missing = 0
+
+    for day, hour in missing_slots:
+        start = datetime(year, month, day, hour, tzinfo=ZoneInfo("UTC"))
+        # End is start of next hour (or next day if hour=23)
+        if hour < 23:
+            end = datetime(year, month, day, hour + 1, tzinfo=ZoneInfo("UTC"))
+        else:
+            try:
+                end = datetime(year, month, day + 1, 0, tzinfo=ZoneInfo("UTC"))
+            except ValueError:
+                # Last day of month overflow — use first of next month
+                if month == 12:
+                    end = datetime(year + 1, 1, 1, 0, tzinfo=ZoneInfo("UTC"))
+                else:
+                    end = datetime(year, month + 1, 1, 0, tzinfo=ZoneInfo("UTC"))
+
+        try:
+            df_patch_pd = dukascopy_python.fetch(
+                instrument,
+                INTERVAL_TICK,
+                OFFER_SIDE_BID,
+                start,
+                end,
+                max_retries=max_retries,
+                limit=30_000_000,
+                debug=False,
+            )
+            if df_patch_pd is not None and len(df_patch_pd) > 0:
+                df_patch = pl.from_pandas(df_patch_pd.reset_index())
+                df_patch = df_patch.rename(
+                    {
+                        "timestamp": "timestamp",
+                        "askPrice": "ask",
+                        "bidPrice": "bid",
+                        "askVolume": "ask_volume",
+                        "bidVolume": "bid_volume",
+                    }
+                )
+                df_patch = df_patch.select(
+                    ["timestamp", "ask", "bid", "ask_volume", "bid_volume"]
+                )
+                df_patch = df_patch.with_columns(
+                    pl.col("timestamp").cast(pl.Datetime("ms")).alias("timestamp")
+                )
+                patch_frames.append(df_patch)
+            else:
+                still_missing += 1
+        except Exception as e:
+            logger.debug(
+                "  Repair failed for %d-%02d %02d:00: %s", year, month, day, hour, e
+            )
+            still_missing += 1
+
+    if patch_frames:
+        all_frames = [df] + patch_frames
+        merged = (
+            pl.concat(all_frames, how="diagonal")
             .unique(subset=["timestamp"], keep="first")
             .sort("timestamp")
         )
-        df.write_parquet(file_path)
-        logger.info("-> Patched +%s rows", f"{added:,}")
+        rows_added = len(merged) - len(df)
+        return merged, rows_added, still_missing
 
-    covered_after = set(
-        df.with_columns(
-            [
-                pl.col("timestamp").dt.day().alias("_day"),
-                pl.col("timestamp").dt.hour().alias("_hour"),
-            ]
-        )
-        .select(["_day", "_hour"])
-        .unique()
-        .rows()
+    return df, 0, still_missing
+
+
+# ---------------------------------------------------------------------------
+# Download
+# ---------------------------------------------------------------------------
+
+
+def _pandas_to_polars(df_pandas) -> pl.DataFrame:
+    """Convert a dukascopy-python pandas DataFrame to canonical Polars schema."""
+    df = pl.from_pandas(df_pandas.reset_index())
+    df = df.rename(
+        {
+            "timestamp": "timestamp",
+            "askPrice": "ask",
+            "bidPrice": "bid",
+            "askVolume": "ask_volume",
+            "bidVolume": "bid_volume",
+        }
     )
-    still_missing = sum(
-        1
-        for _, _, day, hour in weekday_slots(config, year, month)
-        if (day, hour) not in covered_after
-    )
-    return len(df), still_missing
+    df = df.select(["timestamp", "ask", "bid", "ask_volume", "bid_volume"])
+    df = df.with_columns(pl.col("timestamp").cast(pl.Datetime("ms")).alias("timestamp"))
+    df = df.sort("timestamp")
+    return df
 
 
-def _infer_state_from_file(file_path: Path) -> tuple[int, int]:
-    """Read row count from parquet file. Returns (rows, missing_hours=0)."""
-    try:
-        df = pl.read_parquet(file_path)
-        return len(df), 0
-    except Exception:
-        return -1, 0
+def download_month(
+    year: int,
+    month: int,
+    output_dir: Path,
+    instrument: str = INSTRUMENT_FX_METALS_XAU_USD,
+    asset_class: str = "fx",
+    max_retries: int = 7,
+    force: bool = False,
+    verify: bool = True,
+) -> tuple[int, int, int]:
+    """Download tick data for a specific month with verify & repair.
 
-
-def run_download_job(
-    symbol: str,
-    asset_class: str,
-    start_year: int,
-    start_month: int,
-    concurrency: int,
-    force: bool,
-    *,
-    end_year: int | None = None,
-    end_month: int | None = None,
-    skip_current_month: bool = False,
-    paths: ProjectPaths = DEFAULT_PATHS,
-) -> bool:
-    """Download, validate, and repair monthly tick parquet files for one symbol."""
-    config = build_download_config(
-        symbol,
-        start_year,
-        start_month,
-        asset_class,
-        concurrency,
-        force,
-        end_year=end_year,
-        end_month=end_month,
-        skip_current_month=skip_current_month,
-        paths=paths,
-    )
-    config.output_dir.mkdir(parents=True, exist_ok=True)
-
-    now = datetime.now()
-    effective_end_year = config.end_year if config.end_year is not None else now.year
-    effective_end_month = (
-        config.end_month if config.end_month is not None else now.month
-    )
-
-    state = migrate_old_markers(
-        config.output_dir,
-        config.state_file,
-        load_state(config.state_file),
-    )
-
-    for year in range(config.start_year, effective_end_year + 1):
-        month_start = config.start_month if year == config.start_year else 1
-        month_end = effective_end_month if year == effective_end_year else 12
-        for month in range(month_start, month_end + 1):
-            key = f"{year}-{month:02d}"
-            file_path = config.output_dir / f"{key}.parquet"
-            is_past = not (year == now.year and month == now.month)
-            is_current_month = year == now.year and month == now.month
-            entry = state.get(key)
-
-            if config.skip_current_month and is_current_month:
-                logger.info(
-                    "Skip     %s  (current month, skip_current_month=True)", key
-                )
-                continue
-
-            if (
-                is_past
-                and entry
-                and entry["missing_hours"] == 0
-                and file_path.exists()
-                and not config.force
-            ):
-                logger.info(
-                    "Skip     %s  rows=%10s  missing=0", key, f"{entry['rows']:,}"
-                )
-                continue
-
-            if file_path.exists() and entry is None and is_past and not config.force:
-                rows, _ = _infer_state_from_file(file_path)
-                state[key] = {"rows": rows, "missing_hours": 0}
-                save_state(config.state_file, state)
-                logger.info(
-                    "Skip     %s  rows=%10s  (inferred from file, no state)",
-                    key,
-                    f"{rows:,}",
-                )
-                continue
-
-            if file_path.exists():
-                logger.info("Checking %s ...", key)
-                rows, missing = repair_month(config, year, month, file_path)
-                flag = "full" if missing == 0 else f"{missing} hrs missing"
-                logger.info("   %s  rows=%10s  %s", key, f"{rows:,}", flag)
-                if is_past:
-                    state[key] = {"rows": rows, "missing_hours": missing}
-                    save_state(config.state_file, state)
-                continue
-
-            logger.info("Download %s ...", key)
-            frames, timed_out = fetch_hours(
-                config, all_slots(config, year, month), month
-            )
-            if frames:
-                df = to_datetime_df(pl.concat(frames).sort("timestamp_ms"))
-                df.write_parquet(file_path)
-                logger.info("Saved %s rows.", f"{len(df):,}")
-            else:
-                df = None
-                logger.info("No data found.")
-
-            if is_past:
-                rows = len(df) if df is not None else 0
-                state[key] = {"rows": rows, "missing_hours": timed_out}
-                save_state(config.state_file, state)
-    return True
-
-
-def _add_download_parser(subparsers: argparse._SubParsersAction) -> None:
-    """
-    Register the "download" subcommand on the provided subparsers and configure its CLI arguments using defaults from config.toml.
-
-    If loading config.toml fails, sensible fallback defaults are used for start/end dates, concurrency, force, and skip-current-month.
-
-    Parameters:
-        subparsers (argparse._SubParsersAction): Subparsers collection returned by ArgumentParser.add_subparsers() to which the "download" command will be added.
-    """
-    from thesis.config import load_config
-
-    # Load config to get defaults
-    try:
-        cfg = load_config("config.toml")
-        data_cfg = cfg.data
-
-        # Parse start_date for year/month defaults
-        start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
-        default_start_year = start_dt.year
-        default_start_month = start_dt.month
-
-        # Parse end_date for year/month defaults (optional)
-        end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
-        default_end_year = end_dt.year
-        default_end_month = end_dt.month
-
-        # Get download-specific defaults
-        default_symbol = data_cfg.symbol
-        default_asset_class = data_cfg.asset_class
-        default_concurrency = data_cfg.download_concurrency
-        default_force = data_cfg.download_force
-        default_skip_current = data_cfg.download_skip_current_month
-    except Exception:
-        # Fallback defaults if config loading fails
-        default_symbol = None
-        default_asset_class = "fx"
-        default_start_year = 2018
-        default_start_month = 1
-        default_end_year = None  # Current year
-        default_end_month = None  # Current month
-        default_concurrency = 8
-        default_force = False
-        default_skip_current = False
-
-    download = subparsers.add_parser(
-        "download",
-        help="Download raw tick data from Dukascopy",
-        description="Download historical tick data for a symbol.",
-    )
-    download.add_argument(
-        "--symbol",
-        required=True,
-        help="Instrument symbol to download (e.g. XAUUSD, EURUSD)",
-    )
-    download.add_argument(
-        "--asset-class",
-        choices=["fx", "crypto", "index"],
-        default=default_asset_class,
-        help=f"Asset class (default: {default_asset_class})",
-    )
-    download.add_argument(
-        "--start-year",
-        type=int,
-        default=default_start_year,
-        help=f"Start year (default: {default_start_year})",
-    )
-    download.add_argument(
-        "--start-month",
-        type=int,
-        default=default_start_month,
-        help=f"Start month 1-12 (default: {default_start_month})",
-    )
-    download.add_argument(
-        "--end-year",
-        type=int,
-        default=default_end_year,
-        help="End year (default: current year)"
-        if default_end_year is None
-        else f"End year (default: {default_end_year})",
-    )
-    download.add_argument(
-        "--end-month",
-        type=int,
-        default=default_end_month,
-        help="End month (default: current month)"
-        if default_end_month is None
-        else f"End month (default: {default_end_month})",
-    )
-    download.add_argument(
-        "--concurrency",
-        type=int,
-        default=default_concurrency,
-        help=f"Parallel downloads (default: {default_concurrency})",
-    )
-    download.add_argument(
-        "--force",
-        action=argparse.BooleanOptionalAction,
-        default=default_force,
-        help=f"Force re-verify existing months (default: {default_force})",
-    )
-    download.add_argument(
-        "--skip-current-month",
-        action=argparse.BooleanOptionalAction,
-        default=default_skip_current,
-        help=f"Skip checking/repairing current month (default: {default_skip_current})",
-    )
-
-
-def _get_download_defaults_from_config():
-    """
-    Load download-related defaults from config.toml.
-
-    Returns a mapping of download defaults extracted from the file with the following keys:
-    - "symbol": canonical symbol string.
-    - "asset_class": asset class (e.g., "fx", "crypto", "index").
-    - "start_year": start year as an integer.
-    - "start_month": start month as an integer (1-12).
-    - "end_year": end year as an integer.
-    - "end_month": end month as an integer (1-12).
-    - "concurrency": download concurrency as an integer.
-    - "force": boolean indicating whether to force re-downloads.
-    - "skip_current_month": boolean indicating whether to skip the current month.
+    Args:
+        year: Year to download.
+        month: Month to download (1-12).
+        output_dir: Directory to save parquet file.
+        instrument: Dukascopy instrument identifier.
+        asset_class: Asset class for trading-hour assumptions ("fx", "crypto").
+        max_retries: Maximum retry attempts for failed downloads.
+        force: If True, re-download even if file exists.
+        verify: If True, check hour coverage and repair gaps.
 
     Returns:
-        dict[str, object]: The defaults mapping, or `None` if the configuration could not be loaded or parsed.
+        Tuple of (rows, missing_hours, confirmed_absent).
     """
-    from thesis.config import load_config
-    from datetime import datetime
+    key = f"{year}-{month:02d}"
+    file_path = output_dir / f"{key}.parquet"
+    state_path = output_dir / STATE_FILE
 
+    # --- Skip if already complete (unless force) ---
+    if file_path.exists() and not force:
+        try:
+            df = pl.read_parquet(file_path)
+            rows = len(df)
+            if rows > 0:
+                # Check state for known completeness
+                state = load_state(state_path)
+                entry = state.get(key)
+                if entry and entry.get("missing_hours", -1) == 0:
+                    logger.info("Skip     %s  rows=%10s  missing=0", key, f"{rows:,}")
+                    return rows, 0, 0
+                # File exists but state says incomplete or no state — verify
+                if verify:
+                    missing, confirmed = _check_hour_coverage(
+                        df, year, month, asset_class
+                    )
+                    if missing == 0:
+                        logger.info(
+                            "Skip     %s  rows=%10s  verified complete",
+                            key,
+                            f"{rows:,}",
+                        )
+                        state[key] = {
+                            "rows": rows,
+                            "missing_hours": 0,
+                            "confirmed_absent": 0,
+                        }
+                        save_state(state_path, state)
+                        return rows, 0, 0
+                    logger.info(
+                        "Check    %s  rows=%10s  %d hours missing",
+                        key,
+                        f"{rows:,}",
+                        missing,
+                    )
+                    # Fall through to repair
+                else:
+                    logger.info("Skip     %s  rows=%10s", key, f"{rows:,}")
+                    return rows, 0, 0
+        except Exception:
+            logger.warning("Existing file %s is corrupted, re-downloading", file_path)
+
+    # --- Calculate date range for the month ---
+    start_dt = datetime(year, month, 1, tzinfo=ZoneInfo("UTC"))
+    if month == 12:
+        end_dt = datetime(year + 1, 1, 1, tzinfo=ZoneInfo("UTC"))
+    else:
+        end_dt = datetime(year, month + 1, 1, tzinfo=ZoneInfo("UTC"))
+
+    # Don't download future dates
+    now = datetime.now(timezone.utc)
+    if start_dt > now:
+        logger.info("Skip     %s  (future date)", key)
+        return 0, 0, 0
+    if end_dt > now:
+        end_dt = now
+
+    # --- Download ---
+    logger.info("Download %s  (%s → %s)...", key, start_dt.date(), end_dt.date())
+
+    df: pl.DataFrame | None = None
+
+    # If file exists (repair path), load existing data first
+    if file_path.exists():
+        try:
+            df = pl.read_parquet(file_path)
+        except Exception:
+            df = None
+
+    if df is None:
+        try:
+            df_pandas = dukascopy_python.fetch(
+                instrument,
+                INTERVAL_TICK,
+                OFFER_SIDE_BID,
+                start_dt,
+                end_dt,
+                max_retries=max_retries,
+                limit=30_000_000,
+                debug=False,
+            )
+
+            if df_pandas is None or len(df_pandas) == 0:
+                logger.warning("No data returned for %s", key)
+                return 0, 0, 0
+
+            df = _pandas_to_polars(df_pandas)
+        except Exception as e:
+            logger.error("Failed to download %s: %s", key, e)
+            return 0, 0, 0
+
+    # --- Verify & repair ---
+    missing_hours = 0
+    confirmed_absent = 0
+
+    if verify and df is not None and len(df) > 0:
+        missing, confirmed = _check_hour_coverage(df, year, month, asset_class)
+        if missing > 0:
+            df, rows_added, still_missing = _repair_missing_hours(
+                df, year, month, asset_class, instrument, max_retries
+            )
+            if rows_added > 0:
+                logger.info("  Repaired +%s rows for %s", f"{rows_added:,}", key)
+            missing_hours = still_missing
+            confirmed_absent = still_missing
+        else:
+            missing_hours = 0
+            confirmed_absent = 0
+
+    # --- Save ---
+    if df is not None and len(df) > 0:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(file_path)
+        rows = len(df)
+    else:
+        rows = 0
+
+    flag = "complete" if missing_hours == 0 else f"{missing_hours} hrs missing"
+    logger.info("   %s  rows=%10s  %s", key, f"{rows:,}", flag)
+
+    # --- Update state ---
+    state = load_state(state_path)
+    is_past = end_dt < now
+    if is_past:
+        state[key] = {
+            "rows": rows,
+            "missing_hours": missing_hours,
+            "confirmed_absent": confirmed_absent,
+        }
+        save_state(state_path, state)
+
+    return rows, missing_hours, confirmed_absent
+
+
+def _resolve_instrument(symbol: str) -> str:
+    """Resolve a canonical symbol to a dukascopy-python instrument constant.
+
+    Falls back to the raw symbol string if no matching constant is found.
+    """
+    from dukascopy_python import instruments as instr_module
+
+    # Build lookup: e.g. INSTRUMENT_FX_METALS_XAU_USD -> "XAUUSD"
+    for attr_name in dir(instr_module):
+        if not attr_name.startswith("INSTRUMENT"):
+            continue
+        value = getattr(instr_module, attr_name)
+        if (
+            isinstance(value, str)
+            and value.replace("/", "").upper() == symbol.replace("/", "").upper()
+        ):
+            return value
+    # Fallback: try common FX metals naming convention
+    if symbol.upper().startswith("XAU"):
+        return INSTRUMENT_FX_METALS_XAU_USD
+    # Return as-is — dukascopy-python may still accept it
+    return symbol
+
+
+def run_download(
+    start_year: int | None = None,
+    start_month: int | None = None,
+    end_year: int | None = None,
+    end_month: int | None = None,
+    output_dir: Path | None = None,
+    instrument: str | None = None,
+    asset_class: str | None = None,
+    workers: int = 4,
+    max_retries: int | None = None,
+    force: bool | None = None,
+    verify: bool = True,
+    skip_current_month: bool | None = None,
+) -> bool:
+    """Run the download job for specified date range.
+
+    Any parameter left as ``None`` is resolved from ``config.toml``.
+    Falls back to sensible defaults if the config file is unavailable.
+
+    Args:
+        start_year: Start year.
+        start_month: Start month (1-12).
+        end_year: End year.
+        end_month: End month (1-12).
+        output_dir: Directory for parquet files.
+        instrument: Dukascopy instrument identifier.
+        asset_class: Asset class ("fx", "crypto", "index").
+        workers: Number of parallel workers.
+        max_retries: Retry attempts per month.
+        force: Force re-download existing files.
+        verify: Check hour coverage and repair gaps.
+        skip_current_month: Skip the current (incomplete) month.
+
+    Returns:
+        True if all months downloaded without errors, False otherwise.
+    """
+    # --- Resolve defaults from config.toml ---
+    cfg = None
     try:
         cfg = load_config("config.toml")
-        data_cfg = cfg.data
+    except FileNotFoundError:
+        logger.warning("config.toml not found, using built-in defaults")
 
+    if cfg is not None:
+        data_cfg = cfg.data
         start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
-
-        return {
-            "symbol": data_cfg.symbol,
-            "asset_class": data_cfg.asset_class,
+        _defaults = {
             "start_year": start_dt.year,
             "start_month": start_dt.month,
             "end_year": end_dt.year,
             "end_month": end_dt.month,
-            "concurrency": data_cfg.download_concurrency,
+            "output_dir": Path(cfg.paths.data_raw),
+            "instrument": _resolve_instrument(
+                data_cfg.symbol_download or data_cfg.symbol
+            ),
+            "asset_class": data_cfg.asset_class,
+            "max_retries": data_cfg.download_max_retries,
             "force": data_cfg.download_force,
             "skip_current_month": data_cfg.download_skip_current_month,
         }
-    except Exception as e:
-        logging.getLogger(__name__).warning(f"Failed to load config defaults: {e}")
-        return None
+    else:
+        _defaults = {
+            "start_year": 2013,
+            "start_month": 1,
+            "end_year": datetime.now(timezone.utc).year,
+            "end_month": datetime.now(timezone.utc).month,
+            "output_dir": Path("data/raw/XAUUSD"),
+            "instrument": INSTRUMENT_FX_METALS_XAU_USD,
+            "asset_class": "fx",
+            "max_retries": 7,
+            "force": False,
+            "skip_current_month": True,
+        }
+
+    start_year = start_year if start_year is not None else _defaults["start_year"]
+    start_month = start_month if start_month is not None else _defaults["start_month"]
+    end_year = end_year if end_year is not None else _defaults["end_year"]
+    end_month = end_month if end_month is not None else _defaults["end_month"]
+    output_dir = output_dir if output_dir is not None else _defaults["output_dir"]
+    instrument = instrument if instrument is not None else _defaults["instrument"]
+    asset_class = asset_class if asset_class is not None else _defaults["asset_class"]
+    max_retries = max_retries if max_retries is not None else _defaults["max_retries"]
+    force = force if force is not None else _defaults["force"]
+    skip_current_month = (
+        skip_current_month
+        if skip_current_month is not None
+        else _defaults["skip_current_month"]
+    )
+
+    # Derive output subdirectory from instrument if user didn't specify --output-dir
+    if output_dir == _defaults["output_dir"]:
+        symbol_dir = instrument.replace("/", "").upper()
+        output_dir = Path("data/raw") / symbol_dir
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build list of months to download
+    months_to_download: list[tuple[int, int]] = []
+    now = datetime.now(timezone.utc)
+    year, month = start_year, start_month
+    while (year < end_year) or (year == end_year and month <= end_month):
+        if skip_current_month and year == now.year and month == now.month:
+            logger.info("Skip     %d-%02d  (current month)", year, month)
+        else:
+            months_to_download.append((year, month))
+        month += 1
+        if month > 12:
+            month = 1
+            year += 1
+
+    total_rows = 0
+    total_missing = 0
+    total_errors = 0
+
+    logger.info(
+        "Starting download of %d months to %s  [instrument=%s, asset_class=%s, workers=%d]",
+        len(months_to_download),
+        output_dir,
+        instrument,
+        asset_class,
+        workers,
+    )
+
+    if workers == 1:
+        # Sequential download
+        for year, month in months_to_download:
+            rows, missing, confirmed = download_month(
+                year,
+                month,
+                output_dir,
+                instrument,
+                asset_class,
+                max_retries,
+                force,
+                verify,
+            )
+            total_rows += rows
+            total_missing += missing
+            if rows == 0 and missing > 0:
+                total_errors += 1
+    else:
+        # Parallel download with process pool
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    download_month,
+                    year,
+                    month,
+                    output_dir,
+                    instrument,
+                    asset_class,
+                    max_retries,
+                    force,
+                    verify,
+                ): (year, month)
+                for year, month in months_to_download
+            }
+
+            for future in as_completed(futures):
+                year, month = futures[future]
+                try:
+                    rows, missing, confirmed = future.result()
+                    total_rows += rows
+                    total_missing += missing
+                    if rows == 0 and missing > 0:
+                        total_errors += 1
+                except Exception as e:
+                    logger.error("Exception for %d-%02d: %s", year, month, e)
+                    total_errors += 1
+
+    logger.info(
+        "Download complete: %s total rows, %d missing hours, %d errors",
+        f"{total_rows:,}",
+        total_missing,
+        total_errors,
+    )
+
+    return total_errors == 0
 
 
-_SYMBOL_HELP = """\
-supported symbols (verified against Dukascopy data feed):
-
-  FX majors & minors:
-    EURUSD  GBPUSD  USDJPY  USDCHF  AUDUSD  NZDUSD  USDCAD
-
-  FX crosses:
-    EURGBP  EURJPY  EURCHF  EURAUD  EURNZD  EURCAD
-    GBPJPY  GBPCHF  GBPAUD  GBPNZD  GBPCAD
-    AUDJPY  AUDCHF  AUDNZD  AUDCAD
-    NZDJPY  NZDCHF  NZDCAD  CADJPY  CADCHF  CHFJPY
-
-  FX Scandi & exotic:
-    USDSEK  USDNOK  USDDKK  USDPLN  USDCZK  USDHUF
-    EURSEK  EURNOK  EURPLN
-    USDTRY  USDMXN  USDZAR  USDSGD  USDHKD  USDCNH
-    EURTRY
-
-  Metals (--asset-class fx):
-    XAUUSD  XAGUSD  XAUEUR  XAGEUR
-
-  Indices (--asset-class index):
-    DOLLARIDXUSD  DEUIDXEUR  ESPIDXEUR
-
-  Crypto (--asset-class crypto):
-    BTCUSD  ETHUSD  XRPUSD  LTCUSD  ADAUSD  BTCEUR  ETHEUR
-
-Pass any of these to --symbol.  The list is not exhaustive — other
-Dukascopy instruments may work if you know the exact feed name.
-"""
-
-
-def main():
-    """
-    CLI entry point that parses command-line arguments and runs the data download job.
-
-    Parses download-related CLI options, configures logging, invokes `run_download_job` with the parsed values, and returns an appropriate process exit code.
-
-    Returns:
-        int: `0` on success, `1` on failure.
-    """
-    import argparse
-
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point."""
     parser = argparse.ArgumentParser(
-        prog="data_download.py",
-        description="Download historical tick data from Dukascopy.",
-        epilog=_SYMBOL_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Download tick data from Dukascopy via dukascopy-python",
     )
 
-    # Load defaults from config.toml (all args optional when config exists)
-    defaults = _get_download_defaults_from_config()
+    # Load config for defaults
+    cfg = None
+    try:
+        cfg = load_config("config.toml")
+    except FileNotFoundError:
+        pass
 
-    parser.add_argument(
-        "--symbol",
-        default=defaults["symbol"] if defaults else None,
-        help="Instrument symbol to download (see list below)",
-    )
-    parser.add_argument(
-        "--asset-class",
-        choices=["fx", "crypto", "index"],
-        default=defaults.get("asset_class", "fx") if defaults else "fx",
-        help="Asset class — controls trading-hour assumptions",
-    )
+    if cfg is not None:
+        data_cfg = cfg.data
+        _start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
+        _end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
+        _def_start_year = _start_dt.year
+        _def_start_month = _start_dt.month
+        _def_end_year = _end_dt.year
+        _def_end_month = _end_dt.month
+        _def_output = str(cfg.paths.data_raw)
+        _def_instrument = _resolve_instrument(
+            data_cfg.symbol_download or data_cfg.symbol
+        )
+        _def_asset_class = data_cfg.asset_class
+        _def_max_retries = data_cfg.download_max_retries
+        _def_force = data_cfg.download_force
+        _def_skip_current = data_cfg.download_skip_current_month
+    else:
+        _def_start_year = 2013
+        _def_start_month = 1
+        _def_end_year = datetime.now(timezone.utc).year
+        _def_end_month = datetime.now(timezone.utc).month
+        _def_output = "data/raw/XAUUSD"
+        _def_instrument = INSTRUMENT_FX_METALS_XAU_USD
+        _def_asset_class = "fx"
+        _def_max_retries = 7
+        _def_force = False
+        _def_skip_current = True
+
     parser.add_argument(
         "--start-year",
         type=int,
-        default=defaults.get("start_year") if defaults else None,
-        help="Start year",
+        default=_def_start_year,
+        help=f"Start year (default: {_def_start_year})",
     )
     parser.add_argument(
         "--start-month",
         type=int,
-        default=defaults.get("start_month") if defaults else None,
-        help="Start month 1-12",
+        default=_def_start_month,
+        help=f"Start month 1-12 (default: {_def_start_month})",
     )
     parser.add_argument(
         "--end-year",
         type=int,
-        default=defaults.get("end_year") if defaults else None,
-        help="End year (default: from config.toml or current year)",
+        default=_def_end_year,
+        help=f"End year (default: {_def_end_year})",
     )
     parser.add_argument(
         "--end-month",
         type=int,
-        default=defaults.get("end_month") if defaults else None,
-        help="End month (default: from config.toml or current month)",
+        default=_def_end_month,
+        help=f"End month 1-12 (default: {_def_end_month})",
     )
     parser.add_argument(
-        "--concurrency",
+        "--output-dir",
+        type=Path,
+        default=None,
+        help=f"Output directory (default: {_def_output})",
+    )
+    parser.add_argument(
+        "--instrument",
+        default=None,
+        help=f"Dukascopy instrument (default: {_def_instrument})",
+    )
+    parser.add_argument(
+        "--asset-class",
+        choices=["fx", "crypto", "index"],
+        default=None,
+        help=f"Asset class (default: {_def_asset_class})",
+    )
+    parser.add_argument(
+        "--workers",
         type=int,
-        default=defaults.get("concurrency", 8) if defaults else 8,
-        help="Parallel downloads",
+        default=4,
+        help="Number of parallel workers (default: 4)",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=None,
+        help=f"Max retries per request (default: {_def_max_retries})",
     )
     parser.add_argument(
         "--force",
         action=argparse.BooleanOptionalAction,
-        default=defaults.get("force", False) if defaults else False,
-        help="Force re-verify existing months",
+        default=None,
+        help=f"Force re-download (default: {_def_force})",
+    )
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="Skip hour-coverage verification and repair",
     )
     parser.add_argument(
         "--skip-current-month",
         action=argparse.BooleanOptionalAction,
-        default=defaults.get("skip_current_month", False) if defaults else False,
-        help="Skip checking/repairing current month",
+        default=None,
+        help=f"Skip current month (default: {_def_skip_current})",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    # Validate required args when no config defaults
-    if not args.symbol:
-        parser.error("--symbol is required when config.toml is unavailable")
-    if not args.start_year:
-        parser.error("--start-year is required when config.toml is unavailable")
-    if not args.start_month:
-        parser.error("--start-month is required when config.toml is unavailable")
-
-    # Configure logging
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
     )
 
-    # Run download
-    success = run_download_job(
-        symbol=args.symbol,
-        asset_class=args.asset_class,
+    success = run_download(
         start_year=args.start_year,
         start_month=args.start_month,
-        concurrency=args.concurrency,
-        force=args.force,
         end_year=args.end_year,
         end_month=args.end_month,
+        output_dir=args.output_dir,
+        instrument=args.instrument,
+        asset_class=args.asset_class,
+        workers=args.workers,
+        max_retries=args.max_retries,
+        force=args.force,
+        verify=not args.no_verify,
         skip_current_month=args.skip_current_month,
     )
 

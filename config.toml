@@ -15,6 +15,7 @@ contract_size = 100
 symbol_download = "XAUUSD"
 asset_class = "fx"
 download_concurrency = 20
+download_max_retries = 7
 download_force = false           # Force re-download even if file exists
 download_skip_current_month = true  # Skip current month (incomplete data)
 
