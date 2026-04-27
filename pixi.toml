@@ -63,3 +63,4 @@ numba = ">=0.65.0,<0.66"
 backtesting = ">=0.6.5, <0.7"
 streamlit-echarts = { version = ">=0.6.0, <0.7", extras = ["pyecharts"] }
 dukascopy-python = ">=4.0.1, <5"
+vulture = ">=2.16, <3"
