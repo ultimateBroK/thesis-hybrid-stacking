@@ -287,4 +287,3 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     Path("models").mkdir(parents=True, exist_ok=True)
 
     return cfg
-

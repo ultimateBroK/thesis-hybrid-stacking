@@ -49,17 +49,17 @@ correlation_threshold = 0.75
 # LABELS — Triple Barrier
 # =============================================================================
 [labels]
-atr_multiplier = 1.5
-horizon_bars = 24
+atr_multiplier = 2.5
+horizon_bars = 12
 num_classes = 3
-min_atr = 0.5
+min_atr = 5.0
 
 # =============================================================================
 # MODEL — LightGBM (receives GRU hidden states + static features)
 # =============================================================================
 [model]
 use_optuna = true
-optuna_trials = 100
+optuna_trials = 50
 optuna_timeout = 3600
 num_leaves = 48
 max_depth = 4
@@ -84,22 +84,22 @@ slippage_ticks = 5                  # slippage in ticks
 commission_per_lot = 10.0           # Round-trip commission per lot
 atr_stop_multiplier = 1.0          # ATR multiplier for stop-loss distance
 lots_per_trade = 0.2                # fixed lot size per trade
-confidence_threshold = 0.55         # Min predicted probability to trade (0 = disabled)
+confidence_threshold = 0.40         # Min predicted probability to trade (0 = disabled)
 
 # =============================================================================
 # GRU — Feature Extractor
 # =============================================================================
 [gru]
-input_size = 4        # must match len(feature_cols)
-feature_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
-hidden_size = 32
+input_size = 10       # must match len(feature_cols)
+feature_cols = ["log_returns", "rsi_14", "atr_14", "atr_ratio", "macd_hist", "atr_percentile", "sess_asia", "sess_london", "sess_ny_pm", "sess_overlap"]
+hidden_size = 64
 num_layers = 2
 sequence_length = 48
-dropout = 0.4
+dropout = 0.1
 learning_rate = 0.001
 batch_size = 64
-epochs = 30
-patience = 10
+epochs = 50
+patience = 15
 
 # =============================================================================
 # WORKFLOW

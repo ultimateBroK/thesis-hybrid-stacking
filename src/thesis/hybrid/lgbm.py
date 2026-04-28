@@ -260,10 +260,14 @@ def _compute_sharpe_from_predictions(
     mean_ret = np.mean(returns)
     std_ret = np.std(returns, ddof=1)
 
-    if std_ret == 0:
-        return 0.0
+    if std_ret < 1e-10 or abs(mean_ret) < 1e-10:
+        return 0.0  # No variance or no signal = no real Sharpe
 
     sharpe = mean_ret / std_ret
+
+    # Clamp to prevent overflow in Optuna
+    sharpe = float(np.clip(sharpe, -10.0, 10.0))
+
     n_trades = len(returns)
 
     # Annualize only when actual trade count is known (e.g., final backtest).

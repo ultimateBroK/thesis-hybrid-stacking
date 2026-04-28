@@ -9,6 +9,7 @@ import numpy as np
 import polars as pl
 import torch
 import torch.nn as nn
+from sklearn.utils.class_weight import compute_class_weight
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -101,6 +102,10 @@ def _train_epoch(
         loss = criterion(logits, batch_y)
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            list(model.parameters()) + list(classifier.parameters()),
+            max_norm=1.0,
+        )
         optimizer.step()
 
         train_loss += loss.item() * len(batch_x)
@@ -234,12 +239,24 @@ def train_gru(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, classifier = _build_model_and_classifier(config, device)
 
-    # Optimizer
+    # Optimizer + LR scheduler
     optimizer = torch.optim.Adam(
         list(model.parameters()) + list(classifier.parameters()),
         lr=gru_cfg.learning_rate,
     )
-    criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=5
+    )
+
+    # Class-weighted loss to handle label imbalance (Hold ~3.5% of samples)
+    unique_classes = np.unique(train_labels)
+    class_weights_arr = compute_class_weight(
+        "balanced", classes=unique_classes, y=train_labels
+    )
+    class_weights_tensor = torch.tensor(class_weights_arr, dtype=torch.float32).to(
+        device
+    )
+    criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
 
     # Training loop with early stopping
     best_val_loss = float("inf")
@@ -282,6 +299,7 @@ def train_gru(
             val_loss, val_acc = _validate_epoch(
                 model, classifier, val_loader, criterion, device
             )
+            scheduler.step(val_loss)
 
             history.append(
                 {

@@ -99,7 +99,11 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         if value < 0.5:
             return ("dangerous", "Poor", "<0.5 — excessive downside risk")
         if value < 1.5:
-            return ("moderate", "Acceptable", "0.5-1.5 — acceptable downside-adjusted returns")
+            return (
+                "moderate",
+                "Acceptable",
+                "0.5-1.5 — acceptable downside-adjusted returns",
+            )
         if value < 2.5:
             return ("good", "Good", "1.5-2.5 — solid downside-adjusted returns")
         if value < 4.0:
@@ -249,7 +253,11 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     # ========== Avg Win / Avg Loss ==========
     if metric_name == "avg_win":
         if value < 50:
-            return ("poor", "Low", "<1% of initial capital — small wins, may not cover costs")
+            return (
+                "poor",
+                "Low",
+                "<1% of initial capital — small wins, may not cover costs",
+            )
         if value < 200:
             return ("moderate", "Moderate", "1-4% of initial capital — decent win size")
         if value < 500:
@@ -259,11 +267,19 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     if metric_name == "avg_loss":
         value = abs(value)
         if value < 50:
-            return ("excellent", "Low", "<1% of initial capital — excellent risk control")
+            return (
+                "excellent",
+                "Low",
+                "<1% of initial capital — excellent risk control",
+            )
         if value < 200:
             return ("good", "Moderate", "1-4% of initial capital — reasonable losses")
         if value < 500:
-            return ("moderate", "High", "4-10% of initial capital — large average losses")
+            return (
+                "moderate",
+                "High",
+                "4-10% of initial capital — large average losses",
+            )
         return ("poor", "Severe", ">10% of initial capital — concerning loss size")
 
     # ========== Equity Final ==========

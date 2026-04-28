@@ -29,9 +29,9 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "tp_price",
         "sl_price",
         "touched_bar",
-        "open_right",   # Label-derived — pure look-ahead
-        "high_right",   # Label-derived — pure look-ahead
-        "low_right",    # Label-derived — pure look-ahead
+        "open_right",  # Label-derived — pure look-ahead
+        "high_right",  # Label-derived — pure look-ahead
+        "low_right",  # Label-derived — pure look-ahead
         "close_right",  # Label-derived — pure look-ahead
         "open",
         "high",

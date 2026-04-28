@@ -40,6 +40,7 @@ class GRUExtractor(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
+        self.input_norm = nn.LayerNorm(input_size)
         self.gru = nn.GRU(
             input_size=input_size,
             hidden_size=hidden_size,
@@ -58,6 +59,7 @@ class GRUExtractor(nn.Module):
             Final hidden state from the last GRU layer with shape
             ``(batch, hidden_size)``.
         """
+        x = self.input_norm(x)
         _, hidden = self.gru(x)
         # hidden shape: (num_layers, batch, hidden_size)
         # Take last layer's hidden state
