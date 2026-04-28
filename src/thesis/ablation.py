@@ -24,8 +24,9 @@ import pandas as pd
 import polars as pl
 
 from thesis.config import Config
+from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS
 from thesis.gru import extract_hidden_states, prepare_sequences, train_gru
-from thesis.hybrid.lgbm import _EXCLUDE_COLS, _compute_class_weights, _wrap_np
+from thesis.hybrid.lgbm import _compute_class_weights, _wrap_np
 
 logger = logging.getLogger("thesis.ablation")
 
@@ -506,7 +507,7 @@ def run_ablation(config: Config) -> None:
         config, train_df, val_df
     )
 
-    gru_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
+    gru_cols = config.gru.feature_cols
     test_seq, _, _ = prepare_sequences(test_df, gru_cols, config.gru.sequence_length)
     test_hidden = extract_hidden_states(gru_model, test_seq, config.gru.batch_size)
 

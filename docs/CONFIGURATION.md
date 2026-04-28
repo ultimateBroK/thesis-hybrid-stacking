@@ -489,3 +489,9 @@ These settings are carefully chosen and rarely need adjustment:
 - `input_size` — Must match the number of GRU input features (4).
 - `correlation_threshold` — Values above 0.95 let too many redundant features through.
 - `lots_per_trade` — Changing this affects margin requirements; ensure leverage supports the lot size.
+
+---
+
+## Repository hygiene (coverage)
+
+`pixi run test` writes **`.coverage`** and **`coverage.xml`** via pytest-cov. These files are listed in `.gitignore` so they do not clutter `git status`. CI regenerates coverage in the job workspace; do not commit them.

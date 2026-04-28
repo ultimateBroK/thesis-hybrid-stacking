@@ -12,6 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from thesis.config import Config
+from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS
 from thesis.gru import (
     extract_hidden_states,
     prepare_sequences,
@@ -20,7 +21,6 @@ from thesis.gru import (
 )
 from thesis.hybrid.interpret import _compute_shap, _save_feature_importance
 from thesis.hybrid.lgbm import (
-    _EXCLUDE_COLS,
     _compute_class_weights,
     _train_fixed,
     _train_optuna,
@@ -199,12 +199,13 @@ def train_model(config: Config) -> None:
         config, train_df, val_df
     )
 
-    # Save GRU model
-    gru_path = Path(config.paths.model).parent / "gru_model.pt"
+    # Save GRU model (single source of truth: paths.gru_model)
+    gru_path = Path(config.paths.gru_model)
+    gru_path.parent.mkdir(parents=True, exist_ok=True)
     save_gru_model(gru_model, config, gru_path)
 
     # Extract hidden states for test set
-    gru_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
+    gru_cols = config.gru.feature_cols
     test_seq, _, _ = prepare_sequences(test_df, gru_cols, config.gru.sequence_length)
     test_hidden = extract_hidden_states(gru_model, test_seq, config.gru.batch_size)
 

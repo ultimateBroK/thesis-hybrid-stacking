@@ -237,6 +237,12 @@ thesis/
 └── docs/                    # Documentation (you are here)
 ```
 
+### Core vs optional modules
+
+The batch thesis path is **stages 0–6** in `pipeline.py` using `agg`, `features`, `labeling`, `splitting`, `gru`, `hybrid`, `backtest`, `report`, and `plots`. Session-scoped paths are applied via `thesis.session_paths`.
+
+Optional surfaces (not required to reproduce the main numerical pipeline): `ablation.py`, `hybrid/interpret.py` (SHAP depth), `charts/` (interactive), `dashboard/` (Streamlit), and `scripts/data_download.py`. See [CORE_VS_OPTIONAL.md](CORE_VS_OPTIONAL.md).
+
 ---
 
 ## Data Flow

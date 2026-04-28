@@ -12,7 +12,7 @@ from pathlib import Path
 import streamlit as st
 
 from thesis.charts import load_session_data
-from thesis.config import load_config
+from thesis.session_paths import load_config_for_session
 
 logger = logging.getLogger("thesis.app_streamlit")
 
@@ -89,12 +89,7 @@ def _load_config(session_dir: str) -> dict:
     Returns:
         Mapping with keys ``config`` (Config object) and ``data`` (session data).
     """
-    config = load_config()
-    config.paths.session_dir = session_dir
-    snapshot = Path(session_dir) / "config" / "config_snapshot.toml"
-    if snapshot.exists():
-        config = load_config(snapshot)
-        config.paths.session_dir = session_dir
+    config = load_config_for_session(session_dir)
     data = load_session_data(config)
     return {"config": config, "data": data}
 

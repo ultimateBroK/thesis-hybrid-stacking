@@ -120,7 +120,7 @@ class BacktestConfig:
 class GRUConfig:
     """GRU feature extractor parameters."""
 
-    input_size: int = 4  # log_returns + rsi_14 + atr_14 + macd_hist
+    input_size: int = 4  # must match len(feature_cols)
     hidden_size: int = 32
     num_layers: int = 2
     sequence_length: int = 48
@@ -129,6 +129,9 @@ class GRUConfig:
     batch_size: int = 64
     epochs: int = 30
     patience: int = 10
+    feature_cols: list[str] = field(
+        default_factory=lambda: ["log_returns", "rsi_14", "atr_14", "macd_hist"]
+    )
 
 
 @dataclass
@@ -285,6 +288,3 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
 
     return cfg
 
-
-# Backward-compat alias
-ModelConfig = LGBMConfig

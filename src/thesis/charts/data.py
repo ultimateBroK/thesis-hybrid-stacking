@@ -9,47 +9,16 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
+from thesis.constants import CHART_COLORS, EXCLUDED_FEATURE_COLS
+
 if TYPE_CHECKING:
     from thesis.config import Config
 
 logger = logging.getLogger("thesis.charts")
 
-# --- Constants ----------------------------------------------------------------
+# --- Constants (single source: thesis.constants) ----------------------------
 
-COLORS: dict[str, str] = {
-    "primary": "#2563EB",
-    "secondary": "#7C3AED",
-    "success": "#059669",
-    "danger": "#DC2626",
-    "warning": "#D97706",
-    "gray": "#6B7280",
-    "long": "#059669",
-    "short": "#DC2626",
-    "flat": "#6B7280",
-}
-
-EXCLUDED_FEATURE_COLS: frozenset[str] = frozenset(
-    {
-        "timestamp",
-        "label",
-        "tp_price",
-        "sl_price",
-        "touched_bar",
-        "open_right",
-        "high_right",
-        "low_right",
-        "close_right",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "avg_spread",
-        "tick_count",
-        "dead_hour",
-        "log_returns",
-    }
-)
+COLORS: dict[str, str] = CHART_COLORS
 
 
 def _get_feature_cols(df: pl.DataFrame) -> list[str]:

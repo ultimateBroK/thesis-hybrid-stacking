@@ -5,29 +5,11 @@ import logging
 import numpy as np
 import polars as pl
 
+from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS
+
 logger = logging.getLogger("thesis.data")
 
-_EXCLUDE_COLS = frozenset(
-    [
-        "timestamp",
-        "label",
-        "tp_price",
-        "sl_price",
-        "touched_bar",
-        "open_right",
-        "high_right",
-        "low_right",
-        "close_right",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "avg_spread",
-        "tick_count",
-        "dead_hour",
-    ]
-)
+# Column sets — imported from thesis.constants (single source of truth)
 
 
 def _drop_correlated(

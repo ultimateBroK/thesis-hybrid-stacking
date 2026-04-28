@@ -7,21 +7,10 @@ import numpy as np
 import polars as pl
 
 from thesis.config import Config
+from thesis.constants import CHART_COLORS as _COLORS
+from thesis.constants import EXCLUDE_COLS
 
 logger = logging.getLogger("thesis.visualize")
-
-# Professional color palette
-_COLORS = {
-    "primary": "#2563EB",
-    "secondary": "#7C3AED",
-    "success": "#059669",
-    "danger": "#DC2626",
-    "warning": "#D97706",
-    "gray": "#6B7280",
-    "long": "#059669",
-    "short": "#DC2626",
-    "flat": "#6B7280",
-}
 
 
 def _output_dir(config: Config, subdir: str) -> Path:
@@ -161,30 +150,6 @@ def _plot_candlestick(df: pl.DataFrame, config: Config, out: Path) -> None:
     logger.info("Chart: candlestick.png")
 
 
-_EXCLUDED_FEATURE_COLS = frozenset(
-    {
-        "timestamp",
-        "label",
-        "tp_price",
-        "sl_price",
-        "touched_bar",
-        "open_right",
-        "high_right",
-        "low_right",
-        "close_right",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "avg_spread",
-        "tick_count",
-        "dead_hour",
-        "log_returns",
-    }
-)
-
-
 def _generate_data_charts(config: Config) -> None:
     """Generate static data-exploration charts for report assets.
 
@@ -239,7 +204,7 @@ def _generate_data_charts(config: Config) -> None:
     # --- 3. Feature Correlation Heatmap ---
     if features_path.exists():
         df = pl.read_parquet(features_path)
-        feature_cols = [c for c in df.columns if c not in _EXCLUDED_FEATURE_COLS]
+        feature_cols = [c for c in df.columns if c not in EXCLUDE_COLS]
 
         if len(feature_cols) > 1:
             numeric_df = df.select(feature_cols)
@@ -280,7 +245,7 @@ def _generate_data_charts(config: Config) -> None:
     # --- 4. Feature Distributions ---
     if features_path.exists():
         df = pl.read_parquet(features_path)
-        feature_cols = [c for c in df.columns if c not in _EXCLUDED_FEATURE_COLS]
+        feature_cols = [c for c in df.columns if c not in EXCLUDE_COLS]
 
         if feature_cols:
             n = len(feature_cols)

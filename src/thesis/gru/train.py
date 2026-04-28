@@ -174,7 +174,7 @@ def train_gru(
         embeddings and ``history`` stores per-epoch train/validation metrics.
     """
     gru_cfg = config.gru
-    gru_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
+    gru_cols = config.gru.feature_cols
     seed = config.workflow.random_seed
 
     # Set seeds for reproducibility

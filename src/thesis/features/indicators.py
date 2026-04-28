@@ -23,6 +23,7 @@ from pathlib import Path
 import polars as pl
 
 from thesis.config import Config
+from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS
 
 logger = logging.getLogger("thesis.features")
 
@@ -79,29 +80,8 @@ def generate_features(config: Config) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Column sets
+# Column sets — imported from thesis.constants (single source of truth)
 # ---------------------------------------------------------------------------
-
-_EXCLUDE_COLS = frozenset(
-    [
-        "timestamp",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "avg_spread",
-        "tick_count",
-        "label",
-        "tp_price",
-        "sl_price",
-        "touched_bar",
-        "open_right",  # Label-derived
-        "high_right",  # Label-derived
-        "low_right",  # Label-derived
-        "close_right",  # Label-derived
-    ]
-)
 
 
 # ---------------------------------------------------------------------------
@@ -290,17 +270,6 @@ def _build_pivot_table(df: pl.DataFrame, trading_day_expr: pl.Expr) -> pl.DataFr
         )
         .select(["_trading_day", "prev_pivot", "prev_r1", "prev_s1"])
     )
-
-
-def _shift_pivots_by_one_day(daily: pl.DataFrame) -> pl.DataFrame:
-    """Shift daily pivots by one day to align with the next trading day (no look-ahead)."""
-    return daily.with_columns(
-        [
-            pl.col("pivot").shift(1).alias("prev_pivot"),
-            pl.col("r1").shift(1).alias("prev_r1"),
-            pl.col("s1").shift(1).alias("prev_s1"),
-        ]
-    ).select(["_trading_day", "prev_pivot", "prev_r1", "prev_s1"])
 
 
 def _compute_pivot_position(df: pl.DataFrame) -> pl.DataFrame:

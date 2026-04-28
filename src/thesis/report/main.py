@@ -144,6 +144,19 @@ def generate_report(config: Config) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    # Match former ``generate_all_charts`` defaults (single Stage-6 entry point).
+    plt.style.use("seaborn-v0_8-whitegrid")
+    plt.rcParams.update(
+        {
+            "figure.dpi": 150,
+            "savefig.bbox": "tight",
+            "font.size": 10,
+            "axes.titlesize": 12,
+            "axes.labelsize": 10,
+        }
+    )
 
     if config.paths.session_dir:
         out_dir = Path(config.paths.session_dir) / "reports"

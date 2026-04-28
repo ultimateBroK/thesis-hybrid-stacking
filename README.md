@@ -18,6 +18,7 @@ Bachelor's thesis — Thuy Loi University
 
 | Document | Description |
 |:---------|:------------|
+| 🧭 [Core vs optional](docs/CORE_VS_OPTIONAL.md) | What the thesis pipeline requires vs dashboard/ablation extras |
 | 📐 [Architecture](docs/ARCHITECTURE.md) | High-level overview — pipeline stages, hybrid model design, data flow |
 | 🚀 [Quickstart](docs/QUICKSTART.md) | Step-by-step guide to install, run, and view results |
 | 📊 [Evaluation](docs/EVALUATION.md) | How to read your results — metrics explained in plain language |

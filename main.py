@@ -29,6 +29,7 @@ if (PROJECT_ROOT / "src").exists():
 from thesis.ablation import run_ablation
 from thesis.config import load_config
 from thesis.pipeline import run_pipeline
+from thesis.session_paths import configure_session_paths, load_config_for_session
 
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -74,34 +75,8 @@ def _find_session(session_name: str) -> Path | None:
 
 
 def _load_session_config(session_dir: Path) -> object:
-    """
-    Load configuration from an existing session directory.
-
-    Uses the session's config_snapshot.toml if available.
-
-    Parameters:
-        session_dir: Path to the session directory.
-
-    Returns:
-        Loaded configuration object with paths updated to session_dir.
-    """
-    snapshot = session_dir / "config" / "config_snapshot.toml"
-    if snapshot.exists():
-        config = load_config(str(snapshot))
-    else:
-        config = load_config()
-
-    config.paths.session_dir = str(session_dir)
-    config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
-    config.paths.predictions = str(
-        session_dir / "predictions" / "final_predictions.parquet"
-    )
-    config.paths.backtest_results = str(
-        session_dir / "backtest" / "backtest_results.json"
-    )
-    config.paths.report = str(session_dir / "reports" / "thesis_report.md")
-
-    return config
+    """Load configuration from an existing session directory (snapshot + paths)."""
+    return load_config_for_session(session_dir)
 
 
 def main() -> None:
@@ -182,15 +157,7 @@ def main() -> None:
 
         # Update config paths to point to session directory
         config.workflow.session_timestamp = session_ts
-        config.paths.session_dir = str(session_dir)
-        config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
-        config.paths.predictions = str(
-            session_dir / "predictions" / "final_predictions.parquet"
-        )
-        config.paths.backtest_results = str(
-            session_dir / "backtest" / "backtest_results.json"
-        )
-        config.paths.report = str(session_dir / "reports" / "thesis_report.md")
+        configure_session_paths(config, session_dir)
 
         # Create session subdirectories
         for subdir in [

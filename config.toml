@@ -90,7 +90,8 @@ confidence_threshold = 0.55         # Min predicted probability to trade (0 = di
 # GRU — Feature Extractor
 # =============================================================================
 [gru]
-input_size = 4        # number of GRU input features
+input_size = 4        # must match len(feature_cols)
+feature_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist"]
 hidden_size = 32
 num_layers = 2
 sequence_length = 48

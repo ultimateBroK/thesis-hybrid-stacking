@@ -12,7 +12,6 @@ from thesis.splitting import split_data
 from thesis.hybrid import train_model
 from thesis.backtest import run_backtest
 from thesis.report import generate_report
-from thesis.plots import generate_all_charts
 
 logger = logging.getLogger("thesis.pipeline")
 
@@ -87,13 +86,8 @@ def run_pipeline(config: Config) -> None:
     # Stage 5: Backtest
     _run_stage(5, config, "run_backtest", None, run_backtest)
 
-    # Stage 6: Report
-    def _run_report() -> None:
-        """Generate report and all static charts."""
-        generate_report(config)
-        generate_all_charts(config)
-
-    _run_stage(6, config, "run_reporting", None, lambda cfg: _run_report())
+    # Stage 6: Report (static charts + markdown; single entry — see report/main.py)
+    _run_stage(6, config, "run_reporting", None, generate_report)
 
     console.print()
     console.rule("[bold green]✓ Pipeline Complete[/]")

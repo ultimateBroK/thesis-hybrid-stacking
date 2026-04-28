@@ -65,30 +65,8 @@ def split_data(config: Config) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Purge / Embargo
+# Column sets — imported from thesis.constants (single source of truth)
 # ---------------------------------------------------------------------------
-
-_EXCLUDE_COLS = frozenset(
-    [
-        "timestamp",
-        "label",
-        "tp_price",
-        "sl_price",
-        "touched_bar",
-        "open_right",  # Label-derived — pure look-ahead
-        "high_right",  # Label-derived — pure look-ahead
-        "low_right",  # Label-derived — pure look-ahead
-        "close_right",  # Label-derived — pure look-ahead
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "avg_spread",
-        "tick_count",
-        "dead_hour",
-    ]
-)
 
 
 def _apply_purge_embargo(
