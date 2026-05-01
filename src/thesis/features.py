@@ -30,10 +30,10 @@ def generate_features(config: Config) -> None:
     """Generate and persist feature-enriched OHLCV bars.
 
     Loads OHLCV data from ``config.paths.ohlcv``, computes technical
-    indicators and normalized/session features, forward-fills remaining
-    nulls (then replaces any remaining nulls with 0.0), writes the
-    enriched bars to ``config.paths.features``, and saves a sidecar JSON
-    file listing the produced feature column names.
+    indicators and normalized/session features, drops warm-up rows with
+    incomplete or non-finite model-facing features, writes the enriched bars
+    to ``config.paths.features``, and saves a sidecar JSON file listing the
+    produced feature column names.
 
     Args:
         config: Application configuration containing input/output paths
@@ -184,10 +184,15 @@ def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
 
 
 def _drop_warmup_rows(df: pl.DataFrame, feature_cols: list[str]) -> pl.DataFrame:
-    """Drop rows whose model-facing features are still null/NaN after warm-up."""
+    """Drop rows whose model-facing features are incomplete or non-finite."""
     existing_features = [c for c in feature_cols if c in df.columns]
     n_before = len(df)
     df = df.fill_nan(None).drop_nulls(subset=existing_features)
+    if existing_features:
+        finite_expr = pl.all_horizontal(
+            [pl.col(c).is_finite() for c in existing_features]
+        )
+        df = df.filter(finite_expr)
     dropped = n_before - len(df)
     if dropped > 0:
         logger.info(

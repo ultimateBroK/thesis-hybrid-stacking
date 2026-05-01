@@ -211,7 +211,7 @@ def _train_fixed(
         n_jobs=config.workflow.n_jobs,
         verbose=-1,
         use_missing=False,
-        zero_as_missing=True,
+        zero_as_missing=False,
     )
 
     # Rich progress bar over boosting iterations
@@ -522,7 +522,7 @@ def _train_optuna(
             "n_jobs": config.workflow.n_jobs,
             "verbose": -1,
             "use_missing": False,
-            "zero_as_missing": True,
+            "zero_as_missing": False,
         }
 
         model = lgb.LGBMClassifier(**params)
@@ -671,7 +671,7 @@ def _train_optuna(
         n_jobs=config.workflow.n_jobs,
         verbose=-1,
         use_missing=False,
-        zero_as_missing=True,
+        zero_as_missing=False,
     )
 
     n_est = best.get("n_estimators", 500)

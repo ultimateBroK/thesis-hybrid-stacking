@@ -710,8 +710,11 @@ def train_gru(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    # Accelerate handles device placement, mixed precision, and multi-GPU
-    accelerator = Accelerator(mixed_precision="fp16")
+    # Accelerate handles device placement, mixed precision, and multi-GPU.
+    # fp16 is useful on CUDA, but on CPU it adds no value and can cause
+    # avoidable numerical/runtime issues.
+    mixed_precision = "fp16" if torch.cuda.is_available() else "no"
+    accelerator = Accelerator(mixed_precision=mixed_precision)
 
     # Prepare sequences
     train_seq, train_labels, _ = prepare_sequences(
@@ -755,7 +758,7 @@ def train_gru(
         train_dataset,
         batch_size=gru_cfg.batch_size,
         shuffle=True,
-        drop_last=True,
+        drop_last=False,
     )
     val_loader = DataLoader(
         val_dataset,
@@ -805,12 +808,16 @@ def train_gru(
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
 
-    # Class-weighted Focal Loss to handle label imbalance (Hold ~3.5% of samples)
+    # Class-weighted Focal Loss to handle label imbalance. Build a full
+    # num_classes-length alpha vector so windows missing a class still train.
     unique_classes = np.unique(train_labels)
     class_weights_arr = compute_class_weight(
         "balanced", classes=unique_classes, y=train_labels
     )
-    class_weights_tensor = torch.tensor(class_weights_arr, dtype=torch.float32).to(
+    class_weights_full = np.ones(config.labels.num_classes, dtype=np.float32)
+    for cls, weight in zip(unique_classes, class_weights_arr):
+        class_weights_full[int(cls)] = float(weight)
+    class_weights_tensor = torch.tensor(class_weights_full, dtype=torch.float32).to(
         accelerator.device
     )
     criterion = FocalLoss(

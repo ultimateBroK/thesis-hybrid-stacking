@@ -1,7 +1,8 @@
 """Data preparation — aggregate raw tick data to OHLCV bars.
 
-Reads monthly tick parquet files from data/raw/XAUUSD/, computes mid-price
-OHLCV bars at the configured timeframe, and saves to data/processed/ohlcv.parquet.
+Reads monthly tick parquet files from data/raw/XAUUSD/, computes quote
+microprice OHLCV bars at the configured timeframe, and saves to
+data/processed/ohlcv.parquet.
 
 Memory-efficient: aggregates each monthly file independently, then concats
 only the small OHLCV results (~56K rows for 8 years of 1H bars).
@@ -66,7 +67,8 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
             dropped_quotes,
         )
 
-    # Compute mid-price and total volume
+    # Compute quote microprice and total volume. This is volume-weighted by
+    # opposing-side quote sizes, not the simple midpoint (bid + ask) / 2.
     ticks = ticks.with_columns(
         [
             (
@@ -75,7 +77,7 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
                     + pl.col("bid") * pl.col("ask_volume")
                 )
                 / (pl.col("ask_volume") + pl.col("bid_volume") + 1e-10)
-            ).alias("mid"),
+            ).alias("microprice"),
             (pl.col("ask_volume") + pl.col("bid_volume")).alias("volume"),
         ]
     )
@@ -105,12 +107,12 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
         ticks.group_by("bar_time", maintain_order=True)
         .agg(
             [
-                pl.col("mid").first().alias("open"),
-                pl.col("mid").max().alias("high"),
-                pl.col("mid").min().alias("low"),
-                pl.col("mid").last().alias("close"),
+                pl.col("microprice").first().alias("open"),
+                pl.col("microprice").max().alias("high"),
+                pl.col("microprice").min().alias("low"),
+                pl.col("microprice").last().alias("close"),
                 pl.col("volume").sum().alias("volume"),
-                pl.col("mid").count().alias("tick_count"),
+                pl.col("microprice").count().alias("tick_count"),
                 ((pl.col("ask") - pl.col("bid")).mean()).alias("avg_spread"),
             ]
         )
@@ -191,6 +193,12 @@ def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
     Returns:
         Tuple of (filtered DataFrame, number of dropped bars).
     """
+    duplicate_count = len(ohlcv) - ohlcv.get_column("timestamp").n_unique()
+    if duplicate_count > 0:
+        logger.warning(
+            "Found %d duplicate OHLCV bar timestamps before dedup; keeping first",
+            duplicate_count,
+        )
     ohlcv = ohlcv.unique(subset=["timestamp"], keep="first").sort("timestamp")
     n_before = len(ohlcv)
     ohlcv = ohlcv.filter(
@@ -246,7 +254,7 @@ def _log_gap_report(ohlcv: pl.DataFrame, group_ms: int) -> None:
     largest_gap_ms = int(diffs.max() or 0)
 
     logger.info(
-        "OHLCV gap report: expected_delta=%d ms, missing_gap_count=%d, "
+        "OHLCV calendar gap report: expected_delta=%d ms, calendar_gap_count=%d, "
         "estimated_missing_bars=%d, largest_gap=%.2f bars, non_increasing_deltas=%d",
         group_ms,
         len(missing_gaps),

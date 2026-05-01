@@ -149,7 +149,9 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     )
 
     if not windows:
-        raise RuntimeError("No valid walk-forward windows generated — check data size and window parameters")
+        raise RuntimeError(
+            "No valid walk-forward windows generated — check data size and window parameters"
+        )
 
     log_windows(windows, df, "timestamp")
     logger.info("Walk-forward: %d windows", len(windows))
@@ -161,9 +163,9 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     gru_model = None
     gru_mean = None
     gru_std = None
-    best_model = None
-    best_feature_cols: list[str] = []
-    best_accuracy = 0.0
+    last_lgbm_model = None
+    last_feature_cols: list[str] = []
+    last_window_accuracy: float | None = None
     last_gru_history: list[dict] = []
 
     stage_start = time.perf_counter()
@@ -300,7 +302,8 @@ def _run_walk_forward_hybrid(config: Config) -> None:
 
         # --- Predict on test ---
         proba = model.predict_proba(_wrap_np(X_test, all_feature_cols))
-        preds = model.classes_[np.argmax(proba, axis=1)]
+        aligned_proba = _align_probability_matrix(proba, model.classes_)
+        preds = STACK_CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
 
         acc = (preds == y_test).mean()
         logger.info(
@@ -310,27 +313,21 @@ def _run_walk_forward_hybrid(config: Config) -> None:
             len(y_test),
         )
 
-        # Track best model and its feature cols
-        if acc > best_accuracy:
-            best_accuracy = acc
-            best_model = model
-            best_feature_cols = all_feature_cols
-
+        # Save deployable artifacts from the latest walk-forward window. Do not
+        # select a "final" model by test-fold accuracy; OOF predictions carry
+        # evaluation, while the last model is a chronological deployment proxy.
+        last_lgbm_model = model
+        last_feature_cols = all_feature_cols
+        last_window_accuracy = float(acc)
         last_gru_history = gru_history
 
         # Collect OOF predictions
-        class_order = model.classes_.tolist()
-        proba_cols = {}
-        for idx, cls in enumerate(class_order):
-            label = f"minus{abs(cls)}" if cls < 0 else str(cls)
-            proba_cols[f"pred_proba_class_{label}"] = proba[:, idx]
-
         oof_chunk = pl.DataFrame(
             {
                 "timestamp": test_aligned["timestamp"],
                 "true_label": y_test,
                 "pred_label": preds.astype(np.int32),
-                **proba_cols,
+                **_probability_columns(proba, model.classes_),
             }
         )
         all_oof_preds.append(oof_chunk)
@@ -357,17 +354,17 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     oof_df.write_parquet(preds_path)
     oof_df.write_csv(preds_path.with_suffix(".csv"))
 
-    # Save best LightGBM model
-    if best_model is not None:
+    # Save latest chronological LightGBM model, not a best-by-test artifact.
+    if last_lgbm_model is not None:
         model_path = Path(config.paths.model)
         model_path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(best_model, model_path)
+        joblib.dump(last_lgbm_model, model_path)
 
-    # Save feature importance from best LightGBM model
-    if best_model is not None and best_feature_cols:
+    # Save feature importance from the same latest chronological model.
+    if last_lgbm_model is not None and last_feature_cols:
         from thesis.model import _save_feature_importance
 
-        _save_feature_importance(best_model, best_feature_cols, config)
+        _save_feature_importance(last_lgbm_model, last_feature_cols, config)
 
     # Save training history (GRU + LightGBM info)
     if config.paths.session_dir:
@@ -376,14 +373,16 @@ def _run_walk_forward_hybrid(config: Config) -> None:
         history_path = models_dir / "training_history.json"
 
         lgbm_info: dict[str, Any] = {}
-        if best_model is not None:
+        if last_lgbm_model is not None:
             lgbm_info = {
-                "best_iteration": int(best_model.best_iteration_)
-                if hasattr(best_model, "best_iteration_")
+                "artifact_strategy": "last_walk_forward_window",
+                "last_window_accuracy": last_window_accuracy,
+                "best_iteration": int(last_lgbm_model.best_iteration_)
+                if hasattr(last_lgbm_model, "best_iteration_")
                 else None,
-                "n_features": len(best_feature_cols),
-                "n_classes": len(best_model.classes_)
-                if hasattr(best_model, "classes_")
+                "n_features": len(last_feature_cols),
+                "n_classes": len(last_lgbm_model.classes_)
+                if hasattr(last_lgbm_model, "classes_")
                 else None,
             }
 
