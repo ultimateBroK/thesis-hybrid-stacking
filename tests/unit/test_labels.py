@@ -30,7 +30,8 @@ def test_labels_in_valid_set() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -60,7 +61,8 @@ def test_upper_lower_barrier_relationship() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -91,7 +93,8 @@ def test_touched_bars_for_hold() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -118,7 +121,8 @@ def test_same_bar_both_hit_counted_as_ambiguous_hold() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=2.0,
+        tp_mult=2.0,
+        sl_mult=2.0,
         horizon=2,
         min_atr=0.0001,
     )
@@ -163,7 +167,8 @@ def test_touched_bars_for_non_hold() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -192,7 +197,8 @@ def test_zero_atr_handled() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.1,  # min_atr should kick in
     )
@@ -223,7 +229,8 @@ def test_extreme_volatility_all_long() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -249,7 +256,8 @@ def test_extreme_volatility_all_short() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -275,7 +283,8 @@ def test_horizon_boundary() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=horizon,
         min_atr=0.0001,
     )
@@ -291,8 +300,8 @@ def test_horizon_boundary() -> None:
 
 @pytest.mark.unit
 @pytest.mark.data
-def test_atr_multiplier_effect() -> None:
-    """Test that larger ATR multiplier creates wider barriers."""
+def test_atr_multiplier_effect_asymmetric() -> None:
+    """Test that asymmetric TP/SL multipliers create correct barrier widths."""
     n = 50
     close = np.linspace(1800, 1900, n)
     high = close + 5
@@ -304,7 +313,8 @@ def test_atr_multiplier_effect() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.0,
+        tp_mult=1.0,
+        sl_mult=1.0,
         horizon=10,
         min_atr=0.0001,
     )
@@ -314,7 +324,8 @@ def test_atr_multiplier_effect() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=3.0,
+        tp_mult=3.0,
+        sl_mult=3.0,
         horizon=10,
         min_atr=0.0001,
     )
@@ -344,7 +355,8 @@ def test_no_lookahead_bias() -> None:
         high=high,
         low=low,
         atr=atr,
-        mult=1.5,
+        tp_mult=1.5,
+        sl_mult=1.5,
         horizon=10,
         min_atr=0.0001,
     )
@@ -356,3 +368,35 @@ def test_no_lookahead_bias() -> None:
             absolute_touch = i + touched_bars[i]
             assert absolute_touch > i, "Touch must be in the future"
             assert absolute_touch < n, "Touch must be within bounds"
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_asymmetric_barriers_tp_sl_ratio() -> None:
+    """Test that asymmetric TP/SL multipliers create correct barrier distances."""
+    n = 50
+    close = np.linspace(1800, 1900, n)
+    high = close + 5
+    low = close - 5
+    atr = np.ones(n) * 10
+
+    _, upper_barriers, lower_barriers, _, _ = _compute_labels(
+        close=close,
+        high=high,
+        low=low,
+        atr=atr,
+        tp_mult=2.0,
+        sl_mult=1.0,
+        horizon=10,
+        min_atr=0.0001,
+    )
+
+    for i in range(n):
+        upper_dist = upper_barriers[i] - close[i]
+        lower_dist = close[i] - lower_barriers[i]
+        assert abs(upper_dist - 20.0) < 1e-10, (
+            f"Upper barrier distance should be 20.0 (2.0 * 10.0 ATR), got {upper_dist}"
+        )
+        assert abs(lower_dist - 10.0) < 1e-10, (
+            f"Lower barrier distance should be 10.0 (1.0 * 10.0 ATR), got {lower_dist}"
+        )

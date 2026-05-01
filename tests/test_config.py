@@ -60,7 +60,8 @@ def test_labels_no_session_atr():
     cfg = load_config(Path(__file__).parent.parent / "config.toml")
     # No session_atr attribute
     assert not hasattr(cfg.labels, "session_atr")
-    assert cfg.labels.atr_multiplier > 0
+    assert cfg.labels.atr_tp_multiplier > 0
+    assert cfg.labels.atr_sl_multiplier > 0
 
 
 def test_paths_basic():

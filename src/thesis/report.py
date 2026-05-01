@@ -688,7 +688,7 @@ def _config_table(L: list[str], config: Config) -> None:
             (
                 "Labels",
                 "atr_mult / horizon",
-                f"{config.labels.atr_multiplier} / {config.labels.horizon_bars}",
+                f"{config.labels.atr_tp_multiplier}/{config.labels.atr_sl_multiplier} / {config.labels.horizon_bars}",
             ),
             (
                 "GRU",
@@ -1332,7 +1332,7 @@ def _issues_list(
             (
                 "high",
                 f"Hold labels are {hold_pct:.1f}% (> 50%). "
-                f"Reduce ATR multiplier (current: {config.labels.atr_multiplier}) "
+                f"Reduce ATR multipliers (current TP: {config.labels.atr_tp_multiplier}, SL: {config.labels.atr_sl_multiplier}) "
                 "for tighter barriers to generate more directional signals.",
             )
         )
@@ -1341,7 +1341,7 @@ def _issues_list(
             (
                 "medium",
                 f"Hold labels are {hold_pct:.1f}% (> 40%). "
-                f"Consider reducing ATR multiplier (current: {config.labels.atr_multiplier}) "
+                f"Consider reducing ATR multipliers (current TP: {config.labels.atr_tp_multiplier}, SL: {config.labels.atr_sl_multiplier}) "
                 "for tighter barriers.",
             )
         )

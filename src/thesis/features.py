@@ -55,7 +55,7 @@ def generate_features(config: Config) -> None:
     df = _add_atr(df, config)
 
     # --- Price-action + session context ---
-    df = _add_new_features(df, config)
+    df = _add_context_features(df, config)
 
     # --- Price-action structure ---
     df = _add_price_action_features(df, config)
@@ -263,7 +263,7 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def _add_new_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add derived, normalized, and regime/session features.
 
     Appends: ``atr_ratio``, ``price_dist_ratio``, ``pivot_position``,

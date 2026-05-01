@@ -1,7 +1,8 @@
-"""Stage 2: symmetric upper/lower barrier direction labeling.
+"""Stage 2: asymmetric upper/lower barrier direction labeling.
 
-Uses a single ``atr_multiplier`` for all hours. No DST detection,
-no session definitions, no dead-hour filtering.
+Uses separate ``atr_tp_multiplier`` and ``atr_sl_multiplier`` for take-profit
+and stop-loss barriers. No DST detection, no session definitions, no
+dead-hour filtering.
 
 Classes:
     +1  Long  (upper barrier hit first)
@@ -32,7 +33,7 @@ def generate_labels(config: Config) -> None:
     """
     Generate direction-barrier labels and write them to the configured labels path.
 
-    Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes symmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
+    Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes asymmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_tp_multiplier`, `atr_sl_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
 
     Args:
         config (Config): Application configuration containing:
@@ -40,7 +41,8 @@ def generate_labels(config: Config) -> None:
             - paths.ohlcv: path to OHLCV parquet
             - paths.labels: output path for labels parquet
             - features.atr_period: integer ATR period (used to form `atr_{period}` column)
-            - labels.atr_multiplier: ATR multiplier for upper/lower barriers
+            - labels.atr_tp_multiplier: ATR multiplier for take-profit (upper barrier)
+            - labels.atr_sl_multiplier: ATR multiplier for stop-loss (lower barrier)
             - labels.horizon_bars: forward horizon in bars
             - labels.min_atr: minimum ATR value to use
 
@@ -75,15 +77,17 @@ def generate_labels(config: Config) -> None:
             high=df["high"].to_numpy(),
             low=df["low"].to_numpy(),
             atr=df[atr_col].to_numpy(),
-            mult=config.labels.atr_multiplier,
+            tp_mult=config.labels.atr_tp_multiplier,
+            sl_mult=config.labels.atr_sl_multiplier,
             horizon=config.labels.horizon_bars,
             min_atr=config.labels.min_atr,
         )
     )
 
     logger.info(
-        "Direction-barrier params: mult=%.2f, horizon=%d, min_atr=%.6f",
-        config.labels.atr_multiplier,
+        "Direction-barrier params: tp_mult=%.2f, sl_mult=%.2f, horizon=%d, min_atr=%.6f",
+        config.labels.atr_tp_multiplier,
+        config.labels.atr_sl_multiplier,
         config.labels.horizon_bars,
         config.labels.min_atr,
     )
@@ -113,14 +117,21 @@ def _compute_labels(
     high: np.ndarray,
     low: np.ndarray,
     atr: np.ndarray,
-    mult: float,
+    tp_mult: float,
+    sl_mult: float,
     horizon: int,
     min_atr: float,
 ) -> tuple:
     """
-    Compute symmetric direction-barrier outcomes for each bar.
+    Compute asymmetric direction-barrier outcomes for each bar.
 
-    For each index i this sets upper = close[i] + mult * max(atr[i], min_atr) and lower = close[i] - mult * max(atr[i], min_atr), then inspects bars i+1 .. i+horizon (bounded by series end) to determine which barrier is touched first. If neither barrier is touched within the horizon the label remains 0. If both barriers are touched on the same OHLC bar, the sample is treated as ambiguous and labeled Hold (0). Rows within `horizon` bars of the series end are marked -2 (censored) and are dropped from training.
+    For each index i this sets upper = close[i] + tp_mult * max(atr[i], min_atr)
+    and lower = close[i] - sl_mult * max(atr[i], min_atr), then inspects bars
+    i+1 .. i+horizon (bounded by series end) to determine which barrier is
+    touched first. If neither barrier is touched within the horizon the label
+    remains 0. If both barriers are touched on the same OHLC bar, the sample
+    is treated as ambiguous and labeled Hold (0). Rows within `horizon` bars
+    of the series end are marked -2 (censored) and are dropped from training.
 
     Returns:
         Tuple of labels, upper barriers, lower barriers, touched-bar offsets,
@@ -135,8 +146,8 @@ def _compute_labels(
 
     for i in range(n):
         a = max(atr[i], min_atr)
-        upper = close[i] + mult * a
-        lower = close[i] - mult * a
+        upper = close[i] + tp_mult * a
+        lower = close[i] - sl_mult * a
         upper_barriers[i] = upper
         lower_barriers[i] = lower
 

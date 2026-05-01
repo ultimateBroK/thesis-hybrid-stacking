@@ -18,7 +18,7 @@ from thesis.features import (
     _add_rsi,
     _add_atr,
     _add_macd,
-    _add_new_features,
+    _add_context_features,
     _add_pivot_position,
     _add_ny_session_dummies,
     _add_ema_crossover,
@@ -87,7 +87,7 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     df = _add_rsi(df, config)
     df = _add_atr(df, config)
     df = _add_macd(df, config)
-    df = _add_new_features(df, config)
+    df = _add_context_features(df, config)
     df = _add_pivot_position(df)
     df = _add_price_action_features(df, config)
     df = _add_ema_crossover(df, config)
@@ -196,7 +196,7 @@ def test_atr_ratio_positive(sample_config: Config) -> None:
     """Test atr_ratio > 0 (ratio of short to long ATR)."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_new_features(df, sample_config)
+    result = _add_context_features(df, sample_config)
 
     assert "atr_ratio" in result.columns
     values = result["atr_ratio"].drop_nulls().to_numpy()
@@ -210,7 +210,7 @@ def test_price_dist_ratio_exists(sample_config: Config) -> None:
     """Test price_dist_ratio is computed."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_new_features(df, sample_config)
+    result = _add_context_features(df, sample_config)
 
     assert "price_dist_ratio" in result.columns
 
@@ -221,7 +221,7 @@ def test_atr_percentile_bounded(sample_config: Config) -> None:
     """Test atr_percentile is within [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_new_features(df, sample_config)
+    result = _add_context_features(df, sample_config)
 
     assert "atr_percentile" in result.columns
     values = result["atr_percentile"].drop_nulls().to_numpy()
@@ -327,7 +327,7 @@ def test_all_features_together(sample_config: Config) -> None:
     df = _add_rsi(df, sample_config)
     df = _add_atr(df, sample_config)
     df = _add_macd(df, sample_config)
-    df = _add_new_features(df, sample_config)
+    df = _add_context_features(df, sample_config)
 
     # Fill nulls like the main function does
     df = df.fill_null(strategy="forward").fill_null(0.0)

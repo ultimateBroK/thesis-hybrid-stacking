@@ -1288,7 +1288,7 @@ def _render_reports_section(session_dir: str) -> None:
                             }
                             for d in details
                         ],
-                        width='stretch',
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -1416,9 +1416,7 @@ def main() -> None:
         for i, sec in enumerate(sections):
             with nav_cols[i]:
                 btn_type = "primary" if sec == current_section else "secondary"
-                if st.button(
-                    sec, key=f"nav_{sec}", type=btn_type, width='stretch'
-                ):
+                if st.button(sec, key=f"nav_{sec}", type=btn_type, width="stretch"):
                     st.session_state.nav_section = sec
                     st.rerun()
 

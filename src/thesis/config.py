@@ -134,9 +134,10 @@ class FeaturesConfig:
 
 @dataclass
 class LabelsConfig:
-    """Triple-barrier label parameters (single ATR multiplier, no sessions)."""
+    """Triple-barrier label parameters (asymmetric TP/SL, no sessions)."""
 
-    atr_multiplier: float = 2.5
+    atr_tp_multiplier: float = 2.0
+    atr_sl_multiplier: float = 1.0
     horizon_bars: int = 24
     num_classes: int = 3
     min_atr: float = 0.5
