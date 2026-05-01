@@ -17,6 +17,7 @@ import pandas as pd
 import polars as pl
 
 from thesis.config import Config
+from thesis.constants import H1_BARS_PER_YEAR
 from thesis.zones import _get_metric_zone
 
 logger = logging.getLogger("thesis.report")
@@ -48,6 +49,9 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
         dist["total"] = total
         return dist
     except Exception:
+        logger.warning(
+            "Failed to load label distribution: %s", labels_path, exc_info=True
+        )
         return None
 
 
@@ -76,6 +80,11 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         try:
             df = pl.read_parquet(preds_path)
         except Exception:
+            logger.warning(
+                "Failed to load full predictions parquet; retrying required columns: %s",
+                preds_path,
+                exc_info=True,
+            )
             df = pl.read_parquet(preds_path, columns=cols)
 
         true = df["true_label"].to_numpy()
@@ -164,6 +173,9 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
 
         return result
     except Exception:
+        logger.warning(
+            "Failed to load prediction statistics: %s", preds_path, exc_info=True
+        )
         return None
 
 
@@ -171,7 +183,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
 # Benchmark comparison helpers (formerly report/stats.py)
 # ---------------------------------------------------------------------------
 
-_BARS_PER_YEAR = 252 * 24
+_BARS_PER_YEAR = H1_BARS_PER_YEAR
 
 
 def _annualized_sharpe(
@@ -259,7 +271,11 @@ def _load_close_prices_for_benchmark(
             df = pl.read_parquet(test_data_path, columns=["close"])
             return df["close"].to_numpy()
         except Exception:
-            logger.warning("Failed to load test data for benchmarks")
+            logger.warning(
+                "Failed to load static test data for benchmarks: %s",
+                test_data_path,
+                exc_info=True,
+            )
     elif test_data_path.exists() and not is_static:
         logger.warning(
             "Static test file found (%s) but workflow is walk-forward "
@@ -277,7 +293,9 @@ def _load_close_prices_for_benchmark(
     try:
         df = pl.read_parquet(ohlcv_path)
     except Exception:
-        logger.warning("Failed to load OHLCV for benchmarks")
+        logger.warning(
+            "Failed to load OHLCV for benchmarks: %s", ohlcv_path, exc_info=True
+        )
         return None
 
     ts_col = df["timestamp"]
@@ -613,65 +631,105 @@ def _config_table(L: list[str], config: Config) -> None:
     rows = [
         ("Data", "symbol", str(config.data.symbol)),
         ("Data", "timeframe", config.data.timeframe),
-        (
-            "Split",
-            "train",
-            f"{config.splitting.train_start} → {config.splitting.train_end}",
-        ),
-        ("Split", "val", f"{config.splitting.val_start} → {config.splitting.val_end}"),
-        (
-            "Split",
-            "test",
-            f"{config.splitting.test_start} → {config.splitting.test_end}",
-        ),
-        (
-            "Split",
-            "purge/embargo",
-            f"{config.splitting.purge_bars}/{config.splitting.embargo_bars}",
-        ),
-        (
-            "Labels",
-            "atr_mult / horizon",
-            f"{config.labels.atr_multiplier} / {config.labels.horizon_bars}",
-        ),
-        (
-            "GRU",
-            "hidden/layers/seq",
-            f"{config.gru.hidden_size}/{config.gru.num_layers}/{config.gru.sequence_length}",
-        ),
-        (
-            "GRU",
-            "lr/dropout/epochs",
-            f"{config.gru.learning_rate}/{config.gru.dropout}/{config.gru.epochs}",
-        ),
-        (
-            "LGBM",
-            "leaves/depth/lr",
-            f"{config.model.num_leaves}/{config.model.max_depth}/{config.model.learning_rate}",
-        ),
-        (
-            "LGBM",
-            "estimators/subsample",
-            f"{config.model.n_estimators}/{config.model.subsample}",
-        ),
-        ("LGBM", "feature_fraction", str(config.model.feature_fraction)),
-        (
-            "Backtest",
-            "capital/leverage",
-            f"${config.backtest.initial_capital:,.0f}/{config.backtest.leverage}:1",
-        ),
-        (
-            "Backtest",
-            "lots/conf_thr",
-            f"{config.backtest.lots_per_trade}/{config.backtest.confidence_threshold}",
-        ),
-        (
-            "Backtest",
-            "stop/tp (ATR)",
-            f"{config.backtest.atr_stop_multiplier}/{config.backtest.atr_tp_multiplier}",
-        ),
-        ("Seed", "random_seed", str(config.workflow.random_seed)),
+        ("Validation", "method", config.validation.method),
     ]
+
+    if config.validation.method == "sliding":
+        rows.extend(
+            [
+                ("Validation", "window type", "bar-based walk-forward"),
+                (
+                    "Validation",
+                    "train/test/step bars",
+                    f"{config.validation.train_window_bars}/"
+                    f"{config.validation.test_window_bars}/"
+                    f"{config.validation.step_bars}",
+                ),
+                (
+                    "Validation",
+                    "purge/embargo bars",
+                    f"{config.validation.purge_bars}/{config.validation.embargo_bars}",
+                ),
+                (
+                    "Validation",
+                    "min_train_bars",
+                    str(config.validation.min_train_bars),
+                ),
+            ]
+        )
+    else:
+        rows.extend(
+            [
+                (
+                    "Split",
+                    "train",
+                    f"{config.splitting.train_start} → {config.splitting.train_end}",
+                ),
+                (
+                    "Split",
+                    "val",
+                    f"{config.splitting.val_start} → {config.splitting.val_end}",
+                ),
+                (
+                    "Split",
+                    "test",
+                    f"{config.splitting.test_start} → {config.splitting.test_end}",
+                ),
+                (
+                    "Split",
+                    "purge/embargo",
+                    f"{config.splitting.purge_bars}/{config.splitting.embargo_bars}",
+                ),
+            ]
+        )
+
+    rows.extend(
+        [
+            (
+                "Labels",
+                "atr_mult / horizon",
+                f"{config.labels.atr_multiplier} / {config.labels.horizon_bars}",
+            ),
+            (
+                "GRU",
+                "hidden/layers/seq",
+                f"{config.gru.hidden_size}/{config.gru.num_layers}/{config.gru.sequence_length}",
+            ),
+            (
+                "GRU",
+                "lr/dropout/epochs",
+                f"{config.gru.learning_rate}/{config.gru.dropout}/{config.gru.epochs}",
+            ),
+            (
+                "LGBM",
+                "leaves/depth/lr",
+                f"{config.model.num_leaves}/{config.model.max_depth}/{config.model.learning_rate}",
+            ),
+            (
+                "LGBM",
+                "estimators/subsample",
+                f"{config.model.n_estimators}/{config.model.subsample}",
+            ),
+            ("LGBM", "feature_fraction", str(config.model.feature_fraction)),
+            (
+                "Backtest",
+                "capital/leverage",
+                f"${config.backtest.initial_capital:,.0f}/{config.backtest.leverage}:1",
+            ),
+            (
+                "Backtest",
+                "lots/conf_thr",
+                f"{config.backtest.lots_per_trade}/{config.backtest.confidence_threshold}",
+            ),
+            (
+                "Backtest",
+                "stop/tp (ATR)",
+                f"{config.backtest.atr_stop_multiplier}/{config.backtest.atr_tp_multiplier}",
+            ),
+            ("Seed", "random_seed", str(config.workflow.random_seed)),
+        ]
+    )
+
     L.append(_tbl_row("Section", "Parameter", "Value"))
     L.append(_tbl_row("-------", "---------", "-----"))
     for section, param, val in rows:
@@ -767,6 +825,9 @@ def _stacking_summary(L: list[str], config: Config) -> None:
     try:
         history = json.loads(wf_path.read_text())
     except Exception:
+        logger.warning(
+            "Failed to load stacking walk-forward history: %s", wf_path, exc_info=True
+        )
         L.append("Stacking: base models = GRU + LightGBM, meta learner = LightGBM.")
         L.append("")
         return
@@ -912,6 +973,11 @@ def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> 
         L.append("")
         return
 
+    L.append(
+        "*Benchmarks are rough directional references and are not "
+        "trading-cost-equivalent to the CFD backtest strategy.*"
+    )
+    L.append("")
     L.append(_tbl_row("Strategy", "Return", "Sharpe", "Max DD", "Win Rate", "Trades"))
     L.append(_tbl_row("--------", "------", "------", "-------", "--------", "------"))
     for b in benchmarks:
@@ -987,7 +1053,11 @@ def _count_features(config: Config) -> int:
             exclude = {"timestamp", "open", "high", "low", "close", "volume", "label"}
             return sum(1 for c in df.columns if c not in exclude)
         except Exception:
-            pass
+            logger.warning(
+                "Failed to count features from features parquet: %s",
+                features_path,
+                exc_info=True,
+            )
     return config.gru.hidden_size + len(config.features.static_feature_cols)
 
 

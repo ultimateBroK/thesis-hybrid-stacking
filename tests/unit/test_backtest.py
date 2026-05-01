@@ -15,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.backtest import (
     _calendar_day,
+    _prepare_df,
+    _run_bt,
     run_backtest_from_data,
 )
 from thesis.config import Config
@@ -90,7 +92,9 @@ def sample_config() -> Config:
     config.backtest.slippage_ticks = 3.0
     config.backtest.commission_per_lot = 10.0
     config.backtest.atr_stop_multiplier = 0.75
-    config.backtest.confidence_threshold = 0.0  # disable confidence gating for deterministic sizing
+    config.backtest.confidence_threshold = (
+        0.0  # disable confidence gating for deterministic sizing
+    )
     config.data.contract_size = 100
     config.data.tick_size = 0.01
     return config
@@ -204,11 +208,15 @@ def test_no_lookahead_bias(sample_config: Config) -> None:
     """Test that execution is delayed by 1 bar (backtesting.py native)."""
     n_rows = 10
     test_df, preds_df = create_synthetic_backtest_data(n_rows, "all_long")
-    metrics = run_backtest_from_data(test_df, preds_df, sample_config)
+    pdf = _prepare_df(test_df, preds_df)
+    stats, _bt = _run_bt(pdf, sample_config)
+    trades = stats["_trades"]
 
-    # backtesting.py evaluates at bar[i] close, executes at bar[i+1] open
-    # With all_long signals starting from bar 0, first trade enters at bar 1
-    assert metrics.get("num_trades", 0) > 0
+    # backtesting.py evaluates signals only after bars are complete and fills
+    # market orders on the next bar. The first actionable all-long signal is
+    # evaluated at bar 1, so the first entry must be at bar 2, not bar 0/1.
+    assert len(trades) > 0
+    assert trades.iloc[0]["EntryTime"] == pdf.index[2]
 
 
 @pytest.mark.unit

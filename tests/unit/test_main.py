@@ -85,6 +85,18 @@ class TestStageResumeLogic:
         assert cfg.workflow.run_model_training is False
         assert cfg.workflow.run_backtest is False
 
+    @pytest.mark.unit
+    def test_force_flag_reapplied_after_session_config_load(self) -> None:
+        """--session reloads config, so --force must be applied after reload."""
+        from main import _apply_force_flag
+
+        cfg = Config()
+        cfg.workflow.force_rerun = False
+
+        result = _apply_force_flag(cfg, force=True)
+
+        assert result.workflow.force_rerun is True
+
 
 class TestPipelineEmptyWindowsGuard:
     """Verify RuntimeError when generate_windows returns empty."""
@@ -105,18 +117,22 @@ class TestPipelineEmptyWindowsGuard:
         # We need to mock both: provide a small df and verify the RuntimeError.
         import polars as pl
 
-        tiny_df = pl.DataFrame({
-            "timestamp": pl.datetime_range(
-                start=pl.datetime(2024, 1, 1),
-                end=pl.datetime(2024, 1, 1) + pl.duration(hours=9),
-                interval="1h",
-                eager=True,
-            ),
-            "value": list(range(10)),
-        })
+        tiny_df = pl.DataFrame(
+            {
+                "timestamp": pl.datetime_range(
+                    start=pl.datetime(2024, 1, 1),
+                    end=pl.datetime(2024, 1, 1) + pl.duration(hours=9),
+                    interval="1h",
+                    eager=True,
+                ),
+                "value": list(range(10)),
+            }
+        )
 
-        with patch("thesis.pipeline.Path") as mock_path_cls, \
-             patch("thesis.pipeline.generate_windows", return_value=[]):
+        with (
+            patch("thesis.pipeline.Path") as mock_path_cls,
+            patch("thesis.pipeline.generate_windows", return_value=[]),
+        ):
             # Make labels_path.exists() return True
             mock_path_instance = mock_path_cls.return_value
             mock_path_instance.exists.return_value = True
@@ -131,12 +147,11 @@ class TestPipelineEmptyWindowsGuard:
         """Guard: all_oof_preds empty triggers RuntimeError."""
         # This tests the second guard at line 343.
         # We verify the error message is correct.
-        from thesis.config import Config
-        cfg = Config()
         # The guard checks: `if not all_oof_preds or gru_model is None`
         # This is tested implicitly by the empty-windows path, but we verify
         # the message exists as a contract.
         import inspect as _inspect
         import thesis.pipeline as pipeline_mod
+
         source = _inspect.getsource(pipeline_mod._run_walk_forward_hybrid)
         assert "No OOF predictions generated" in source

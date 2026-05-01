@@ -27,7 +27,7 @@ from rich.progress import (
 from rich.table import Table
 
 from thesis.config import Config
-from thesis.constants import EXCLUDE_COLS
+from thesis.constants import EXCLUDE_COLS, H1_BARS_PER_YEAR
 from thesis.gru import (
     extract_hidden_states,
     prepare_sequences,
@@ -266,8 +266,8 @@ def _train_fixed(
 # LightGBM training — Optuna multi-objective tuning
 # ---------------------------------------------------------------------------
 
-# Default bars per year for H1 timeframe (approx 23h/day × 365 days)
-_H1_BARS_PER_YEAR = 8400
+# Backward-compatible alias for older internal imports/tests.
+_H1_BARS_PER_YEAR = H1_BARS_PER_YEAR
 
 
 def _convert_hard_to_proba(y_pred: np.ndarray) -> np.ndarray:

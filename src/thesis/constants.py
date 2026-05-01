@@ -55,6 +55,11 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
 # Backward-compatible private alias used by internal modules
 _EXCLUDE_COLS = EXCLUDE_COLS
 
+# Annualization constant for hourly XAU/USD-style markets.
+# Uses 24 hours × 5 trading days × 52 weeks; actual bar counts may vary by
+# broker holidays, market closures, and missing data.
+H1_BARS_PER_YEAR: int = 24 * 5 * 52
+
 # ---------------------------------------------------------------------------
 # Shared visualization palette (matplotlib + pyecharts)
 # ---------------------------------------------------------------------------

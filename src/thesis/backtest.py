@@ -41,7 +41,9 @@ class HybridGRUStrategy(Strategy):
     """Trade on ML signals with ATR stop-loss and equity risk management.
 
     No manual signal shift — backtesting.py natively delays execution
-    by 1 bar (evaluates at close[i], executes at open[i+1]).
+    by 1 bar. The strategy reads ``pred_label[i]`` when bar ``i`` is
+    complete, and backtesting.py fills any resulting market order on the
+    next bar's open.
 
     Position sizing: confidence-weighted — scales from min_lots to max_lots
     based on how far the predicted probability exceeds the confidence
@@ -243,7 +245,9 @@ class HybridGRUStrategy(Strategy):
             3. Risk gate check — skip new trades if any gate blocks.
             4. Confidence gate — skip low-confidence signals.
             5. Compute confidence-weighted position size.
-            6. Execute trades with native ATR-based stop-loss.
+            6. Submit market orders with native ATR-based stop-loss. The
+               backtesting engine fills these orders on the next bar, so
+               signal bar ``i`` cannot trade at the same bar's close.
         """
         # Step 1: update risk state every bar
         self._update_risk_state()

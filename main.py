@@ -26,10 +26,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if (PROJECT_ROOT / "src").exists():
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from thesis.config import load_config
-from thesis.pipeline import run_pipeline
-from thesis.session_paths import configure_session_paths, load_config_for_session
-
+from thesis.config import load_config  # noqa: E402
+from thesis.pipeline import run_pipeline  # noqa: E402
+from thesis.session_paths import configure_session_paths, load_config_for_session  # noqa: E402
 
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -79,6 +78,13 @@ def _load_session_config(session_dir: Path) -> object:
     return load_config_for_session(session_dir)
 
 
+def _apply_force_flag(config: object, force: bool) -> object:
+    """Apply CLI force flag after any config load path."""
+    if force:
+        config.workflow.force_rerun = True
+    return config
+
+
 def main() -> None:
     """
     Command-line entry point that runs the thesis ML pipeline and records a session.
@@ -109,9 +115,8 @@ def main() -> None:
     # Load config
     config = load_config(args.config)
 
-    # Handle force flag
-    if args.force:
-        config.workflow.force_rerun = True
+    # Handle force flag for new-session config.
+    config = _apply_force_flag(config, args.force)
 
     # Determine session directory and setup
     if args.session:
@@ -123,6 +128,7 @@ def main() -> None:
 
         # Load existing session config
         config = _load_session_config(session_dir)
+        config = _apply_force_flag(config, args.force)
         session_ts = (
             session_dir.name.split("_")[-2] + "_" + session_dir.name.split("_")[-1]
         )
