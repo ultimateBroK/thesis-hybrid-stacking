@@ -33,32 +33,31 @@ macd_slow = 26
 macd_signal = 9
 correlation_threshold = 0.75
 static_feature_cols = [
-  # --- Price structure ---
-  "atr_14",
-  "price_dist_ratio",
-  "close_vs_ema_34",
+  # --- Trend ---
   "ema34_vs_ema89",
-  "pivot_position",
-  "price_position_20",
+  "close_vs_ema_34",
+  "trend_strength",
+  # --- Momentum ---
+  "return_1h",
+  "return_4h",
+  "macd_hist",
+  "rsi_14",
+  # --- Volatility / Regime ---
+  "atr_14",
   "atr_percentile",
-  # --- Candle / bar structure ---
+  "high_low_range_20",
+  # --- Position / Location ---
+  "price_dist_ratio",
+  "price_position_20",
+  "pivot_position",
+  # --- Candle Structure ---
   "candle_body_ratio",
   "upper_wick_ratio",
   "lower_wick_ratio",
-  "gap_ratio",
-  # --- Momentum from price ---
-  "return_1h",
-  "return_4h",
-  "high_low_range_20",
-  "consecutive_bars",
-  # --- Minimal indicators ---
-  "rsi_14",
-  "macd_hist",
-  "trend_strength",
   # --- Session ---
   "sess_london",
   "sess_overlap",
-  # --- Volume ---
+  # --- Volume / Activity ---
   "volume_zscore_20",
 ]
 
@@ -81,7 +80,7 @@ reg_lambda = 5.0
 early_stopping_rounds = 40
 
 [gru]
-feature_cols = ["log_returns", "atr_14", "close_vs_ema_34", "ema34_vs_ema89", "candle_body_ratio", "return_1h", "return_4h", "price_position_20"]
+feature_cols = ["log_returns", "return_1h", "return_4h", "atr_14", "close_vs_ema_34", "ema34_vs_ema89", "price_position_20", "candle_body_ratio"]
 hidden_size = 64
 num_layers = 2
 sequence_length = 48

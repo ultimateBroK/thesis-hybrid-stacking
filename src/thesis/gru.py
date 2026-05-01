@@ -920,7 +920,7 @@ def train_gru(
                 ):
                     if epoch + 1 < gru_cfg.epochs:
                         logger.info(
-                            "Early stop at epoch %d (patience=%d, min_epochs=%d)",
+                            "\nEarly stop at epoch %d (patience=%d, min_epochs=%d)",
                             epoch + 1,
                             gru_cfg.patience,
                             gru_cfg.min_epochs,

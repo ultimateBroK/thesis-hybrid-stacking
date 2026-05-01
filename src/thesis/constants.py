@@ -82,31 +82,30 @@ EXCLUDED_FEATURE_COLS = EXCLUDE_COLS
 # Core tabular features — price-action focused with minimal indicators.
 # Keep in sync with config.toml [features].static_feature_cols.
 CORE_STATIC_FEATURES: tuple[str, ...] = (
-    # Price structure
-    "atr_14",
-    "price_dist_ratio",
-    "close_vs_ema_34",
+    # Trend
     "ema34_vs_ema89",
-    "pivot_position",
-    "price_position_20",
+    "close_vs_ema_34",
+    "trend_strength",
+    # Momentum
+    "return_1h",
+    "return_4h",
+    "macd_hist",
+    "rsi_14",
+    # Volatility / Regime
+    "atr_14",
     "atr_percentile",
-    # Candle / bar structure
+    "high_low_range_20",
+    # Position / Location
+    "price_dist_ratio",
+    "price_position_20",
+    "pivot_position",
+    # Candle Structure
     "candle_body_ratio",
     "upper_wick_ratio",
     "lower_wick_ratio",
-    "gap_ratio",
-    # Momentum from price
-    "return_1h",
-    "return_4h",
-    "high_low_range_20",
-    "consecutive_bars",
-    # Minimal indicators
-    "rsi_14",
-    "macd_hist",
-    "trend_strength",
     # Session
     "sess_london",
     "sess_overlap",
-    # Volume
+    # Volume / Activity
     "volume_zscore_20",
 )

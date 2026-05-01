@@ -183,9 +183,9 @@ def test_workflow_config_expected_boolean_fields():
 
 
 @pytest.mark.unit
-def test_static_feature_count_is_21():
-    """CORE_STATIC_FEATURES must have exactly 21 features."""
-    assert len(CORE_STATIC_FEATURES) == 21
+def test_static_feature_count_is_19():
+    """CORE_STATIC_FEATURES must have exactly 19 features."""
+    assert len(CORE_STATIC_FEATURES) == 19
 
 
 @pytest.mark.unit
@@ -200,7 +200,7 @@ def test_total_features_equals_hidden_plus_static():
     """total features = hidden_size + len(static_feature_cols)."""
     cfg = Config()
     total = cfg.gru.hidden_size + len(cfg.features.static_feature_cols)
-    assert total == 64 + 21  # 85
+    assert total == 64 + 19  # 83
 
 
 @pytest.mark.unit

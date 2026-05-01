@@ -116,25 +116,23 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 # Keep in sync with CORE_STATIC_FEATURES in constants.py.
 EXPECTED_FEATURES: list[str] = [
     "atr_14",
-    "price_dist_ratio",
-    "close_vs_ema_34",
-    "ema34_vs_ema89",
-    "pivot_position",
-    "price_position_20",
     "atr_percentile",
     "candle_body_ratio",
-    "upper_wick_ratio",
+    "close_vs_ema_34",
+    "ema34_vs_ema89",
+    "high_low_range_20",
     "lower_wick_ratio",
-    "gap_ratio",
+    "macd_hist",
+    "pivot_position",
+    "price_dist_ratio",
+    "price_position_20",
     "return_1h",
     "return_4h",
-    "high_low_range_20",
-    "consecutive_bars",
     "rsi_14",
-    "macd_hist",
-    "trend_strength",
     "sess_london",
     "sess_overlap",
+    "trend_strength",
+    "upper_wick_ratio",
     "volume_zscore_20",
 ]
 
@@ -320,7 +318,7 @@ def test_session_dummies_coverage() -> None:
 @pytest.mark.unit
 @pytest.mark.features
 def test_all_features_together(sample_config: Config) -> None:
-    """Test that all indicators can be applied together producing 11 core features."""
+    """Test that all indicators can be applied together producing core features."""
     df = create_synthetic_ohlcv(n_rows=200)
 
     # Apply all feature functions in order
