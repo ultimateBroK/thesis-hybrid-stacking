@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import polars as pl
-import pytest
 from sklearn.model_selection import TimeSeriesSplit
 
 from thesis.config import Config
@@ -16,6 +15,8 @@ def test_exclude_cols_contains_target_and_lookahead_fields() -> None:
     for col in (
         "timestamp",
         "label",
+        "upper_barrier",
+        "lower_barrier",
         "tp_price",
         "sl_price",
         "touched_bar",

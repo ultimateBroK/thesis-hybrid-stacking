@@ -161,7 +161,7 @@ Different timeframes require different parameter values.
 
 ## 3. Walk-Forward Validation (`[validation]`)
 
-Walk-forward validation is critical for time-series models. These parameters control how the pipeline splits data into train/test windows.
+Walk-forward validation is critical for time-series models. These parameters control how the pipeline splits data into train/test windows. Window sizes are **bar-based** row counts, not guaranteed calendar durations.
 
 | Parameter | Default | What it does |
 |-----------|---------|-------------|

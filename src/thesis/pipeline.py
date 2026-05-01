@@ -154,7 +154,7 @@ def _run_walk_forward_hybrid(config: Config) -> None:
         )
 
     log_windows(windows, df, "timestamp")
-    logger.info("Walk-forward: %d windows", len(windows))
+    logger.info("Walk-forward: %d bar-based windows", len(windows))
 
     # Identify feature columns (exclude non-features)
     feature_cols = sorted(c for c in df.columns if c not in EXCLUDE_COLS)
@@ -197,7 +197,9 @@ def _run_walk_forward_hybrid(config: Config) -> None:
             continue
 
         # --- Train GRU ---
-        # Use last 20% of training as validation for early stopping
+        # Validation protocol: GRU gets the last 20% of the outer training
+        # window for neural early stopping. This slice never includes the
+        # outer test window.
         val_split = max(1, int(len(train_df) * 0.2))
         gru_train_df = train_df.head(len(train_df) - val_split)
         gru_val_df = train_df.tail(val_split)
@@ -260,7 +262,10 @@ def _run_walk_forward_hybrid(config: Config) -> None:
         y_train = train_aligned["label"].to_numpy().astype(np.int32)
         y_test = test_aligned["label"].to_numpy().astype(np.int32)
 
-        # Validation set for LightGBM = last portion of training
+        # Validation protocol: LightGBM uses the last 20% of sequence-aligned
+        # hybrid training rows for early stopping/Optuna. This is a separate
+        # validation split after GRU hidden-state extraction, still inside the
+        # outer training window.
         val_split_idx = max(1, int(len(X_train) * 0.2))
         X_tr = X_train[:-val_split_idx]
         y_tr = y_train[:-val_split_idx]
@@ -376,6 +381,11 @@ def _run_walk_forward_hybrid(config: Config) -> None:
         if last_lgbm_model is not None:
             lgbm_info = {
                 "artifact_strategy": "last_walk_forward_window",
+                "validation_protocol": {
+                    "outer_windows": "bar_based_walk_forward_with_purge_embargo",
+                    "gru_validation": "tail_20_percent_of_outer_train",
+                    "lgbm_validation": "tail_20_percent_of_sequence_aligned_outer_train",
+                },
                 "last_window_accuracy": last_window_accuracy,
                 "best_iteration": int(last_lgbm_model.best_iteration_)
                 if hasattr(last_lgbm_model, "best_iteration_")

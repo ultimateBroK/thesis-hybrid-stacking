@@ -15,8 +15,8 @@ occurs when each stage maintains its own copy.
 #: Rationale per group:
 #:  - timestamp          → index / join key, not a feature
 #:  - label              → target variable (look-ahead)
-#:  - upper_barrier/lower_barrier/tp_price/sl_price/touched_bar
-#:    → label-derived, pure look-ahead
+#:  - upper_barrier/lower_barrier/touched_bar → label-derived, pure look-ahead
+#:  - tp_price/sl_price → legacy label aliases from older cached artifacts
 #:  - open_right/high_right/low_right/close_right → label-derived look-ahead
 #:  - open/high/low/close/volume → raw OHLCV, excluded to avoid raw price leakage
 #:  - avg_spread/tick_count → microstructure columns kept for backtest
@@ -34,9 +34,9 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "label",
         "upper_barrier",
         "lower_barrier",
+        "touched_bar",
         "tp_price",
         "sl_price",
-        "touched_bar",
         "open_right",  # Label-derived — pure look-ahead
         "high_right",  # Label-derived — pure look-ahead
         "low_right",  # Label-derived — pure look-ahead

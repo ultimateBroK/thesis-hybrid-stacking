@@ -30,7 +30,7 @@ logger = logging.getLogger("thesis.labels")
 
 def generate_labels(config: Config) -> None:
     """
-    Generate triple-barrier labels and write them to the configured labels path.
+    Generate direction-barrier labels and write them to the configured labels path.
 
     Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes symmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
 
@@ -40,7 +40,7 @@ def generate_labels(config: Config) -> None:
             - paths.ohlcv: path to OHLCV parquet
             - paths.labels: output path for labels parquet
             - features.atr_period: integer ATR period (used to form `atr_{period}` column)
-            - labels.atr_multiplier: ATR multiplier for TP/SL
+            - labels.atr_multiplier: ATR multiplier for upper/lower barriers
             - labels.horizon_bars: forward horizon in bars
             - labels.min_atr: minimum ATR value to use
 
@@ -69,21 +69,27 @@ def generate_labels(config: Config) -> None:
 
     _log_atr_stats(df, atr_col, config.labels.min_atr)
 
-    labels_arr, upper_arr, lower_arr, touched_bars_arr = _compute_labels(
-        close=df["close"].to_numpy(),
-        high=df["high"].to_numpy(),
-        low=df["low"].to_numpy(),
-        atr=df[atr_col].to_numpy(),
-        mult=config.labels.atr_multiplier,
-        horizon=config.labels.horizon_bars,
-        min_atr=config.labels.min_atr,
+    labels_arr, upper_arr, lower_arr, touched_bars_arr, ambiguous_count = (
+        _compute_labels(
+            close=df["close"].to_numpy(),
+            high=df["high"].to_numpy(),
+            low=df["low"].to_numpy(),
+            atr=df[atr_col].to_numpy(),
+            mult=config.labels.atr_multiplier,
+            horizon=config.labels.horizon_bars,
+            min_atr=config.labels.min_atr,
+        )
     )
 
     logger.info(
-        "Triple-barrier params: mult=%.2f, horizon=%d, min_atr=%.6f",
+        "Direction-barrier params: mult=%.2f, horizon=%d, min_atr=%.6f",
         config.labels.atr_multiplier,
         config.labels.horizon_bars,
         config.labels.min_atr,
+    )
+    logger.info(
+        "Ambiguous same-bar both-hit labels: %d (treated as Hold)",
+        ambiguous_count,
     )
 
     df = _merge_label_columns(df, labels_arr, upper_arr, lower_arr, touched_bars_arr)
@@ -117,17 +123,15 @@ def _compute_labels(
     For each index i this sets upper = close[i] + mult * max(atr[i], min_atr) and lower = close[i] - mult * max(atr[i], min_atr), then inspects bars i+1 .. i+horizon (bounded by series end) to determine which barrier is touched first. If neither barrier is touched within the horizon the label remains 0. If both barriers are touched on the same OHLC bar, the sample is treated as ambiguous and labeled Hold (0). Rows within `horizon` bars of the series end are marked -2 (censored) and are dropped from training.
 
     Returns:
-        dict: A dictionary with the following keys:
-            - "labels" (np.ndarray[int32]): per-bar labels where 1 = upper barrier hit, -1 = lower barrier hit, 0 = Hold, -2 = censored (right-censored, insufficient forward bars).
-            - "upper_barriers" (np.ndarray[float64]): upper barrier price set at each bar.
-            - "lower_barriers" (np.ndarray[float64]): lower barrier price set at each bar.
-            - "touched_bars" (np.ndarray[int32]): number of bars forward until the barrier was touched; -1 if not touched, -2 if censored.
+        Tuple of labels, upper barriers, lower barriers, touched-bar offsets,
+        and the same-bar both-hit count.
     """
     n = len(close)
     labels = np.zeros(n, dtype=np.int32)
     upper_barriers = np.zeros(n, dtype=np.float64)
     lower_barriers = np.zeros(n, dtype=np.float64)
     touched_bars = np.full(n, -1, dtype=np.int32)
+    ambiguous_count = 0
 
     for i in range(n):
         a = max(atr[i], min_atr)
@@ -148,6 +152,7 @@ def _compute_labels(
             lower_hit = low[j] <= lower
             if upper_hit and lower_hit:
                 # OHLC bars do not reveal intra-bar path; keep ambiguous samples neutral.
+                ambiguous_count += 1
                 break
             if upper_hit:
                 label = 1  # Long
@@ -159,7 +164,7 @@ def _compute_labels(
                 break
         labels[i] = label
 
-    return labels, upper_barriers, lower_barriers, touched_bars
+    return labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count
 
 
 # ---------------------------------------------------------------------------
@@ -182,11 +187,7 @@ def _merge_label_columns(
     lower_arr: np.ndarray,
     touched_bars_arr: np.ndarray,
 ) -> pl.DataFrame:
-    """Build and join label columns into the main dataframe.
-
-    ``tp_price`` and ``sl_price`` are retained as backward-compatible aliases
-    for the upper/lower direction barriers.
-    """
+    """Build and join label columns into the main dataframe."""
     ts_dtype = df["timestamp"].dtype
     labels_df = pl.DataFrame(
         {
@@ -194,8 +195,6 @@ def _merge_label_columns(
             "label": labels_arr,
             "upper_barrier": upper_arr,
             "lower_barrier": lower_arr,
-            "tp_price": upper_arr,
-            "sl_price": lower_arr,
             "touched_bar": touched_bars_arr,
         }
     )
@@ -228,7 +227,7 @@ def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
 def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
     """Remove censored rows (label == -2) where forward horizon is insufficient.
 
-    Censored rows lack enough future data to evaluate the triple-barrier outcome.
+    Censored rows lack enough future data to evaluate the barrier outcome.
     Keeping them as Hold would inject label noise, so they are dropped entirely.
     """
     n_censored = int((df["label"] == -2).sum())

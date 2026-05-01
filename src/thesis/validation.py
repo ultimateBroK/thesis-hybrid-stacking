@@ -1,8 +1,10 @@
-"""Walk-forward sliding window validation with purge and embargo.
+"""Bar-based walk-forward sliding window validation with purge and embargo.
 
-Generates expanding or rolling train/test window splits suitable for
-time-series cross-validation.  Each window applies *purge* and *embargo*
-gaps at the train/test boundary to prevent information leakage.
+Generates rolling train/test window splits suitable for time-series
+cross-validation. Windows are defined by row counts (bars), not fixed calendar
+durations; calendar span can vary when weekends, holidays, or missing bars are
+present. Each window applies *purge* and *embargo* gaps at the train/test
+boundary to prevent information leakage.
 """
 
 from __future__ import annotations
@@ -53,16 +55,17 @@ def generate_windows(
     embargo_bars: int = 50,
     min_train_bars: int = 5_000,
 ) -> list[WalkForwardWindow]:
-    """Create walk-forward windows across *total_bars* observations.
+    """Create bar-count walk-forward windows across *total_bars* observations.
 
-    Windows slide forward by *step_bars* each fold.  Purge trims the
+    Windows slide forward by *step_bars* each fold.  The parameters are counts
+    of observed rows/bars, not guaranteed calendar durations.  Purge trims the
     tail of each training window and embargo skips the head of each test
     window so that no overlapping information leaks across the boundary.
 
     Args:
         total_bars: Total number of bars (rows) in the dataset.
-        train_window_bars: Desired training window length (~3 years at H1).
-        test_window_bars: Desired test window length (~6 months at H1).
+        train_window_bars: Desired training window length in observed bars.
+        test_window_bars: Desired test window length in observed bars.
         step_bars: Number of bars to advance between successive windows.
         purge_bars: Bars removed from the end of the training period.
         embargo_bars: Additional gap inserted after the purge zone.
@@ -99,7 +102,7 @@ def generate_windows(
 
         test_start += step_bars
 
-    logger.info("Generated %d walk-forward window(s)", len(windows))
+    logger.info("Generated %d bar-based walk-forward window(s)", len(windows))
     return windows
 
 
@@ -177,6 +180,9 @@ def split_data(
 
     Uses integer-row slicing (not date-based filtering) so the indices
     in each :class:`WalkForwardWindow` map directly to row positions.
+    The default Stage 3 pipeline slices inline for readability; this helper is
+    retained for tests, notebooks, and external callers that need reusable
+    train/test frame pairs.
 
     Args:
         df: Source DataFrame containing all bars.
@@ -195,7 +201,7 @@ def split_data(
         splits.append((train_df, test_df))
 
         logger.debug(
-            "Window %d — train rows [%d:%d] (%d), test rows [%d:%d] (%d)",
+            "Bar-based window %d — train rows [%d:%d] (%d), test rows [%d:%d] (%d)",
             i,
             w.train_start_idx,
             w.train_end_idx,
@@ -205,7 +211,7 @@ def split_data(
             len(test_df),
         )
 
-    logger.info("Split DataFrame into %d (train, test) pair(s)", len(splits))
+    logger.info("Split DataFrame into %d bar-based (train, test) pair(s)", len(splits))
     return splits
 
 
@@ -247,7 +253,7 @@ def log_windows(
         test_bars = w.test_end_idx - w.test_start_idx
 
         logger.info(
-            "Window %d | train: %s → %s (%d bars) | test: %s → %s (%d bars)",
+            "Bar-based window %d | train: %s → %s (%d bars) | test: %s → %s (%d bars)",
             i,
             train_start_dt,
             train_end_dt,

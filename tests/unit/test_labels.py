@@ -7,11 +7,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.labels import _compute_labels
+from thesis.labels import _compute_labels, _merge_label_columns
 
 
 @pytest.mark.unit
@@ -24,7 +25,7 @@ def test_labels_in_valid_set() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    labels, _, _, _ = _compute_labels(
+    labels, _, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -46,15 +47,15 @@ def test_labels_in_valid_set() -> None:
 
 @pytest.mark.unit
 @pytest.mark.data
-def test_tp_sl_price_relationship() -> None:
-    """Test that tp_price > close and sl_price < close for each bar (the bug fix!)."""
+def test_upper_lower_barrier_relationship() -> None:
+    """Test that upper_barrier > close and lower_barrier < close for each bar (the bug fix!)."""
     n = 50
     close = np.linspace(1800, 1900, n)
     high = close + 5
     low = close - 5
     atr = np.ones(n) * 10
 
-    _, tp_prices, sl_prices, _ = _compute_labels(
+    _, upper_barriers, lower_barriers, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -64,13 +65,13 @@ def test_tp_sl_price_relationship() -> None:
         min_atr=0.0001,
     )
 
-    # For every bar, TP should be above close and SL below close
+    # For every bar, upper barrier should be above close and lower barrier below close
     for i in range(n):
-        assert tp_prices[i] > close[i], (
-            f"TP {tp_prices[i]} not > close {close[i]} at index {i}"
+        assert upper_barriers[i] > close[i], (
+            f"upper barrier {upper_barriers[i]} not > close {close[i]} at index {i}"
         )
-        assert sl_prices[i] < close[i], (
-            f"SL {sl_prices[i]} not < close {close[i]} at index {i}"
+        assert lower_barriers[i] < close[i], (
+            f"lower barrier {lower_barriers[i]} not < close {close[i]} at index {i}"
         )
 
 
@@ -85,7 +86,7 @@ def test_touched_bars_for_hold() -> None:
     low = close - 0.1
     atr = np.ones(n) * 10  # Barriers will be at +/- 15
 
-    labels, _, _, touched_bars = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -105,16 +106,59 @@ def test_touched_bars_for_hold() -> None:
 
 @pytest.mark.unit
 @pytest.mark.data
+def test_same_bar_both_hit_counted_as_ambiguous_hold() -> None:
+    """Same-bar upper/lower hit is neutral and counted for diagnostics."""
+    close = np.array([100.0, 100.0, 100.0, 100.0])
+    high = np.array([100.0, 103.0, 100.0, 100.0])
+    low = np.array([100.0, 97.0, 100.0, 100.0])
+    atr = np.ones(len(close))
+
+    labels, _, _, touched_bars, ambiguous_count = _compute_labels(
+        close=close,
+        high=high,
+        low=low,
+        atr=atr,
+        mult=2.0,
+        horizon=2,
+        min_atr=0.0001,
+    )
+
+    assert labels[0] == 0
+    assert touched_bars[0] == -1
+    assert ambiguous_count == 1
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_label_columns_do_not_emit_legacy_tp_sl_aliases() -> None:
+    """New label output uses upper/lower barrier names only."""
+    df = pl.DataFrame({"timestamp": [1, 2, 3]})
+    result = _merge_label_columns(
+        df,
+        labels_arr=np.array([1, 0, -1], dtype=np.int32),
+        upper_arr=np.array([102.0, 103.0, 104.0]),
+        lower_arr=np.array([98.0, 97.0, 96.0]),
+        touched_bars_arr=np.array([1, -1, 2], dtype=np.int32),
+    )
+
+    assert "upper_barrier" in result.columns
+    assert "lower_barrier" in result.columns
+    assert "tp_price" not in result.columns
+    assert "sl_price" not in result.columns
+
+
+@pytest.mark.unit
+@pytest.mark.data
 def test_touched_bars_for_non_hold() -> None:
     """Test that touched_bars >= 0 for non-Hold labels."""
     n = 50
     close = np.linspace(1800, 1900, n)
-    # Make high hit TP quickly
-    high = close + 20  # Will hit TP
+    # Make high hit upper barrier quickly
+    high = close + 20  # Will hit upper barrier
     low = close - 1
     atr = np.ones(n) * 10
 
-    labels, _, _, touched_bars = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -143,7 +187,7 @@ def test_zero_atr_handled() -> None:
     low = close - 5
     atr = np.zeros(n)  # Zero ATR
 
-    labels, tp_prices, sl_prices, _ = _compute_labels(
+    labels, upper_barriers, lower_barriers, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -157,10 +201,10 @@ def test_zero_atr_handled() -> None:
     assert len(labels) == n
     assert np.all(np.isin(labels, [-2, -1, 0, 1]))
 
-    # TP and SL should still be valid
+    # upper barrier and lower barrier should still be valid
     for i in range(n):
-        assert tp_prices[i] > close[i]
-        assert sl_prices[i] < close[i]
+        assert upper_barriers[i] > close[i]
+        assert lower_barriers[i] < close[i]
 
 
 @pytest.mark.unit
@@ -169,12 +213,12 @@ def test_extreme_volatility_all_long() -> None:
     """Test with extreme volatility (all Long)."""
     n = 50
     close = np.linspace(1800, 1900, n)
-    # High always hits TP
+    # High always hits upper barrier
     high = close + 100
     low = close - 1
     atr = np.ones(n) * 10
 
-    labels, _, _, _ = _compute_labels(
+    labels, _, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -196,11 +240,11 @@ def test_extreme_volatility_all_short() -> None:
     n = 50
     close = np.linspace(1800, 1900, n)
     high = close + 1
-    # Low always hits SL
+    # Low always hits lower barrier
     low = close - 100
     atr = np.ones(n) * 10
 
-    labels, _, _, _ = _compute_labels(
+    labels, _, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -226,7 +270,7 @@ def test_horizon_boundary() -> None:
     atr = np.ones(n) * 10
     horizon = 5
 
-    labels, _, _, touched_bars = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -255,7 +299,7 @@ def test_atr_multiplier_effect() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    labels_small, _, _, _ = _compute_labels(
+    labels_small, _, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -265,7 +309,7 @@ def test_atr_multiplier_effect() -> None:
         min_atr=0.0001,
     )
 
-    labels_large, _, _, _ = _compute_labels(
+    labels_large, _, _, _, _ = _compute_labels(
         close=close,
         high=high,
         low=low,
@@ -295,7 +339,7 @@ def test_no_lookahead_bias() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    labels, _, _, touched_bars = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_labels(
         close=close,
         high=high,
         low=low,

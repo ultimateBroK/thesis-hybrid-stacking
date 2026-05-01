@@ -69,6 +69,10 @@ All defaults below match `config.toml` and `src/thesis/config.py` dataclasses.
 | `oof_ensemble` | `true` | Aggregate out-of-fold predictions across all walk-forward windows. |
 | `wf_optuna_trials` | `0` | Optuna hyperparameter trials per walk-forward window. `0` means fixed params (faster, more reproducible). |
 
+Walk-forward window sizes are **bar-based**, not fixed calendar durations. For
+example, `4380` H1 bars is only approximately six months; weekends, holidays,
+and missing broker data can change the actual calendar span.
+
 ### `[features]`
 
 | Parameter | Default | Description |

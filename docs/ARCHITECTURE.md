@@ -116,10 +116,13 @@ Each window:
 
 1. **Slices** the labeled data into a train block and a test block.
 2. **Applies purge and embargo** at the boundary (anti-leakage).
-3. **Trains GRU** on the train slice (80/20 internal split for early stopping).
+3. **Trains GRU** on the train slice. GRU validation is the last 20% of the
+   outer train block and is used for neural early stopping only.
 4. **Extracts GRU hidden states** for both train and test slices.
 5. **Builds the hybrid feature matrix** (GRU hidden states + static indicators).
-6. **Trains LightGBM** on the hybrid features.
+6. **Trains LightGBM** on the hybrid features. LightGBM validation is the last
+   20% of the sequence-aligned outer train rows and is used for tree early
+   stopping or per-window Optuna.
 7. **Predicts on the test slice** and collects as one OOF chunk.
 
 After all windows: OOF chunks are concatenated into a single prediction file
@@ -398,6 +401,8 @@ flowchart LR
 These gaps apply at **every window boundary**, not just at fixed dates.
 The window indices are computed dynamically by `validation.generate_windows()`
 based on the total bar count and the configured window sizes.
+These are **bar-based** windows: the calendar duration is approximate and can
+vary when weekends, holidays, or missing bars are present.
 
 ---
 
