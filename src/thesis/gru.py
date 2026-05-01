@@ -899,7 +899,7 @@ def train_gru(
                 v_acc=val_acc,
             )
 
-            # Early stopping
+            # Early stopping — enforce min_epochs before allowing patience
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_epoch = epoch + 1
@@ -914,12 +914,16 @@ def train_gru(
                 patience_counter = 0
             else:
                 patience_counter += 1
-                if patience_counter >= gru_cfg.patience:
+                if (
+                    patience_counter >= gru_cfg.patience
+                    and epoch + 1 >= gru_cfg.min_epochs
+                ):
                     if epoch + 1 < gru_cfg.epochs:
                         logger.info(
-                            "Early stop at epoch %d (patience=%d)",
+                            "Early stop at epoch %d (patience=%d, min_epochs=%d)",
                             epoch + 1,
                             gru_cfg.patience,
+                            gru_cfg.min_epochs,
                         )
                     break
 

@@ -229,3 +229,85 @@ def test_calendar_day_strips_intraday_time() -> None:
 
     assert _calendar_day(ts1) == _calendar_day(ts2)
     assert _calendar_day(ts1) != _calendar_day(ts3)
+
+
+# ---------------------------------------------------------------------------
+# Confidence-based position sizing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.backtest
+def test_position_size_scales_with_confidence() -> None:
+    """Higher confidence should produce larger position sizes."""
+    from thesis.backtest import HybridGRUStrategy
+
+    # Can't instantiate Strategy without broker/data/params.
+    # Use a lightweight mock with only the attributes _compute_lots reads.
+    strategy = type("S", (), {
+        "confidence_threshold": 0.55,
+        "lots_per_trade": 0.1,
+        "min_lots": 0.05,
+        "max_lots": 0.2,
+        "_compute_lots": HybridGRUStrategy._compute_lots,
+    })()
+
+    # Low confidence (just above threshold)
+    lots_low = strategy._compute_lots(confidence=0.56)
+    # High confidence (near 1.0)
+    lots_high = strategy._compute_lots(confidence=0.95)
+
+    assert lots_low > 0, "Lots should be positive above threshold"
+    assert lots_high > 0, "Lots should be positive at high confidence"
+    assert lots_high >= lots_low, (
+        f"Higher confidence ({lots_high}) should produce >= lots than "
+        f"lower confidence ({lots_low})"
+    )
+
+    # Clamped to [min_lots, max_lots]
+    assert lots_low >= strategy.min_lots
+    assert lots_high <= strategy.max_lots
+
+
+@pytest.mark.unit
+@pytest.mark.backtest
+def test_position_size_returns_fixed_when_no_confidence() -> None:
+    """Without confidence data, sizing falls back to fixed lots_per_trade."""
+    from thesis.backtest import HybridGRUStrategy
+
+    strategy = type("S", (), {
+        "confidence_threshold": 0.0,  # disabled
+        "lots_per_trade": 0.1,
+        "_compute_lots": HybridGRUStrategy._compute_lots,
+    })()
+
+    lots = strategy._compute_lots(confidence=None)
+    assert lots == 0.1
+
+    # Even with a confidence value, threshold=0 means fixed sizing
+    lots2 = strategy._compute_lots(confidence=0.99)
+    assert lots2 == 0.1
+
+
+@pytest.mark.unit
+@pytest.mark.backtest
+def test_position_size_below_threshold_returns_min() -> None:
+    """Confidence below threshold should not be reached (caller gates)."""
+    from thesis.backtest import HybridGRUStrategy
+
+    strategy = type("S", (), {
+        "confidence_threshold": 0.7,
+        "lots_per_trade": 0.1,
+        "min_lots": 0.05,
+        "max_lots": 0.2,
+        "_compute_lots": HybridGRUStrategy._compute_lots,
+    })()
+
+    # At threshold boundary: scale = 0 → clamped to min_lots
+    lots_at = strategy._compute_lots(confidence=0.70)
+    assert lots_at == strategy.min_lots
+
+    # Well above threshold: scale > 0 → lots > min_lots
+    lots_above = strategy._compute_lots(confidence=0.95)
+    # scale = (0.95-0.70)/0.30 = 0.833 → lots = 0.0833 > 0.05
+    assert lots_above > strategy.min_lots

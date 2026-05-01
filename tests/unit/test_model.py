@@ -254,5 +254,7 @@ def test_interaction_constraints_skip_empty_groups() -> None:
     static_only = _build_interaction_constraints(["rsi_14", "atr_14"])
     gru_only = _build_interaction_constraints(["gru_h0", "gru_h1"])
 
-    assert static_only == [[0, 1]]
-    assert gru_only == [[0, 1]]
+    # Interaction constraints are currently disabled — returns empty list
+    # to allow full cross-group interaction in LightGBM.
+    assert static_only == []
+    assert gru_only == []

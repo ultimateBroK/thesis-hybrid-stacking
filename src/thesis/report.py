@@ -977,6 +977,11 @@ def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> 
         "*Benchmarks are rough directional references and are not "
         "trading-cost-equivalent to the CFD backtest strategy.*"
     )
+    L.append(
+        "*Note: Benchmarks exclude transaction costs (spread, slippage, "
+        "commission); not directly comparable to the Hybrid model which "
+        "incurs all three.*"
+    )
     L.append("")
     L.append(_tbl_row("Strategy", "Return", "Sharpe", "Max DD", "Win Rate", "Trades"))
     L.append(_tbl_row("--------", "------", "------", "-------", "--------", "------"))
@@ -1446,7 +1451,12 @@ def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> Non
 def _build_equity_series(
     trades: list[dict], initial_capital: float
 ) -> tuple[list, list]:
-    """Build timestamp and cumulative equity series from trades."""
+    """Build timestamp and cumulative equity series from trades.
+
+    Note:
+        The equity curve is trade-by-trade (closed-trade PnL), not
+        mark-to-market. Intra-trade drawdowns are not visible.
+    """
     times = [pd.to_datetime(trades[0]["entry_time"])]
     equity = [initial_capital]
     for t in trades:

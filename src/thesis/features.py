@@ -65,7 +65,7 @@ def generate_features(config: Config) -> None:
     df = _add_high_low_range(df, config)
 
     # --- Trend quality ---
-    df = add_trend_strength(df)
+    df = _add_trend_strength(df)
 
     # --- Minimal indicators ---
     df = _add_rsi(df, config)
@@ -526,7 +526,7 @@ def _add_high_low_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
+def _add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
     """Add ``trend_strength`` column — Wilder-smoothed ADX.
 
     ADX > 25 typically indicates a trending market; ADX < 20 suggests a

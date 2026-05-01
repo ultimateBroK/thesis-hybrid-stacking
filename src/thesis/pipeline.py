@@ -153,6 +153,16 @@ def _run_walk_forward_hybrid(config: Config) -> None:
             "No valid walk-forward windows generated — check data size and window parameters"
         )
 
+    # P0-1: Guard against sequence leakage — ensure gap >= sequence_length
+    gap_bars = v.purge_bars + v.embargo_bars
+    seq_len = config.gru.sequence_length
+    if gap_bars < seq_len:
+        raise ValueError(
+            f"Leakage risk: purge+embargo gap ({gap_bars} bars) < GRU sequence_length "
+            f"({seq_len} bars). Test sequences would overlap with training data. "
+            f"Increase purge_bars and/or embargo_bars to at least {seq_len}."
+        )
+
     log_windows(windows, df, "timestamp")
     logger.info("Walk-forward: %d bar-based windows", len(windows))
 
@@ -354,6 +364,17 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     # --- Concatenate OOF predictions ---
 
     oof_df = pl.concat(all_oof_preds)
+
+    # P1-2: Verify OOF predictions have unique timestamps
+    ts_col = oof_df["timestamp"]
+    if ts_col.n_unique() < len(ts_col):
+        dup_count = len(ts_col) - ts_col.n_unique()
+        raise ValueError(
+            f"OOF predictions contain {dup_count} duplicate timestamps — "
+            f"walk-forward test windows should be non-overlapping. "
+            f"Check step_bars vs test_window_bars."
+        )
+
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
     oof_df.write_parquet(preds_path)
@@ -1055,9 +1076,19 @@ def _run_walk_forward(config: Config) -> None:
 
 
 def _run_static_train(config: Config) -> None:
-    """Run traditional static train/val/test split training."""
+    """Run traditional static train/val/test split training.
+
+    WARNING: Static split does not apply purge/embargo at the split boundary.
+    With triple-barrier labels (horizon_bars > 0), labels near the boundary
+    may use future information from the adjacent split. For thesis evaluation,
+    use validation.method = "sliding" instead.
+    """
     from thesis.model import train_model
 
+    logger.warning(
+        "Static split mode does not apply purge/embargo — potential label leakage "
+        "at split boundaries. Recommended: validation.method = 'sliding'."
+    )
     train_model(config)
 
 

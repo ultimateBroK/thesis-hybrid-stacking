@@ -152,9 +152,15 @@ class HybridGRUStrategy(Strategy):
         return max(atr, self.min_atr)
 
     def _update_risk_state(self) -> None:
-        """Update peak equity, drawdown cooldown, and daily loss tracking.
+        """Update peak equity, drawdown tracking, and daily loss tracking.
 
         Called every bar in ``next()`` before any trading decisions.
+
+        Note: The drawdown circuit breaker is a **permanent shutdown** — once
+        triggered, no new positions are opened for the remainder of the
+        backtest. This is intentional for thesis evaluation: a strategy that
+        loses more than the cutoff is deemed unfit. The ``dd_cooldown_bars``
+        parameter is unused in the current implementation.
         """
         eq = self.equity
         self._peak_equity = max(self._peak_equity, eq)
@@ -332,12 +338,17 @@ def _extract_recovery_factor(
 
     Returns:
         Recovery factor (0.0 if max_drawdown is zero or negative).
+
+    Note:
+        Returns ``float('inf')`` when max drawdown is zero (no drawdown),
+        since division by zero is undefined and a strategy that never
+        experienced drawdown has infinite recovery.
     """
     net_profit = equity_final - initial_capital
     max_dd_dollars = abs(max_dd_pct / 100) * equity_peak
     if max_dd_dollars > 0:
         return net_profit / max_dd_dollars
-    return 0.0
+    return float("inf")
 
 
 def _compute_avg_win_loss(trades_df: pd.DataFrame) -> tuple[float, float]:
@@ -512,6 +523,10 @@ def _save_equity_curve_csv(
 
     Each row represents a closed trade with the running equity, peak equity,
     and drawdown percentage.
+
+    Note:
+        The equity curve is trade-by-trade (closed-trade PnL), not
+        mark-to-market. Intra-trade drawdowns are not visible.
 
     Args:
         trades: List of trade dictionaries with pnl and exit_time.

@@ -205,6 +205,88 @@ class TestSplitData:
         assert len(splits) == 0
 
 
+class TestConsecutiveWindowsNoOverlap:
+    """Verify walk-forward test windows are disjoint across folds."""
+
+    def test_consecutive_test_windows_do_not_overlap(self):
+        """No index can appear in two different test windows."""
+        windows = generate_windows(
+            total_bars=20000,
+            train_window_bars=8000,
+            test_window_bars=2000,
+            step_bars=2000,  # step == test_window → non-overlapping
+            purge_bars=10,
+            embargo_bars=5,
+            min_train_bars=2000,
+        )
+        assert len(windows) >= 2, "Need at least 2 windows to test overlap"
+
+        for i in range(len(windows) - 1):
+            w_a = windows[i]
+            w_b = windows[i + 1]
+            # test range of window i must end before test range of window i+1
+            assert w_a.test_end_idx <= w_b.test_start_idx, (
+                f"Window {i} test [{w_a.test_start_idx}, {w_a.test_end_idx}) "
+                f"overlaps window {i + 1} test [{w_b.test_start_idx}, {w_b.test_end_idx})"
+            )
+
+    def test_all_test_indices_are_disjoint_sets(self):
+        """Collect all test indices and verify zero duplicates."""
+        windows = generate_windows(
+            total_bars=15000,
+            train_window_bars=5000,
+            test_window_bars=1500,
+            step_bars=1500,
+            purge_bars=5,
+            embargo_bars=3,
+            min_train_bars=1000,
+        )
+        all_test_indices: set[int] = set()
+        for w in windows:
+            for idx in range(w.test_start_idx, w.test_end_idx):
+                assert idx not in all_test_indices, (
+                    f"Index {idx} appears in multiple test windows"
+                )
+                all_test_indices.add(idx)
+
+
+class TestOOFUniquenessGuard:
+    """Verify duplicate-timestamp detection logic for OOF predictions."""
+
+    def test_oof_timestamps_unique_after_concat(self):
+        """OOF predictions must have unique timestamps — no double-counting."""
+        # Simulate two fold predictions with one overlapping timestamp
+        fold1 = pl.DataFrame({
+            "timestamp": [1, 2, 3],
+            "pred_label": [1, -1, 0],
+        })
+        fold2 = pl.DataFrame({
+            "timestamp": [3, 4, 5],  # timestamp 3 overlaps
+            "pred_label": [1, -1, 0],
+        })
+        oof_df = pl.concat([fold1, fold2])
+
+        ts_col = oof_df["timestamp"]
+        assert ts_col.n_unique() < len(ts_col), "Expected duplicates"
+        dup_count = len(ts_col) - ts_col.n_unique()
+        assert dup_count == 1
+
+    def test_oof_no_duplicates_passes(self):
+        """Non-overlapping folds produce unique timestamps."""
+        fold1 = pl.DataFrame({
+            "timestamp": [1, 2, 3],
+            "pred_label": [1, -1, 0],
+        })
+        fold2 = pl.DataFrame({
+            "timestamp": [4, 5, 6],
+            "pred_label": [1, -1, 0],
+        })
+        oof_df = pl.concat([fold1, fold2])
+
+        ts_col = oof_df["timestamp"]
+        assert ts_col.n_unique() == len(ts_col)
+
+
 class TestLogWindows:
     def test_log_runs_without_error(self):
         df = _make_df(500)

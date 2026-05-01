@@ -21,22 +21,14 @@ from thesis.features import (
     _add_new_features,
     _add_pivot_position,
     _add_ny_session_dummies,
-    _add_trend_distances,
-    _add_bollinger_bands,
+    _add_ema_crossover,
+    _add_price_action_features,
     _add_volume_zscore,
     _add_log_returns,
     _add_high_low_range,
 )
 from thesis.features import (
-    add_multi_timeframe_features,
-    _resample_to_4h,
-    _join_4h_to_1h,
-)
-from thesis.features import (
-    add_vol_regime,
-    add_trend_strength,
-    add_hurst_exponent,
-    add_fractal_dim,
+    _add_trend_strength,
 )
 from thesis.constants import EXCLUDE_COLS
 
@@ -92,12 +84,18 @@ def sample_config() -> Config:
 
 def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Apply the full feature pipeline to a DataFrame (mirrors generate_features)."""
+    df = _add_rsi(df, config)
     df = _add_atr(df, config)
+    df = _add_macd(df, config)
     df = _add_new_features(df, config)
-    df = _add_trend_distances(df, config)
+    df = _add_pivot_position(df)
+    df = _add_price_action_features(df, config)
+    df = _add_ema_crossover(df, config)
+    df = _add_ny_session_dummies(df)
+    df = _add_volume_zscore(df, config)
     df = _add_log_returns(df, config)
     df = _add_high_low_range(df, config)
-    df = add_trend_strength(df)
+    df = _add_trend_strength(df)
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
     # NaN from numpy → Polars null before forward-fill (production pipeline does this too)
@@ -115,19 +113,29 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 # Expected compact production feature columns.
+# Keep in sync with CORE_STATIC_FEATURES in constants.py.
 EXPECTED_FEATURES: list[str] = [
     "atr_14",
     "price_dist_ratio",
+    "close_vs_ema_34",
+    "ema34_vs_ema89",
     "pivot_position",
+    "price_position_20",
     "atr_percentile",
-    "sess_london",
-    "sess_overlap",
-    "close_vs_sma_50",
-    "close_vs_ema_200",
+    "candle_body_ratio",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "gap_ratio",
     "return_1h",
     "return_4h",
     "high_low_range_20",
+    "consecutive_bars",
+    "rsi_14",
+    "macd_hist",
     "trend_strength",
+    "sess_london",
+    "sess_overlap",
+    "volume_zscore_20",
 ]
 
 
@@ -371,6 +379,7 @@ def test_insufficient_rows_handled(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_multi_timeframe_produces_columns(sample_config: Config) -> None:
     """Test that 4H resampling produces rsi_14_4h, atr_14_4h, macd_hist_4h."""
     df = create_synthetic_ohlcv(n_rows=200)
@@ -382,6 +391,7 @@ def test_multi_timeframe_produces_columns(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_multi_timeframe_rsi_bounded(sample_config: Config) -> None:
     """Test that 4H RSI is bounded [0, 100]."""
     df = create_synthetic_ohlcv(n_rows=200)
@@ -395,6 +405,7 @@ def test_multi_timeframe_rsi_bounded(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_multi_timeframe_atr_positive(sample_config: Config) -> None:
     """Test that 4H ATR is positive."""
     df = create_synthetic_ohlcv(n_rows=200)
@@ -407,6 +418,7 @@ def test_multi_timeframe_atr_positive(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_resample_4h_row_count(sample_config: Config) -> None:
     """Test that 4H resampling produces ~n/4 rows."""
     df = create_synthetic_ohlcv(n_rows=200)
@@ -417,6 +429,7 @@ def test_resample_4h_row_count(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_4h_no_future_leakage(sample_config: Config) -> None:
     """Test that 4H indicators are causally lagged — no future data leaks.
 
@@ -456,6 +469,7 @@ def test_4h_no_future_leakage(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_4h_join_is_backward(sample_config: Config) -> None:
     """Verify join_asof uses backward strategy — no 1H bar sees a 4H value from the future."""
     from thesis.features import _compute_4h_indicators
@@ -490,16 +504,15 @@ def test_4h_join_is_backward(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
-def test_trend_distances_columns(sample_config: Config) -> None:
-    """Test that trend distance features are produced."""
+def test_ema_crossover_columns(sample_config: Config) -> None:
+    """Test that EMA crossover features are produced."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_trend_distances(df, sample_config)
+    result = _add_ema_crossover(df, sample_config)
 
-    expected = [f"close_vs_sma_{p}" for p in sample_config.features.multi_timeframe.sma_periods]
-    expected.append(f"close_vs_ema_{sample_config.features.multi_timeframe.ema_long}")
+    expected = ["close_vs_ema_34", "ema34_vs_ema89"]
     for col in expected:
-        assert col in result.columns, f"Missing trend distance column: {col}"
+        assert col in result.columns, f"Missing EMA crossover column: {col}"
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +522,7 @@ def test_trend_distances_columns(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="_add_bollinger_bands removed in feature refactor")
 def test_bollinger_bands_columns(sample_config: Config) -> None:
     """Test that bb_width and bb_position columns are produced."""
     df = create_synthetic_ohlcv(n_rows=200)
@@ -521,6 +535,7 @@ def test_bollinger_bands_columns(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="_add_bollinger_bands removed in feature refactor")
 def test_bollinger_position_bounded(sample_config: Config) -> None:
     """Test that bb_position is clipped to [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=300)
@@ -535,6 +550,7 @@ def test_bollinger_position_bounded(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="_add_bollinger_bands removed in feature refactor")
 def test_bollinger_width_positive(sample_config: Config) -> None:
     """Test that bb_width is positive for valid data."""
     df = create_synthetic_ohlcv(n_rows=300)
@@ -602,6 +618,7 @@ def test_high_low_range_column(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_vol_regime removed in refactor")
 def test_vol_regime_ordinal(sample_config: Config) -> None:
     """Test vol_regime is ordinal {0, 1, 2}."""
     df = create_synthetic_ohlcv(n_rows=300)
@@ -617,6 +634,7 @@ def test_vol_regime_ordinal(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_vol_regime removed in refactor")
 def test_vol_regime_has_all_categories(sample_config: Config) -> None:
     """Test that vol_regime produces at least 2 of the 3 categories with enough data."""
     df = create_synthetic_ohlcv(n_rows=500, seed=123)
@@ -636,7 +654,7 @@ def test_trend_strength_adx_range() -> None:
     values slightly above 100 in edge cases. We check non-negative + finite.
     """
     df = create_synthetic_ohlcv(n_rows=300)
-    result = add_trend_strength(df)
+    result = _add_trend_strength(df)
 
     assert "trend_strength" in result.columns
     vals = result["trend_strength"].drop_nulls().to_numpy()
@@ -673,7 +691,7 @@ def test_trend_strength_adx_trending_detection() -> None:
             "volume": np.ones(n) * 5000,
         }
     )
-    result = add_trend_strength(df)
+    result = _add_trend_strength(df)
     vals = result["trend_strength"].drop_nulls().to_numpy()
 
     # For a strong uptrend, ADX should be well above 20 (trending threshold)
@@ -686,6 +704,7 @@ def test_trend_strength_adx_trending_detection() -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_hurst_exponent removed in feature refactor")
 def test_hurst_exponent_column() -> None:
     """Test hurst_exponent_100 column is produced."""
     df = create_synthetic_ohlcv(n_rows=300)
@@ -696,6 +715,7 @@ def test_hurst_exponent_column() -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_hurst_exponent removed in feature refactor")
 def test_hurst_exponent_valid_after_warmup() -> None:
     """Test Hurst exponent produces valid (0, 1) values after warmup.
 
@@ -719,6 +739,7 @@ def test_hurst_exponent_valid_after_warmup() -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_hurst_exponent removed in feature refactor")
 def test_hurst_random_walk_around_half() -> None:
     """Test Hurst exponent for a random walk is near 0.5.
 
@@ -738,6 +759,7 @@ def test_hurst_random_walk_around_half() -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_fractal_dim removed in feature refactor")
 def test_fractal_dim_column() -> None:
     """Test fractal_dim column is produced."""
     df = create_synthetic_ohlcv(n_rows=300)
@@ -748,6 +770,7 @@ def test_fractal_dim_column() -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
+@pytest.mark.skip(reason="add_fractal_dim removed in feature refactor")
 def test_fractal_dim_valid_after_warmup() -> None:
     """Test fractal dimension produces valid [1.0, 2.0] values after warmup."""
     df = create_synthetic_ohlcv(n_rows=300)
@@ -778,8 +801,8 @@ def test_regime_features_no_leakage(sample_config: Config) -> None:
     df_full = create_synthetic_ohlcv(n_rows=300)
     df_prefix = df_full.slice(0, 250)
 
-    result_full = add_trend_strength(df_full)
-    result_prefix = add_trend_strength(df_prefix)
+    result_full = _add_trend_strength(df_full)
+    result_prefix = _add_trend_strength(df_prefix)
 
     # First 250 values should be identical
     full_vals = result_full["trend_strength"].to_numpy()[:250]

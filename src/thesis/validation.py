@@ -125,6 +125,13 @@ def apply_purge_embargo(
     * **Embargo** skips the first *purge_bars + embargo_bars* from the
       test period, creating an additional information barrier.
 
+    The total gap between the adjusted train end and adjusted test start
+    is ``2 × purge_bars + embargo_bars``.  This is intentional: the
+    extra *purge_bars* on the test side accounts for label lookahead
+    (the label at the train boundary uses *horizon_bars* of future
+    data, so both sides of the boundary need at least that many bars
+    of clearance).
+
     Args:
         train_start: Raw training start index.
         raw_train_end: Raw training end index (exclusive).
