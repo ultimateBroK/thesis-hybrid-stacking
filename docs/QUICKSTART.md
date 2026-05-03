@@ -209,7 +209,7 @@ All settings live in **`config.toml`**. Edit this file to change:
 - GRU architecture (hidden size, layers, sequence length, etc.)
 - Model architecture (hybrid)
 
-See the [Configuration Guide](CONFIGURATION.md) for detailed instructions.
+See the `Configuration Guide <CONFIGURATION.md>`_ for detailed instructions.
 
 ---
 

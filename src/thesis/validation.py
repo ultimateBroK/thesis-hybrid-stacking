@@ -207,6 +207,21 @@ def apply_event_time_purge(
     strictly before the raw test boundary. This prevents label lookahead from
     reaching into the test period while avoiding unnecessary fixed-bar trimming.
     Embargo still skips the first ``embargo_bars`` test rows.
+
+    Args:
+        train_start: Raw training start index.
+        raw_train_end: Raw training end index (exclusive).
+        test_start: Raw test start index.
+        test_end: Raw test end index (exclusive).
+        event_end: Array of event-end indices (one per bar).
+        embargo_bars: Number of bars to skip at test head.
+
+    Returns:
+        A :class:`WalkForwardWindow` with adjusted indices, or ``None``
+        if the resulting train or test period is empty.
+
+    Raises:
+        ValueError: If *event_end* is shorter than *raw_train_end*.
     """
     if raw_train_end <= train_start:
         logger.debug(

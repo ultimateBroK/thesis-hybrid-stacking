@@ -20,6 +20,14 @@ import polars as pl
 from numba import njit
 
 from thesis.config import Config
+from thesis.constants import (
+    ATR_HIGH_QUANTILE,
+    ATR_LOW_QUANTILE,
+    CENSORED_LABEL,
+    LABEL_PROFITABILITY_WARN_PCT,
+    ROUNDTRIP_MULT,
+    SAMPLE_WEIGHT_MIN,
+)
 
 logger = logging.getLogger("thesis.labels")
 
@@ -170,8 +178,8 @@ def _compute_labels(
 
         # Right-censored: not enough forward bars to evaluate horizon
         if i + horizon >= n:
-            labels[i] = -2  # Special marker: censored (excluded from training)
-            touched_bars[i] = -2
+            labels[i] = CENSORED_LABEL
+            touched_bars[i] = CENSORED_LABEL
             continue
 
         label = 0  # Hold by default
@@ -203,6 +211,13 @@ def compute_event_end(touched_bars: np.ndarray, horizon: int) -> np.ndarray:
     Hold/ambiguous labels with ``touched_bar == -1`` are active for the full
     horizon. Censored rows are assigned the full horizon too; they are dropped
     before training, but keeping a finite value makes diagnostics stable.
+
+    Args:
+        touched_bars: Array of touched-bar offsets (-1 for hold/censored).
+        horizon: Maximum forward horizon in bars.
+
+    Returns:
+        Array of absolute event-end indices (0-indexed).
     """
     n = len(touched_bars)
     event_end = np.empty(n, dtype=np.int32)
@@ -222,6 +237,12 @@ def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
     of ``1 / concurrency[t]`` across its active bars. Highly overlapping labels
     receive lower weights. Output is clipped to a small positive floor and
     normalized to mean 1 so optimizers keep their usual loss scale.
+
+    Args:
+        event_end: Array of absolute event-end indices for each bar.
+
+    Returns:
+        Array of sample weights normalized to mean 1.
     """
     n = len(event_end)
     diff = np.zeros(n + 1, dtype=np.float64)
@@ -254,7 +275,7 @@ def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
             end = n - 1
         span = end - i + 1
         weight = (inv_prefix[end + 1] - inv_prefix[i]) / span
-        weight = max(weight, 0.05)
+        weight = max(weight, SAMPLE_WEIGHT_MIN)
         weights[i] = weight
         total += weight
 
@@ -272,7 +293,15 @@ def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
 
 
 def _validate_paths(features_path: Path, ohlcv_path: Path) -> None:
-    """Validate that required input paths exist."""
+    """Validate that required input paths exist.
+
+    Args:
+        features_path: Path to the features parquet file.
+        ohlcv_path: Path to the OHLCV parquet file.
+
+    Raises:
+        FileNotFoundError: If either path does not exist.
+    """
     if not features_path.exists():
         raise FileNotFoundError(f"Features not found: {features_path}")
     if not ohlcv_path.exists():
@@ -280,7 +309,15 @@ def _validate_paths(features_path: Path, ohlcv_path: Path) -> None:
 
 
 def _validate_unique_timestamps(df: pl.DataFrame, name: str) -> None:
-    """Fail fast if a stage boundary contains duplicate timestamps."""
+    """Fail fast if a stage boundary contains duplicate timestamps.
+
+    Args:
+        df: DataFrame to validate.
+        name: Human-readable name for the data source (used in error message).
+
+    Raises:
+        ValueError: If duplicate timestamps are found.
+    """
     if "timestamp" not in df.columns:
         return
     duplicate_count = len(df) - df["timestamp"].n_unique()
@@ -300,7 +337,20 @@ def _merge_label_columns(
     event_end_arr: np.ndarray,
     sample_weight_arr: np.ndarray,
 ) -> pl.DataFrame:
-    """Build and join label columns into the main dataframe."""
+    """Build and join label columns into the main dataframe.
+
+    Args:
+        df: Main DataFrame to join labels into.
+        labels_arr: Label values (-1, 0, 1, or censored).
+        upper_arr: Upper barrier prices.
+        lower_arr: Lower barrier prices.
+        touched_bars_arr: Touched-bar offsets.
+        event_end_arr: Event-end indices.
+        sample_weight_arr: Sample weights.
+
+    Returns:
+        DataFrame with label columns joined on ``timestamp``.
+    """
     ts_dtype = df["timestamp"].dtype
     labels_df = pl.DataFrame(
         {
@@ -317,13 +367,19 @@ def _merge_label_columns(
 
 
 def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
-    """Log ATR distribution and how often the configured floor applies."""
+    """Log ATR distribution and how often the configured floor applies.
+
+    Args:
+        df: DataFrame containing the ATR column.
+        atr_col: Name of the ATR column.
+        min_atr: Configured minimum ATR value.
+    """
     stats = df.select(
         [
             pl.col(atr_col).min().alias("min"),
             pl.col(atr_col).median().alias("median"),
-            pl.col(atr_col).quantile(0.05).alias("p5"),
-            pl.col(atr_col).quantile(0.95).alias("p95"),
+            pl.col(atr_col).quantile(ATR_LOW_QUANTILE).alias("p5"),
+            pl.col(atr_col).quantile(ATR_HIGH_QUANTILE).alias("p95"),
             (pl.col(atr_col) < min_atr).mean().alias("floor_rate"),
         ]
     ).row(0, named=True)
@@ -344,12 +400,18 @@ def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
 
     Censored rows lack enough future data to evaluate the barrier outcome.
     Keeping them as Hold would inject label noise, so they are dropped entirely.
+
+    Args:
+        df: DataFrame with a ``label`` column.
+
+    Returns:
+        DataFrame with censored rows removed.
     """
-    n_censored = int((df["label"] == -2).sum())
+    n_censored = int((df["label"] == CENSORED_LABEL).sum())
     if n_censored <= 0:
         return df
     logger.info("Dropping %d censored rows (insufficient forward horizon)", n_censored)
-    return df.filter(pl.col("label") != -2)
+    return df.filter(pl.col("label") != CENSORED_LABEL)
 
 
 def _log_distribution(df: pl.DataFrame) -> None:
@@ -371,7 +433,11 @@ def _log_distribution(df: pl.DataFrame) -> None:
 
 
 def _log_weight_stats(df: pl.DataFrame) -> None:
-    """Log average-uniqueness sample-weight diagnostics."""
+    """Log average-uniqueness sample-weight diagnostics.
+
+    Args:
+        df: DataFrame with a ``sample_weight`` column.
+    """
     if "sample_weight" not in df.columns:
         return
     stats = df.select(
@@ -431,7 +497,7 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
     # is a fraction of notional value that can be subtracted from the leveraged
     # return expression.
     cost_numerator = (spread_ticks + slippage_ticks) * tick_size + (
-        commission_per_lot * 2.0
+        commission_per_lot * ROUNDTRIP_MULT
     ) / contract_size
 
     # net_return = (close[i+horizon] - close[i+1]) / close[i] * leverage - costs
@@ -444,7 +510,7 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
     # Exclude censored rows (-2) and rows where the shift produced a null
     # (last ``horizon`` rows naturally have no valid close[i+horizon]).
     result = result.filter(
-        (pl.col("label") != -2) & pl.col("_net_return").is_not_null()
+        (pl.col("label") != CENSORED_LABEL) & pl.col("_net_return").is_not_null()
     )
 
     if len(result) == 0:
@@ -490,7 +556,10 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
             hold_down,
         )
 
-    if long_pct < 60.0 and short_pct < 60.0:
+    if (
+        long_pct < LABEL_PROFITABILITY_WARN_PCT
+        and short_pct < LABEL_PROFITABILITY_WARN_PCT
+    ):
         logger.warning(
             "LABEL PROFITABILITY LOW: Long %.1f%%, Short %.1f%% -- "
             "labels may not be economically useful after trading costs",

@@ -42,7 +42,7 @@ ENV/
 .claude/
 .windsurf/
 .zed/
-.opencode/No feature importance data available.
+.opencode/
 .qoder/
 .factory/
 .opencode/
@@ -124,6 +124,9 @@ coverage.xml
 # =============================================================================
 docs/_build/
 docs/api/
+docs/source/api/
+docs/source/_autosummary/
+docs/source/generated/
 *.html.pdf
 
 # =============================================================================

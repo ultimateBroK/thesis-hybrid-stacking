@@ -27,7 +27,7 @@ from rich.progress import (
 from rich.table import Table
 
 from thesis.config import Config
-from thesis.constants import EXCLUDE_COLS
+from thesis.constants import DIST_SHIFT_CLIP_MAX, DIST_SHIFT_CLIP_MIN, EXCLUDE_COLS
 from thesis.gru import (
     extract_hidden_states,
     prepare_sequences,
@@ -88,7 +88,7 @@ def _compute_class_weights(y: np.ndarray) -> dict[int, float]:
 def _compute_distribution_shift_weights(
     y_train: np.ndarray,
     y_val: np.ndarray,
-    clip_range: tuple[float, float] = (0.5, 3.0),
+    clip_range: tuple[float, float] = (DIST_SHIFT_CLIP_MIN, DIST_SHIFT_CLIP_MAX),
 ) -> np.ndarray:
     """Compute per-sample weights for validation to correct distribution shift.
 

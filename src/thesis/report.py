@@ -11,6 +11,7 @@ import logging
 import math
 import tomllib
 from datetime import datetime, timedelta
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,49 @@ from thesis.constants import H1_BARS_PER_YEAR
 from thesis.zones import _get_metric_zone
 
 logger = logging.getLogger("thesis.report")
+
+# ---------------------------------------------------------------------------
+# Module-level constants — extracted from function bodies
+# ---------------------------------------------------------------------------
+
+# Confidence & baseline
+_HIGH_CONFIDENCE_THRESHOLD: float = 0.70
+_DIRECTIONAL_BASELINE: float = 0.5
+
+# Model quality assessment
+_QUALITY_ACC_DELTA: float = 0.05
+_QUALITY_DIR_ACC_GOOD: float = 0.55
+_QUALITY_MACRO_F1_GOOD: float = 0.45
+_QUALITY_DIR_ACC_FAIR: float = 0.50
+
+# Trading edge classification
+_EDGE_PF_NEGATIVE: float = 1.0
+_EDGE_SHARPE_MARGINAL: float = 1.0
+_EDGE_PF_MARGINAL: float = 1.5
+
+# Deployment recommendation
+_MIN_TRADES_DEPLOYABLE: int = 30
+
+# Issue identification thresholds
+_ISSUE_DD_CATASTROPHIC: float = 50.0
+_ISSUE_DD_ELEVATED: float = 30.0
+_ISSUE_DD_CFD_ELEVATED: float = 20.0
+_ISSUE_RET_SEVERE_LOSS: float = -50.0
+_ISSUE_RET_SUSPICIOUS: float = 500.0
+_ISSUE_WIN_RATE_VIABILITY: float = 40.0
+_ISSUE_TRADES_MARGINAL: int = 100
+_ISSUE_SHARPE_POOR: float = 0.5
+_ISSUE_PF_MARGINAL_EDGE: float = 1.2
+
+# Hybrid-vs-static comparison
+_MIN_WINDOWS_COMPARISON: int = 3
+_SIGNIFICANCE_ALPHA: float = 0.05
+_MAX_PER_WINDOW_DISPLAY: int = 10
+
+# Expected Calibration Error (ECE)
+_ECE_N_BINS: int = 10
+_ECE_WELL_CALIBRATED: float = 0.05
+_ECE_MODERATELY_CALIBRATED: float = 0.15
 
 # ---------------------------------------------------------------------------
 # Stats helpers (formerly report/stats.py)
@@ -102,10 +146,10 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         if non_hold_mask.sum() > 0:
             directional_correct = true[non_hold_mask] == pred[non_hold_mask]
             directional_accuracy = float(directional_correct.mean())
-            directional_baseline = 0.5
+            directional_baseline = _DIRECTIONAL_BASELINE
         else:
             directional_accuracy = 0.0
-            directional_baseline = 0.5
+            directional_baseline = _DIRECTIONAL_BASELINE
 
         # Per-class metrics
         per_class: dict = {}
@@ -152,7 +196,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         if has_proba:
             proba = df.select(proba_cols).to_numpy()
             max_proba = proba.max(axis=1)
-            threshold = 0.70
+            threshold = _HIGH_CONFIDENCE_THRESHOLD
             hc_mask = max_proba >= threshold
             if hc_mask.sum() > 0:
                 hc_acc = float((true[hc_mask] == pred[hc_mask]).mean())
@@ -195,7 +239,17 @@ _BARS_PER_YEAR = H1_BARS_PER_YEAR
 def _annualized_sharpe(
     returns: np.ndarray, bars_per_year: int = _BARS_PER_YEAR
 ) -> float:
-    """Compute annualized Sharpe ratio from bar returns."""
+    """Compute annualized Sharpe ratio from bar returns.
+
+    Args:
+        returns: 1-D array of per-bar returns.
+        bars_per_year: Number of bars in a trading year (default
+            ``H1_BARS_PER_YEAR``).
+
+    Returns:
+        Annualized Sharpe ratio, or 0.0 if the standard deviation is
+        zero or NaN.
+    """
     std = float(np.std(returns, ddof=1))
     if std == 0 or np.isnan(std):
         return 0.0
@@ -203,7 +257,15 @@ def _annualized_sharpe(
 
 
 def _max_drawdown_pct(equity: np.ndarray) -> float:
-    """Compute maximum drawdown as a percentage from an equity curve."""
+    """Compute maximum drawdown as a percentage from an equity curve.
+
+    Args:
+        equity: 1-D array representing cumulative equity over time.
+
+    Returns:
+        Maximum drawdown as a non-negative percentage (e.g. 15.3 for
+        15.3%), or 0.0 if fewer than 2 data points.
+    """
     if len(equity) < 2:
         return 0.0
     peak = np.maximum.accumulate(equity)
@@ -215,7 +277,16 @@ def _build_equity_curve(
     returns: np.ndarray,
     initial_capital: float,
 ) -> np.ndarray:
-    """Build equity curve from bar returns and initial capital."""
+    """Build equity curve from bar returns and initial capital.
+
+    Args:
+        returns: 1-D array of per-bar returns as fractional changes.
+        initial_capital: Starting equity value.
+
+    Returns:
+        Equity curve array with length ``len(returns) + 1``, where
+        ``equity[0]`` equals ``initial_capital``.
+    """
     equity = np.empty(len(returns) + 1)
     equity[0] = initial_capital
     for i, r in enumerate(returns):
@@ -229,7 +300,18 @@ def _compute_random_strategy(
     leverage: int,
     seed: int,
 ) -> dict:
-    """Simulate a random long/short signal strategy."""
+    """Simulate a random long/short signal strategy.
+
+    Args:
+        returns: 1-D array of per-bar returns.
+        initial_capital: Starting equity value.
+        leverage: CFD leverage multiplier.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Dictionary with ``return_pct``, ``sharpe``, ``max_dd_pct``,
+        ``win_rate_pct``, and ``num_trades``.
+    """
     rng = np.random.default_rng(seed)
     signals = rng.choice([-1, 1], size=len(returns))
     leveraged = returns * signals * leverage
@@ -336,6 +418,17 @@ def compute_benchmark_comparison(
         2. Always Long — leveraged, no timing.
         3. Random Signal — random long/short with leverage.
         4. Hybrid Model — actual backtest results.
+
+    Args:
+        test_data_path: Path to the static test parquet file.
+        hybrid_metrics: Backtest metrics from the hybrid model run.
+        config: Application configuration.
+
+    Returns:
+        List of strategy dictionaries, each with ``strategy``,
+        ``return_pct``, ``sharpe``, ``max_dd_pct``, ``win_rate_pct``,
+        and ``num_trades``. Returns an empty list if no price data is
+        available.
     """
     close = _load_close_prices_for_benchmark(test_data_path, hybrid_metrics, config)
     if close is None or len(close) < 2:
@@ -525,11 +618,15 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
     current_windows = current_history.get("window_details", [])
     sibling_windows = sibling_history.get("window_details", [])
 
-    if len(current_windows) < 3 or len(sibling_windows) < 3:
+    if (
+        len(current_windows) < _MIN_WINDOWS_COMPARISON
+        or len(sibling_windows) < _MIN_WINDOWS_COMPARISON
+    ):
         L.append("#### Hybrid vs Static Comparison")
         L.append("")
         L.append(
-            "*Comparison unavailable — need at least 3 windows in each "
+            "*Comparison unavailable — need at least "
+            f"{_MIN_WINDOWS_COMPARISON} windows in each "
             f"session (have {len(current_windows)}/{len(sibling_windows)}).*"
         )
         L.append("")
@@ -538,12 +635,12 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
     # Pair windows by matching test date ranges
     paired = _pair_windows_by_date(current_windows, sibling_windows)
 
-    if len(paired) < 3:
+    if len(paired) < _MIN_WINDOWS_COMPARISON:
         L.append("#### Hybrid vs Static Comparison")
         L.append("")
         L.append(
             f"*Comparison unavailable — only {len(paired)} overlapping "
-            "test windows found (need ≥3).*"
+            f"test windows found (need ≥{_MIN_WINDOWS_COMPARISON}).*"
         )
         L.append("")
         return
@@ -569,7 +666,7 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
     delta_mean = current_mean - sibling_mean
 
     # Determine significance
-    alpha = 0.05
+    alpha = _SIGNIFICANCE_ALPHA
     if p_value < alpha:
         if delta_mean > 0:
             result_line = (
@@ -627,8 +724,10 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
     )
     L.append("")
 
-    # Per-window delta table (first 10 windows)
-    L.append("**Per-Window Accuracy Delta** (first 10 windows):")
+    # Per-window delta table (first N windows)
+    L.append(
+        f"**Per-Window Accuracy Delta** (first {_MAX_PER_WINDOW_DISPLAY} windows):"
+    )
     L.append("")
     L.append(
         _tbl_row(
@@ -639,7 +738,7 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
         )
     )
     L.append(_tbl_row("------", "------", "------", "------"))
-    for i, (c_acc, s_acc) in enumerate(paired[:10], 1):
+    for i, (c_acc, s_acc) in enumerate(paired[:_MAX_PER_WINDOW_DISPLAY], 1):
         delta = c_acc - s_acc
         L.append(
             _tbl_row(
@@ -649,8 +748,8 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
                 f"{delta * 100:+.1f}pp",
             )
         )
-    if len(paired) > 10:
-        L.append(f"*... and {len(paired) - 10} more windows.*")
+    if len(paired) > _MAX_PER_WINDOW_DISPLAY:
+        L.append(f"*... and {len(paired) - _MAX_PER_WINDOW_DISPLAY} more windows.*")
     L.append("")
 
     logger.info(
@@ -765,7 +864,16 @@ def _pair_windows_by_date(
 
 
 def _parse_date(date_str: str) -> datetime | None:
-    """Parse a date string into a datetime, trying multiple formats."""
+    """Parse a date string into a datetime, trying multiple formats.
+
+    Args:
+        date_str: Date string in one of the supported formats
+            (``"%Y-%m-%d"``, ``"%Y-%m-%d %H:%M:%S"``, or ISO 8601
+            variants).
+
+    Returns:
+        Parsed ``datetime`` object, or ``None`` if no format matched.
+    """
     if not date_str:
         return None
     for fmt in (
@@ -938,9 +1046,13 @@ def _assess_model_quality(pred_stats: dict) -> tuple[str, str]:
     gap = acc - baseline
     if gap < 0:
         return ("POOR", "acc below baseline")
-    if acc > baseline + 0.05 and dir_acc > 0.55 and macro_f1 >= 0.45:
+    if (
+        acc > baseline + _QUALITY_ACC_DELTA
+        and dir_acc > _QUALITY_DIR_ACC_GOOD
+        and macro_f1 >= _QUALITY_MACRO_F1_GOOD
+    ):
         return ("GOOD", "above baseline with directional edge")
-    if dir_acc >= 0.50:
+    if dir_acc >= _QUALITY_DIR_ACC_FAIR:
         return ("FAIR", "slightly above baseline, marginal edge")
     return ("POOR", "no reliable directional edge")
 
@@ -952,15 +1064,15 @@ def _assess_trading_edge(metrics: dict) -> tuple[str, str]:
         metrics: Backtest metrics dictionary.
 
     Returns:
-        (edge_label, reason_phrase) — e.g. ("NEGATIVE", "PF<1.0").
+        (edge_label, reason_phrase).
     """
     pf = metrics.get("profit_factor", 0)
     sharpe = metrics.get("sharpe_ratio", 0)
     ret = metrics.get("return_pct", 0)
 
-    if pf < 1.0 or sharpe < 0 or ret < 0:
-        return ("NEGATIVE", f"PF={pf:.2f}" if pf > 0 else "PF<1.0")
-    if sharpe < 1.0 or pf < 1.5:
+    if pf < _EDGE_PF_NEGATIVE or sharpe < 0 or ret < 0:
+        return ("NEGATIVE", f"PF={pf:.2f}" if pf > 0 else f"PF<{_EDGE_PF_NEGATIVE:.1f}")
+    if sharpe < _EDGE_SHARPE_MARGINAL or pf < _EDGE_PF_MARGINAL:
         return ("MARGINAL", f"PF={pf:.2f}, Sharpe={sharpe:.2f}")
     return ("POSITIVE", f"PF={pf:.2f}, Sharpe={sharpe:.2f}")
 
@@ -980,7 +1092,7 @@ def _derive_recommendation(ml_quality: str, trading_edge: str, metrics: dict) ->
 
     if ml_quality == "POOR" or trading_edge == "NEGATIVE":
         return "NOT DEPLOYABLE without fixes"
-    if n_trades < 30:
+    if n_trades < _MIN_TRADES_DEPLOYABLE:
         return "NOT DEPLOYABLE — insufficient trades for validation"
     if ml_quality == "FAIR" and trading_edge == "MARGINAL":
         return "DEPLOYABLE with caution — marginal edge"
@@ -995,6 +1107,9 @@ def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | Non
     Issues are ranked by severity (critical > warning > info), then by
     impact (e.g. zero trades beats low win rate).
 
+    Checks use lazy ``(condition_fn, message_fn)`` tuples so that
+    conditions and messages are only evaluated until the first match.
+
     Args:
         metrics: Backtest metrics dictionary.
         pred_stats: Preloaded prediction statistics.
@@ -1002,111 +1117,120 @@ def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | Non
     Returns:
         Most severe issue description, or ``None`` if none found.
     """
-    n_trades = int(metrics.get("num_trades", 0)) if metrics else 0
-    sharpe = metrics.get("sharpe_ratio", 0) if metrics else 0
+    nt = int(metrics.get("num_trades", 0)) if metrics else 0
+    sh = metrics.get("sharpe_ratio", 0) if metrics else 0
     pf = metrics.get("profit_factor", 0) if metrics else 0
     dd = abs(metrics.get("max_drawdown_pct", 0)) if metrics else 0
     ret = metrics.get("return_pct", 0) if metrics else 0
     wr = metrics.get("win_rate_pct", 0) if metrics else 0
-    dir_acc = pred_stats.get("directional_accuracy", 0) if pred_stats else 0
+    da = pred_stats.get("directional_accuracy", 0) if pred_stats else 0
 
     # Ordered check: first match is most critical
-    checks: list[tuple[bool, str]] = [
+    checks: list[tuple[Callable[[], bool], Callable[[], str]]] = [
         (
-            n_trades == 0,
-            "Zero trades executed — model produces no actionable signals",
+            lambda: nt == 0,
+            lambda: "Zero trades executed — model produces no actionable signals",
         ),
         (
-            n_trades > 0 and n_trades < 30,
-            f"Only {n_trades} trades — statistically unreliable results",
+            lambda: nt > 0 and nt < _MIN_TRADES_DEPLOYABLE,
+            lambda: f"Only {nt} trades — statistically unreliable results",
         ),
         (
-            sharpe < 0,
-            f"Sharpe {sharpe:.2f} is negative — strategy underperforms risk-free rate",
+            lambda: sh < 0,
+            lambda: (
+                f"Sharpe {sh:.2f} is negative — strategy underperforms risk-free rate"
+            ),
         ),
         (
-            dd > 50,
-            f"Max drawdown {dd:.1f}% > 50% — catastrophic capital erosion",
+            lambda: dd > _ISSUE_DD_CATASTROPHIC,
+            lambda: (
+                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}% — catastrophic capital erosion"
+            ),
         ),
         (
-            pf < 1.0,
-            f"Profit factor {pf:.2f} < 1.0 — strategy loses money on average",
+            lambda: pf < _EDGE_PF_NEGATIVE,
+            lambda: (
+                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f} — strategy loses money on average"
+            ),
         ),
         (
-            dir_acc > 0 and dir_acc < 0.50,
-            f"Directional accuracy {dir_acc:.1%} < 50% — predicts worse than random",
+            lambda: da > 0 and da < _QUALITY_DIR_ACC_FAIR,
+            lambda: (
+                f"Directional accuracy {da:.1%} < {_QUALITY_DIR_ACC_FAIR:.0%} — predicts worse than random"
+            ),
         ),
         (
-            ret < -50,
-            f"Return {ret:.0f}% — severe capital loss",
+            lambda: ret < _ISSUE_RET_SEVERE_LOSS,
+            lambda: f"Return {ret:.0f}% — severe capital loss",
         ),
         (
-            pf < 1.2 and pf >= 1.0,
-            f"Profit factor {pf:.2f} < 1.2 — barely covers transaction costs",
+            lambda: pf < _ISSUE_PF_MARGINAL_EDGE and pf >= _EDGE_PF_NEGATIVE,
+            lambda: (
+                f"Profit factor {pf:.2f} < {_ISSUE_PF_MARGINAL_EDGE:.1f} — barely covers transaction costs"
+            ),
         ),
         (
-            sharpe < 0.5 and sharpe >= 0,
-            f"Sharpe {sharpe:.2f} < 0.5 — poor risk-adjusted returns",
+            lambda: sh < _ISSUE_SHARPE_POOR and sh >= 0,
+            lambda: (
+                f"Sharpe {sh:.2f} < {_ISSUE_SHARPE_POOR:.1f} — poor risk-adjusted returns"
+            ),
         ),
         (
-            dd > 30 and dd <= 50,
-            f"Max drawdown {dd:.1f}% exceeds 30% threshold",
+            lambda: dd > _ISSUE_DD_ELEVATED and dd <= _ISSUE_DD_CATASTROPHIC,
+            lambda: (
+                f"Max drawdown {dd:.1f}% exceeds {_ISSUE_DD_ELEVATED:.0f}% threshold"
+            ),
         ),
         (
-            n_trades >= 30 and n_trades < 100,
-            f"Only {n_trades} trades — marginal sample size",
+            lambda: nt >= _MIN_TRADES_DEPLOYABLE and nt < _ISSUE_TRADES_MARGINAL,
+            lambda: f"Only {nt} trades — marginal sample size",
         ),
         (
-            sharpe < 1.0 and sharpe >= 0.5,
-            f"Sharpe {sharpe:.2f} < 1.0 — below professional threshold",
+            lambda: sh < _EDGE_SHARPE_MARGINAL and sh >= _ISSUE_SHARPE_POOR,
+            lambda: (
+                f"Sharpe {sh:.2f} < {_EDGE_SHARPE_MARGINAL:.1f} — below professional threshold"
+            ),
         ),
         (
-            ret > 500,
-            f"Return {ret:.0f}% suspiciously high — verify for overfitting",
+            lambda: ret > _ISSUE_RET_SUSPICIOUS,
+            lambda: f"Return {ret:.0f}% suspiciously high — verify for overfitting",
         ),
         (
-            dd > 20 and dd <= 30,
-            f"Max drawdown {dd:.1f}% > 20% — elevated for CFD trading",
+            lambda: dd > _ISSUE_DD_CFD_ELEVATED and dd <= _ISSUE_DD_ELEVATED,
+            lambda: (
+                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CFD_ELEVATED:.0f}% — elevated for CFD trading"
+            ),
         ),
         (
-            wr < 40 and wr >= 0,
-            f"Win rate {wr:.1f}% < 40% — below trading viability",
+            lambda: wr < _ISSUE_WIN_RATE_VIABILITY and wr >= 0,
+            lambda: (
+                f"Win rate {wr:.1f}% < {_ISSUE_WIN_RATE_VIABILITY:.0f}% — below trading viability"
+            ),
         ),
         (
-            dir_acc > 0 and dir_acc < 0.55,
-            f"Directional accuracy {dir_acc:.1%} < 55% — unreliable",
+            lambda: da > 0 and da < _QUALITY_DIR_ACC_GOOD,
+            lambda: (
+                f"Directional accuracy {da:.1%} < {_QUALITY_DIR_ACC_GOOD:.0%} — unreliable"
+            ),
         ),
         (
-            pf < 1.5 and pf >= 1.2,
-            f"Profit factor {pf:.2f} < 1.5 — marginal edge",
+            lambda: pf < _EDGE_PF_MARGINAL and pf >= _ISSUE_PF_MARGINAL_EDGE,
+            lambda: f"Profit factor {pf:.2f} < {_EDGE_PF_MARGINAL:.1f} — marginal edge",
         ),
     ]
-    for condition, msg in checks:
-        if condition:
-            return msg
+    for cond_fn, msg_fn in checks:
+        if cond_fn():
+            return msg_fn()
     return None
 
 
-def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
-    """One-paragraph ML-first overall assessment with synthesized verdict.
-
-    Produces:
-    1. ML quality assessment paragraph.
-    2. Synthesized verdict line (model quality + trading edge + recommendation).
-    3. Primary issue identification.
-    4. Application demo summary line (if metrics available).
+def _render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
+    """Append one-paragraph ML quality assessment to markdown lines.
 
     Args:
         L: Output markdown lines.
-        metrics: Backtest metrics dictionary.
         pred_stats: Preloaded prediction statistics.
     """
-    if not pred_stats:
-        if not metrics:
-            return
-        L.append("Prediction metrics are unavailable; only the application demo ran.")
-        return
-
     acc = pred_stats["accuracy"]
     baseline = pred_stats["majority_baseline"]
     dir_acc = pred_stats["directional_accuracy"]
@@ -1117,10 +1241,14 @@ def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
     if gap < 0:
         ml_quality = "weak"
         gate_msg = "Model is below majority baseline; predictive edge is not validated."
-    elif acc > baseline + 0.05 and dir_acc > 0.55 and macro_f1 >= 0.45:
+    elif (
+        acc > baseline + _QUALITY_ACC_DELTA
+        and dir_acc > _QUALITY_DIR_ACC_GOOD
+        and macro_f1 >= _QUALITY_MACRO_F1_GOOD
+    ):
         ml_quality = "strong"
         gate_msg = "Model is above baseline with directional edge."
-    elif dir_acc >= 0.50:
+    elif dir_acc >= _QUALITY_DIR_ACC_FAIR:
         ml_quality = "acceptable"
         gate_msg = "Model is slightly above baseline with marginal directional edge."
     else:
@@ -1133,7 +1261,15 @@ def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
         "application demo, not the primary proof of model quality."
     )
 
-    # ── Synthesized zone-based verdict ──
+
+def _render_synthesized_verdict(L: list[str], pred_stats: dict, metrics: dict) -> None:
+    """Append synthesized verdict line (model quality + trading edge + recommendation).
+
+    Args:
+        L: Output markdown lines.
+        pred_stats: Preloaded prediction statistics.
+        metrics: Backtest metrics dictionary.
+    """
     model_quality, ml_reason = _assess_model_quality(pred_stats)
     if metrics:
         trading_edge, trade_reason = _assess_trading_edge(metrics)
@@ -1149,7 +1285,15 @@ def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
             "No backtest metrics available for trading assessment."
         )
 
-    # ── Primary issue ──
+
+def _render_primary_issue(L: list[str], metrics: dict, pred_stats: dict) -> None:
+    """Append primary issue identification and application demo summary.
+
+    Args:
+        L: Output markdown lines.
+        metrics: Backtest metrics dictionary.
+        pred_stats: Preloaded prediction statistics.
+    """
     if metrics:
         primary = _identify_primary_issue(metrics, pred_stats)
         if primary:
@@ -1171,8 +1315,35 @@ def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
     )
 
 
+def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
+    """One-paragraph ML-first overall assessment with synthesized verdict.
+
+    Delegates to three rendering helpers that each handle one aspect:
+    ML quality paragraph, synthesized verdict, and primary issue.
+
+    Args:
+        L: Output markdown lines.
+        metrics: Backtest metrics dictionary.
+        pred_stats: Preloaded prediction statistics.
+    """
+    if not pred_stats:
+        if not metrics:
+            return
+        L.append("Prediction metrics are unavailable; only the application demo ran.")
+        return
+
+    _render_ml_quality_paragraph(L, pred_stats)
+    _render_synthesized_verdict(L, pred_stats, metrics)
+    _render_primary_issue(L, metrics, pred_stats)
+
+
 def _config_table(L: list[str], config: Config) -> None:
-    """Key hyperparameters in one table."""
+    """Key hyperparameters in one table.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        config: Application configuration.
+    """
     rows = [
         ("Data", "symbol", str(config.data.symbol)),
         ("Data", "timeframe", config.data.timeframe),
@@ -1282,7 +1453,7 @@ def _config_table(L: list[str], config: Config) -> None:
 
 
 def _compute_ece_numpy(
-    proba: np.ndarray, labels: np.ndarray, n_bins: int = 10
+    proba: np.ndarray, labels: np.ndarray, n_bins: int = _ECE_N_BINS
 ) -> float:
     """Compute Expected Calibration Error (ECE) from NumPy arrays.
 
@@ -1293,7 +1464,7 @@ def _compute_ece_numpy(
     Args:
         proba: Softmax probabilities with shape ``(N, C)``.
         labels: Ground-truth class indices with shape ``(N,)``.
-        n_bins: Number of confidence bins (default 10).
+        n_bins: Number of confidence bins (default matches ``_ECE_N_BINS``).
 
     Returns:
         ECE value (0.0 = perfectly calibrated).
@@ -1365,24 +1536,24 @@ def _calibration_summary_text(config: Config) -> str | None:
 
     ece = _compute_ece_numpy(proba, class_indices)
 
-    if ece < 0.05:
+    if ece < _ECE_WELL_CALIBRATED:
         quality = "well-calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            "(ECE < 0.05). Predicted probabilities closely match observed frequencies."
+            f"(ECE < {_ECE_WELL_CALIBRATED:.2f}). Predicted probabilities closely match observed frequencies."
         )
-    elif ece < 0.15:
+    elif ece < _ECE_MODERATELY_CALIBRATED:
         quality = "moderately calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            "(0.05 ≤ ECE < 0.15). Probabilities are somewhat aligned with outcomes; "
+            f"({_ECE_WELL_CALIBRATED:.2f} ≤ ECE < {_ECE_MODERATELY_CALIBRATED:.2f}). Probabilities are somewhat aligned with outcomes; "
             "the model may be slightly over- or under-confident in some bins."
         )
     else:
         quality = "poorly calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            "(ECE ≥ 0.15). Predicted probabilities do not reliably reflect true "
+            f"(ECE ≥ {_ECE_MODERATELY_CALIBRATED:.2f}). Predicted probabilities do not reliably reflect true "
             "likelihoods. Consider temperature scaling or isotonic regression."
         )
 
@@ -1407,7 +1578,7 @@ def _accuracy_table(
     total = pred_stats["total"]
     acc = pred_stats["accuracy"]
     dir_acc = pred_stats.get("directional_accuracy", acc)
-    dir_bl = pred_stats.get("directional_baseline", 0.5)
+    dir_bl = pred_stats.get("directional_baseline", _DIRECTIONAL_BASELINE)
     maj_bl = pred_stats.get("majority_baseline", 0)
     acc_gap = acc - maj_bl
 
@@ -1515,7 +1686,13 @@ def _backtest_params_table(L: list[str], config: Config) -> None:
 
 
 def _backtest_metrics_table(L: list[str], metrics: dict, config: Config) -> None:
-    """Core backtest metrics with zone indicators."""
+    """Core backtest metrics with zone indicators.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        metrics: Backtest metrics dictionary.
+        config: Application configuration (for initial capital display).
+    """
     if not metrics:
         L.append("*No backtest results available.*")
         return
@@ -1605,7 +1782,15 @@ def _render_issues(
     issues: list[tuple[str, str]],
     recs: list[tuple[str, str]],
 ) -> None:
-    """Render sorted issues and recommendations into markdown lines."""
+    """Render sorted issues and recommendations into markdown lines.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        issues: List of ``(severity, description)`` tuples,
+            sorted by severity before rendering.
+        recs: List of ``(priority, description)`` tuples,
+            sorted by priority before rendering.
+    """
     L.append("### Issues")
     L.append("")
     if not issues:
@@ -1629,7 +1814,16 @@ def _render_issues(
 
 
 def _count_features(config: Config) -> int:
-    """Count total features from the features parquet or GRU config."""
+    """Count total features from the features parquet or GRU config.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        Total feature count — either from the features parquet column
+        count (excluding OHLCV/label columns) or as a fallback sum of
+        GRU hidden size plus static feature count.
+    """
     features_path = Path(config.paths.features)
     if features_path.exists():
         try:
@@ -1697,27 +1891,27 @@ def _issues_list(
             )
         )
 
-    if dd > 50:
+    if dd > _ISSUE_DD_CATASTROPHIC:
         issues.append(
             (
                 "critical",
-                f"Max drawdown {dd:.1f}% > 50% — catastrophic capital erosion.",
+                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}% — catastrophic capital erosion.",
             )
         )
 
-    if pf < 1.0:
+    if pf < _EDGE_PF_NEGATIVE:
         issues.append(
             (
                 "critical",
-                f"Profit factor {pf:.2f} < 1.0 — strategy loses money on average.",
+                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f} — strategy loses money on average.",
             )
         )
 
-    if dir_acc > 0 and dir_acc < 0.50:
+    if dir_acc > 0 and dir_acc < _QUALITY_DIR_ACC_FAIR:
         issues.append(
             (
                 "critical",
-                f"Directional accuracy {dir_acc:.1%} < 50% — model predicts worse than random.",
+                f"Directional accuracy {dir_acc:.1%} < {_QUALITY_DIR_ACC_FAIR:.0%} — model predicts worse than random.",
             )
         )
 
@@ -1742,7 +1936,14 @@ def _issues_list(
 
 
 def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None:
-    """Render and save an equity curve image from trade history."""
+    """Render and save an equity curve image from trade history.
+
+    Args:
+        trades: List of trade dictionaries with ``pnl``,
+            ``entry_time``, and ``exit_time``.
+        config: Application configuration for initial capital.
+        out_dir: Output directory for the saved PNG.
+    """
     if not trades:
         return
 
@@ -1782,7 +1983,13 @@ def _build_equity_series(
 
 
 def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
-    """Render and save a top-20 feature-importance chart."""
+    """Render and save a top-20 feature-importance chart.
+
+    Args:
+        feature_importance: Dictionary mapping feature names to
+            importance scores.
+        out_dir: Output directory for the saved PNG.
+    """
     if not feature_importance:
         return
     import matplotlib
@@ -1803,7 +2010,16 @@ def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
 
 
 def _load_feature_importance(config: Config, out_dir: Path) -> dict:
-    """Load feature-importance JSON from session report outputs."""
+    """Load feature-importance JSON from session report outputs.
+
+    Args:
+        config: Application configuration.
+        out_dir: Fallback directory when no session dir is configured.
+
+    Returns:
+        Feature-importance dictionary, or an empty dict if the JSON
+        file is not found.
+    """
     fi_path = (
         Path(config.paths.session_dir) / "reports" / "feature_importance.json"
         if config.paths.session_dir

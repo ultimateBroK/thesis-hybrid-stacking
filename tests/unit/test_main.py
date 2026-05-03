@@ -147,13 +147,11 @@ class TestPipelineEmptyWindowsGuard:
     @pytest.mark.unit
     def test_zero_oof_preds_raises_runtime_error(self) -> None:
         """Guard: all_oof_preds empty triggers RuntimeError."""
-        # This tests the second guard at line 343.
-        # We verify the error message is correct.
-        # The guard checks: `if not all_oof_preds or gru_model is None`
-        # This is tested implicitly by the empty-windows path, but we verify
-        # the message exists as a contract.
+        # The guard `if not all_oof_preds or gru_model is None` lives in
+        # ``_save_wf_artifacts`` (delegated from ``_run_walk_forward_hybrid``).
+        # Verify the error message exists as a contract somewhere in the module.
         import inspect as _inspect
         import thesis.pipeline as pipeline_mod
 
-        source = _inspect.getsource(pipeline_mod._run_walk_forward_hybrid)
+        source = _inspect.getsource(pipeline_mod._save_wf_artifacts)
         assert "No OOF predictions generated" in source

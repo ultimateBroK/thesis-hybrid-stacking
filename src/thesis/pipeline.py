@@ -33,6 +33,27 @@ from thesis.report import generate_report
 logger = logging.getLogger("thesis.pipeline")
 _CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
 
+# --- Confidence & Signal Quality Thresholds ---
+_HIGH_CONFIDENCE_THRESHOLD = 0.70  # High-confidence prediction floor
+_SHORT_BIAS_RATIO_THRESHOLD = 0.5  # LONG/SHORT ratio warning trigger
+_GRU_SIGNAL_F_SCORE_THRESHOLD = 0.5  # Mean F-score below → no detectable signal
+_PCA_VARIANCE_THRESHOLD = 0.50  # Explained variance below → mostly noise
+
+# --- Validation Split ---
+_VALIDATION_SPLIT_FRACTION = 0.2  # Tail validation split for GRU/LGBM/static
+
+# --- Minimum Sample Thresholds ---
+_ANOVA_MIN_SAMPLES_PER_CLASS = 2  # Minimum samples per class for ANOVA F-statistic
+_STATIC_MIN_TRAIN_ROWS = 2  # Minimum training rows for static walk-forward
+
+# --- Display / Logging ---
+_SIGNAL_QUALITY_TOP_N = 5  # Top-N for GRU signal quality logging
+
+# --- Regression Threshold ---
+_REGRESSION_DIRECTION_THRESHOLD = (
+    0  # Zero threshold for regression-to-direction mapping
+)
+
 
 def _select_static_feature_cols(
     config: Config,
@@ -87,7 +108,19 @@ def _window_diagnostics(
     y_train: np.ndarray,
     y_test: np.ndarray,
 ) -> dict[str, Any]:
-    """Build per-window label diagnostics for logs and JSON artifacts."""
+    """Build per-window label diagnostics for logs and JSON artifacts.
+
+    Args:
+        window_idx: Zero-based window index.
+        train_df: Training split Polars DataFrame.
+        test_df: Test split Polars DataFrame.
+        y_train: Training label array.
+        y_test: Test label array.
+
+    Returns:
+        Dictionary with window index, row counts, date ranges, label
+        counts (raw and percentage) for both train and test splits.
+    """
     train_counts = _counts_dict(y_train)
     test_counts = _counts_dict(y_test)
     diag: dict[str, Any] = {
@@ -116,7 +149,17 @@ def _add_prediction_diagnostics(
     y_test: np.ndarray,
     proba: np.ndarray,
 ) -> None:
-    """Attach prediction distribution and confidence diagnostics in-place."""
+    """Attach prediction distribution and confidence diagnostics in-place.
+
+    Mutates ``diag`` by adding prediction counts, accuracy, mean
+    confidence, high-confidence fraction, and long/short ratio.
+
+    Args:
+        diag: Per-window diagnostics dict (mutated in-place).
+        preds: Predicted class labels as a NumPy array.
+        y_test: Ground-truth class labels.
+        proba: Probability matrix (N x 3).
+    """
     pred_counts = _counts_dict(preds)
     confidence = np.max(proba, axis=1) if len(proba) else np.array([], dtype=float)
 
@@ -131,7 +174,9 @@ def _add_prediction_diagnostics(
             "prediction_pct": _pct_dict(pred_counts),
             "accuracy": float((preds == y_test).mean()) if len(y_test) else None,
             "mean_confidence": float(confidence.mean()) if len(confidence) else None,
-            "high_conf_70_pct": float((confidence >= 0.70).mean() * 100.0)
+            "high_conf_70_pct": float(
+                (confidence >= _HIGH_CONFIDENCE_THRESHOLD).mean() * 100.0
+            )
             if len(confidence)
             else None,
             "ls_ratio": round(ls_ratio, 4) if short_count > 0 else None,
@@ -145,7 +190,7 @@ def _add_prediction_diagnostics(
         diag["mean_confidence"] or 0.0,
         ls_ratio if short_count > 0 else float("nan"),
     )
-    if short_count > 0 and long_count / short_count < 0.5:
+    if short_count > 0 and long_count / short_count < _SHORT_BIAS_RATIO_THRESHOLD:
         logger.warning(
             "Window %d: SHORT bias — LONG/SHORT ratio = %.2f",
             diag["window"],
@@ -202,7 +247,7 @@ def _log_gru_signal_quality(
         )
         return
 
-    min_samples_per_class = 2
+    min_samples_per_class = _ANOVA_MIN_SAMPLES_PER_CLASS
     for cls in unique_labels:
         if np.sum(labels == cls) < min_samples_per_class:
             logger.warning(
@@ -221,8 +266,8 @@ def _log_gru_signal_quality(
     n_features = len(f_scores)
     sorted_indices = np.argsort(f_scores)[::-1]  # descending
 
-    top_n = min(5, n_features)
-    bottom_n = min(5, n_features)
+    top_n = min(_SIGNAL_QUALITY_TOP_N, n_features)
+    bottom_n = min(_SIGNAL_QUALITY_TOP_N, n_features)
 
     top_indices = sorted_indices[:top_n]
     bottom_indices = sorted_indices[-bottom_n:][::-1]  # ascending for bottom display
@@ -236,7 +281,7 @@ def _log_gru_signal_quality(
         ", ".join(f"dim{i}={f_scores[i]:.3f}" for i in bottom_indices),
     )
 
-    if mean_f < 0.5:
+    if mean_f < _GRU_SIGNAL_F_SCORE_THRESHOLD:
         logger.warning(
             "GRU hidden states show no detectable signal — GRU contributes noise "
             "(mean F=%.4f across %d dimensions)",
@@ -257,7 +302,20 @@ def _run_stage(
     cache_path: str | Path | None,
     work_fn: callable,
 ) -> None:
-    """Execute a pipeline stage with cache checking."""
+    """Execute a pipeline stage with cache checking.
+
+    Checks the workflow flag and optional cache file; skips the stage
+    if disabled or cached unless ``force_rerun`` is set.
+
+    Args:
+        stage_num: Stage number for console display.
+        config: Application configuration.
+        flag_name: Workflow boolean flag name on ``config.workflow``.
+        cache_path: Path to the cached output file, or ``None`` for
+            no cache check.
+        work_fn: Callable ``(Config) -> None`` that performs the
+            actual stage work.
+    """
     flag = getattr(config.workflow, flag_name, False)
     if not flag:
         stage_skip(stage_num, "disabled")
@@ -278,63 +336,71 @@ def _run_stage(
 # ---------------------------------------------------------------------------
 
 
-def _run_walk_forward_hybrid(config: Config) -> None:
-    """Execute walk-forward sliding window training across all windows.
+def _compute_regression_target(
+    df: pl.DataFrame, config: Config
+) -> tuple[pl.DataFrame, bool]:
+    """Pre-compute regression target column when objective is 'regression'.
 
-    For each window:
-        1. Slice labeled data into train/test
-        2. Apply purge & embargo
-        3. Train GRU feature extractor on train
-        4. Extract hidden states for train and test
-        5. Build hybrid feature matrix (GRU hidden + static features)
-        6. Train LightGBM on hybrid features
-        7. Generate predictions on test slice
-        8. Collect OOF predictions
+    Args:
+        df: Labeled Polars DataFrame containing a ``close`` column.
+        config: Application configuration.
 
-    After all windows: concatenate OOF predictions and save for backtest.
+    Returns:
+        ``(df_maybe_augmented, is_regression)`` — the DataFrame is
+        augmented with a ``regression_target`` column when the
+        objective is ``"regression"``; otherwise returned unchanged
+        with ``is_regression=False``.
     """
-    import joblib
-    import torch
+    is_regression = config.model.objective == "regression"
+    if not is_regression:
+        return df, False
 
-    from thesis.gru import (
-        train_gru,
-        extract_hidden_states,
-        prepare_sequences,
-        save_gru_model,
+    if "close" not in df.columns:
+        raise ValueError(
+            "Regression objective requires 'close' column in labeled data. "
+            "Ensure feature engineering includes OHLCV data."
+        )
+    horizon = config.labels.horizon_bars
+    close = df["close"].to_numpy()
+    close_future = np.roll(close, -horizon)
+    close_future[-horizon:] = close[-horizon:]
+    reg_target = (close_future - close) / close
+    df = df.with_columns(pl.Series("regression_target", reg_target))
+    logger.info(
+        "Regression target computed: horizon=%d bars, mean=%.6f, std=%.6f",
+        horizon,
+        float(np.mean(reg_target)),
+        float(np.std(reg_target)),
     )
-    from thesis.model import (
-        _compute_class_weights,
-        _train_fixed,
-        _wrap_np,
-    )
+    return df, True
 
+
+def _prepare_wf_data(
+    config: Config,
+) -> tuple[pl.DataFrame, list, list[str], bool]:
+    """Load labeled data, generate walk-forward windows, and return prepared state.
+
+    Args:
+        config: Application configuration.
+
+    Returns:
+        ``(df, windows, feature_cols, is_regression)`` tuple containing the
+        full labeled DataFrame, list of walk-forward window objects, sorted
+        feature column names, and whether regression objective is active.
+
+    Raises:
+        FileNotFoundError: If the labels parquet file does not exist.
+        RuntimeError: If no valid walk-forward windows were generated.
+        ValueError: If the purge/embargo gap is smaller than the GRU
+            sequence length (sequence leakage risk).
+    """
     labels_path = Path(config.paths.labels)
     if not labels_path.exists():
         raise FileNotFoundError(f"Labels not found: {labels_path}")
 
     df = pl.read_parquet(labels_path)
     logger.info("Loaded labeled data: %d rows", len(df))
-
-    # Pre-compute regression target when objective is "regression"
-    is_regression = config.model.objective == "regression"
-    if is_regression:
-        if "close" not in df.columns:
-            raise ValueError(
-                "Regression objective requires 'close' column in labeled data. "
-                "Ensure feature engineering includes OHLCV data."
-            )
-        horizon = config.labels.horizon_bars
-        close = df["close"].to_numpy()
-        close_future = np.roll(close, -horizon)
-        close_future[-horizon:] = close[-horizon:]  # fill trailing with current
-        reg_target = (close_future - close) / close
-        df = df.with_columns(pl.Series("regression_target", reg_target))
-        logger.info(
-            "Regression target computed: horizon=%d bars, mean=%.6f, std=%.6f",
-            horizon,
-            float(np.mean(reg_target)),
-            float(np.std(reg_target)),
-        )
+    df, is_regression = _compute_regression_target(df, config)
 
     event_end = df["event_end"].to_numpy() if "event_end" in df.columns else None
     if event_end is None:
@@ -343,7 +409,6 @@ def _run_walk_forward_hybrid(config: Config) -> None:
             "Regenerate labels to enable event-time purging."
         )
 
-    # Generate walk-forward windows
     v = config.validation
     windows = generate_windows(
         total_bars=len(df),
@@ -355,13 +420,12 @@ def _run_walk_forward_hybrid(config: Config) -> None:
         min_train_bars=v.min_train_bars,
         event_end=event_end,
     )
-
     if not windows:
         raise RuntimeError(
             "No valid walk-forward windows generated — check data size and window parameters"
         )
 
-    # P0-1: Guard against sequence leakage — ensure gap >= sequence_length
+    # P0-1: Guard against sequence leakage
     gap_bars = (
         v.embargo_bars if event_end is not None else v.purge_bars + v.embargo_bars
     )
@@ -376,9 +440,511 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     log_windows(windows, df, "timestamp")
     logger.info("Walk-forward: %d bar-based windows", len(windows))
 
-    # Identify feature columns (exclude non-features)
     feature_cols = sorted(c for c in df.columns if c not in EXCLUDE_COLS)
+    return df, windows, feature_cols, is_regression
 
+
+def _wf_gru_phase(
+    config: Config, w_idx: int, window: Any, df: pl.DataFrame
+) -> dict[str, Any] | None:
+    """GRU phase of a hybrid window: slice, train, extract hidden, align, PCA.
+
+    Args:
+        config: Application configuration.
+        w_idx: Zero-based window index for logging.
+        window: Walk-forward window object with ``train_start_idx``,
+            ``train_end_idx``, ``test_start_idx``, ``test_end_idx``.
+        df: Full labeled Polars DataFrame.
+
+    Returns:
+        State dictionary with ``gru_model``, normalization
+        parameters, training history, aligned DataFrames, and
+        hidden-state arrays, or ``None`` if the window is too small.
+    """
+    import torch
+
+    from thesis.gru import (
+        train_gru,
+        extract_hidden_states,
+        prepare_sequences,
+    )
+
+    # Slice
+    train_df = df.slice(
+        window.train_start_idx, window.train_end_idx - window.train_start_idx
+    )
+    test_df = df.slice(
+        window.test_start_idx, window.test_end_idx - window.test_start_idx
+    )
+    if len(train_df) < config.gru.sequence_length:
+        logger.warning(
+            "Window %d: train too small (%d), skipping", w_idx + 1, len(train_df)
+        )
+        return None
+
+    # Train GRU
+    val_split = max(1, int(len(train_df) * _VALIDATION_SPLIT_FRACTION))
+    gru_train_df = train_df.head(len(train_df) - val_split)
+    gru_val_df = train_df.tail(val_split)
+    (gru_model, _, _, _, gru_history, gru_mean, gru_std, dynamic_gru_cols) = train_gru(
+        config, gru_train_df, gru_val_df, window_index=w_idx
+    )
+
+    # Extract hidden states
+    seq_len = config.gru.sequence_length
+    train_seq, _, _ = prepare_sequences(train_df, dynamic_gru_cols, seq_len)
+    test_seq, _, _ = prepare_sequences(test_df, dynamic_gru_cols, seq_len)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_hidden = extract_hidden_states(
+        gru_model,
+        train_seq,
+        config.gru.batch_size,
+        device=device,
+        mean=gru_mean,
+        std=gru_std,
+    )
+    test_hidden = extract_hidden_states(
+        gru_model,
+        test_seq,
+        config.gru.batch_size,
+        device=device,
+        mean=gru_mean,
+        std=gru_std,
+    )
+
+    # Align DataFrames
+    train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
+    test_aligned = test_df.slice(seq_len - 1, len(test_hidden))
+    if len(train_aligned) == 0 or len(test_aligned) == 0:
+        logger.warning("Window %d: aligned data empty, skipping", w_idx + 1)
+        return None
+
+    # PCA on GRU hidden states
+    pca_k = config.gru.pca_components
+    if pca_k > 0:
+        from sklearn.decomposition import PCA
+
+        pca = PCA(n_components=pca_k, random_state=config.workflow.random_seed)
+        pca.fit(train_hidden)
+        train_hidden = pca.transform(train_hidden)
+        test_hidden = pca.transform(test_hidden)
+        explained = float(pca.explained_variance_ratio_.sum())
+        logger.info(
+            "GRU hidden states: %d→%d PCs, explained variance=%.1f%%",
+            config.gru.hidden_size,
+            pca_k,
+            explained * 100,
+        )
+        if explained < _PCA_VARIANCE_THRESHOLD:
+            logger.warning(
+                "GRU hidden state space appears mostly noise (%.1f%% explained by %d PCs)",
+                explained * 100,
+                pca_k,
+            )
+
+    return {
+        "gru_model": gru_model,
+        "gru_mean": gru_mean,
+        "gru_std": gru_std,
+        "gru_history": gru_history,
+        "train_aligned": train_aligned,
+        "test_aligned": test_aligned,
+        "train_hidden": train_hidden,
+        "test_hidden": test_hidden,
+    }
+
+
+def _wf_format_predictions(
+    model: Any, X_test: np.ndarray, all_feature_cols: list[str], is_regression: bool
+) -> tuple[np.ndarray, np.ndarray, Any, Any]:
+    """Generate predictions and aligned probability matrix.
+
+    Args:
+        model: Trained LightGBM model (classifier or regressor).
+        X_test: Test feature matrix.
+        all_feature_cols: Feature column names for wrapping.
+        is_regression: Whether the model is a regressor.
+
+    Returns:
+        ``(preds, aligned_proba, proba, raw_preds)`` — predicted class
+        labels, aligned 3-column probability matrix, raw LightGBM
+        probability output, and raw regression predictions (``None``
+        for classification).
+    """
+    from thesis.model import _wrap_np
+
+    if is_regression:
+        raw_preds = model.predict(_wrap_np(X_test, all_feature_cols))
+        preds = np.where(
+            raw_preds > _REGRESSION_DIRECTION_THRESHOLD,
+            1,
+            np.where(raw_preds < _REGRESSION_DIRECTION_THRESHOLD, -1, 0),
+        ).astype(np.int32)
+        aligned_proba = np.zeros((len(raw_preds), 3), dtype=np.float64)
+        for i, p in enumerate(preds):
+            aligned_proba[i, {-1: 0, 0: 1, 1: 2}[int(p)]] = 1.0
+        return preds, aligned_proba, None, raw_preds
+    else:
+        proba = model.predict_proba(_wrap_np(X_test, all_feature_cols))
+        aligned_proba = _align_probability_matrix(proba, model.classes_)
+        preds = _CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
+        return preds, aligned_proba, proba, None
+
+
+def _wf_build_predict_phase(
+    config: Config,
+    w_idx: int,
+    gru_state: dict[str, Any],
+    feature_cols: list[str],
+    is_regression: bool,
+) -> dict[str, Any]:
+    """Build hybrid matrix, train LGBM, predict, return full window result.
+
+    Args:
+        config: Application configuration.
+        w_idx: Zero-based window index.
+        gru_state: GRU phase state dict from ``_wf_gru_phase``.
+        feature_cols: Candidate feature column names.
+        is_regression: Whether the model objective is regression.
+
+    Returns:
+        Full window result dict containing the GRU state, test labels,
+        predictions, probabilities, trained LGBM model, feature
+        columns, accuracy, diagnostics, and class ordering.
+    """
+    from thesis.model import _compute_class_weights, _train_fixed
+
+    train_aligned = gru_state["train_aligned"]
+    test_aligned = gru_state["test_aligned"]
+    train_hidden = gru_state["train_hidden"]
+    test_hidden = gru_state["test_hidden"]
+
+    # ── Build hybrid feature matrix ─────────────────────────────────────
+    static_cols = _select_static_feature_cols(config, train_aligned, feature_cols)
+    pca_k = config.gru.pca_components
+    hidden_components = pca_k if pca_k > 0 else config.gru.hidden_size
+    gru_feat_names = [
+        f"gru_pc_{i}" if pca_k > 0 else f"gru_h{i}" for i in range(hidden_components)
+    ]
+    all_feature_cols = gru_feat_names + static_cols
+    X_train = np.concatenate(
+        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    X_test = np.concatenate(
+        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
+    )
+    y_train = train_aligned["label"].to_numpy().astype(np.int32)
+    y_test = test_aligned["label"].to_numpy().astype(np.int32)
+    reg_y_train: np.ndarray | None = None
+    if is_regression:
+        reg_y_train = train_aligned["regression_target"].to_numpy().astype(np.float64)
+
+    # ── Diagnostics & weights ───────────────────────────────────────────
+    _log_gru_signal_quality(train_hidden, y_train, config)
+    diag = _window_diagnostics(w_idx + 1, train_aligned, test_aligned, y_train, y_test)
+    train_weights = (
+        train_aligned["sample_weight"].to_numpy().astype(np.float64)
+        if "sample_weight" in train_aligned.columns
+        else None
+    )
+
+    # ── Train LightGBM ──────────────────────────────────────────────────
+    val_split_idx = max(1, int(len(X_train) * _VALIDATION_SPLIT_FRACTION))
+    X_tr = X_train[:-val_split_idx]
+    w_tr = train_weights[:-val_split_idx] if train_weights is not None else None
+    X_val = X_train[-val_split_idx:]
+    if is_regression:
+        y_tr = reg_y_train[:-val_split_idx]  # type: ignore[index]
+        y_val = reg_y_train[-val_split_idx:]  # type: ignore[index]
+        class_weights = None
+    else:
+        y_tr = y_train[:-val_split_idx]
+        y_val = y_train[-val_split_idx:]
+        class_weights = _compute_class_weights(y_tr)
+
+    model = _train_fixed(
+        X_tr,
+        y_tr,
+        X_val,
+        y_val,
+        class_weights,
+        config,
+        all_feature_cols,
+        sample_weight=w_tr,
+    )
+
+    # ── Predict ─────────────────────────────────────────────────────────
+    preds, aligned_proba, proba, raw_preds = _wf_format_predictions(
+        model, X_test, all_feature_cols, is_regression
+    )
+    _add_prediction_diagnostics(diag, preds, y_test, aligned_proba)
+    acc = (preds == y_test).mean()
+    logger.info(
+        "Window %d: accuracy=%.4f, test_samples=%d", w_idx + 1, acc, len(y_test)
+    )
+
+    return {
+        **gru_state,
+        "test_aligned": test_aligned,
+        "y_test": y_test,
+        "preds": preds,
+        "raw_preds": raw_preds,
+        "proba": proba,
+        "model": model,
+        "all_feature_cols": all_feature_cols,
+        "accuracy": float(acc),
+        "diag": diag,
+        "classes": model.classes_,
+    }
+
+
+def _run_hybrid_window(
+    config: Config,
+    w_idx: int,
+    window: Any,
+    df: pl.DataFrame,
+    feature_cols: list[str],
+    is_regression: bool,
+) -> dict[str, Any] | None:
+    """Run a single hybrid walk-forward window: GRU → PCA → LGBM → predict.
+
+    Delegates to ``_wf_gru_phase`` and ``_wf_build_predict_phase``.
+    """
+    gru_state = _wf_gru_phase(config, w_idx, window, df)
+    if gru_state is None:
+        return None
+    return _wf_build_predict_phase(
+        config, w_idx, gru_state, feature_cols, is_regression
+    )
+
+
+def _collect_oof_predictions(
+    result: dict[str, Any], is_regression: bool
+) -> pl.DataFrame:
+    """Build OOF prediction chunk from a single window result.
+
+    Args:
+        result: Window result dict containing ``test_aligned`` DataFrame,
+            ``y_test`` array, ``preds`` array, and (for classification)
+            ``proba`` matrix with ``classes`` ordering.
+        is_regression: Whether the model is a regressor.
+
+    Returns:
+        Polars DataFrame with ``timestamp``, ``true_label``,
+        ``pred_label``, and probability columns (classification) or
+        ``pred_raw`` (regression).
+    """
+    test_aligned: pl.DataFrame = result["test_aligned"]
+    y_test: np.ndarray = result["y_test"]
+    preds: np.ndarray = result["preds"]
+    if is_regression:
+        return pl.DataFrame(
+            {
+                "timestamp": test_aligned["timestamp"],
+                "true_label": y_test,
+                "pred_label": preds.astype(np.int32),
+                "pred_raw": result["raw_preds"].astype(np.float64),
+            }
+        )
+    return pl.DataFrame(
+        {
+            "timestamp": test_aligned["timestamp"],
+            "true_label": y_test,
+            "pred_label": preds.astype(np.int32),
+            **_probability_columns(result["proba"], result["classes"]),
+        }
+    )
+
+
+def _build_lgbm_info(
+    last_lgbm_model: Any,
+    last_feature_cols: list[str],
+    last_window_accuracy: float | None,
+) -> dict[str, Any]:
+    """Build LightGBM metadata dict for training history JSON.
+
+    Args:
+        last_lgbm_model: Trained LightGBM model from the last window.
+        last_feature_cols: Feature column names used by the model.
+        last_window_accuracy: OOF accuracy of the last window, or ``None``.
+
+    Returns:
+        Dictionary with validation protocol, best iteration, feature
+        count, and class count.
+    """
+    return {
+        "artifact_strategy": "last_walk_forward_window",
+        "validation_protocol": {
+            "outer_windows": "bar_based_walk_forward_with_purge_embargo",
+            "gru_validation": "tail_20_percent_of_outer_train",
+            "lgbm_validation": "tail_20_percent_of_sequence_aligned_outer_train",
+        },
+        "last_window_accuracy": last_window_accuracy,
+        "best_iteration": int(last_lgbm_model.best_iteration_)
+        if hasattr(last_lgbm_model, "best_iteration_")
+        else None,
+        "n_features": len(last_feature_cols),
+        "n_classes": len(last_lgbm_model.classes_)
+        if hasattr(last_lgbm_model, "classes_")
+        else None,
+    }
+
+
+def _build_wf_history(
+    windows: list,
+    window_diagnostics: list[dict[str, Any]],
+    oof_len: int,
+) -> dict[str, Any]:
+    """Build walk-forward history dict with per-window details.
+
+    Args:
+        windows: List of walk-forward window objects with index attrs.
+        window_diagnostics: Per-window diagnostic dictionaries.
+        oof_len: Total number of OOF predictions.
+
+    Returns:
+        Dictionary with ``num_windows``, ``total_oof_predictions``,
+        and ``window_details`` list.
+    """
+    return {
+        "num_windows": len(windows),
+        "total_oof_predictions": oof_len,
+        "window_details": [
+            {
+                "window": i + 1,
+                "train_start_idx": w.train_start_idx,
+                "train_end_idx": w.train_end_idx,
+                "test_start_idx": w.test_start_idx,
+                "test_end_idx": w.test_end_idx,
+                **next(
+                    (item for item in window_diagnostics if item["window"] == i + 1), {}
+                ),
+            }
+            for i, w in enumerate(windows)
+        ],
+    }
+
+
+def _save_wf_artifacts(
+    config: Config,
+    all_oof_preds: list[pl.DataFrame],
+    gru_model: Any,
+    gru_mean: Any,
+    gru_std: Any,
+    last_lgbm_model: Any,
+    last_feature_cols: list[str],
+    last_window_accuracy: float | None,
+    last_gru_history: list[dict],
+    windows: list,
+    window_diagnostics: list[dict[str, Any]],
+    stage_start: float,
+    is_regression: bool,
+) -> None:
+    """Validate OOF predictions and persist all walk-forward artifacts.
+
+    Args:
+        config: Application configuration.
+        all_oof_preds: List of per-window OOF Polars DataFrames.
+        gru_model: GRU model from the last window.
+        gru_mean: Normalization mean for the GRU model.
+        gru_std: Normalization std for the GRU model.
+        last_lgbm_model: LightGBM model from the last window.
+        last_feature_cols: Feature column names.
+        last_window_accuracy: Accuracy of the last window.
+        last_gru_history: GRU training history list.
+        windows: Walk-forward window objects.
+        window_diagnostics: Per-window diagnostic dictionaries.
+        stage_start: ``time.perf_counter()`` start timestamp.
+        is_regression: Whether the objective is regression.
+
+    Raises:
+        RuntimeError: If no predictions were generated.
+        ValueError: If duplicate timestamps are found in OOF data.
+    """
+    import joblib
+
+    from thesis.gru import save_gru_model
+    from thesis.model import _save_feature_importance
+
+    # ── Guard ───────────────────────────────────────────────────────────
+    if not all_oof_preds or gru_model is None:
+        raise RuntimeError(
+            "No OOF predictions generated — all walk-forward windows were skipped"
+        )
+
+    # ── Save GRU model (last window) ────────────────────────────────────
+    if config.paths.session_dir:
+        gru_path = Path(config.paths.session_dir) / "models" / "gru_model.pt"
+        save_gru_model(gru_model, config, gru_path, mean=gru_mean, std=gru_std)
+
+    # ── Concatenate & validate OOF ──────────────────────────────────────
+    oof_df = pl.concat(all_oof_preds)
+    ts_col = oof_df["timestamp"]
+    if ts_col.n_unique() < len(ts_col):
+        dup_count = len(ts_col) - ts_col.n_unique()
+        raise ValueError(
+            f"OOF predictions contain {dup_count} duplicate timestamps — "
+            "walk-forward test windows should be non-overlapping. "
+            "Check step_bars vs test_window_bars."
+        )
+
+    preds_path = Path(config.paths.predictions)
+    preds_path.parent.mkdir(parents=True, exist_ok=True)
+    oof_df.write_parquet(preds_path)
+    oof_df.write_csv(preds_path.with_suffix(".csv"))
+
+    # ── Save LGBM model + feature importance ────────────────────────────
+    if last_lgbm_model is not None:
+        model_path = Path(config.paths.model)
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(last_lgbm_model, model_path)
+    if last_lgbm_model is not None and last_feature_cols:
+        _save_feature_importance(last_lgbm_model, last_feature_cols, config)
+
+    # ── Save training history ───────────────────────────────────────────
+    if config.paths.session_dir:
+        models_dir = Path(config.paths.session_dir) / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        history_path = models_dir / "training_history.json"
+        lgbm_info = (
+            _build_lgbm_info(last_lgbm_model, last_feature_cols, last_window_accuracy)
+            if last_lgbm_model is not None
+            else {}
+        )
+        with open(history_path, "w") as f:
+            json.dump({"gru": last_gru_history, "lightgbm": lgbm_info}, f, indent=2)
+        logger.info("Training history saved to %s", history_path)
+
+    # ── Save walk-forward history ───────────────────────────────────────
+    if config.paths.session_dir:
+        wf_path = (
+            Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
+        )
+        wf_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(wf_path, "w") as f:
+            json.dump(
+                _build_wf_history(windows, window_diagnostics, len(oof_df)), f, indent=2
+            )
+
+    total_time = time.perf_counter() - stage_start
+    logger.info(
+        "Walk-forward complete: %d windows, %d OOF predictions (%.1fs)",
+        len(windows),
+        len(oof_df),
+        total_time,
+    )
+
+
+def _run_walk_forward_hybrid(config: Config) -> None:
+    """Execute walk-forward hybrid training across all windows.
+
+    Orchestration: load → windows → loop(GPU→PCA→LGBM→collect) → save.
+    Each step delegates to a focused helper ≤ 80 lines.
+    """
+    # 1. Load labeled data, compute regression target, generate windows
+    df, windows, feature_cols, is_regression = _prepare_wf_data(config)
+
+    # 2. Initialize loop state
     all_oof_preds: list[pl.DataFrame] = []
     gru_model = None
     gru_mean = None
@@ -388,9 +954,9 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     last_window_accuracy: float | None = None
     last_gru_history: list[dict] = []
     window_diagnostics: list[dict[str, Any]] = []
-
     stage_start = time.perf_counter()
 
+    # 3. Process each walk-forward window
     for w_idx, window in enumerate(windows):
         window_start = time.perf_counter()
         logger.info(
@@ -403,357 +969,60 @@ def _run_walk_forward_hybrid(config: Config) -> None:
             window.test_end_idx,
         )
 
-        # Slice data
-        train_df = df.slice(
-            window.train_start_idx, window.train_end_idx - window.train_start_idx
+        result = _run_hybrid_window(
+            config, w_idx, window, df, feature_cols, is_regression
         )
-        test_df = df.slice(
-            window.test_start_idx, window.test_end_idx - window.test_start_idx
-        )
-
-        if len(train_df) < config.gru.sequence_length:
-            logger.warning(
-                "Window %d: train too small (%d), skipping", w_idx + 1, len(train_df)
-            )
+        if result is None:
             continue
-
-        # --- Train GRU ---
-        # Validation protocol: GRU gets the last 20% of the outer training
-        # window for neural early stopping. This slice never includes the
-        # outer test window.
-        val_split = max(1, int(len(train_df) * 0.2))
-        gru_train_df = train_df.head(len(train_df) - val_split)
-        gru_val_df = train_df.tail(val_split)
-
-        (
-            gru_model,
-            _classifier,
-            _,  # train_hidden from train_gru – overwritten below after full-train extraction
-            val_hidden,
-            gru_history,
-            gru_mean,
-            gru_std,
-            dynamic_gru_cols,
-        ) = train_gru(config, gru_train_df, gru_val_df, window_index=w_idx)
-
-        # Extract hidden states for full train and test
-        seq_len = config.gru.sequence_length
-        train_seq, _, _ = prepare_sequences(train_df, dynamic_gru_cols, seq_len)
-        test_seq, _, _ = prepare_sequences(test_df, dynamic_gru_cols, seq_len)
-
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        train_hidden = extract_hidden_states(
-            gru_model,
-            train_seq,
-            config.gru.batch_size,
-            device=device,
-            mean=gru_mean,
-            std=gru_std,
-        )
-        test_hidden = extract_hidden_states(
-            gru_model,
-            test_seq,
-            config.gru.batch_size,
-            device=device,
-            mean=gru_mean,
-            std=gru_std,
-        )
-
-        # Align DataFrames with sequence outputs
-        train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
-        test_aligned = test_df.slice(seq_len - 1, len(test_hidden))
-
-        if len(train_aligned) == 0 or len(test_aligned) == 0:
-            logger.warning("Window %d: aligned data empty, skipping", w_idx + 1)
-            continue
-
-        # --- PCA dimensionality reduction on GRU hidden states ---
-        pca_k = config.gru.pca_components
-        if pca_k > 0:
-            from sklearn.decomposition import PCA
-
-            pca = PCA(n_components=pca_k, random_state=config.workflow.random_seed)
-            pca.fit(train_hidden)
-            train_hidden = pca.transform(train_hidden)
-            test_hidden = pca.transform(test_hidden)
-
-            explained = float(pca.explained_variance_ratio_.sum())
-            logger.info(
-                "GRU hidden states: %d→%d PCs, explained variance=%.1f%%",
-                config.gru.hidden_size,
-                pca_k,
-                explained * 100,
-            )
-            if explained < 0.50:
-                logger.warning(
-                    "GRU hidden state space appears mostly noise "
-                    "(%.1f%% explained by %d PCs)",
-                    explained * 100,
-                    pca_k,
-                )
-
-        # --- Build hybrid feature matrix ---
-        static_cols = _select_static_feature_cols(config, train_aligned, feature_cols)
-        hidden_components = pca_k if pca_k > 0 else config.gru.hidden_size
-        gru_feat_names = [
-            f"gru_pc_{i}" if pca_k > 0 else f"gru_h{i}"
-            for i in range(hidden_components)
-        ]
-        all_feature_cols = gru_feat_names + static_cols
-
-        X_train = np.concatenate(
-            [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
-        )
-        X_test = np.concatenate(
-            [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
-        )
-
-        y_train = train_aligned["label"].to_numpy().astype(np.int32)
-        y_test = test_aligned["label"].to_numpy().astype(np.int32)
-        if is_regression:
-            reg_y_train = (
-                train_aligned["regression_target"].to_numpy().astype(np.float64)
-            )
-
-        # Diagnose whether GRU hidden states carry any signal to labels
-        _log_gru_signal_quality(train_hidden, y_train, config)
-
-        diag = _window_diagnostics(
-            w_idx + 1,
-            train_aligned,
-            test_aligned,
-            y_train,
-            y_test,
-        )
-        train_weights = (
-            train_aligned["sample_weight"].to_numpy().astype(np.float64)
-            if "sample_weight" in train_aligned.columns
-            else None
-        )
-
-        # Validation protocol: LightGBM uses the last 20% of sequence-aligned
-        # hybrid training rows for early stopping/Optuna. This is a separate
-        # validation split after GRU hidden-state extraction, still inside the
-        # outer training window.
-        val_split_idx = max(1, int(len(X_train) * 0.2))
-        X_tr = X_train[:-val_split_idx]
-        w_tr = train_weights[:-val_split_idx] if train_weights is not None else None
-        X_val = X_train[-val_split_idx:]
-
-        if is_regression:
-            y_tr = reg_y_train[:-val_split_idx]
-            y_val = reg_y_train[-val_split_idx:]
-            class_weights = None
-        else:
-            y_tr = y_train[:-val_split_idx]
-            y_val = y_train[-val_split_idx:]
-            class_weights = _compute_class_weights(y_tr)
-
-        model = _train_fixed(
-            X_tr,
-            y_tr,
-            X_val,
-            y_val,
-            class_weights,
-            config,
-            all_feature_cols,
-            sample_weight=w_tr,
-        )
-
-        # --- Predict on test ---
-        if is_regression:
-            raw_preds = model.predict(_wrap_np(X_test, all_feature_cols))
-            # Threshold at 0 for direction: pred > 0 → Long(1), pred < 0 → Short(-1)
-            preds = np.where(raw_preds > 0, 1, np.where(raw_preds < 0, -1, 0)).astype(
-                np.int32
-            )
-            # Build a synthetic 3-column proba for diagnostics compatibility
-            aligned_proba = np.zeros((len(raw_preds), 3), dtype=np.float64)
-            for i in range(len(raw_preds)):
-                if preds[i] == -1:
-                    aligned_proba[i, 0] = 1.0
-                elif preds[i] == 0:
-                    aligned_proba[i, 1] = 1.0
-                else:
-                    aligned_proba[i, 2] = 1.0
-        else:
-            proba = model.predict_proba(_wrap_np(X_test, all_feature_cols))
-            aligned_proba = _align_probability_matrix(proba, model.classes_)
-            preds = _CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
-        _add_prediction_diagnostics(diag, preds, y_test, aligned_proba)
-        window_diagnostics.append(diag)
-
-        acc = (preds == y_test).mean()
-        logger.info(
-            "Window %d: accuracy=%.4f, test_samples=%d",
-            w_idx + 1,
-            acc,
-            len(y_test),
-        )
-
-        # Save deployable artifacts from the latest walk-forward window. Do not
-        # select a "final" model by test-fold accuracy; OOF predictions carry
-        # evaluation, while the last model is a chronological deployment proxy.
-        last_lgbm_model = model
-        last_feature_cols = all_feature_cols
-        last_window_accuracy = float(acc)
-        last_gru_history = gru_history
 
         # Collect OOF predictions
-        if is_regression:
-            oof_chunk = pl.DataFrame(
-                {
-                    "timestamp": test_aligned["timestamp"],
-                    "true_label": y_test,
-                    "pred_label": preds.astype(np.int32),
-                    "pred_raw": raw_preds.astype(np.float64),
-                }
-            )
-        else:
-            oof_chunk = pl.DataFrame(
-                {
-                    "timestamp": test_aligned["timestamp"],
-                    "true_label": y_test,
-                    "pred_label": preds.astype(np.int32),
-                    **_probability_columns(proba, model.classes_),
-                }
-            )
-        all_oof_preds.append(oof_chunk)
+        all_oof_preds.append(_collect_oof_predictions(result, is_regression))
+        window_diagnostics.append(result["diag"])
 
-        window_time = time.perf_counter() - window_start
-        logger.info("Window %d done (%.1fs)", w_idx + 1, window_time)
+        # Update deployable state (latest chronological window)
+        gru_model = result["gru_model"]
+        gru_mean = result["gru_mean"]
+        gru_std = result["gru_std"]
+        last_lgbm_model = result["model"]
+        last_feature_cols = result["all_feature_cols"]
+        last_window_accuracy = result["accuracy"]
+        last_gru_history = result["gru_history"]
 
-    # --- Validate OOF predictions before saving ---
-    if not all_oof_preds or gru_model is None:
-        raise RuntimeError(
-            "No OOF predictions generated — all walk-forward windows were skipped"
+        logger.info(
+            "Window %d done (%.1fs)", w_idx + 1, time.perf_counter() - window_start
         )
 
-    # --- Save final GRU model (last window only) ---
-    if config.paths.session_dir:
-        gru_path = Path(config.paths.session_dir) / "models" / "gru_model.pt"
-        save_gru_model(gru_model, config, gru_path, mean=gru_mean, std=gru_std)
-
-    # --- Concatenate OOF predictions ---
-
-    oof_df = pl.concat(all_oof_preds)
-
-    # P1-2: Verify OOF predictions have unique timestamps
-    ts_col = oof_df["timestamp"]
-    if ts_col.n_unique() < len(ts_col):
-        dup_count = len(ts_col) - ts_col.n_unique()
-        raise ValueError(
-            f"OOF predictions contain {dup_count} duplicate timestamps — "
-            f"walk-forward test windows should be non-overlapping. "
-            f"Check step_bars vs test_window_bars."
-        )
-
-    preds_path = Path(config.paths.predictions)
-    preds_path.parent.mkdir(parents=True, exist_ok=True)
-    oof_df.write_parquet(preds_path)
-    oof_df.write_csv(preds_path.with_suffix(".csv"))
-
-    # Save latest chronological LightGBM model, not a best-by-test artifact.
-    if last_lgbm_model is not None:
-        model_path = Path(config.paths.model)
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(last_lgbm_model, model_path)
-
-    # Save feature importance from the same latest chronological model.
-    if last_lgbm_model is not None and last_feature_cols:
-        from thesis.model import _save_feature_importance
-
-        _save_feature_importance(last_lgbm_model, last_feature_cols, config)
-
-    # Save training history (GRU + LightGBM info)
-    if config.paths.session_dir:
-        models_dir = Path(config.paths.session_dir) / "models"
-        models_dir.mkdir(parents=True, exist_ok=True)
-        history_path = models_dir / "training_history.json"
-
-        lgbm_info: dict[str, Any] = {}
-        if last_lgbm_model is not None:
-            lgbm_info = {
-                "artifact_strategy": "last_walk_forward_window",
-                "validation_protocol": {
-                    "outer_windows": "bar_based_walk_forward_with_purge_embargo",
-                    "gru_validation": "tail_20_percent_of_outer_train",
-                    "lgbm_validation": "tail_20_percent_of_sequence_aligned_outer_train",
-                },
-                "last_window_accuracy": last_window_accuracy,
-                "best_iteration": int(last_lgbm_model.best_iteration_)
-                if hasattr(last_lgbm_model, "best_iteration_")
-                else None,
-                "n_features": len(last_feature_cols),
-                "n_classes": len(last_lgbm_model.classes_)
-                if hasattr(last_lgbm_model, "classes_")
-                else None,
-            }
-
-        with open(history_path, "w") as f:
-            json.dump({"gru": last_gru_history, "lightgbm": lgbm_info}, f, indent=2)
-        logger.info("Training history saved to %s", history_path)
-
-    # Save walk-forward history
-    if config.paths.session_dir:
-        wf_path = (
-            Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
-        )
-        wf_path.parent.mkdir(parents=True, exist_ok=True)
-        history = {
-            "num_windows": len(windows),
-            "total_oof_predictions": len(oof_df),
-            "window_details": [
-                {
-                    "window": i + 1,
-                    "train_start_idx": w.train_start_idx,
-                    "train_end_idx": w.train_end_idx,
-                    "test_start_idx": w.test_start_idx,
-                    "test_end_idx": w.test_end_idx,
-                    **next(
-                        (
-                            item
-                            for item in window_diagnostics
-                            if item["window"] == i + 1
-                        ),
-                        {},
-                    ),
-                }
-                for i, w in enumerate(windows)
-            ],
-        }
-        with open(wf_path, "w") as f:
-            json.dump(history, f, indent=2)
-
-    total_time = time.perf_counter() - stage_start
-    logger.info(
-        "Walk-forward complete: %d windows, %d OOF predictions (%.1fs)",
-        len(windows),
-        len(oof_df),
-        total_time,
+    # 4. Validate and persist all artifacts
+    _save_wf_artifacts(
+        config,
+        all_oof_preds,
+        gru_model,
+        gru_mean,
+        gru_std,
+        last_lgbm_model,
+        last_feature_cols,
+        last_window_accuracy,
+        last_gru_history,
+        windows,
+        window_diagnostics,
+        stage_start,
+        is_regression,
     )
 
 
-def _run_walk_forward_static(
-    config: Config, *, expanded_features: bool = False
-) -> None:
-    """Execute a static-feature-only walk-forward baseline.
-
-    This isolates whether the GRU hidden states add value. It uses the same
-    event-time purged windows, LightGBM training path, sample weights, OOF
-    prediction output, and report/backtest stages as the hybrid architecture.
+def _prepare_static_wf_data(
+    config: Config,
+) -> tuple[pl.DataFrame, list[Any], list[str], bool]:
+    """Load labeled data, pre-compute regression target, and generate windows.
 
     Args:
-        config: Runtime configuration.
-        expanded_features: When True, use ALL available feature columns
-            (except EXCLUDE_COLS, gru_* columns, and regression_target)
-            instead of the curated whitelist. Enables a fair feature-space
-            comparison against the hybrid architecture.
+        config: Application configuration.
+
+    Returns:
+        ``(df, windows, feature_cols, is_regression)`` — the full labeled
+        DataFrame, walk-forward window objects, sorted feature column
+        names, and a boolean indicating regression objective.
     """
-    import joblib
-
-    from thesis.model import _save_feature_importance, _wrap_np
-
     labels_path = Path(config.paths.labels)
     if not labels_path.exists():
         raise FileNotFoundError(f"Labels not found: {labels_path}")
@@ -761,7 +1030,6 @@ def _run_walk_forward_static(
     df = pl.read_parquet(labels_path)
     logger.info("Loaded labeled data for static baseline: %d rows", len(df))
 
-    # Pre-compute regression target when objective is "regression"
     is_regression_static = config.model.objective == "regression"
     if is_regression_static:
         if "close" not in df.columns:
@@ -798,152 +1066,152 @@ def _run_walk_forward_static(
 
     log_windows(windows, df, "timestamp")
     feature_cols = sorted(c for c in df.columns if c not in EXCLUDE_COLS)
-    all_oof_preds: list[pl.DataFrame] = []
-    last_lgbm_model = None
-    last_feature_cols: list[str] = []
-    last_window_accuracy: float | None = None
-    window_diagnostics: list[dict[str, Any]] = []
-    stage_start = time.perf_counter()
+    return df, windows, feature_cols, is_regression_static
 
-    for w_idx, window in enumerate(windows):
-        window_start = time.perf_counter()
-        logger.info(
-            "=== Static window %d/%d: train=[%d:%d] test=[%d:%d] ===",
-            w_idx + 1,
-            len(windows),
-            window.train_start_idx,
-            window.train_end_idx,
-            window.test_start_idx,
-            window.test_end_idx,
-        )
 
-        train_df = df.slice(
-            window.train_start_idx, window.train_end_idx - window.train_start_idx
-        )
-        test_df = df.slice(
-            window.test_start_idx, window.test_end_idx - window.test_start_idx
-        )
-        if len(train_df) < 2 or len(test_df) == 0:
-            logger.warning("Static window %d too small; skipping", w_idx + 1)
-            continue
+def _train_and_predict_static_window(
+    config: Config,
+    w_idx: int,
+    window: Any,
+    df: pl.DataFrame,
+    feature_cols: list[str],
+    is_regression_static: bool,
+    expanded_features: bool,
+) -> dict[str, Any] | None:
+    """Train LightGBM and generate predictions for a single static window.
 
-        if expanded_features:
-            static_cols = [
-                c
-                for c in feature_cols
-                if c in train_df.columns
-                and not c.startswith("gru_")
-                and c != "regression_target"
-            ]
-            mode_tag = "expanded"
-        else:
-            static_cols = _select_static_feature_cols(config, train_df, feature_cols)
-            mode_tag = "whitelist"
-        logger.info(
-            "Static baseline using %d features (%s mode)",
-            len(static_cols),
-            mode_tag,
-        )
-        X_train = train_df.select(static_cols).to_numpy()
-        X_test = test_df.select(static_cols).to_numpy()
-        if is_regression_static:
-            y_train = train_df["regression_target"].to_numpy().astype(np.float64)
-            y_test = test_df["regression_target"].to_numpy().astype(np.float64)
-            # For diagnostics, use original classification labels
-            y_train_cls = train_df["label"].to_numpy().astype(np.int32)
-            y_test_cls = test_df["label"].to_numpy().astype(np.int32)
-        else:
-            y_train = train_df["label"].to_numpy().astype(np.int32)
-            y_test = test_df["label"].to_numpy().astype(np.int32)
-            y_train_cls = y_train
-            y_test_cls = y_test
-        sample_weight = (
-            train_df["sample_weight"].to_numpy().astype(np.float64)
-            if "sample_weight" in train_df.columns
-            else None
-        )
-        diag = _window_diagnostics(
-            w_idx + 1, train_df, test_df, y_train_cls, y_test_cls
-        )
+    Returns a dict with ``oof_chunk``, ``model``, ``static_cols``,
+    ``accuracy``, and ``diag``, or ``None`` if the window is too small.
+    """
+    from thesis.model import _compute_class_weights, _train_fixed, _wrap_np
 
-        val_split_idx = max(1, int(len(X_train) * 0.2))
-        X_tr = X_train[:-val_split_idx]
-        y_tr = y_train[:-val_split_idx]
-        X_val = X_train[-val_split_idx:]
-        y_val = y_train[-val_split_idx:]
-        w_tr = sample_weight[:-val_split_idx] if sample_weight is not None else None
-        val_reference_price = float(
-            train_df.slice(len(train_df) - val_split_idx, val_split_idx)[
-                "close"
-            ].median()
-        )
-
-        model = _fit_lgbm_model(
-            X_tr,
-            y_tr,
-            X_val,
-            y_val,
-            val_reference_price,
-            config,
-            static_cols,
-            trials_override=config.validation.wf_optuna_trials
-            if config.validation.wf_optuna_trials > 0
-            else None,
-            sample_weight=w_tr,
-        )
-
-        if is_regression_static:
-            raw_preds = model.predict(_wrap_np(X_test, static_cols))
-            preds = np.where(raw_preds > 0, 1, np.where(raw_preds < 0, -1, 0)).astype(
-                np.int32
-            )
-            aligned_proba = np.zeros((len(raw_preds), 3), dtype=np.float64)
-            for i in range(len(raw_preds)):
-                if preds[i] == -1:
-                    aligned_proba[i, 0] = 1.0
-                elif preds[i] == 0:
-                    aligned_proba[i, 1] = 1.0
-                else:
-                    aligned_proba[i, 2] = 1.0
-        else:
-            proba = model.predict_proba(_wrap_np(X_test, static_cols))
-            aligned_proba = _align_probability_matrix(proba, model.classes_)
-            preds = _CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
-        _add_prediction_diagnostics(diag, preds, y_test_cls, aligned_proba)
-        window_diagnostics.append(diag)
-
-        acc = float((preds == y_test_cls).mean())
-        logger.info(
-            "Static window %d: accuracy=%.4f, test_samples=%d",
-            w_idx + 1,
-            acc,
-            len(y_test_cls),
-        )
-
-        last_lgbm_model = model
-        last_feature_cols = static_cols
-        last_window_accuracy = acc
-
-        if is_regression_static:
-            chunk_data = {
+    train_df = df.slice(
+        window.train_start_idx, window.train_end_idx - window.train_start_idx
+    )
+    test_df = df.slice(
+        window.test_start_idx, window.test_end_idx - window.test_start_idx
+    )
+    if len(train_df) < _STATIC_MIN_TRAIN_ROWS or len(test_df) == 0:
+        logger.warning("Static window %d too small; skipping", w_idx + 1)
+        return None
+    if expanded_features:
+        static_cols = [
+            c
+            for c in feature_cols
+            if c in train_df.columns
+            and not c.startswith("gru_")
+            and c != "regression_target"
+        ]
+        mode_tag = "expanded"
+    else:
+        static_cols = _select_static_feature_cols(config, train_df, feature_cols)
+        mode_tag = "whitelist"
+    logger.info(
+        "Static baseline using %d features (%s mode)", len(static_cols), mode_tag
+    )
+    X_train = train_df.select(static_cols).to_numpy()
+    X_test = test_df.select(static_cols).to_numpy()
+    if is_regression_static:
+        y_train = train_df["regression_target"].to_numpy().astype(np.float64)
+        y_test = test_df["regression_target"].to_numpy().astype(np.float64)
+        y_train_cls = train_df["label"].to_numpy().astype(np.int32)
+        y_test_cls = test_df["label"].to_numpy().astype(np.int32)
+    else:
+        y_train = train_df["label"].to_numpy().astype(np.int32)
+        y_test = test_df["label"].to_numpy().astype(np.int32)
+        y_train_cls, y_test_cls = y_train, y_test
+    sw = (
+        train_df["sample_weight"].to_numpy().astype(np.float64)
+        if "sample_weight" in train_df.columns
+        else None
+    )
+    diag = _window_diagnostics(w_idx + 1, train_df, test_df, y_train_cls, y_test_cls)
+    val_split_idx = max(1, int(len(X_train) * _VALIDATION_SPLIT_FRACTION))
+    X_tr, y_tr = X_train[:-val_split_idx], y_train[:-val_split_idx]
+    X_val, y_val = X_train[-val_split_idx:], y_train[-val_split_idx:]
+    w_tr = sw[:-val_split_idx] if sw is not None else None
+    class_weights = None if is_regression_static else _compute_class_weights(y_tr)
+    model = _train_fixed(
+        X_tr,
+        y_tr,
+        X_val,
+        y_val,
+        class_weights,
+        config,
+        static_cols,
+        sample_weight=w_tr,
+    )
+    if is_regression_static:
+        raw_preds = model.predict(_wrap_np(X_test, static_cols))
+        preds = np.sign(raw_preds).astype(np.int32)  # threshold=0
+        aligned_proba = np.zeros((len(raw_preds), 3), dtype=np.float64)
+        aligned_proba[np.arange(len(preds)), preds + 1] = 1.0
+        oof_chunk = pl.DataFrame(
+            {
                 "timestamp": test_df["timestamp"],
                 "true_label": y_test_cls,
                 "pred_label": preds.astype(np.int32),
                 "pred_raw": raw_preds.astype(np.float64),
             }
-        else:
-            chunk_data = {
+        )
+    else:
+        proba = model.predict_proba(_wrap_np(X_test, static_cols))
+        aligned_proba = _align_probability_matrix(proba, model.classes_)
+        preds = _CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
+        oof_chunk = pl.DataFrame(
+            {
                 "timestamp": test_df["timestamp"],
                 "true_label": y_test_cls,
                 "pred_label": preds.astype(np.int32),
                 **_probability_columns(proba, model.classes_),
             }
-        all_oof_preds.append(pl.DataFrame(chunk_data))
-        logger.info(
-            "Static window %d done (%.1fs)",
-            w_idx + 1,
-            time.perf_counter() - window_start,
         )
+    _add_prediction_diagnostics(diag, preds, y_test_cls, aligned_proba)
+    acc = float((preds == y_test_cls).mean())
+    logger.info(
+        "Static window %d: accuracy=%.4f, test_samples=%d",
+        w_idx + 1,
+        acc,
+        len(y_test_cls),
+    )
+    return {
+        "oof_chunk": oof_chunk,
+        "model": model,
+        "static_cols": static_cols,
+        "accuracy": acc,
+        "diag": diag,
+    }
+
+
+def _save_static_wf_artifacts(
+    config: Config,
+    all_oof_preds: list[pl.DataFrame],
+    last_lgbm_model: Any,
+    last_feature_cols: list[str],
+    last_window_accuracy: float | None,
+    windows: list[Any],
+    window_diagnostics: list[dict[str, Any]],
+    stage_start: float,
+) -> None:
+    """Validate OOF predictions and persist static walk-forward artifacts.
+
+    Args:
+        config: Application configuration.
+        all_oof_preds: List of per-window OOF Polars DataFrames.
+        last_lgbm_model: LightGBM model from the last window.
+        last_feature_cols: Feature column names.
+        last_window_accuracy: Accuracy of the last window.
+        windows: Walk-forward window objects.
+        window_diagnostics: Per-window diagnostic dictionaries.
+        stage_start: ``time.perf_counter()`` start timestamp.
+
+    Raises:
+        RuntimeError: If no predictions were generated.
+        ValueError: If duplicate timestamps are found in OOF data.
+    """
+    import joblib
+
+    from thesis.model import _save_feature_importance
 
     if not all_oof_preds or last_lgbm_model is None:
         raise RuntimeError("No static OOF predictions generated")
@@ -1036,8 +1304,85 @@ def _run_walk_forward_static(
     )
 
 
+def _run_walk_forward_static(
+    config: Config, *, expanded_features: bool = False
+) -> None:
+    """Execute a static-feature-only walk-forward baseline.
+
+    Isolates whether GRU hidden states add value. Uses event-time purged
+    windows, LightGBM, sample weights, and OOF prediction output. When
+    ``expanded_features`` is True, uses all available feature columns.
+
+    Args:
+        config: Application configuration.
+        expanded_features: If True, use all available features rather
+            than the whitelist.
+    """
+    # 1. Prepare data and windows
+    df, windows, feature_cols, is_regression_static = _prepare_static_wf_data(config)
+
+    # 2. Walk-forward loop
+    all_oof_preds: list[pl.DataFrame] = []
+    last_lgbm_model = None
+    last_feature_cols: list[str] = []
+    last_window_accuracy: float | None = None
+    window_diagnostics: list[dict[str, Any]] = []
+    stage_start = time.perf_counter()
+    for w_idx, window in enumerate(windows):
+        window_start = time.perf_counter()
+        logger.info(
+            "=== Static window %d/%d: train=[%d:%d] test=[%d:%d] ===",
+            w_idx + 1,
+            len(windows),
+            window.train_start_idx,
+            window.train_end_idx,
+            window.test_start_idx,
+            window.test_end_idx,
+        )
+        result = _train_and_predict_static_window(
+            config,
+            w_idx,
+            window,
+            df,
+            feature_cols,
+            is_regression_static,
+            expanded_features,
+        )
+        if result is None:
+            continue
+        all_oof_preds.append(result["oof_chunk"])
+        window_diagnostics.append(result["diag"])
+        last_lgbm_model = result["model"]
+        last_feature_cols = result["static_cols"]
+        last_window_accuracy = result["accuracy"]
+        logger.info(
+            "Static window %d done (%.1fs)",
+            w_idx + 1,
+            time.perf_counter() - window_start,
+        )
+
+    # 3. Validate and persist
+    _save_static_wf_artifacts(
+        config,
+        all_oof_preds,
+        last_lgbm_model,
+        last_feature_cols,
+        last_window_accuracy,
+        windows,
+        window_diagnostics,
+        stage_start,
+    )
+
+
 def _label_suffix(class_label: int) -> str:
-    """Return the canonical probability-column suffix for a class label."""
+    """Return the canonical probability-column suffix for a class label.
+
+    Args:
+        class_label: An integer from ``{-1, 0, 1}``.
+
+    Returns:
+        String suffix such as ``"minus1"`` or ``"0"``.
+    """
     return f"minus{abs(class_label)}" if class_label < 0 else str(class_label)
 
 
@@ -1045,7 +1390,19 @@ def _align_probability_matrix(
     proba: np.ndarray,
     class_order: list[int] | np.ndarray,
 ) -> np.ndarray:
-    """Align class probabilities to the canonical ``[-1, 0, 1]`` order."""
+    """Align class probabilities to the canonical ``[-1, 0, 1]`` order.
+
+    Some LightGBM models produce probabilities in a different class order
+    (e.g. ``[0, 1]`` for binary).  This function maps them to the fixed
+    ``[-1, 0, 1]`` column order expected by downstream stages.
+
+    Args:
+        proba: Raw probability matrix ``(N, C)`` from the model.
+        class_order: Model's ``classes_`` attribute (list or array).
+
+    Returns:
+        Probability matrix aligned to ``_CLASS_ORDER`` (``[-1, 0, 1]``).
+    """
     aligned = np.zeros((len(proba), len(_CLASS_ORDER)), dtype=np.float64)
     index_by_class = {int(cls): idx for idx, cls in enumerate(class_order)}
     for target_idx, cls in enumerate(_CLASS_ORDER):
@@ -1061,7 +1418,17 @@ def _probability_columns(
     *,
     prefix: str = "pred_proba_class_",
 ) -> dict[str, np.ndarray]:
-    """Build canonical probability columns for ``{-1, 0, 1}``."""
+    """Build canonical probability columns for ``{-1, 0, 1}``.
+
+    Args:
+        proba: Raw probability matrix from the model.
+        class_order: Model's ``classes_`` attribute.
+        prefix: Column name prefix (default ``"pred_proba_class_"``).
+
+    Returns:
+        Dictionary mapping canonical column names to 1-D probability
+        arrays.
+    """
     aligned = _align_probability_matrix(proba, class_order)
     return {
         f"{prefix}{_label_suffix(int(cls))}": aligned[:, idx]
@@ -1072,9 +1439,21 @@ def _probability_columns(
 def _split_tail_frame(
     df: pl.DataFrame,
     *,
-    fraction: float = 0.2,
+    fraction: float = _VALIDATION_SPLIT_FRACTION,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Split a DataFrame into head train and tail validation slices."""
+    """Split a DataFrame into head train and tail validation slices.
+
+    Args:
+        df: Polars DataFrame to split.
+        fraction: Fraction of rows to reserve for validation (default 0.2).
+
+    Returns:
+        ``(train_df, val_df)`` — the larger head portion and the
+        smaller tail portion.
+
+    Raises:
+        ValueError: If the DataFrame has fewer than 2 rows.
+    """
     if len(df) < 2:
         raise ValueError("Need at least 2 rows to create a train/validation split")
     val_size = min(max(1, int(len(df) * fraction)), len(df) - 1)
@@ -1086,9 +1465,24 @@ def _split_tail_arrays(
     y: np.ndarray,
     reference_prices: np.ndarray,
     *,
-    fraction: float = 0.2,
+    fraction: float = _VALIDATION_SPLIT_FRACTION,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
-    """Split matrices into train/validation tails and return val price anchor."""
+    """Split matrices into train/validation tails and return val price anchor.
+
+    Args:
+        X: Feature matrix ``(N, D)``.
+        y: Target vector ``(N,)``.
+        reference_prices: Price array used to compute the validation
+            price anchor (median of the tail).
+        fraction: Fraction of rows reserved for validation (default 0.2).
+
+    Returns:
+        ``(X_tr, y_tr, X_val, y_val, reference_price)`` — train and
+        validation splits plus the median price of the validation tail.
+
+    Raises:
+        ValueError: If fewer than 2 rows are provided.
+    """
     if len(X) < 2:
         raise ValueError("Need at least 2 rows to create a train/validation split")
     val_size = min(max(1, int(len(X) * fraction)), len(X) - 1)
@@ -1100,43 +1494,17 @@ def _split_tail_arrays(
     return X_tr, y_tr, X_val, y_val, reference_price
 
 
-def _fit_lgbm_model(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    X_val: np.ndarray,
-    y_val: np.ndarray,
-    reference_price: float,
-    config: Config,
-    feature_cols: list[str],
-    *,
-    trials_override: int | None = None,
-    sample_weight: np.ndarray | None = None,
-) -> Any:
-    """Train a LightGBM model using fixed hyperparameters."""
-    from thesis.model import (
-        _compute_class_weights,
-        _train_fixed,
-    )
-
-    if config.model.objective == "regression":
-        class_weights = None
-    else:
-        class_weights = _compute_class_weights(y_train)
-
-    return _train_fixed(
-        X_train,
-        y_train,
-        X_val,
-        y_val,
-        class_weights,
-        config,
-        feature_cols,
-        sample_weight=sample_weight,
-    )
-
-
 def _run_walk_forward(config: Config) -> None:
-    """Dispatch walk-forward training to the configured architecture."""
+    """Dispatch walk-forward training to the configured architecture.
+
+    Args:
+        config: Application configuration. Reads ``model.architecture``
+            to route to ``_run_walk_forward_static`` or
+            ``_run_walk_forward_hybrid``.
+
+    Raises:
+        ValueError: If ``model.architecture`` is unsupported.
+    """
     architecture = config.model.architecture
 
     if architecture == "static":
@@ -1154,10 +1522,14 @@ def _run_walk_forward(config: Config) -> None:
 def _run_static_train(config: Config) -> None:
     """Run traditional static train/val/test split training.
 
-    WARNING: Static split does not apply purge/embargo at the split boundary.
-    With triple-barrier labels (horizon_bars > 0), labels near the boundary
-    may use future information from the adjacent split. For thesis evaluation,
-    use validation.method = "sliding" instead.
+    Args:
+        config: Application configuration.
+
+    Warning:
+        Static split does not apply purge/embargo at the split boundary.
+        With triple-barrier labels (horizon_bars > 0), labels near the
+        boundary may use future information from the adjacent split. For
+        thesis evaluation, use ``validation.method = "sliding"`` instead.
     """
     from thesis.model import train_model
 

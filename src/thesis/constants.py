@@ -82,6 +82,83 @@ CHART_COLORS: dict[str, str] = {
 #: Alias for interactive chart modules (`charts/`) — same set as ``EXCLUDE_COLS``.
 EXCLUDED_FEATURE_COLS = EXCLUDE_COLS
 
+# ---------------------------------------------------------------------------
+# Labeling constants
+# ---------------------------------------------------------------------------
+
+#: Sample weight minimum floor for average-uniqueness computation.
+#: Prevents numerical instability from near-zero weights before
+#: normalisation to mean 1. Values below this are clamped up.
+SAMPLE_WEIGHT_MIN: float = 0.05
+
+#: ATR quantile p-values for diagnostic logging in ``_log_atr_stats``.
+ATR_LOW_QUANTILE: float = 0.05
+ATR_HIGH_QUANTILE: float = 0.95
+
+#: Label profitability warning threshold (percentage).
+#: If *both* Long and Short profit percentages fall below this value a warning
+#: is emitted because the labels may not be economically viable after costs.
+LABEL_PROFITABILITY_WARN_PCT: float = 60.0
+
+#: Round-trip multiplier for commission / contract-size → price-unit cost.
+ROUNDTRIP_MULT: float = 2.0
+
+#: Special label value marking rows whose forward horizon exceeds available
+#: data.  These are dropped before training (see ``_filter_censored``).
+CENSORED_LABEL: int = -2
+
+# ---------------------------------------------------------------------------
+# Distribution-shift weight clipping
+# ---------------------------------------------------------------------------
+
+#: Minimum and maximum allowed per-class weight ratios when correcting
+#: distribution shift between training and validation label frequencies.
+DIST_SHIFT_CLIP_MIN: float = 0.5
+DIST_SHIFT_CLIP_MAX: float = 3.0
+
+# ---------------------------------------------------------------------------
+# Feature engineering / numerical stability
+# ---------------------------------------------------------------------------
+
+#: Small epsilon for division safety in feature expressions (e.g. ATR
+#: ratio, pivot position, log-return normalisation).
+FEATURE_EPS: float = 1e-10
+
+#: Epsilon used in standard-deviation denominators (e.g. z-score, dataset
+#: standardisation) — larger than ``FEATURE_EPS`` to avoid amplifying
+#: near-constant series.
+STD_EPS: float = 1e-8
+
+# ---------------------------------------------------------------------------
+# GRU training hyper-parameter constants
+# ---------------------------------------------------------------------------
+
+#: Gradient clipping max-norm for GRU encoder and classifier parameters.
+GRAD_CLIP_NORM: float = 1.0
+
+#: Number of linear warmup epochs before cosine annealing takes over.
+WARMUP_EPOCHS: int = 3
+
+#: Cosine-annealing-with-warm-restarts base period (``T_0`` in PyTorch
+#: ``CosineAnnealingWarmRestarts`` semantics).
+COSINE_T0: int = 10
+
+#: Cosine-annealing-with-warm-restarts period multiplier (``T_mult``).
+COSINE_TMULT: int = 2
+
+#: Number of confidence bins for Expected Calibration Error (ECE).
+ECE_N_BINS: int = 10
+
+#: Learning rate for LBFGS temperature-scaling calibration.
+CALIB_LR: float = 0.01
+
+#: Maximum LBFGS iterations for temperature-scaling calibration.
+CALIB_MAX_ITER: int = 100
+
+# ---------------------------------------------------------------------------
+# Core static feature list
+# ---------------------------------------------------------------------------
+
 # Core tabular features — price-action focused with minimal indicators.
 # Keep in sync with config.toml [features].static_feature_cols.
 CORE_STATIC_FEATURES: tuple[str, ...] = (

@@ -35,6 +35,37 @@ from thesis.config import Config
 
 logger = logging.getLogger("thesis.backtest")
 
+
+# ---------------------------------------------------------------------------
+# Module-level defaults — extracted from magic numbers
+# See .weave/plans/audit-hardcoded-values.md
+# ---------------------------------------------------------------------------
+
+#: Floor to prevent microscopic stops in low-volatility regimes.
+#: Audit #33: backtest.py:148, severity High.
+_MIN_ATR_FLOOR: float = 0.0001
+
+#: Default initial capital used as fallback when BacktestConfig is unavailable.
+#: Audit #26, #43, #46: backtest.py:60,520,848, severity Medium.
+_DEFAULT_INITIAL_CAPITAL: float = 10_000.0
+
+#: Default commission per lot — fallback for _trades_to_list when config absent.
+#: Audit #42: backtest.py:436-437, severity Medium.
+_DEFAULT_COMMISSION_PER_LOT: float = 20.0
+
+#: Default contract size (units per lot) — fallback for _trades_to_list.
+#: Audit #42: backtest.py:436-437, severity Medium.
+_DEFAULT_CONTRACT_SIZE: float = 100.0
+
+#: Minimum bars required before the shifted-signal logic can activate.
+#: Audit #40: backtest.py:317, severity Medium.
+_MIN_BARS_FOR_SIGNAL: int = 2
+
+#: Minimum order size in units (backtesting.py requires whole-number sizes).
+#: Audit #41: backtest.py:366, severity Medium.
+_MIN_ORDER_SIZE: int = 1
+
+
 CORE_BACKTEST_METRICS: tuple[tuple[str, str, str], ...] = (
     ("return_pct", "Total Return", "{:.2f}%"),
     ("max_drawdown_pct", "Max Drawdown", "{:.2f}%"),
@@ -57,10 +88,17 @@ CORE_BACKTEST_METRIC_KEYS = {
 }
 
 
-def _log_core_backtest_metrics(metrics: dict[str, Any], initial_capital: float = 10_000.0) -> None:
-    """Log only the finance metrics that matter for CLI readability."""
+def _log_core_backtest_metrics(
+    metrics: dict[str, Any], initial_capital: float = _DEFAULT_INITIAL_CAPITAL
+) -> None:
+    """Log only the finance metrics that matter for CLI readability.
+
+    Args:
+        metrics: Normalized backtest statistics from ``_normalize_stats``.
+        initial_capital: Starting capital displayed in the log header.
+    """
     logger.info("=== BACKTEST CORE METRICS ===")
-    logger.info("  Initial Balance: $%,.0f", initial_capital)
+    logger.info("  Initial Balance: %s", f"${initial_capital:,.0f}")
     for key, label, fmt in CORE_BACKTEST_METRICS:
         value = metrics.get(key)
         if value is None:
@@ -73,7 +111,15 @@ def _log_core_backtest_metrics(metrics: dict[str, Any], initial_capital: float =
 
 
 def _calendar_day(value: object) -> object:
-    """Return the calendar date for a timestamp-like value."""
+    """Return the calendar date for a timestamp-like value.
+
+    Args:
+        value: A timestamp object (Pandas Timestamp, datetime, or
+            string parseable by ``pd.Timestamp``).
+
+    Returns:
+        The calendar date portion as a ``datetime.date`` object.
+    """
     return pd.Timestamp(value).date()
 
 
@@ -139,21 +185,60 @@ class HybridGRUStrategy(Strategy):
         daily_loss_limit: Max fraction of daily equity loss before pause.
     """
 
-    atr_stop_mult = 1.0
-    atr_tp_mult = 2.0  # 0 = disabled (no take-profit)
-    lots_per_trade = 0.2
-    min_lots = 0.1
-    max_lots = 0.5
-    confidence_threshold = 0.0  # 0 = disabled, trade all signals
-    min_atr = 0.0001  # floor to prevent microscopic stops
-    contract_size = 100  # units per lot (from DataConfig)
-    horizon_bars = (
-        0  # 0 = disabled (hold until opposite signal or stop); N = exit after N bars
+    # ── STRATEGY FALLBACK DEFAULTS ────────────────────────────────────────
+    # **Contract**: BacktestConfig is the authoritative source for all
+    # trading parameters.  These class-level attributes act only as *safe
+    # guardrail defaults* — they are overridden at runtime by bt.run()
+    # keyword arguments that carry values from BacktestConfig (or
+    # equivalent manual keyword arguments).  When bt.run() provides a
+    # value for a parameter, the attribute below is never consulted.
+    #
+    # **When the Strategy default applies**: only when the Strategy is
+    # used directly *without* the full config pipeline or when a specific
+    # parameter is omitted from bt.run() kwargs (not the case in current
+    # orchestration — every parameter is passed explicitly).
+    #
+    # **Naming convention**: Strategy attribute names use short forms
+    # (e.g. ``atr_stop_mult``, ``lot_per_trade``) while BacktestConfig
+    # uses canonical long names (e.g. ``atr_stop_multiplier``,
+    # ``lots_per_trade``).  The mapping is done inside _run_bt() and
+    # run_backtest_manual().
+    #
+    # **Divergent defaults** (Strategy vs BacktestConfig):
+    #   atr_stop_mult:          1.0  vs  2.0  (BacktestConfig is stricter)
+    #   lots_per_trade:         0.2  vs  0.1
+    #   min_lots:               0.1  vs  0.01
+    #   confidence_threshold:   0.0  vs  0.50 (Strategy trades all by default)
+    #   max_drawdown_cutoff:    0.50 vs  0.30 (Strategy is more permissive)
+    # Attributes with **identical** defaults: atr_tp_mult, max_lots,
+    #   dd_cooldown_bars, max_open_positions, daily_loss_limit.
+    #
+    # **Config-only parameters** (no Strategy attribute): leverage,
+    #   spread_ticks, slippage_ticks, commission_per_lot, initial_capital.
+    #
+    # **Labels-derived parameters**: horizon_bars comes from LabelsConfig,
+    #   contract_size from DataConfig — both injected via bt.run() kwargs.
+    #
+    # See .weave/plans/audit-hardcoded-values.md for extraction rationale.
+    # ───────────────────────────────────────────────────────────────────────
+
+    atr_stop_mult = 1.0  # cf. BacktestConfig.atr_stop_multiplier = 2.0
+    atr_tp_mult = 2.0  # 0 = disabled (no take-profit); matches BacktestConfig
+    lots_per_trade = 0.2  # cf. BacktestConfig.lots_per_trade = 0.1
+    min_lots = 0.1  # cf. BacktestConfig.min_lots = 0.01
+    max_lots = 0.5  # matches BacktestConfig
+    confidence_threshold = 0.0  # 0 = disabled (trade all); cf. BacktestConfig = 0.50
+    min_atr = (
+        _MIN_ATR_FLOOR  # floor to prevent microscopic stops (module-level constant)
     )
-    max_drawdown_cutoff = 0.50  # circuit breaker threshold
-    dd_cooldown_bars = 12  # pause duration after drawdown breach
-    max_open_positions = 1  # max simultaneous positions
-    daily_loss_limit = 0.03  # daily loss fraction limit
+    contract_size = 100  # units per lot; overridden via DataConfig.contract_size
+    horizon_bars = 0  # 0 = disabled (hold until opposite signal or stop); overridden via LabelsConfig
+    max_drawdown_cutoff = 0.50  # circuit breaker threshold; cf. BacktestConfig = 0.30
+    dd_cooldown_bars = (
+        12  # pause duration after drawdown breach; matches BacktestConfig
+    )
+    max_open_positions = 1  # max simultaneous positions; matches BacktestConfig
+    daily_loss_limit = 0.03  # daily loss fraction limit; matches BacktestConfig
 
     def init(self) -> None:
         """Register indicators and initialise risk-management state.
@@ -197,7 +282,15 @@ class HybridGRUStrategy(Strategy):
         self._current_date: object = None  # track calendar day for daily reset
 
     def _floor_atr(self, atr: float) -> float:
-        """Floor ATR to prevent unrealistic stops in low-volatility regimes."""
+        """Floor ATR to prevent unrealistic stops in low-volatility regimes.
+
+        Args:
+            atr: Current Average True Range value.
+
+        Returns:
+            ``max(atr, self.min_atr)`` — guaranteed above the module-level
+            ``_MIN_ATR_FLOOR``.
+        """
         return max(atr, self.min_atr)
 
     def _update_risk_state(self) -> None:
@@ -205,11 +298,23 @@ class HybridGRUStrategy(Strategy):
 
         Called every bar in ``next()`` before any trading decisions.
 
-        Note: The drawdown circuit breaker is a **permanent shutdown** — once
-        triggered, no new positions are opened for the remainder of the
-        backtest. This is intentional for thesis evaluation: a strategy that
-        loses more than the cutoff is deemed unfit. The ``dd_cooldown_bars``
-        parameter is unused in the current implementation.
+        Maintains the following risk-management state:
+
+        - ``_peak_equity``: running maximum equity (used for drawdown
+          calculation).
+        - ``_dd_cooldown_left``: bars remaining in drawdown cooldown
+          (decremented each bar).
+        - ``_daily_start_equity``: equity at the start of the current
+          calendar day.
+        - ``_current_date``: calendar day tracker for daily reset logic.
+
+        Note:
+            The drawdown circuit breaker is a **permanent shutdown** — once
+            triggered, no new positions are opened for the remainder of the
+            backtest. This is intentional for thesis evaluation: a strategy
+            that loses more than the cutoff is deemed unfit. The
+            ``dd_cooldown_bars`` parameter is unused in the current
+            implementation.
         """
         eq = self.equity
         self._peak_equity = max(self._peak_equity, eq)
@@ -314,7 +419,7 @@ class HybridGRUStrategy(Strategy):
         # open[i] ≈ close[i-1].  Without the shift, pred_label[i]
         # (anchored at close[i]) would be executed at open[i+1], a
         # one-bar misalignment between label anchor and entry price.
-        if len(self.signals) < 2:
+        if len(self.signals) < _MIN_BARS_FOR_SIGNAL:
             return
         raw_signal = float(self.signals[-2])
         # Threshold continuous predictions at 0 for direction:
@@ -363,7 +468,7 @@ class HybridGRUStrategy(Strategy):
         lots = self._compute_lots(confidence)
         size = lots * self.contract_size
         # backtesting.py requires whole-number units (or equity fraction <1)
-        size = max(1, round(size))
+        size = max(_MIN_ORDER_SIZE, round(size))
 
         # Step 6: execute trades
         if signal == 1 and not self.position:
@@ -400,6 +505,14 @@ def _normalize_stats(stats: pd.Series) -> dict:
     parameters (Sortino, Calmar, SQN, Kelly, recovery factor, avg win/loss,
     etc.).  Backtesting.py still computes its internal stats while running;
     this function decides what the thesis workflow keeps and saves.
+
+    Args:
+        stats: Raw ``pd.Series`` from ``backtesting.py`` stats output.
+
+    Returns:
+        Dictionary containing only the keys listed in
+        ``CORE_BACKTEST_METRIC_KEYS``, with keys normalized to
+        snake_case.
     """
     raw = stats.to_dict()
     out: dict = {}
@@ -433,8 +546,8 @@ def _normalize_stats(stats: pd.Series) -> dict:
 
 def _trades_to_list(
     trades_df: pd.DataFrame,
-    commission_per_lot: float = 20.0,
-    contract_size: float = 100.0,
+    commission_per_lot: float = _DEFAULT_COMMISSION_PER_LOT,
+    contract_size: float = _DEFAULT_CONTRACT_SIZE,
 ) -> list[dict]:
     """Convert a backtesting.py trades DataFrame to a JSON-serializable list.
 
@@ -517,7 +630,7 @@ def _save_trade_details_csv(trades: list[dict], out_dir: Path) -> None:
 def _save_equity_curve_csv(
     trades: list[dict],
     out_dir: Path,
-    initial_capital: float = 10_000.0,
+    initial_capital: float = _DEFAULT_INITIAL_CAPITAL,
 ) -> None:
     """Save equity curve as CSV with running peak and drawdown.
 
@@ -845,7 +958,7 @@ def run_backtest(config: Config) -> None:
         initial_capital = (
             config.backtest.initial_capital
             if hasattr(config.backtest, "initial_capital")
-            else 10_000.0
+            else _DEFAULT_INITIAL_CAPITAL
         )
         _save_equity_curve_csv(trades, out_path.parent, initial_capital)
 

@@ -2,9 +2,10 @@
 
 The production feature pipeline intentionally stays small and interpretable for
 student projects:
-    - prioritize price structure and trend distance over stacked indicators
-    - avoid strongly redundant transforms of the same signal
-    - keep runtime low and behavior stable across runs
+
+- prioritize price structure and trend distance over stacked indicators
+- avoid strongly redundant transforms of the same signal
+- keep runtime low and behavior stable across runs
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pathlib import Path
 import polars as pl
 
 from thesis.config import Config
-from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS
+from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS, FEATURE_EPS
 
 logger = logging.getLogger("thesis.features")
 
@@ -127,7 +128,17 @@ def _compute_atr_expr(period: int) -> pl.Expr:
 
 
 def _timeframe_to_ms(timeframe: str) -> int:
-    """Parse a small timeframe string into milliseconds for validation."""
+    """Parse a small timeframe string into milliseconds for validation.
+
+    Args:
+        timeframe: Timeframe string like "1H", "4H", "5MIN", "1D".
+
+    Returns:
+        Timeframe in milliseconds.
+
+    Raises:
+        ValueError: If timeframe format is unsupported.
+    """
     tf = timeframe.upper()
     if tf.endswith("H"):
         return int(tf[:-1]) * 3_600_000
@@ -141,7 +152,16 @@ def _timeframe_to_ms(timeframe: str) -> int:
 
 
 def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
-    """Log timestamp continuity checks before rolling feature generation."""
+    """Log timestamp continuity checks before rolling feature generation.
+
+    Args:
+        df: OHLCV DataFrame to validate.
+        config: Application configuration.
+
+    Raises:
+        ValueError: If required columns are missing, DataFrame is empty,
+            timestamps are unsorted, or timestamps are not unique.
+    """
     required = {"timestamp", "open", "high", "low", "close", "volume"}
     missing = sorted(required - set(df.columns))
     if missing:
@@ -184,7 +204,18 @@ def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
 
 
 def _drop_warmup_rows(df: pl.DataFrame, feature_cols: list[str]) -> pl.DataFrame:
-    """Drop rows whose model-facing features are incomplete or non-finite."""
+    """Drop rows whose model-facing features are incomplete or non-finite.
+
+    Args:
+        df: Feature DataFrame.
+        feature_cols: Column names that must be finite and non-null.
+
+    Returns:
+        DataFrame with warm-up rows removed.
+
+    Raises:
+        ValueError: If no rows remain after warm-up removal.
+    """
     existing_features = [c for c in feature_cols if c in df.columns]
     n_before = len(df)
     df = df.fill_nan(None).drop_nulls(subset=existing_features)
@@ -225,12 +256,16 @@ def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     loss = (-delta).clip(lower_bound=0.0)
     avg_gain = gain.ewm_mean(alpha=1.0 / p, adjust=False)
     avg_loss = loss.ewm_mean(alpha=1.0 / p, adjust=False)
-    rs = avg_gain / (avg_loss + 1e-10)
+    rs = avg_gain / (avg_loss + FEATURE_EPS)
     return df.with_columns((100.0 - 100.0 / (1.0 + rs)).alias(f"rsi_{p}"))
 
 
 def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add ATR column to the DataFrame.
+
+    Args:
+        df: Input OHLCV DataFrame.
+        config: Configuration with ``features.atr_period``.
 
     Returns:
         DataFrame with a new column ``atr_{p}``.
@@ -242,6 +277,11 @@ def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add a ``macd_hist`` column using configured MACD spans.
+
+    Args:
+        df: Input OHLCV DataFrame.
+        config: Configuration with ``features.macd_fast``,
+            ``features.macd_slow``, ``features.macd_signal``.
 
     Returns:
         DataFrame with an added ``macd_hist`` column.
@@ -268,18 +308,25 @@ def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
     Appends: ``atr_ratio``, ``price_dist_ratio``, ``pivot_position``,
     session dummies, and ``atr_percentile``.
+
+    Args:
+        df: Input DataFrame with OHLCV and ATR columns.
+        config: Configuration with ``features.atr_period``.
+
+    Returns:
+        DataFrame with additional context feature columns.
     """
     p = config.features.atr_period
 
     # ATR Ratio: ATR(5) / ATR(20) — volatility regime
     atr_5 = _compute_atr_expr(5)
     atr_20 = _compute_atr_expr(20)
-    df = df.with_columns((atr_5 / (atr_20 + 1e-10)).alias("atr_ratio"))
+    df = df.with_columns((atr_5 / (atr_20 + FEATURE_EPS)).alias("atr_ratio"))
 
     # Price Distance Ratio: (Close - EMA89) / ATR14
     ema_89 = pl.col("close").ewm_mean(span=89, adjust=False)
     df = df.with_columns(
-        ((pl.col("close") - ema_89) / (pl.col(f"atr_{p}") + 1e-10)).alias(
+        ((pl.col("close") - ema_89) / (pl.col(f"atr_{p}") + FEATURE_EPS)).alias(
             "price_dist_ratio"
         )
     )
@@ -301,7 +348,14 @@ def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
-    """Compute previous-day pivot levels and add bounded pivot_position column."""
+    """Compute previous-day pivot levels and add bounded pivot_position column.
+
+    Args:
+        df: Input OHLCV DataFrame with timestamp, high, low, close columns.
+
+    Returns:
+        DataFrame with an added ``pivot_position`` column.
+    """
     trading_day_expr = _to_ny_trading_day(df)
     pivots = _build_pivot_table(df, trading_day_expr)
     df = df.with_columns(trading_day_expr.alias("_trading_day"))
@@ -312,7 +366,15 @@ def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _to_ny_trading_day(df: pl.DataFrame) -> pl.Expr:
-    """Convert timestamp column to NY trading-day expression."""
+    """Convert timestamp column to NY trading-day expression.
+
+    Args:
+        df: Input DataFrame with a ``timestamp`` column (UTC or timezone-aware).
+
+    Returns:
+        Polars expression yielding trading-day timestamps in America/New_York
+        timezone, shifted so each day starts at 7 PM ET.
+    """
     ts = pl.col("timestamp")
     if df["timestamp"].dtype.time_zone is None:
         ts = ts.dt.replace_time_zone("UTC")
@@ -321,7 +383,16 @@ def _to_ny_trading_day(df: pl.DataFrame) -> pl.Expr:
 
 
 def _build_pivot_table(df: pl.DataFrame, trading_day_expr: pl.Expr) -> pl.DataFrame:
-    """Build previous-day pivot/R1/S1 lookup table."""
+    """Build previous-day pivot/R1/S1 lookup table.
+
+    Args:
+        df: Input OHLCV DataFrame.
+        trading_day_expr: Polars expression yielding trading-day timestamps.
+
+    Returns:
+        DataFrame with ``prev_pivot``, ``prev_r1``, ``prev_s1`` columns
+        keyed by ``_trading_day``.
+    """
     df_with_day = df.with_columns(trading_day_expr.alias("_trading_day"))
     daily = (
         df_with_day.group_by("_trading_day")
@@ -352,11 +423,20 @@ def _build_pivot_table(df: pl.DataFrame, trading_day_expr: pl.Expr) -> pl.DataFr
 
 
 def _compute_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
-    """Compute bounded pivot_position and drop intermediate pivot columns."""
+    """Compute bounded pivot_position and drop intermediate pivot columns.
+
+    Args:
+        df: DataFrame with ``close``, ``prev_s1``, ``prev_r1``,
+            ``prev_pivot`` columns.
+
+    Returns:
+        DataFrame with ``pivot_position`` column replacing intermediate
+        pivot columns.
+    """
     return df.with_columns(
         (
             (pl.col("close") - pl.col("prev_s1"))
-            / (pl.col("prev_r1") - pl.col("prev_s1") + 1e-10)
+            / (pl.col("prev_r1") - pl.col("prev_s1") + FEATURE_EPS)
         )
         .clip(0.0, 1.0)
         .alias("pivot_position")
@@ -378,10 +458,17 @@ def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame
         gap_ratio: (open - prev_close) / ATR14 — gap detection
         consecutive_bars: rolling sum of bar direction (±1) over 5 bars — momentum streak
         price_position_20: (close - low_20) / (high_20 - low_20) — position in N-bar range
+
+    Args:
+        df: Input DataFrame with OHLCV and ATR columns.
+        config: Configuration with ``features.atr_period``.
+
+    Returns:
+        DataFrame with additional price-action feature columns.
     """
     p = config.features.atr_period
     atr_col = pl.col(f"atr_{p}")
-    hl_range = pl.col("high") - pl.col("low") + 1e-10
+    hl_range = pl.col("high") - pl.col("low") + FEATURE_EPS
 
     return df.with_columns(
         [
@@ -400,9 +487,9 @@ def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame
                 / hl_range
             ).alias("lower_wick_ratio"),
             # Gap from previous close, normalized by ATR
-            ((pl.col("open") - pl.col("close").shift(1)) / (atr_col + 1e-10)).alias(
-                "gap_ratio"
-            ),
+            (
+                (pl.col("open") - pl.col("close").shift(1)) / (atr_col + FEATURE_EPS)
+            ).alias("gap_ratio"),
             # Consecutive direction streak (rolling 5 bars)
             (
                 pl.when(pl.col("close") > pl.col("open"))
@@ -418,7 +505,7 @@ def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame
                 / (
                     pl.col("high").rolling_max(window_size=20)
                     - pl.col("low").rolling_min(window_size=20)
-                    + 1e-10
+                    + FEATURE_EPS
                 )
             ).alias("price_position_20"),
         ]
@@ -431,6 +518,13 @@ def _add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     Features:
         close_vs_ema_34: (close - EMA34) / ATR14 — price distance from EMA 34
         ema34_vs_ema89: (EMA34 - EMA89) / ATR14 — crossover signal / trend direction
+
+    Args:
+        df: Input DataFrame with OHLCV and ATR columns.
+        config: Configuration with ``features.atr_period``.
+
+    Returns:
+        DataFrame with additional EMA crossover feature columns.
     """
     p = config.features.atr_period
     atr_col = pl.col(f"atr_{p}")
@@ -440,8 +534,10 @@ def _add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
     return df.with_columns(
         [
-            ((pl.col("close") - ema_34) / (atr_col + 1e-10)).alias("close_vs_ema_34"),
-            ((ema_34 - ema_89) / (atr_col + 1e-10)).alias("ema34_vs_ema89"),
+            ((pl.col("close") - ema_34) / (atr_col + FEATURE_EPS)).alias(
+                "close_vs_ema_34"
+            ),
+            ((ema_34 - ema_89) / (atr_col + FEATURE_EPS)).alias("ema34_vs_ema89"),
         ]
     )
 
@@ -450,6 +546,12 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
     """Add four NY session indicator columns (DST-aware).
 
     Adds: ``sess_asia``, ``sess_london``, ``sess_overlap``, ``sess_ny_pm``.
+
+    Args:
+        df: Input DataFrame with a ``timestamp`` column (UTC or timezone-aware).
+
+    Returns:
+        DataFrame with four session indicator columns.
     """
     ts = pl.col("timestamp")
     if df["timestamp"].dtype.time_zone is None:
@@ -475,12 +577,23 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add rolling volume z-score vs ``volume_zscore_period``-bar mean."""
+    """Add rolling volume z-score vs ``volume_zscore_period``-bar mean.
+
+    Args:
+        df: Input DataFrame with a ``volume`` column.
+        config: Configuration with
+            ``features.multi_timeframe.volume_zscore_period``.
+
+    Returns:
+        DataFrame with an added ``volume_zscore_20`` column.
+    """
     n = config.features.multi_timeframe.volume_zscore_period
     vol_mean = pl.col("volume").rolling_mean(window_size=n)
     vol_std = pl.col("volume").rolling_std(window_size=n)
     return df.with_columns(
-        ((pl.col("volume") - vol_mean) / (vol_std + 1e-10)).alias("volume_zscore_20")
+        ((pl.col("volume") - vol_mean) / (vol_std + FEATURE_EPS)).alias(
+            "volume_zscore_20"
+        )
     )
 
 
@@ -493,6 +606,14 @@ def _add_log_returns(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add log return features at multiple lookback horizons.
 
     Produces ``return_1h``, ``return_4h``, ``return_1d``.
+
+    Args:
+        df: Input DataFrame with a ``close`` column.
+        config: Configuration with
+            ``features.multi_timeframe.return_lookbacks``.
+
+    Returns:
+        DataFrame with additional log return columns.
     """
     cols: list[pl.Expr] = []
     for lookback in config.features.multi_timeframe.return_lookbacks:
@@ -510,14 +631,25 @@ def _add_log_returns(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_high_low_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add normalized 20-bar high-low range: (max_high - min_low) / ATR14."""
+    """Add normalized 20-bar high-low range: (max_high - min_low) / ATR14.
+
+    Args:
+        df: Input DataFrame with OHLCV and ATR columns.
+        config: Configuration with ``features.atr_period`` and
+            ``features.multi_timeframe.range_lookback``.
+
+    Returns:
+        DataFrame with an added ``high_low_range_20`` column.
+    """
     p = config.features.atr_period
     atr_col = pl.col(f"atr_{p}")
     n = config.features.multi_timeframe.range_lookback
     rolling_high = pl.col("high").rolling_max(window_size=n)
     rolling_low = pl.col("low").rolling_min(window_size=n)
     return df.with_columns(
-        ((rolling_high - rolling_low) / (atr_col + 1e-10)).alias("high_low_range_20")
+        ((rolling_high - rolling_low) / (atr_col + FEATURE_EPS)).alias(
+            "high_low_range_20"
+        )
     )
 
 
@@ -531,6 +663,13 @@ def _add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
 
     ADX > 25 typically indicates a trending market; ADX < 20 suggests a
     range-bound market.
+
+    Args:
+        df: Input OHLCV DataFrame.
+        period: Lookback period for ADX smoothing (default 14).
+
+    Returns:
+        DataFrame with an added ``trend_strength`` column.
     """
     alpha = 1.0 / period
 
@@ -559,11 +698,11 @@ def _add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
     minus_dm_smooth = minus_dm.ewm_mean(alpha=alpha, adjust=False)
 
     # +DI / -DI
-    plus_di = 100.0 * plus_dm_smooth / (atr_smooth + 1e-10)
-    minus_di = 100.0 * minus_dm_smooth / (atr_smooth + 1e-10)
+    plus_di = 100.0 * plus_dm_smooth / (atr_smooth + FEATURE_EPS)
+    minus_di = 100.0 * minus_dm_smooth / (atr_smooth + FEATURE_EPS)
 
     # DX → ADX
-    dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10)
+    dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di + FEATURE_EPS)
     adx = dx.ewm_mean(alpha=alpha, adjust=False)
 
     return df.with_columns(adx.alias("trend_strength"))
@@ -575,7 +714,13 @@ def _add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
 
 
 def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
-    """Write a JSON sidecar listing feature column names."""
+    """Write a JSON sidecar listing feature column names.
+
+    Args:
+        features_path: Path to the features parquet file (sidecar is written
+            alongside with ``.feature_list.json`` suffix).
+        feature_cols: List of feature column names to save.
+    """
     list_path = features_path.with_suffix(".feature_list.json")
     with open(list_path, "w") as f:
         json.dump(feature_cols, f, indent=2)

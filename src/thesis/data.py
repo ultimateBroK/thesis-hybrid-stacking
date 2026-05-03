@@ -214,7 +214,18 @@ def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
 
 
 def _filter_date_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Apply inclusive configured data date range to OHLCV bars."""
+    """Apply inclusive configured data date range to OHLCV bars.
+
+    Args:
+        ohlcv: OHLCV DataFrame with a ``timestamp`` column.
+        config: Application configuration.
+
+    Returns:
+        Filtered DataFrame.
+
+    Raises:
+        ValueError: If no bars remain after filtering.
+    """
     n_before = len(ohlcv)
     ts_dtype = ohlcv["timestamp"].dtype
     start = _parse_datetime_bound(config.data.start_date, "start_date", ts_dtype)
@@ -237,7 +248,12 @@ def _filter_date_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _log_gap_report(ohlcv: pl.DataFrame, group_ms: int) -> None:
-    """Log timestamp continuity diagnostics without filling missing bars."""
+    """Log timestamp continuity diagnostics without filling missing bars.
+
+    Args:
+        ohlcv: OHLCV DataFrame with a ``timestamp`` column.
+        group_ms: Expected bar interval in milliseconds.
+    """
     if len(ohlcv) < 2:
         logger.warning("OHLCV gap report skipped: fewer than 2 bars")
         return
@@ -266,7 +282,11 @@ def _log_gap_report(ohlcv: pl.DataFrame, group_ms: int) -> None:
 
 
 def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
-    """Log OHLCV candle integrity and likely outlier diagnostics."""
+    """Log OHLCV candle integrity and likely outlier diagnostics.
+
+    Args:
+        ohlcv: OHLCV DataFrame.
+    """
     if ohlcv.is_empty():
         return
 

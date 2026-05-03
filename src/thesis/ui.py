@@ -40,7 +40,12 @@ STAGE_LABELS: dict[int, str] = {
 # UI helpers
 # ---------------------------------------------------------------------------
 def stage_header(stage: int, total: int = 6) -> None:
-    """Print a visually distinct stage banner via console (Rich) and logger."""
+    """Print a visually distinct stage banner via console (Rich) and logger.
+
+    Args:
+        stage: Stage number (0-indexed).
+        total: Total number of pipeline stages.
+    """
     _logger = logging.getLogger("thesis")
     style = STAGE_STYLES.get(stage, "bold")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
@@ -59,7 +64,12 @@ def stage_header(stage: int, total: int = 6) -> None:
 
 
 def stage_skip(stage: int, reason: str) -> None:
-    """Print a dim skip line via console (Rich) and logger."""
+    """Print a dim skip line via console (Rich) and logger.
+
+    Args:
+        stage: Stage number (0-indexed).
+        reason: Why the stage is being skipped.
+    """
     _logger = logging.getLogger("thesis")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
     # Rich console output

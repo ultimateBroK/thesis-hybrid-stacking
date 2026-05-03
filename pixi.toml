@@ -32,6 +32,10 @@ test-fast = "pytest tests/ -v -m 'not slow'"
 streamlit = "PYTHONPATH=src streamlit run src/thesis/dashboard.py --server.port 8501"
 dead-code = "vulture src tests --min-confidence 80"
 
+# Documentation
+docs-html = "sphinx-build -b html -W docs/source docs/_build/html"
+docs-pdf = "bash docs/build_pdf.sh"
+
 # ---------------------------------------------------------------------------
 # Dependencies — core pipeline + testing only
 # ---------------------------------------------------------------------------
@@ -59,7 +63,11 @@ bokeh = ">=3.9.0,<4"
 jupyter = ">=1.1.1,<2"
 ipykernel = ">=7.2.0,<8"
 vulture = ">=2.16,<3"
-sphinx = ">=9.1.0,<10"
+sphinx = ">=8,<9"
+sphinx-rtd-theme = ">=3.0.0,<4"
+myst-parser = ">=5.0.0,<6"
+sphinxcontrib-mermaid = ">=2.0.1,<3"
+nodejs = ">=22,<26"
 
 [pypi-dependencies]
 backtesting = ">=0.6.5, <0.7"

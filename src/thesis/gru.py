@@ -46,6 +46,16 @@ from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Dataset
 
 from thesis.config import Config
+from thesis.constants import (
+    CALIB_LR,
+    CALIB_MAX_ITER,
+    COSINE_T0,
+    COSINE_TMULT,
+    ECE_N_BINS,
+    GRAD_CLIP_NORM,
+    STD_EPS,
+    WARMUP_EPOCHS,
+)
 
 logger = logging.getLogger("thesis.gru")
 
@@ -359,7 +369,7 @@ class SequenceDataset(Dataset):
             self.std = std
         else:
             self.mean = sequences.mean(axis=(0, 1), keepdims=True)
-            self.std = sequences.std(axis=(0, 1), keepdims=True) + 1e-8
+            self.std = sequences.std(axis=(0, 1), keepdims=True) + STD_EPS
         standardized = (sequences - self.mean) / self.std
         self.sequences = torch.from_numpy(standardized.copy()).float()
         if labels is not None:
@@ -674,9 +684,9 @@ def _train_epoch(
 
         params = list(model.parameters()) + list(classifier.parameters())
         if accelerator is not None:
-            accelerator.clip_grad_norm_(params, max_norm=1.0)
+            accelerator.clip_grad_norm_(params, max_norm=GRAD_CLIP_NORM)
         else:
-            torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(params, max_norm=GRAD_CLIP_NORM)
 
         optimizer.step()
 
@@ -812,7 +822,7 @@ def _pretrain_contrastive(
 
             optimizer.zero_grad()
             accelerator.backward(loss)
-            accelerator.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            accelerator.clip_grad_norm_(model.parameters(), max_norm=GRAD_CLIP_NORM)
             optimizer.step()
 
             epoch_loss += loss.item() * N
@@ -839,7 +849,9 @@ def _pretrain_contrastive(
 # ---------------------------------------------------------------------------
 
 
-def _compute_ece(probs: torch.Tensor, labels: torch.Tensor, n_bins: int = 10) -> float:
+def _compute_ece(
+    probs: torch.Tensor, labels: torch.Tensor, n_bins: int = ECE_N_BINS
+) -> float:
     """Compute Expected Calibration Error (ECE).
 
     Partitions predictions into ``n_bins`` equal-width confidence bins
@@ -943,8 +955,8 @@ def _calibrate_model(
 
     optimizer = torch.optim.LBFGS(
         [temperature_param],
-        lr=0.01,
-        max_iter=100,
+        lr=CALIB_LR,
+        max_iter=CALIB_MAX_ITER,
         line_search_fn="strong_wolfe",
     )
     optimizer.step(_closure)
@@ -1167,15 +1179,27 @@ def train_gru(
 
     # LR scheduler: 3-epoch linear warmup → cosine annealing with warm restarts
     # (T_0=10, T_mult=2)
-    warmup_epochs = 3
+    warmup_epochs = WARMUP_EPOCHS
 
     def _lr_lambda(epoch: int) -> float:
+        """Cosine annealing LR schedule with 3-epoch linear warmup.
+
+        Warmup: linearly scales LR from 0 to 1 over the first 3 epochs.
+        After warmup: cosine annealing with warm restarts
+        (``T_0=10``, ``T_mult=2``).
+
+        Args:
+            epoch: Current epoch index (0-based).
+
+        Returns:
+            LR multiplier in [0, 1].
+        """
         if epoch < warmup_epochs:
             return (epoch + 1) / warmup_epochs
         # Cosine annealing with warm restarts (T_0=10, T_mult=2)
         adjusted = epoch - warmup_epochs
-        t_0 = 10
-        t_mult = 2
+        t_0 = COSINE_T0
+        t_mult = COSINE_TMULT
         t_i = t_0
         while adjusted >= t_i:
             adjusted -= t_i
