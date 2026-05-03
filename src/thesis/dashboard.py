@@ -1,5 +1,10 @@
 """Interactive Streamlit dashboard for thesis visualization.
 
+.. deprecated::
+    This is a supplementary visualization module. It is NOT required for the
+    core thesis pipeline.  The core pipeline (data → features → labels →
+    model → backtest → report) functions independently of dashboard/charts.
+
 Launch: ``pixi run streamlit``
 
 Combines session discovery, metric cards, zone classification, and all
@@ -51,7 +56,6 @@ from thesis.charts import (
     build_monthly_returns_heatmap,
     build_pnl_histogram_chart,
     build_rolling_sharpe_chart,
-    build_shap_chart,
     load_session_data,
 )
 from thesis.session_paths import load_config_for_session
@@ -594,17 +598,6 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
     else:
         st.info("No feature importance data available.")
 
-    shap_data = data.get("shap_values")
-    if shap_data:
-        st.subheader("SHAP Summary")
-        chart = build_shap_chart(shap_data)
-        _render_chart(chart, height="600px")
-    elif session_dir:
-        shap_png = Path(session_dir) / "reports" / "shap_summary.png"
-        if shap_png.exists():
-            st.subheader("SHAP Summary")
-            st.image(str(shap_png), width="stretch")
-
 
 # ===================================================================
 # Section: Training
@@ -807,7 +800,7 @@ def _render_training_section(data: dict, session_dir: str) -> None:
 # ===================================================================
 
 
-def _render_backtest_section(data: dict) -> None:
+def _render_backtest_section(data: dict, config: object) -> None:
     """Render backtest metrics, charts, analysis panels, and CSV downloads."""
     st.markdown("> 🏠 Dashboard > **Backtest Results**")
     st.header("Backtest Results")
@@ -826,14 +819,11 @@ def _render_backtest_section(data: dict) -> None:
             "Zone indicators based on industry benchmarks for XAU/USD CFD trading"
         )
 
-        pnls = [t["pnl"] for t in trades] if trades else []
-        wins = [p for p in pnls if p > 0]
-        losses = [p for p in pnls if p <= 0]
-        avg_loss_abs = abs(sum(losses) / len(losses)) if losses else 0
-        rr = abs(sum(wins) / len(wins)) / avg_loss_abs if avg_loss_abs > 0 else 0.0
-
-        st.markdown("**📊 Key Performance Indicators**")
-        kpi_cols = st.columns(5, gap="small")
+        st.markdown("**📊 Core Financial Metrics**")
+        st.caption(
+            "Kept intentionally small: return, risk, edge, consistency, and sample size."
+        )
+        kpi_cols = st.columns(3, gap="small")
         _render_zoned_metric(
             kpi_cols[0],
             "Total Return",
@@ -844,13 +834,6 @@ def _render_backtest_section(data: dict) -> None:
         )
         _render_zoned_metric(
             kpi_cols[1],
-            "Sharpe Ratio",
-            metrics.get("sharpe_ratio", 0),
-            "sharpe_ratio",
-            "{:.2f}",
-        )
-        _render_zoned_metric(
-            kpi_cols[2],
             "Max Drawdown",
             metrics.get("max_drawdown_pct", 0),
             "max_drawdown_pct",
@@ -858,7 +841,23 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            kpi_cols[3],
+            kpi_cols[2],
+            "Profit Factor",
+            metrics.get("profit_factor", 0),
+            "profit_factor",
+            "{:.2f}",
+        )
+
+        kpi_cols = st.columns(3, gap="small")
+        _render_zoned_metric(
+            kpi_cols[0],
+            "Sharpe Ratio",
+            metrics.get("sharpe_ratio", 0),
+            "sharpe_ratio",
+            "{:.2f}",
+        )
+        _render_zoned_metric(
+            kpi_cols[1],
             "Win Rate",
             metrics.get("win_rate_pct", 0),
             "win_rate_pct",
@@ -866,184 +865,14 @@ def _render_backtest_section(data: dict) -> None:
             "%",
         )
         _render_zoned_metric(
-            kpi_cols[4], "Trades", metrics.get("num_trades", 0), "num_trades", "{:.0f}"
+            kpi_cols[2], "Trades", metrics.get("num_trades", 0), "num_trades", "{:.0f}"
         )
 
-        st.markdown("---")
-
-        st.markdown("**⚖️ Risk-Adjusted Returns**")
-        risk_cols = st.columns([1, 1, 1, 1, 1], gap="small")
-        _render_zoned_metric(
-            risk_cols[0],
-            "Sortino Ratio",
-            metrics.get("sortino_ratio", 0),
-            "sortino_ratio",
-            "{:.2f}",
-        )
-        _render_zoned_metric(
-            risk_cols[1],
-            "Calmar Ratio",
-            metrics.get("calmar_ratio", 0),
-            "calmar_ratio",
-            "{:.2f}",
-        )
-        _render_zoned_metric(
-            risk_cols[2], "SQN", metrics.get("sqn", 0), "sqn", "{:.2f}"
-        )
-        _render_zoned_metric(
-            risk_cols[3],
-            "Volatility",
-            metrics.get("volatility_ann_pct", 0),
-            "volatility_ann_pct",
-            "{:.2f}",
-            "%",
-        )
-        _render_zoned_metric(
-            risk_cols[4],
-            "Recovery Factor",
-            metrics.get("recovery_factor", 0),
-            "recovery_factor",
-            "{:.2f}",
-        )
-
-        st.markdown("**💰 Profitability Metrics**")
-        profit_cols = st.columns([1, 1, 1, 1, 1], gap="small")
-        _render_zoned_metric(
-            profit_cols[0],
-            "CAGR",
-            metrics.get("cagr_pct", 0),
-            "cagr_pct",
-            "{:.2f}",
-            "%",
-        )
-        _render_zoned_metric(
-            profit_cols[1],
-            "Annual Return",
-            metrics.get("return_ann_pct", 0),
-            "return_ann_pct",
-            "{:.2f}",
-            "%",
-        )
-        _render_zoned_metric(
-            profit_cols[2],
-            "Profit Factor",
-            metrics.get("profit_factor", 0),
-            "profit_factor",
-            "{:.2f}",
-        )
-        _render_zoned_metric(
-            profit_cols[3],
-            "Avg Trade",
-            metrics.get("avg_trade_pct", 0),
-            "avg_trade_pct",
-            "{:.2f}",
-            "%",
-        )
-        _render_zoned_metric(
-            profit_cols[4],
-            "Kelly Criterion",
-            metrics.get("kelly_criterion", 0),
-            "kelly_criterion",
-            "{:.1%}",
-            "",
-        )
-
-        st.markdown("**📈 Trade Analysis**")
-        trade_cols = st.columns([1, 1, 1, 1, 1], gap="small")
-        _render_zoned_metric(
-            trade_cols[0], "Avg Win", metrics.get("avg_win", 0), "avg_win", "${:.0f}"
-        )
-        _render_zoned_metric(
-            trade_cols[1], "Avg Loss", metrics.get("avg_loss", 0), "avg_loss", "${:.0f}"
-        )
-        _render_zoned_metric(
-            trade_cols[2], "Risk/Reward", rr, "risk_reward_ratio", "1:{:.2f}"
-        )
-        _render_zoned_metric(
-            trade_cols[3],
-            "Best Trade",
-            metrics.get("best_trade_pct", 0),
-            "best_trade_pct",
-            "{:.2f}",
-            "%",
-        )
-        _render_zoned_metric(
-            trade_cols[4],
-            "Worst Trade",
-            metrics.get("worst_trade_pct", 0),
-            "worst_trade_pct",
-            "{:.2f}",
-            "%",
-        )
-
-        st.markdown("**💼 Account Summary**")
-        account_cols = st.columns(5, gap="small")
-        _render_zoned_metric(
-            account_cols[0],
-            "Equity Final",
-            metrics.get("equity_final", 0),
-            "equity_final",
-            "${:.0f}",
-        )
-        _render_zoned_metric(
-            account_cols[1],
-            "Equity Peak",
-            metrics.get("equity_peak", 0),
-            "equity_peak",
-            "${:.0f}",
-        )
-        _render_zoned_metric(
-            account_cols[2],
-            "Commissions",
-            metrics.get("commissions", 0),
-            "commissions",
-            "${:.0f}",
-        )
-        _render_zoned_metric(
-            account_cols[3],
-            "Exposure",
-            metrics.get("exposure_time_pct", 0),
-            "exposure_time_pct",
-            "{:.1f}",
-            "%",
-        )
-        account_cols[4].markdown(
-            f"""
-            <div style="
-                background: linear-gradient(135deg, #4b556322 0%, #4b556311 100%);
-                border-left: 3px solid #4b5563;
-                border-radius: 8px;
-                padding: 12px 14px;
-                margin: 4px 0;
-                min-height: 110px;
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-                justify-content: space-between;
-                box-sizing: border-box;
-            ">
-                <div>
-                    <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Period</div>
-                    <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">
-                        {metrics.get("start", "N/A")[:10]}<br/>→ {metrics.get("end", "N/A")[:10]}
-                    </div>
-                </div>
-                <div style="margin-top: 8px;">
-                    <span style="
-                        background: #4b556333;
-                        color: #9ca3af;
-                        padding: 2px 10px;
-                        border-radius: 12px;
-                        font-size: 0.65rem;
-                        font-weight: 700;
-                        text-transform: uppercase;
-                        letter-spacing: 0.03em;
-                    ">Duration</span>
-                    <div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">Trading period</div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        st.caption(
+            f"Period: {metrics.get('start', 'N/A')[:10]} → "
+            f"{metrics.get('end', 'N/A')[:10]} | "
+            f"Initial balance: ${config.backtest.initial_capital:,.0f} | "
+            f"Final equity: ${metrics.get('equity_final', 0):,.0f}"
         )
 
         st.caption(
@@ -1303,22 +1132,6 @@ def _render_reports_section(session_dir: str) -> None:
             chart = build_feature_importance_chart(fi_data)
             _render_chart(chart, height="600px")
 
-    # --- SHAP (graceful fallback) ---
-    shap_json_path = reports_dir / "shap_values.json"
-    if shap_json_path.exists():
-        with open(shap_json_path) as f:
-            shap_data = json.load(f)
-        st.divider()
-        st.subheader("SHAP Feature Importance")
-        chart = build_shap_chart(shap_data)
-        _render_chart(chart, height="600px")
-    else:
-        shap_png = reports_dir / "shap_summary.png"
-        if shap_png.exists():
-            st.divider()
-            st.subheader("SHAP Feature Importance")
-            st.image(str(shap_png), width="stretch")
-
 
 # ===================================================================
 # Main entry point
@@ -1469,7 +1282,7 @@ def main() -> None:
     elif section_name == "Reports":
         _render_reports_section(session_path)
     else:
-        _render_backtest_section(data)
+        _render_backtest_section(data, config)
 
 
 if __name__ == "__main__":

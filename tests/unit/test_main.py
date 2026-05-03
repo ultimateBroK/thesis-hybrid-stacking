@@ -15,26 +15,26 @@ from thesis.config import Config
 def _apply_stage_flags(config: Config, stage: int) -> Config:
     """Replicate the --stage flag logic from main.py without filesystem ops.
 
-    Stage N: skip stages 0..N-1, run N..end.
+    Stage N (1-based): skip stages 1..N-1, run N..6.
     """
-    if stage > 0:
-        config.workflow.run_data_pipeline = False
     if stage > 1:
-        config.workflow.run_feature_engineering = False
+        config.workflow.run_data_pipeline = False
     if stage > 2:
-        config.workflow.run_label_generation = False
+        config.workflow.run_feature_engineering = False
     if stage > 3:
-        config.workflow.run_model_training = False
+        config.workflow.run_label_generation = False
     if stage > 4:
+        config.workflow.run_model_training = False
+    if stage > 5:
         config.workflow.run_backtest = False
     return config
 
 
 class TestStageResumeLogic:
-    """Parametrized tests for all 6 stage values (0-5)."""
+    """Parametrized tests for all 6 stage values (1-6)."""
 
     @pytest.mark.unit
-    @pytest.mark.parametrize("stage", [0, 1, 2, 3, 4, 5])
+    @pytest.mark.parametrize("stage", [1, 2, 3, 4, 5, 6])
     def test_stage_disables_correct_flags(self, stage: int) -> None:
         cfg = _apply_stage_flags(Config(), stage)
         flags = [
@@ -45,17 +45,18 @@ class TestStageResumeLogic:
             cfg.workflow.run_backtest,
             cfg.workflow.run_reporting,
         ]
-        # All flags before `stage` index should be False, rest True
+        # All flags before `stage` should be False, rest True
+        # Stage 1 → all True; Stage N → first N-1 flags False
         for i, flag in enumerate(flags):
-            if i < stage:
+            if i < stage - 1:
                 assert flag is False, f"Stage {stage}: flag[{i}] should be False"
             else:
                 assert flag is True, f"Stage {stage}: flag[{i}] should be True"
 
     @pytest.mark.unit
-    def test_stage_0_enables_all(self) -> None:
-        """--stage 0 keeps all workflow flags True."""
-        cfg = _apply_stage_flags(Config(), 0)
+    def test_stage_1_enables_all(self) -> None:
+        """--stage 1 keeps all workflow flags True."""
+        cfg = _apply_stage_flags(Config(), 1)
         assert cfg.workflow.run_data_pipeline is True
         assert cfg.workflow.run_feature_engineering is True
         assert cfg.workflow.run_label_generation is True
@@ -64,9 +65,9 @@ class TestStageResumeLogic:
         assert cfg.workflow.run_reporting is True
 
     @pytest.mark.unit
-    def test_stage_3_disables_first_three(self) -> None:
-        """--stage 3 disables data, features, labels but enables model+backtest+report."""
-        cfg = _apply_stage_flags(Config(), 3)
+    def test_stage_4_disables_first_three(self) -> None:
+        """--stage 4 disables data, features, labels but enables model+backtest+report."""
+        cfg = _apply_stage_flags(Config(), 4)
         assert cfg.workflow.run_data_pipeline is False
         assert cfg.workflow.run_feature_engineering is False
         assert cfg.workflow.run_label_generation is False
@@ -75,9 +76,9 @@ class TestStageResumeLogic:
         assert cfg.workflow.run_reporting is True
 
     @pytest.mark.unit
-    def test_stage_5_enables_only_reporting(self) -> None:
-        """--stage 5 enables only run_reporting."""
-        cfg = _apply_stage_flags(Config(), 5)
+    def test_stage_6_enables_only_reporting(self) -> None:
+        """--stage 6 enables only run_reporting."""
+        cfg = _apply_stage_flags(Config(), 6)
         assert cfg.workflow.run_reporting is True
         # All others disabled
         assert cfg.workflow.run_data_pipeline is False

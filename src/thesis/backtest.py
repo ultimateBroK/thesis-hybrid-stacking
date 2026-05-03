@@ -2,6 +2,15 @@
 
 Combines strategy, runners, persistence, and stats into a single module.
 
+Barrier alignment requirement: The backtest SL/TP ATR multipliers
+(``BacktestConfig.atr_stop_multiplier``, ``atr_tp_multiplier``) MUST
+match the label barrier multipliers (``LabelsConfig.atr_sl_multiplier``,
+``atr_tp_multiplier``).  Signals are generated from labels whose
+barriers are placed at ±2×ATR; setting backtest SL/TP to any other
+multiple would create a mismatch between the model's training target
+and the execution risk envelope, degrading out-of-sample performance.
+Both config sections should equal 2.0 for the thesis evaluation.
+
 Public API:
     run_backtest         — full pipeline from Parquet files.
     run_backtest_from_data — from in-memory DataFrames.
@@ -15,7 +24,7 @@ import csv
 import json
 import logging
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import pandas as pd
 import polars as pl
@@ -25,6 +34,42 @@ from backtesting.lib import FractionalBacktest
 from thesis.config import Config
 
 logger = logging.getLogger("thesis.backtest")
+
+CORE_BACKTEST_METRICS: tuple[tuple[str, str, str], ...] = (
+    ("return_pct", "Total Return", "{:.2f}%"),
+    ("max_drawdown_pct", "Max Drawdown", "{:.2f}%"),
+    ("profit_factor", "Profit Factor", "{:.2f}"),
+    ("sharpe_ratio", "Sharpe Ratio", "{:.2f}"),
+    ("win_rate_pct", "Win Rate", "{:.2f}%"),
+    ("num_trades", "Trades", "{:,.0f}"),
+)
+
+CORE_BACKTEST_METRIC_KEYS = {
+    "return_pct",
+    "max_drawdown_pct",
+    "profit_factor",
+    "sharpe_ratio",
+    "win_rate_pct",
+    "num_trades",
+    "equity_final",
+    "start",
+    "end",
+}
+
+
+def _log_core_backtest_metrics(metrics: dict[str, Any], initial_capital: float = 10_000.0) -> None:
+    """Log only the finance metrics that matter for CLI readability."""
+    logger.info("=== BACKTEST CORE METRICS ===")
+    logger.info("  Initial Balance: $%,.0f", initial_capital)
+    for key, label, fmt in CORE_BACKTEST_METRICS:
+        value = metrics.get(key)
+        if value is None:
+            continue
+        logger.info("  %s: %s", label, fmt.format(value))
+
+    equity_final = metrics.get("equity_final")
+    if equity_final is not None:
+        logger.info("  Final Equity: %s", f"${equity_final:,.0f}")
 
 
 def _calendar_day(value: object) -> object:
@@ -40,10 +85,14 @@ def _calendar_day(value: object) -> object:
 class HybridGRUStrategy(Strategy):
     """Trade on ML signals with ATR stop-loss and equity risk management.
 
-    No manual signal shift — backtesting.py natively delays execution
-    by 1 bar. The strategy reads ``pred_label[i]`` when bar ``i`` is
-    complete, and backtesting.py fills any resulting market order on the
-    next bar's open.
+    Signal shift: the strategy reads ``self.signals[-2]`` instead of
+    ``-1`` so that the trade decision at bar ``i`` is based on the
+    prediction made at bar ``i-1``.  This aligns the label anchor
+    (``close[i-1]``) with the approximate entry price (``open[i]``),
+    since the label for bar ``i-1`` uses barriers centred on
+    ``close[i-1]``.  Without this shift the prediction at bar ``i``
+    (anchored at ``close[i]``) would be executed at ``open[i+1]`` — a
+    one-bar gap that breaks the anchor-entry correspondence.
 
     Position sizing: confidence-weighted — scales from min_lots to max_lots
     based on how far the predicted probability exceeds the confidence
@@ -258,7 +307,24 @@ class HybridGRUStrategy(Strategy):
         # Step 1: update risk state every bar
         self._update_risk_state()
 
-        signal = int(self.signals[-1])
+        # Signal shift: use signals[-2] so the trade decision at bar i
+        # is based on the prediction made at bar i-1.  The label for
+        # bar i-1 is anchored at close[i-1]; backtesting.py fills
+        # orders at the next open, so the approximate entry price is
+        # open[i] ≈ close[i-1].  Without the shift, pred_label[i]
+        # (anchored at close[i]) would be executed at open[i+1], a
+        # one-bar misalignment between label anchor and entry price.
+        if len(self.signals) < 2:
+            return
+        raw_signal = float(self.signals[-2])
+        # Threshold continuous predictions at 0 for direction:
+        #   pred > 0  → Long  (1)
+        #   pred < 0  → Short (-1)
+        #   pred == 0 → Hold  (0)
+        if raw_signal not in (-1, 0, 1):
+            signal = 1 if raw_signal > 0 else (-1 if raw_signal < 0 else 0)
+        else:
+            signal = int(raw_signal)
         atr = self._floor_atr(self.atr[-1])
 
         # Step 2: time-based exit
@@ -278,15 +344,19 @@ class HybridGRUStrategy(Strategy):
         # Step 4: confidence gate
         confidence: float | None = None
         if self.confidence_threshold > 0 and self._has_proba:
+            # Confidence must use the same bar as the shifted signal
             if signal == 1:
-                confidence = float(self.proba_long[-1])
+                confidence = float(self.proba_long[-2])
             elif signal == -1:
-                confidence = float(self.proba_short[-1])
+                confidence = float(self.proba_short[-2])
             else:
                 return
 
             if confidence < self.confidence_threshold:
                 return
+        elif self.confidence_threshold > 0 and not self._has_proba:
+            # Regression mode: no probability columns — skip confidence gate
+            pass
 
         # Step 5: position sizing
         proxy_entry_price = self.data.Close[-1]
@@ -322,73 +392,14 @@ class HybridGRUStrategy(Strategy):
 # ---------------------------------------------------------------------------
 
 
-def _extract_recovery_factor(
-    equity_final: float,
-    equity_peak: float,
-    max_dd_pct: float,
-    initial_capital: float = 10_000.0,
-) -> float:
-    """Compute recovery factor = net_profit / max_drawdown_dollars.
+def _normalize_stats(stats: pd.Series) -> dict:
+    """Convert Backtesting.py statistics into the curated core metric dict.
 
-    Args:
-        equity_final: Final equity value from backtest.
-        equity_peak: Peak equity reached during backtest.
-        max_dd_pct: Maximum drawdown as percentage of peak equity.
-        initial_capital: Starting capital (default 10_000).
-
-    Returns:
-        Recovery factor (0.0 if max_drawdown is zero or negative).
-
-    Note:
-        Returns ``float('inf')`` when max drawdown is zero (no drawdown),
-        since division by zero is undefined and a strategy that never
-        experienced drawdown has infinite recovery.
-    """
-    net_profit = equity_final - initial_capital
-    max_dd_dollars = abs(max_dd_pct / 100) * equity_peak
-    if max_dd_dollars > 0:
-        return net_profit / max_dd_dollars
-    return float("inf")
-
-
-def _compute_avg_win_loss(trades_df: pd.DataFrame) -> tuple[float, float]:
-    """Compute average win and average loss from trades DataFrame.
-
-    Args:
-        trades_df: DataFrame with PnL column from backtesting.py stats.
-
-    Returns:
-        Tuple of (avg_win, avg_loss). Returns (0.0, 0.0) if DataFrame is empty
-        or PnL column is missing.
-    """
-    if trades_df.empty or "PnL" not in trades_df.columns:
-        return 0.0, 0.0
-    wins = trades_df[trades_df["PnL"] > 0]["PnL"]
-    losses = trades_df[trades_df["PnL"] < 0]["PnL"]
-    avg_win = float(wins.mean()) if not wins.empty else 0.0
-    avg_loss = float(losses.mean()) if not losses.empty else 0.0
-    return avg_win, avg_loss
-
-
-def _normalize_stats(stats: pd.Series, initial_capital: float = 10_000.0) -> dict:
-    """Convert a Backtesting.py statistics Series into a snake_case dict.
-
-    Omits keys that begin with an underscore and normalizes display-style keys
-    by lowercasing, replacing spaces and punctuation with underscores, and
-    mapping ``%`` to ``pct`` and ``#`` to ``num``.
-
-    Adds computed fields:
-        - ``recovery_factor``: net_profit / max_drawdown_dollars.
-        - ``avg_win``: mean PnL of winning trades.
-        - ``avg_loss``: mean PnL of losing trades.
-
-    Args:
-        stats: Series-like statistics object produced by Backtesting.py.
-        initial_capital: Starting capital for recovery factor computation
-            (default 10_000).
-
-    Returns:
-        Dictionary of normalized metric names to their original values.
+    Only export metrics that are shown in dashboard/CLI.  This prevents
+    downstream artifacts from becoming a noisy dump of technical finance
+    parameters (Sortino, Calmar, SQN, Kelly, recovery factor, avg win/loss,
+    etc.).  Backtesting.py still computes its internal stats while running;
+    this function decides what the thesis workflow keeps and saves.
     """
     raw = stats.to_dict()
     out: dict = {}
@@ -409,19 +420,8 @@ def _normalize_stats(stats: pd.Series, initial_capital: float = 10_000.0) -> dic
             .replace("__", "_")
             .rstrip("_")
         )
-        out[key] = v
-
-    equity_final = out.get("equity_final", 0)
-    equity_peak = out.get("equity_peak", equity_final)
-    max_dd_pct = out.get("max_drawdown_pct", 0)
-    out["recovery_factor"] = _extract_recovery_factor(
-        equity_final, equity_peak, max_dd_pct, initial_capital=initial_capital
-    )
-
-    trades_df = stats.get("_trades", pd.DataFrame())
-    avg_win, avg_loss = _compute_avg_win_loss(trades_df)
-    out["avg_win"] = avg_win
-    out["avg_loss"] = avg_loss
+        if key in CORE_BACKTEST_METRIC_KEYS:
+            out[key] = v
 
     return out
 
@@ -830,7 +830,7 @@ def run_backtest(config: Config) -> None:
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
     stats, bt = _run_bt(pdf, config)
 
-    metrics = _normalize_stats(stats, initial_capital=config.backtest.initial_capital)
+    metrics = _normalize_stats(stats)
     trades = _trades_to_list(
         stats["_trades"],
         commission_per_lot=config.backtest.commission_per_lot,
@@ -849,9 +849,7 @@ def run_backtest(config: Config) -> None:
         )
         _save_equity_curve_csv(trades, out_path.parent, initial_capital)
 
-    logger.info("=== BACKTEST RESULTS ===")
-    for k, v in metrics.items():
-        logger.info("  %s: %s", k, v)
+    _log_core_backtest_metrics(metrics, config.backtest.initial_capital)
 
     session_dir = Path(config.paths.session_dir) if config.paths.session_dir else None
     _save_bokeh_chart(bt, stats, session_dir)
@@ -875,7 +873,7 @@ def run_backtest_from_data(
     """
     pdf = _prepare_df(test_df, preds_df)
     stats, _ = _run_bt(pdf, config)
-    return _normalize_stats(stats, initial_capital=config.backtest.initial_capital)
+    return _normalize_stats(stats)
 
 
 def run_backtest_manual(
@@ -971,7 +969,7 @@ def run_backtest_manual(
         daily_loss_limit=daily_loss_limit,
     )
 
-    metrics = _normalize_stats(stats, initial_capital=initial_capital)
+    metrics = _normalize_stats(stats)
     trades = _trades_to_list(
         stats["_trades"],
         commission_per_lot=commission_per_lot,

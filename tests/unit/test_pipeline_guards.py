@@ -31,11 +31,14 @@ def test_purge_guard_raises_on_insufficient_gap() -> None:
     mock_df.__len__ = MagicMock(return_value=100_000)
     mock_windows = [MagicMock()]  # non-empty to pass the first check
 
-    with patch("thesis.pipeline.pl.read_parquet", return_value=mock_df), \
-         patch("thesis.pipeline.generate_windows", return_value=mock_windows), \
-         patch("thesis.pipeline.log_windows"), \
-         pytest.raises(ValueError, match="Leakage risk"):
+    with (
+        patch("thesis.pipeline.pl.read_parquet", return_value=mock_df),
+        patch("thesis.pipeline.generate_windows", return_value=mock_windows),
+        patch("thesis.pipeline.log_windows"),
+        pytest.raises(ValueError, match="Leakage risk"),
+    ):
         from thesis.pipeline import _run_walk_forward_hybrid
+
         _run_walk_forward_hybrid(config)
 
 
@@ -53,10 +56,13 @@ def test_purge_guard_passes_with_sufficient_gap() -> None:
     mock_df.columns = []
     mock_windows = [MagicMock()]
 
-    with patch("thesis.pipeline.pl.read_parquet", return_value=mock_df), \
-         patch("thesis.pipeline.generate_windows", return_value=mock_windows), \
-         patch("thesis.pipeline.log_windows"):
+    with (
+        patch("thesis.pipeline.pl.read_parquet", return_value=mock_df),
+        patch("thesis.pipeline.generate_windows", return_value=mock_windows),
+        patch("thesis.pipeline.log_windows"),
+    ):
         from thesis.pipeline import _run_walk_forward_hybrid
+
         # Should NOT raise the purge guard ValueError.
         # It will fail later (no real data), but the guard is what we test.
         try:

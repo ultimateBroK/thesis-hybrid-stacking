@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import datetime
+import tomllib
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -64,8 +65,8 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
 
     Returns:
         A dictionary with overall accuracy, directional accuracy, baselines,
-        per-class metrics, confusion matrix, and optional high-confidence stats;
-        returns ``None`` if the file is unavailable or unreadable.
+        per-class metrics, confusion matrix, and optional high-confidence
+        stats; returns ``None`` if the file is unavailable or unreadable.
     """
     if not preds_path.exists():
         return None
@@ -177,6 +178,11 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
             "Failed to load prediction statistics: %s", preds_path, exc_info=True
         )
         return None
+
+
+# ---------------------------------------------------------------------------
+# Confusion cost matrix
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -431,9 +437,351 @@ def _tbl_row(*cells: str) -> str:
 
 def _model_label(config: Config) -> str:
     """Human-readable model family label for reports."""
-    if config.model.architecture == "stacking":
-        return "True Stacking (GRU + LGBM -> Meta LGBM)"
-    return "Hybrid GRU + LightGBM"
+    architecture = config.model.architecture
+    if architecture == "static":
+        return "Static LightGBM"
+    if architecture == "hybrid":
+        return "Hybrid GRU + LightGBM"
+    return f"{architecture.title()} Model"
+
+
+def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
+    """Render hybrid-vs-static statistical comparison section.
+
+    Loads walk-forward history from the current session and a sibling session
+    of the opposite architecture, performs a paired t-test on per-window
+    accuracy, and appends markdown lines to ``L``.
+
+    Args:
+        L: Output markdown lines.
+        config: Loaded runtime configuration.
+    """
+    current_arch = config.model.architecture
+    # Only meaningful for hybrid vs static
+    if current_arch not in ("hybrid", "static"):
+        return
+
+    target_arch = "static" if current_arch == "hybrid" else "hybrid"
+    current_session = config.paths.session_dir
+
+    if not current_session:
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — no session directory configured.*")
+        L.append("")
+        return
+
+    current_wf_path = Path(current_session) / "reports" / "walk_forward_history.json"
+    if not current_wf_path.exists():
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append(
+            "*Comparison unavailable — walk-forward history not found for "
+            f"current {current_arch} session.*"
+        )
+        L.append("")
+        return
+
+    # Find sibling session with opposite architecture
+    results_dir = Path(current_session).parent
+    sibling_session = _find_architecture_session(
+        results_dir, target_arch, current_session
+    )
+
+    if sibling_session is None:
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — run both static and hybrid first.*")
+        L.append(f"*No `{target_arch}` session found under `{results_dir}`.*")
+        L.append("")
+        return
+
+    sibling_wf_path = sibling_session / "reports" / "walk_forward_history.json"
+    if not sibling_wf_path.exists():
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append(
+            f"*Comparison unavailable — walk-forward history not found "
+            f"for {target_arch} session `{sibling_session.name}`.*"
+        )
+        L.append("")
+        return
+
+    # Load both histories
+    try:
+        current_history = json.loads(current_wf_path.read_text())
+        sibling_history = json.loads(sibling_wf_path.read_text())
+    except Exception:
+        logger.warning(
+            "Failed to load walk-forward history for hybrid-vs-static comparison",
+            exc_info=True,
+        )
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — failed to load walk-forward history.*")
+        L.append("")
+        return
+
+    current_windows = current_history.get("window_details", [])
+    sibling_windows = sibling_history.get("window_details", [])
+
+    if len(current_windows) < 3 or len(sibling_windows) < 3:
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append(
+            "*Comparison unavailable — need at least 3 windows in each "
+            f"session (have {len(current_windows)}/{len(sibling_windows)}).*"
+        )
+        L.append("")
+        return
+
+    # Pair windows by matching test date ranges
+    paired = _pair_windows_by_date(current_windows, sibling_windows)
+
+    if len(paired) < 3:
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append(
+            f"*Comparison unavailable — only {len(paired)} overlapping "
+            "test windows found (need ≥3).*"
+        )
+        L.append("")
+        return
+
+    current_accs = [p[0] for p in paired]
+    sibling_accs = [p[1] for p in paired]
+
+    # Paired t-test
+    try:
+        from scipy.stats import ttest_rel
+
+        t_stat, p_value = ttest_rel(current_accs, sibling_accs)
+    except Exception:
+        logger.warning("ttest_rel failed", exc_info=True)
+        L.append("#### Hybrid vs Static Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — statistical test failed.*")
+        L.append("")
+        return
+
+    current_mean = np.mean(current_accs)
+    sibling_mean = np.mean(sibling_accs)
+    delta_mean = current_mean - sibling_mean
+
+    # Determine significance
+    alpha = 0.05
+    if p_value < alpha:
+        if delta_mean > 0:
+            result_line = (
+                f"{_model_label(config)} **significantly outperforms** "
+                f"{target_arch.title()} (p={p_value:.4f})"
+            )
+        else:
+            result_line = (
+                f"{target_arch.title()} **significantly outperforms** "
+                f"{_model_label(config)} (p={p_value:.4f})"
+            )
+    else:
+        result_line = (
+            f"{_model_label(config)} is **not significantly different** from "
+            f"{target_arch.title()} (p={p_value:.4f})"
+        )
+
+    L.append("#### Hybrid vs Static Comparison")
+    L.append("")
+    L.append(result_line)
+    L.append("")
+    L.append(_tbl_row("Metric", _model_label(config), target_arch.title(), "Delta"))
+    L.append(_tbl_row("------", "------", "------", "------"))
+    L.append(
+        _tbl_row(
+            "Mean Accuracy",
+            f"{current_mean * 100:.1f}%",
+            f"{sibling_mean * 100:.1f}%",
+            f"{delta_mean * 100:+.1f}pp",
+        )
+    )
+    L.append(
+        _tbl_row(
+            "Paired Windows",
+            str(len(paired)),
+            str(len(paired)),
+            "",
+        )
+    )
+    L.append(
+        _tbl_row(
+            "t-statistic",
+            "",
+            "",
+            f"{t_stat:.4f}",
+        )
+    )
+    L.append(
+        _tbl_row(
+            "p-value",
+            "",
+            "",
+            f"{p_value:.4f}",
+        )
+    )
+    L.append("")
+
+    # Per-window delta table (first 10 windows)
+    L.append("**Per-Window Accuracy Delta** (first 10 windows):")
+    L.append("")
+    L.append(
+        _tbl_row(
+            "Window",
+            _model_label(config),
+            target_arch.title(),
+            "Delta",
+        )
+    )
+    L.append(_tbl_row("------", "------", "------", "------"))
+    for i, (c_acc, s_acc) in enumerate(paired[:10], 1):
+        delta = c_acc - s_acc
+        L.append(
+            _tbl_row(
+                str(i),
+                f"{c_acc * 100:.1f}%",
+                f"{s_acc * 100:.1f}%",
+                f"{delta * 100:+.1f}pp",
+            )
+        )
+    if len(paired) > 10:
+        L.append(f"*... and {len(paired) - 10} more windows.*")
+    L.append("")
+
+    logger.info(
+        "Hybrid vs Static comparison: %d paired windows, t=%.4f, p=%.4f, delta=%.4f",
+        len(paired),
+        t_stat,
+        p_value,
+        delta_mean,
+    )
+
+
+def _find_architecture_session(
+    results_dir: Path, target_arch: str, exclude_session: str
+) -> Path | None:
+    """Find the most recent session directory with a given architecture.
+
+    Args:
+        results_dir: Directory containing session subdirectories.
+        target_arch: Architecture to search for (``"static"`` or ``"hybrid"``).
+        exclude_session: Session path to exclude (the current session).
+
+    Returns:
+        Path to the most recent matching session, or ``None``.
+    """
+    if not results_dir.exists():
+        return None
+
+    candidates: list[tuple[float, Path]] = []
+    for session_dir in sorted(results_dir.iterdir()):
+        if not session_dir.is_dir():
+            continue
+        session_str = str(session_dir)
+        if session_str == str(exclude_session):
+            continue
+
+        snapshot = session_dir / "config" / "config_snapshot.toml"
+        if not snapshot.exists():
+            continue
+
+        try:
+            with open(snapshot, "rb") as f:
+                data = tomllib.load(f)
+            arch = data.get("model", {}).get("architecture", "")
+            if arch == target_arch:
+                # Use directory modification time for recency
+                candidates.append((session_dir.stat().st_mtime, session_dir))
+        except Exception:
+            logger.debug(
+                "Skipping session %s during architecture search",
+                session_dir.name,
+                exc_info=True,
+            )
+            continue
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
+
+
+def _pair_windows_by_date(
+    current_windows: list[dict],
+    sibling_windows: list[dict],
+) -> list[tuple[float, float]]:
+    """Pair windows by overlapping test date ranges.
+
+    Each window dict is expected to have ``accuracy``, ``test_dates``
+    (with ``start``/``end`` keys), and ``window``.
+
+    Args:
+        current_windows: Window details from the current session.
+        sibling_windows: Window details from the sibling session.
+
+    Returns:
+        List of ``(current_accuracy, sibling_accuracy)`` paired by
+        best-overlapping test date range.
+    """
+    paired: list[tuple[float, float]] = []
+
+    for cw in current_windows:
+        if "accuracy" not in cw or cw["accuracy"] is None:
+            continue
+        cd = cw.get("test_dates", {})
+        c_start = _parse_date(cd.get("start", ""))
+        c_end = _parse_date(cd.get("end", ""))
+        if c_start is None or c_end is None:
+            continue
+
+        best_sw = None
+        best_overlap = timedelta.min
+        for sw in sibling_windows:
+            if "accuracy" not in sw or sw["accuracy"] is None:
+                continue
+            sd = sw.get("test_dates", {})
+            s_start = _parse_date(sd.get("start", ""))
+            s_end = _parse_date(sd.get("end", ""))
+            if s_start is None or s_end is None:
+                continue
+
+            overlap_start = max(c_start, s_start)
+            overlap_end = min(c_end, s_end)
+            overlap = overlap_end - overlap_start
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_sw = sw
+
+        if best_sw is not None and best_overlap > timedelta(0):
+            paired.append((cw["accuracy"], best_sw["accuracy"]))
+
+    return paired
+
+
+def _parse_date(date_str: str) -> datetime | None:
+    """Parse a date string into a datetime, trying multiple formats."""
+    if not date_str:
+        return None
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+    ):
+        try:
+            return datetime.strptime(
+                date_str[:19] if len(date_str) > 19 else date_str, fmt
+            )
+        except ValueError:
+            continue
+    return None
 
 
 def _build_markdown(
@@ -441,7 +789,6 @@ def _build_markdown(
     metrics: dict,
     trades: list[dict],
     feature_importance: dict,
-    ablation: dict,
     pred_stats: dict | None,
 ) -> str:
     """Build concise metrics-first markdown report.
@@ -451,7 +798,6 @@ def _build_markdown(
         metrics: Backtest metrics dictionary.
         trades: Backtest trades list.
         feature_importance: Feature importance values.
-        ablation: Ablation-study summary.
         pred_stats: Preloaded prediction statistics, if available.
 
     Returns:
@@ -483,9 +829,9 @@ def _build_markdown(
     # -- Model Performance --
     L.append("## Model Performance")
     L.append("")
-    _accuracy_table(L, pred_stats)
-    _gru_summary(L, config)
-    _stacking_summary(L, config)
+    _accuracy_table(L, pred_stats, config)
+    if config.model.architecture == "hybrid":
+        _gru_summary(L, config)
     _feature_importance_table(L, feature_importance)
     L.append("")
 
@@ -493,14 +839,16 @@ def _build_markdown(
     L.append("## Backtest Results")
     L.append("")
     _backtest_params_table(L, config)
-    _backtest_metrics_table(L, metrics)
-    _trade_stats(L, trades, metrics)
+    _backtest_metrics_table(L, metrics, config)
     L.append("")
 
     # -- Benchmark Comparison --
     L.append("## Benchmark Comparison")
     L.append("")
     _benchmark_comparison_table(L, metrics, config)
+
+    # -- Hybrid vs Static Comparison --
+    _static_vs_hybrid_comparison(L, config)
 
     # -- Issues & Recommendations --
     L.append("## Issues & Recommendations")
@@ -572,8 +920,181 @@ def _exec_table(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
             L.append(_tbl_row(label, fmt(val), _zone(key, val)))
 
 
+def _assess_model_quality(pred_stats: dict) -> tuple[str, str]:
+    """Classify ML quality into POOR / FAIR / GOOD with a short reason.
+
+    Args:
+        pred_stats: Preloaded prediction statistics.
+
+    Returns:
+        (quality_label, reason_phrase) — e.g. ("POOR", "acc below baseline").
+    """
+    acc = pred_stats["accuracy"]
+    baseline = pred_stats["majority_baseline"]
+    dir_acc = pred_stats["directional_accuracy"]
+    per_class = pred_stats["per_class"]
+    macro_f1 = float(np.mean([per_class[name]["f1"] for name in per_class]))
+
+    gap = acc - baseline
+    if gap < 0:
+        return ("POOR", "acc below baseline")
+    if acc > baseline + 0.05 and dir_acc > 0.55 and macro_f1 >= 0.45:
+        return ("GOOD", "above baseline with directional edge")
+    if dir_acc >= 0.50:
+        return ("FAIR", "slightly above baseline, marginal edge")
+    return ("POOR", "no reliable directional edge")
+
+
+def _assess_trading_edge(metrics: dict) -> tuple[str, str]:
+    """Classify trading edge into NEGATIVE / MARGINAL / POSITIVE.
+
+    Args:
+        metrics: Backtest metrics dictionary.
+
+    Returns:
+        (edge_label, reason_phrase) — e.g. ("NEGATIVE", "PF<1.0").
+    """
+    pf = metrics.get("profit_factor", 0)
+    sharpe = metrics.get("sharpe_ratio", 0)
+    ret = metrics.get("return_pct", 0)
+
+    if pf < 1.0 or sharpe < 0 or ret < 0:
+        return ("NEGATIVE", f"PF={pf:.2f}" if pf > 0 else "PF<1.0")
+    if sharpe < 1.0 or pf < 1.5:
+        return ("MARGINAL", f"PF={pf:.2f}, Sharpe={sharpe:.2f}")
+    return ("POSITIVE", f"PF={pf:.2f}, Sharpe={sharpe:.2f}")
+
+
+def _derive_recommendation(ml_quality: str, trading_edge: str, metrics: dict) -> str:
+    """Produce a deployment recommendation from model quality + trading edge.
+
+    Args:
+        ml_quality: "POOR", "FAIR", or "GOOD".
+        trading_edge: "NEGATIVE", "MARGINAL", or "POSITIVE".
+        metrics: Backtest metrics dictionary.
+
+    Returns:
+        Recommendation string, e.g. "NOT DEPLOYABLE without fixes".
+    """
+    n_trades = int(metrics.get("num_trades", 0)) if metrics else 0
+
+    if ml_quality == "POOR" or trading_edge == "NEGATIVE":
+        return "NOT DEPLOYABLE without fixes"
+    if n_trades < 30:
+        return "NOT DEPLOYABLE — insufficient trades for validation"
+    if ml_quality == "FAIR" and trading_edge == "MARGINAL":
+        return "DEPLOYABLE with caution — marginal edge"
+    if ml_quality == "GOOD" and trading_edge == "POSITIVE":
+        return "DEPLOYABLE"
+    return "DEPLOYABLE with caution"
+
+
+def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | None:
+    """Return the single most critical issue description, or None.
+
+    Issues are ranked by severity (critical > warning > info), then by
+    impact (e.g. zero trades beats low win rate).
+
+    Args:
+        metrics: Backtest metrics dictionary.
+        pred_stats: Preloaded prediction statistics.
+
+    Returns:
+        Most severe issue description, or ``None`` if none found.
+    """
+    n_trades = int(metrics.get("num_trades", 0)) if metrics else 0
+    sharpe = metrics.get("sharpe_ratio", 0) if metrics else 0
+    pf = metrics.get("profit_factor", 0) if metrics else 0
+    dd = abs(metrics.get("max_drawdown_pct", 0)) if metrics else 0
+    ret = metrics.get("return_pct", 0) if metrics else 0
+    wr = metrics.get("win_rate_pct", 0) if metrics else 0
+    dir_acc = pred_stats.get("directional_accuracy", 0) if pred_stats else 0
+
+    # Ordered check: first match is most critical
+    checks: list[tuple[bool, str]] = [
+        (
+            n_trades == 0,
+            "Zero trades executed — model produces no actionable signals",
+        ),
+        (
+            n_trades > 0 and n_trades < 30,
+            f"Only {n_trades} trades — statistically unreliable results",
+        ),
+        (
+            sharpe < 0,
+            f"Sharpe {sharpe:.2f} is negative — strategy underperforms risk-free rate",
+        ),
+        (
+            dd > 50,
+            f"Max drawdown {dd:.1f}% > 50% — catastrophic capital erosion",
+        ),
+        (
+            pf < 1.0,
+            f"Profit factor {pf:.2f} < 1.0 — strategy loses money on average",
+        ),
+        (
+            dir_acc > 0 and dir_acc < 0.50,
+            f"Directional accuracy {dir_acc:.1%} < 50% — predicts worse than random",
+        ),
+        (
+            ret < -50,
+            f"Return {ret:.0f}% — severe capital loss",
+        ),
+        (
+            pf < 1.2 and pf >= 1.0,
+            f"Profit factor {pf:.2f} < 1.2 — barely covers transaction costs",
+        ),
+        (
+            sharpe < 0.5 and sharpe >= 0,
+            f"Sharpe {sharpe:.2f} < 0.5 — poor risk-adjusted returns",
+        ),
+        (
+            dd > 30 and dd <= 50,
+            f"Max drawdown {dd:.1f}% exceeds 30% threshold",
+        ),
+        (
+            n_trades >= 30 and n_trades < 100,
+            f"Only {n_trades} trades — marginal sample size",
+        ),
+        (
+            sharpe < 1.0 and sharpe >= 0.5,
+            f"Sharpe {sharpe:.2f} < 1.0 — below professional threshold",
+        ),
+        (
+            ret > 500,
+            f"Return {ret:.0f}% suspiciously high — verify for overfitting",
+        ),
+        (
+            dd > 20 and dd <= 30,
+            f"Max drawdown {dd:.1f}% > 20% — elevated for CFD trading",
+        ),
+        (
+            wr < 40 and wr >= 0,
+            f"Win rate {wr:.1f}% < 40% — below trading viability",
+        ),
+        (
+            dir_acc > 0 and dir_acc < 0.55,
+            f"Directional accuracy {dir_acc:.1%} < 55% — unreliable",
+        ),
+        (
+            pf < 1.5 and pf >= 1.2,
+            f"Profit factor {pf:.2f} < 1.5 — marginal edge",
+        ),
+    ]
+    for condition, msg in checks:
+        if condition:
+            return msg
+    return None
+
+
 def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
-    """One-paragraph ML-first overall assessment.
+    """One-paragraph ML-first overall assessment with synthesized verdict.
+
+    Produces:
+    1. ML quality assessment paragraph.
+    2. Synthesized verdict line (model quality + trading edge + recommendation).
+    3. Primary issue identification.
+    4. Application demo summary line (if metrics available).
 
     Args:
         L: Output markdown lines.
@@ -611,6 +1132,30 @@ def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
         f"macro F1 {macro_f1:.3f}. {gate_msg} Backtest figures below are treated as an "
         "application demo, not the primary proof of model quality."
     )
+
+    # ── Synthesized zone-based verdict ──
+    model_quality, ml_reason = _assess_model_quality(pred_stats)
+    if metrics:
+        trading_edge, trade_reason = _assess_trading_edge(metrics)
+        recommendation = _derive_recommendation(model_quality, trading_edge, metrics)
+        L.append(
+            f"**Verdict:** Model quality **{model_quality}** ({ml_reason}), "
+            f"Trading edge **{trading_edge}** ({trade_reason}), "
+            f"Recommendation: **{recommendation}**."
+        )
+    else:
+        L.append(
+            f"**Verdict:** Model quality **{model_quality}** ({ml_reason}). "
+            "No backtest metrics available for trading assessment."
+        )
+
+    # ── Primary issue ──
+    if metrics:
+        primary = _identify_primary_issue(metrics, pred_stats)
+        if primary:
+            L.append(f"**Primary issue:** {primary}.")
+    else:
+        L.append("**Primary issue:** No backtest metrics — pipeline may have failed.")
 
     if not metrics:
         return
@@ -736,12 +1281,124 @@ def _config_table(L: list[str], config: Config) -> None:
         L.append(_tbl_row(section, param, val))
 
 
-def _accuracy_table(L: list[str], pred_stats: dict | None) -> None:
-    """Model accuracy: exact + directional + per-class.
+def _compute_ece_numpy(
+    proba: np.ndarray, labels: np.ndarray, n_bins: int = 10
+) -> float:
+    """Compute Expected Calibration Error (ECE) from NumPy arrays.
+
+    Partitions predictions into ``n_bins`` equal-width confidence bins
+    and measures the absolute difference between average confidence
+    and accuracy within each bin, weighted by bin size.
+
+    Args:
+        proba: Softmax probabilities with shape ``(N, C)``.
+        labels: Ground-truth class indices with shape ``(N,)``.
+        n_bins: Number of confidence bins (default 10).
+
+    Returns:
+        ECE value (0.0 = perfectly calibrated).
+    """
+    confidences = proba.max(axis=1)
+    predictions = proba.argmax(axis=1)
+    accuracies = (predictions == labels).astype(np.float64)
+
+    ece = 0.0
+    for i in range(n_bins):
+        bin_lower = i / n_bins
+        bin_upper = (i + 1) / n_bins
+        in_bin = (confidences > bin_lower) & (confidences <= bin_upper)
+        bin_size = in_bin.sum()
+        if bin_size > 0:
+            bin_conf = confidences[in_bin].mean()
+            bin_acc = accuracies[in_bin].mean()
+            ece += (bin_size / len(proba)) * abs(bin_conf - bin_acc)
+
+    return ece
+
+
+def _calibration_summary_text(config: Config) -> str | None:
+    """Compute a one-paragraph calibration reliability note.
+
+    Reads predicted probabilities and true labels from the predictions
+    parquet file, computes ECE, and returns a human-readable summary
+    of whether confidence scores appear calibrated.
+
+    Args:
+        config: Loaded runtime configuration.
+
+    Returns:
+        Calibration summary string, or ``None`` if the predictions file
+        is unavailable or missing probability columns.
+    """
+    preds_path = Path(config.paths.predictions)
+    if not preds_path.exists():
+        return None
+
+    proba_cols = [
+        "pred_proba_class_minus1",
+        "pred_proba_class_0",
+        "pred_proba_class_1",
+    ]
+    try:
+        df = pl.read_parquet(preds_path)
+    except Exception:
+        logger.warning(
+            "Failed to load predictions for calibration check: %s",
+            preds_path,
+            exc_info=True,
+        )
+        return None
+
+    if not all(c in df.columns for c in proba_cols):
+        return None
+    if "true_label" not in df.columns:
+        return None
+
+    proba = df.select(proba_cols).to_numpy()
+    labels = df["true_label"].to_numpy()
+
+    # Map label values (-1, 0, 1) → class indices (0, 1, 2)
+    class_indices = np.zeros(len(labels), dtype=np.int64)
+    class_indices[labels == 0] = 1
+    class_indices[labels == 1] = 2
+    # class_indices[labels == -1] stays 0
+
+    ece = _compute_ece_numpy(proba, class_indices)
+
+    if ece < 0.05:
+        quality = "well-calibrated"
+        note = (
+            f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
+            "(ECE < 0.05). Predicted probabilities closely match observed frequencies."
+        )
+    elif ece < 0.15:
+        quality = "moderately calibrated"
+        note = (
+            f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
+            "(0.05 ≤ ECE < 0.15). Probabilities are somewhat aligned with outcomes; "
+            "the model may be slightly over- or under-confident in some bins."
+        )
+    else:
+        quality = "poorly calibrated"
+        note = (
+            f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
+            "(ECE ≥ 0.15). Predicted probabilities do not reliably reflect true "
+            "likelihoods. Consider temperature scaling or isotonic regression."
+        )
+
+    logger.info("Calibration summary: ECE=%.4f (%s)", ece, quality)
+    return note
+
+
+def _accuracy_table(
+    L: list[str], pred_stats: dict | None, config: Config | None = None
+) -> None:
+    """Model accuracy: exact + directional + per-class + calibration.
 
     Args:
         L: Output markdown lines.
         pred_stats: Preloaded prediction statistics.
+        config: Optional application configuration for calibration check.
     """
     if not pred_stats:
         L.append("*Prediction data not found.*")
@@ -799,45 +1456,21 @@ def _accuracy_table(L: list[str], pred_stats: dict | None) -> None:
         )
         L.append("")
 
+    # Calibration reliability note (after confidence section)
+    if config is not None:
+        calib_note = _calibration_summary_text(config)
+        if calib_note:
+            L.append(calib_note)
+            L.append("")
+
 
 def _gru_summary(L: list[str], config: Config) -> None:
-    """GRU architecture summary line."""
+    """GRU architecture summary line (hybrid only — caller guards architecture)."""
     gru = config.gru
     L.append(
         f"GRU: input={gru.input_size}, hidden={gru.hidden_size}, "
         f"layers={gru.num_layers}, seq={gru.sequence_length}, "
         f"dropout={gru.dropout}, epochs≤{gru.epochs}, patience={gru.patience}"
-    )
-    L.append("")
-
-
-def _stacking_summary(L: list[str], config: Config) -> None:
-    """Add a compact stacking summary when the session used true stacking."""
-    if config.model.architecture != "stacking":
-        return
-
-    wf_path = Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
-    if not wf_path.exists():
-        L.append("Stacking: base models = GRU + LightGBM, meta learner = LightGBM.")
-        L.append("")
-        return
-
-    try:
-        history = json.loads(wf_path.read_text())
-    except Exception:
-        logger.warning(
-            "Failed to load stacking walk-forward history: %s", wf_path, exc_info=True
-        )
-        L.append("Stacking: base models = GRU + LightGBM, meta learner = LightGBM.")
-        L.append("")
-        return
-
-    L.append(
-        "Stacking: base models = GRU + LightGBM, "
-        f"meta learner = LightGBM, "
-        f"base OOF rows = {history.get('base_oof_rows', 0):,}, "
-        f"meta OOF rows = {history.get('meta_oof_rows', 0):,}, "
-        f"meta warmup skips = {history.get('skipped_meta_folds', 0)}."
     )
     L.append("")
 
@@ -881,23 +1514,18 @@ def _backtest_params_table(L: list[str], config: Config) -> None:
     L.append("")
 
 
-def _backtest_metrics_table(L: list[str], metrics: dict) -> None:
-    """Full backtest metrics with zone indicators."""
+def _backtest_metrics_table(L: list[str], metrics: dict, config: Config) -> None:
+    """Core backtest metrics with zone indicators."""
     if not metrics:
         L.append("*No backtest results available.*")
         return
 
     rows = [
         ("Return", "return_pct", _fmt_pct),
-        ("Ann. Return", "return_ann_pct", _fmt_pct),
         ("Sharpe", "sharpe_ratio", _fmt_f2),
-        ("Sortino", "sortino_ratio", _fmt_f2),
         ("Max DD", "max_drawdown_pct", _fmt_pct),
         ("Win Rate", "win_rate_pct", _fmt_pct),
         ("Profit Factor", "profit_factor", _fmt_f2),
-        ("Recovery Factor", "recovery_factor", _fmt_f2),
-        ("SQN", "sqn", _fmt_f2),
-        ("Avg Trade %", "avg_trade_pct", _fmt_pct),
         ("Trades", "num_trades", lambda v: f"{int(v):,}"),
     ]
     L.append(_tbl_row("Metric", "Value", "Zone"))
@@ -909,63 +1537,16 @@ def _backtest_metrics_table(L: list[str], metrics: dict) -> None:
         L.append(_tbl_row(label, fmt(val), _zone(key, val)))
     L.append("")
 
+    initial = config.backtest.initial_capital
     eq_final = metrics.get("equity_final", 0)
-    eq_peak = metrics.get("equity_peak", 0)
-    L.append(f"Equity: ${eq_final:,.0f} (peak ${eq_peak:,.0f})")
-    L.append("")
-
-
-def _trade_stats(L: list[str], trades: list[dict], metrics: dict) -> None:
-    """Trade-level statistics."""
-    if not trades:
-        return
-
-    pnls = [t["pnl"] for t in trades]
-    winners = [p for p in pnls if p > 0]
-    losers = [p for p in pnls if p < 0]
-    longs = [t for t in trades if t.get("direction") == "long"]
-    shorts = [t for t in trades if t.get("direction") == "short"]
-
-    L.append(_tbl_row("Stat", "Value"))
-    L.append(_tbl_row("----", "-----"))
-    L.append(_tbl_row("Total Trades", str(len(trades))))
-    L.append(_tbl_row("Long / Short", f"{len(longs)} / {len(shorts)}"))
     L.append(
-        _tbl_row(
-            "Winners / Losers",
-            f"{len(winners)} / {len(losers)}",
-        )
+        f"Initial balance: {_fmt_dollar(initial)} | Final equity: ${eq_final:,.0f}"
     )
-    if winners:
-        L.append(_tbl_row("Avg Win", _fmt_dollar(np.mean(winners))))
-        L.append(_tbl_row("Best Trade", _fmt_dollar(max(winners))))
-    if losers:
-        L.append(_tbl_row("Avg Loss", _fmt_dollar(np.mean(losers))))
-        L.append(_tbl_row("Worst Trade", _fmt_dollar(min(losers))))
-    if winners and losers:
-        rr = abs(np.mean(winners) / np.mean(losers))
-        L.append(_tbl_row("Win/Loss Ratio", f"{rr:.1f}:1"))
-
-    consec = _max_consecutive_losses(pnls)
-    L.append(_tbl_row("Max Consec. Losses", str(consec)))
     L.append("")
-
-
-def _max_consecutive_losses(pnls: list[float]) -> int:
-    """Compute max consecutive losing trades."""
-    max_streak = 0
-    streak = 0
-    for p in pnls:
-        if p < 0:
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-    return max_streak
 
 
 def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> None:
-    """Compare 4 strategies: Buy & Hold, Always Long, Random, Hybrid."""
+    """Compare benchmarks against the configured model architecture."""
     test_path = Path(config.paths.test_data)
     benchmarks = compute_benchmark_comparison(test_path, metrics, config)
     if not benchmarks:
@@ -979,8 +1560,8 @@ def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> 
     )
     L.append(
         "*Note: Benchmarks exclude transaction costs (spread, slippage, "
-        "commission); not directly comparable to the Hybrid model which "
-        "incurs all three.*"
+        f"commission); not directly comparable to the {_model_label(config)} model "
+        "which incurs all three.*"
     )
     L.append("")
     L.append(_tbl_row("Strategy", "Return", "Sharpe", "Max DD", "Win Rate", "Trades"))
@@ -1073,7 +1654,9 @@ def _issues_list(
     config: Config,
     pred_stats: dict | None,
 ) -> None:
-    """Identify issues and recommendations from report metrics.
+    """High-signal issues and recommendations from report metrics.
+
+    Only the most critical checks are included to keep the report focused.
 
     Args:
         L: Output markdown lines.
@@ -1094,27 +1677,17 @@ def _issues_list(
     dd = abs(metrics.get("max_drawdown_pct", 0))
     pf = metrics.get("profit_factor", 0)
     n_trades = int(metrics.get("num_trades", 0))
-    ret = metrics.get("return_pct", 0)
-    wr = metrics.get("win_rate_pct", 0)
-    sqn = metrics.get("sqn", 0)
-    recovery = metrics.get("recovery_factor", 0)
-    exposure = metrics.get("exposure_time_pct", 0)
-    avg_trade = metrics.get("avg_trade_pct", 0)
-
     dir_acc = pred_stats.get("directional_accuracy", 0) if pred_stats else 0
 
-    label_dist = _load_label_distribution(Path(config.paths.labels))
-    hold_pct = 0.0
-    if label_dist and "Hold" in label_dist:
-        _, hold_pct = label_dist["Hold"]
+    # — Core high-signal checks —
 
-    feature_count = _count_features(config)
-
-    sortino = metrics.get("sortino_ratio", 0)
-
-    # =========================================================================
-    # Issues — threshold-based
-    # =========================================================================
+    if n_trades == 0:
+        issues.append(
+            (
+                "critical",
+                "Zero trades executed — model produces no actionable signals in test period.",
+            )
+        )
 
     if sharpe < 0:
         issues.append(
@@ -1123,83 +1696,12 @@ def _issues_list(
                 f"Sharpe {sharpe:.2f} is negative — strategy underperforms risk-free rate.",
             )
         )
-    elif sharpe < 0.5:
-        issues.append(
-            (
-                "critical",
-                f"Sharpe {sharpe:.2f} < 0.5 — model does not generate risk-adjusted returns. "
-                "Consider increasing feature set or adjusting labeling parameters.",
-            )
-        )
-    elif sharpe < 1.0:
-        issues.append(
-            (
-                "warning",
-                f"Sharpe {sharpe:.2f} < 1.0 — risk-adjusted returns below professional threshold.",
-            )
-        )
 
     if dd > 50:
         issues.append(
             (
                 "critical",
-                f"Max drawdown {dd:.1f}% > 50% — catastrophic capital erosion. "
-                "Strategy viability is questionable.",
-            )
-        )
-    elif dd > 30:
-        issues.append(
-            (
-                "critical",
-                f"Max drawdown {dd:.1f}% exceeds 30% threshold. "
-                "Add position sizing rules or circuit breaker.",
-            )
-        )
-    elif dd > 20:
-        issues.append(
-            (
-                "warning",
-                f"Max drawdown {dd:.1f}% > 20% — elevated drawdown for CFD trading.",
-            )
-        )
-
-    if dir_acc > 0 and dir_acc < 0.50:
-        issues.append(
-            (
-                "critical",
-                f"Directional accuracy {dir_acc:.1%} < 50% — model predicts worse than random. "
-                "Check label distribution and GRU training convergence.",
-            )
-        )
-    elif dir_acc > 0 and dir_acc < 0.55:
-        issues.append(
-            (
-                "warning",
-                f"Directional accuracy {dir_acc:.1%} < 55% — model does not reliably predict direction. "
-                "Check label distribution and GRU training convergence.",
-            )
-        )
-
-    if np.isnan(wr):
-        issues.append(
-            (
-                "critical",
-                "Win rate is NaN — zero trades or calculation error.",
-            )
-        )
-    elif wr < 30:
-        issues.append(
-            (
-                "critical",
-                f"Win rate {wr:.1f}% < 30% — requires exceptional risk/reward ratio to be viable.",
-            )
-        )
-    elif wr < 40:
-        issues.append(
-            (
-                "warning",
-                f"Win rate {wr:.1f}% < 40% — below trading viability. "
-                "Review stop-loss/take-profit ratio.",
+                f"Max drawdown {dd:.1f}% > 50% — catastrophic capital erosion.",
             )
         )
 
@@ -1210,205 +1712,19 @@ def _issues_list(
                 f"Profit factor {pf:.2f} < 1.0 — strategy loses money on average.",
             )
         )
-    elif pf < 1.2:
-        issues.append(
-            (
-                "warning",
-                f"Profit factor {pf:.2f} < 1.2 — barely covers transaction costs.",
-            )
-        )
-    elif pf < 1.5:
-        issues.append(
-            (
-                "warning",
-                f"Profit factor {pf:.2f} < 1.5 — indicates marginal edge. "
-                "Tighten confidence threshold to filter low-conviction trades.",
-            )
-        )
 
-    if n_trades == 0:
+    if dir_acc > 0 and dir_acc < 0.50:
         issues.append(
             (
                 "critical",
-                "Zero trades executed — model produces no actionable signals in test period.",
-            )
-        )
-    elif n_trades < 30:
-        issues.append(
-            (
-                "critical",
-                f"Only {n_trades} trades — statistically unreliable results.",
-            )
-        )
-    elif n_trades < 100:
-        issues.append(
-            (
-                "warning",
-                f"{n_trades} trades — marginal sample size for statistical significance.",
-            )
-        )
-
-    if ret > 500:
-        issues.append(
-            (
-                "warning",
-                f"Return {ret:.0f}% suspiciously high — verify for overfitting or data leakage.",
-            )
-        )
-    elif ret < -50:
-        issues.append(
-            (
-                "critical",
-                f"Return {ret:.0f}% — severe capital loss. Strategy is destroying value.",
-            )
-        )
-
-    if recovery < 1.0:
-        issues.append(
-            (
-                "warning",
-                f"Recovery factor {recovery:.2f} < 1.0 — strategy never recovered from worst drawdown.",
-            )
-        )
-
-    if sqn < 1.0 and n_trades > 0:
-        issues.append(
-            (
-                "warning",
-                f"SQN {sqn:.2f} < 1.0 — system quality suggests no reliable edge.",
-            )
-        )
-
-    if avg_trade < 0:
-        issues.append(
-            (
-                "warning",
-                f"Average trade {avg_trade:.2f}% is negative — expected value per trade is a loss.",
-            )
-        )
-
-    if config.backtest.leverage > 20:
-        issues.append(
-            (
-                "warning",
-                f"Leverage {config.backtest.leverage}:1 amplifies both returns and drawdowns.",
-            )
-        )
-
-    if exposure > 0 and exposure < 10:
-        issues.append(
-            (
-                "warning",
-                f"Market exposure {exposure:.1f}% < 10% — model is overly selective, may miss opportunities.",
+                f"Directional accuracy {dir_acc:.1%} < 50% — model predicts worse than random.",
             )
         )
 
     if not issues:
         issues.append(("info", "No critical issues identified."))
 
-    # =========================================================================
-    # Recommendations — prioritized
-    # =========================================================================
-
-    if feature_count < 20:
-        recs.append(
-            (
-                "high",
-                f"Feature set has {feature_count} features (< 20). "
-                "Add more features: order flow, cross-asset correlations, microstructure metrics.",
-            )
-        )
-    elif feature_count < 30:
-        recs.append(
-            (
-                "medium",
-                f"Feature set has {feature_count} features. "
-                "Consider adding order flow imbalance or cross-asset features for additional signal.",
-            )
-        )
-
-    if hold_pct > 50:
-        recs.append(
-            (
-                "high",
-                f"Hold labels are {hold_pct:.1f}% (> 50%). "
-                f"Reduce ATR multipliers (current TP: {config.labels.atr_tp_multiplier}, SL: {config.labels.atr_sl_multiplier}) "
-                "for tighter barriers to generate more directional signals.",
-            )
-        )
-    elif hold_pct > 40:
-        recs.append(
-            (
-                "medium",
-                f"Hold labels are {hold_pct:.1f}% (> 40%). "
-                f"Consider reducing ATR multipliers (current TP: {config.labels.atr_tp_multiplier}, SL: {config.labels.atr_sl_multiplier}) "
-                "for tighter barriers.",
-            )
-        )
-
-    if sharpe < 2.0:
-        recs.append(
-            (
-                "medium",
-                "Tune confidence threshold to filter low-conviction trades and improve risk-adjusted returns.",
-            )
-        )
-
-    if dd > 20:
-        recs.append(
-            (
-                "high",
-                "Add position sizing or circuit breaker to limit drawdowns. "
-                "Consider Kelly criterion for optimal sizing.",
-            )
-        )
-
-    if n_trades < 100:
-        recs.append(
-            (
-                "medium",
-                "Lower confidence threshold or expand test period for more trades "
-                "to improve statistical reliability.",
-            )
-        )
-
-    if pf < 1.5:
-        recs.append(
-            (
-                "high",
-                "Optimize take-profit/stop-loss ratio. "
-                f"Current ATR stop={config.backtest.atr_stop_multiplier}x, "
-                f"ATR TP={config.backtest.atr_tp_multiplier}x.",
-            )
-        )
-
-    if config.gru.epochs < 20:
-        recs.append(
-            (
-                "medium",
-                f"GRU max epochs set to {config.gru.epochs} (< 20). "
-                "Model may not converge. Increase epochs or review learning rate.",
-            )
-        )
-
-    if sortino > 0 and sharpe > 0 and (sortino / sharpe) < 1.2:
-        recs.append(
-            (
-                "low",
-                "Sortino/Sharpe ratio close to 1.0 — upside and downside volatility similar. "
-                "Strategy does not effectively limit downside risk.",
-            )
-        )
-
-    if wr < 45 and pf < 1.5:
-        recs.append(
-            (
-                "high",
-                f"Low win rate ({wr:.1f}%) combined with low profit factor ({pf:.2f}). "
-                "Fundamental strategy review recommended — check signal quality and trade execution.",
-            )
-        )
-
+    # — Single actionable recommendation —
     if not recs:
         recs.append(
             (
@@ -1499,17 +1815,6 @@ def _load_feature_importance(config: Config, out_dir: Path) -> dict:
         return json.load(f)
 
 
-def _load_ablation_results(config: Config) -> dict:
-    """Load ablation-study results for the current session."""
-    if not config.paths.session_dir:
-        return {}
-    abl_path = Path(config.paths.session_dir) / "reports" / "ablation_results.json"
-    if not abl_path.exists():
-        return {}
-    with open(abl_path) as f:
-        return json.load(f)
-
-
 # ---------------------------------------------------------------------------
 # Public entry point (formerly report/main.py → generate_report)
 # ---------------------------------------------------------------------------
@@ -1556,8 +1861,6 @@ def generate_report(config: Config) -> None:
     _plot_equity_curve(trades, config, out_dir)
     feature_importance = _load_feature_importance(config, out_dir)
     _plot_feature_importance(feature_importance, out_dir)
-    ablation = _load_ablation_results(config)
-
     # Markdown Report
     pred_stats = _load_prediction_stats(Path(config.paths.predictions))
     md = _build_markdown(
@@ -1565,7 +1868,6 @@ def generate_report(config: Config) -> None:
         metrics,
         trades,
         feature_importance,
-        ablation,
         pred_stats,
     )
     report_path = Path(config.paths.report)

@@ -23,7 +23,7 @@ An experiment where you remove parts of your model one at a time to see which pa
 A simulation of how a trading strategy would have performed in the past. You pretend to trade using historical data and see if you would have made money. It is not a guarantee of future results.
 
 **Base Learner**
-A model that serves as a building block in a stacking ensemble. In this project, GRU and LightGBM are base learners whose predictions feed into the meta-learner.
+A standalone model (such as GRU or LightGBM) that can be trained independently on its own feature set.
 
 **Batch Size**
 The number of data samples processed at once during neural network training. A batch size of 64 means the model looks at 64 examples, updates its weights, then looks at the next 64.
@@ -122,7 +122,7 @@ The internal representation that a GRU produces after reading a sequence. In thi
 The maximum time window for a trade. In triple barrier labeling, if the price does not hit TP or SL within the horizon (e.g., 24 bars), the trade is closed and labeled as "Flat".
 
 **Hyperparameter**
-A setting you choose before training (like learning rate or number of trees). The model cannot learn these from data — you have to set them manually or use auto-tuning (Optuna).
+A setting you choose before training (like learning rate or number of trees). The model cannot learn these from data — you have to set them manually.
 
 ---
 
@@ -160,9 +160,6 @@ When your broker warns you that your account does not have enough money to maint
 **Max Drawdown**
 The largest percentage drop from a peak to a trough in your equity curve. It measures the worst-case loss you would have experienced.
 
-**Meta-learner**
-The second-level model in a stacking ensemble that learns how to best combine the predictions of base learners. In this project, a LightGBM classifier serves as the meta-learner.
-
 ---
 
 ## N
@@ -176,9 +173,6 @@ A Python library for numerical computing. It handles arrays and mathematical ope
 
 **OHLCV**
 Open, High, Low, Close, Volume — the five pieces of information in each candlestick bar. Open = starting price, High = highest price, Low = lowest price, Close = ending price, Volume = number of trades.
-
-**Optuna**
-A Python library for automatic hyperparameter tuning. Instead of guessing the best settings, Optuna tries many combinations and finds the ones that give the best results.
 
 **Overfitting**
 When a model learns the training data too well, including the noise. It performs great on training data but poorly on new, unseen data. Like a student who memorized exam answers but cannot solve new problems.
@@ -225,9 +219,6 @@ A momentum indicator that ranges from 0 to 100. Above 70 suggests the asset is o
 
 ## S
 
-**SHAP (SHapley Additive exPlanations)**
-A method to explain which features contributed to each prediction. It tells you why the model made a specific decision.
-
 **Sharpe Ratio**
 A measure of risk-adjusted return. It tells you how much return you get per unit of risk. A Sharpe of 1.0 is considered decent. Above 2.0 is excellent.
 
@@ -245,9 +236,6 @@ Similar to Sharpe ratio, but it only considers downside risk (losses). It is oft
 
 **Spread**
 The difference between the bid and ask price. This is a cost you pay every time you trade. A spread of 2 pips means you start each trade $2 in the hole.
-
-**Stacking**
-An ensemble method that trains multiple base models independently, then uses their predictions as input features for a meta-learner that makes the final prediction. Unlike simple concatenation (hybrid), stacking learns the optimal combination weights from data.
 
 **Stop-Loss (SL)**
 A price level where you automatically exit a losing trade to limit your loss. If you buy at $2,000 and set a stop-loss at $1,990, you will exit if the price drops to $1,990.

@@ -172,7 +172,6 @@ Walk-forward validation is critical for time-series models. These parameters con
 | `purge_bars` | 25 | Bars removed at train/test boundary |
 | `embargo_bars` | 50 | Additional gap after purge |
 | `min_train_bars` | 10000 | Minimum training bars to produce a window |
-| `wf_optuna_trials` | 0 | Optuna trials per window (0 = fixed params) |
 | `oof_ensemble` | `true` | Aggregate OOF predictions across windows |
 
 ### How to adjust
@@ -180,7 +179,6 @@ Walk-forward validation is critical for time-series models. These parameters con
 - **`train_window_bars`**: Increase for more training data (e.g., 35040 for ~4yr). Decrease for shorter datasets. Ensure it's at least `min_train_bars` (10000).
 - **`test_window_bars`**: Shorter (2190 ≈ 3mo) = more windows, more robust evaluation. Longer (4380 ≈ 6mo) = more stable per-window estimates.
 - **`step_bars`**: Set equal to `test_window_bars` for non-overlapping windows. Set lower (e.g., 2190) for overlapping windows — gives more test periods but slower.
-- **`wf_optuna_trials`**: Set to 0 for fast, reproducible runs with fixed params. Set to 20–50 for light tuning per window. Set to 100+ for thorough optimization (much slower).
 - **`purge_bars` / `embargo_bars`**: Anti-leakage gaps. Keep `purge_bars ≥ 25` and `embargo_bars ≥ 50` for 1H data. Increase for longer `horizon_bars`.
 
 ### Common patterns
@@ -189,44 +187,20 @@ Walk-forward validation is critical for time-series models. These parameters con
 # Fast iteration — single static split
 [validation]
 method = "static"
-wf_optuna_trials = 0
 
-# Thorough walk-forward with light tuning
+# Thorough walk-forward validation
 [validation]
 method = "sliding"
 train_window_bars = 26280
 test_window_bars = 4380
 step_bars = 4380
-wf_optuna_trials = 20
 purge_bars = 25
 embargo_bars = 50
 ```
 
 ---
 
-## 4. Stacking Configuration (`[stacking]`)
-
-The stacking ensemble combines GRU and LightGBM base model predictions via a meta-learner.
-
-| Parameter | Default | What it does |
-|-----------|---------|-------------|
-| `base_models` | `["gru", "lgbm"]` | Base model types to ensemble |
-| `meta_model` | `"lightgbm"` | Meta-learner type |
-| `use_probability_features_only` | `true` | Only pass probabilities (not raw features) to meta-learner |
-| `min_meta_train_folds` | 1 | Minimum completed folds before meta-learner trains |
-| `min_meta_train_rows` | 500 | Minimum rows required for meta-learner training |
-| `final_refit` | `true` | Refit base + meta on all data after walk-forward |
-
-### How to adjust
-
-- **`min_meta_train_folds`**: Default 1 means the meta-learner starts training after the first fold. Increase to 2–3 if you want more warm-up data before the meta-learner activates.
-- **`min_meta_train_rows`**: If the meta-learner fails to train (too few rows), lower this to 200–300. If you see unstable meta-predictions, raise to 1000+.
-- **`final_refit`**: Keep `true` to produce deployable model artifacts. Set to `false` if you only want walk-forward evaluation without a final model.
-- **`use_probability_features_only`**: Keep `true` for clean stacking. Set to `false` to pass additional features to the meta-learner (experimental, risk of overfitting).
-
----
-
-## 5. Backtest Parameters (`[backtest]`)
+## 4. Backtest Parameters (`[backtest]`)
 
 All backtest parameters with their defaults and guidance:
 
@@ -256,7 +230,7 @@ All backtest parameters with their defaults and guidance:
 
 ---
 
-## 6. Dataset-Size Guidance
+## 5. Dataset-Size Guidance
 
 The amount of training data affects which parameters are safe to use.
 
@@ -291,7 +265,7 @@ The amount of training data affects which parameters are safe to use.
 
 ---
 
-## 7. Profiles for Different Goals
+## 6. Profiles for Different Goals
 
 Choose a profile based on your goal and risk tolerance.
 
@@ -356,7 +330,7 @@ horizon_bars = 16
 
 ---
 
-## 8. Tuning Priority Order
+## 7. Tuning Priority Order
 
 When optimizing, adjust parameters in this order. Each step builds on the previous.
 
@@ -368,11 +342,10 @@ When optimizing, adjust parameters in this order. Each step builds on the previo
 6. **`correlation_threshold`** — Feature set. Adjust if feature count is too low/high.
 7. **`train_window_bars` / `test_window_bars`** — Walk-forward window sizing.
 8. **LightGBM params** — Fine-tune after above are stable (`max_depth`, `min_child_samples`, `learning_rate`).
-9. **`wf_optuna_trials`** — Enable per-window tuning once other params are in a good range.
 
 ---
 
-## 9. Common Pitfalls
+## 8. Common Pitfalls
 
 Avoid these mistakes:
 
@@ -385,12 +358,11 @@ Avoid these mistakes:
 | `correlation_threshold` too high (0.95) | Redundant features add noise, slow training | Keep at 0.75 or lower |
 | `hidden_size` too large on small data | GRU memorizes instead of generalizes | Use 16–24 for < 2 years data |
 | `purge_bars` / `embargo_bars` too low | Label leakage from train into test | Keep purge ≥ 25, embargo ≥ 50 for 1H |
-| `wf_optuna_trials` too high on small data | Overfits hyperparams to noise | Start at 0, increase to 20–50 max |
 | `max_drawdown_cutoff` too low (0.10) | Backtest stops too early, not enough trades | Minimum 0.20, prefer 0.30 |
 
 ---
 
-## 10. Quick Reference Tables
+## 9. Quick Reference Tables
 
 ### ATR Multiplier by Market Volatility
 
@@ -419,7 +391,7 @@ Avoid these mistakes:
 
 ---
 
-## 11. Monitoring and Iteration
+## 10. Monitoring and Iteration
 
 After running a backtest:
 
@@ -431,7 +403,7 @@ After running a backtest:
 
 ---
 
-## 12. Example Tuning Workflow
+## 11. Example Tuning Workflow
 
 ```mermaid
 flowchart TD

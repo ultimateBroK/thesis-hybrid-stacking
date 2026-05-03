@@ -30,7 +30,9 @@ def test_configure_session_paths_sets_model_gru_predictions_backtest_report(
 
 
 @pytest.mark.unit
-def test_load_config_for_session_without_snapshot_uses_repo_toml(tmp_path: Path) -> None:
+def test_load_config_for_session_without_snapshot_uses_repo_toml(
+    tmp_path: Path,
+) -> None:
     """When no snapshot exists, load base ``config.toml`` from repo root."""
     session = tmp_path / "empty_session"
     session.mkdir()
@@ -47,7 +49,7 @@ def test_load_config_for_session_prefers_snapshot_over_base(tmp_path: Path) -> N
     (session / "config").mkdir(parents=True)
     snap = session / "config" / "config_snapshot.toml"
     snap.write_text(
-        '[workflow]\nrandom_seed = 424242\n',
+        "[workflow]\nrandom_seed = 424242\n",
         encoding="utf-8",
     )
     cfg = load_config_for_session(session, base_config_path="config.toml")

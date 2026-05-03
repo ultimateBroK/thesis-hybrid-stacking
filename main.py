@@ -7,7 +7,7 @@ Usage:
 Options:
     --session SESSION   Continue from an existing session directory name
                         (e.g., XAUUSD_H1_20260418_143052)
-    --stage N           Start pipeline from stage N (0-5). Use with --session.
+    --stage N           Start pipeline from stage N (1-6). Use with --session.
                         Default: resumes from first missing stage.
     --force             Force re-run all stages (or stage with --stage)
 """
@@ -105,9 +105,9 @@ def main() -> None:
     parser.add_argument(
         "--stage",
         type=int,
-        choices=[0, 1, 2, 3, 4, 5],
+        choices=[1, 2, 3, 4, 5, 6],
         default=None,
-        help="Start from stage N (0-5). Skips stages before N.",
+        help="Start from stage N (1-6). Skips stages before N.",
     )
     parser.add_argument("--force", action="store_true", help="Force re-run all stages")
     args = parser.parse_args()
@@ -135,17 +135,17 @@ def main() -> None:
         config.workflow.session_timestamp = session_ts
 
         # If --stage specified, disable stages BEFORE the target stage
-        # Stage N: skip 0..N-1, run N..end
+        # Stage 1: full run from data. Stage N: skip stages 1..N-1, run N..6.
         if args.stage is not None:
-            if args.stage > 0:
-                config.workflow.run_data_pipeline = False
             if args.stage > 1:
-                config.workflow.run_feature_engineering = False
+                config.workflow.run_data_pipeline = False
             if args.stage > 2:
-                config.workflow.run_label_generation = False
+                config.workflow.run_feature_engineering = False
             if args.stage > 3:
-                config.workflow.run_model_training = False
+                config.workflow.run_label_generation = False
             if args.stage > 4:
+                config.workflow.run_model_training = False
+            if args.stage > 5:
                 config.workflow.run_backtest = False
 
         log_mode = "a"  # Append to existing log

@@ -61,11 +61,11 @@ class SplittingConfig:
     uses walk-forward (sliding-window) validation — see :class:`ValidationConfig`.
     """
 
-    train_start: str = "2013-01-01"
-    train_end: str = "2022-03-31 23:59:59"
-    val_start: str = "2022-04-01"
-    val_end: str = "2024-03-31 23:59:59"
-    test_start: str = "2024-04-01"
+    train_start: str = "2018-01-01"
+    train_end: str = "2022-12-31 23:59:59"
+    val_start: str = "2023-01-01"
+    val_end: str = "2023-12-31 23:59:59"
+    test_start: str = "2024-01-01"
     test_end: str = "2026-03-31 23:59:59"
     purge_bars: int = 25
     embargo_bars: int = 50
@@ -85,9 +85,6 @@ class ValidationConfig:
     embargo_bars: int = 50  # additional gap after purge
     min_train_bars: int = 10000  # minimum training bars to produce a window
     oof_ensemble: bool = True  # aggregate OOF predictions across windows
-    wf_optuna_trials: int = (
-        0  # Optuna trials per walk-forward window (0 = fixed params)
-    )
 
 
 @dataclass
@@ -134,10 +131,16 @@ class FeaturesConfig:
 
 @dataclass
 class LabelsConfig:
-    """Triple-barrier label parameters (asymmetric TP/SL, no sessions)."""
+    """Triple-barrier label parameters (symmetric TP/SL by default).
+
+    2xATR barriers (~$40-50 move on XAUUSD 1H) widen the target window
+    relative to the default 1xATR, reducing label noise from minor
+    fluctuations that are smaller than round-trip trading costs (~$2.40).
+    This improves the signal-to-noise ratio of the learning target.
+    """
 
     atr_tp_multiplier: float = 2.0
-    atr_sl_multiplier: float = 1.0
+    atr_sl_multiplier: float = 2.0
     horizon_bars: int = 24
     num_classes: int = 3
     min_atr: float = 0.5
@@ -148,10 +151,13 @@ class LGBMConfig:
     """LightGBM parameters."""
 
     # LightGBM
-    architecture: str = "hybrid"  # "hybrid" or "stacking"
-    use_optuna: bool = False
-    optuna_trials: int = 20
-    optuna_timeout: int = 300
+    architecture: str = "hybrid"  # "hybrid", "static", or "stacking"
+    objective: str = (
+        "multiclass"  # "multiclass" (3-class) or "regression" (continuous returns)
+    )
+    static_expanded: bool = (
+        False  # use ALL features (not whitelist) for static baseline
+    )
     num_leaves: int = 31
     max_depth: int = 6
     learning_rate: float = 0.02
@@ -169,7 +175,7 @@ class LGBMConfig:
 class GRUConfig:
     """GRU feature extractor parameters."""
 
-    input_size: int = 8
+    input_size: int = 13
     feature_cols: list[str] = field(
         default_factory=lambda: [
             "log_returns",
@@ -180,6 +186,11 @@ class GRUConfig:
             "return_1h",
             "return_4h",
             "price_position_20",
+            "macd_hist",
+            "rsi_14",
+            "atr_percentile",
+            "trend_strength",
+            "volume_zscore_20",
         ]
     )
     hidden_size: int = 64
@@ -193,24 +204,34 @@ class GRUConfig:
     min_epochs: int = 5
     focal_loss_gamma: float = 2.0
     warmup_epochs: int = 3
+    contrastive_pretrain_epochs: int = 10
+    temperature_scaling: bool = False
+    pca_components: int = 16  # 0 = disabled
 
 
 @dataclass
 class BacktestConfig:
-    """CFD backtest parameters — thin wrapper for backtesting.py."""
+    """CFD backtest parameters — thin wrapper for backtesting.py.
+
+    The SL/TP ATR multipliers must match [labels] multipliers so that
+    backtest stop-loss and take-profit distances are identical to the
+    label barrier distances used to generate the signals being traded.
+    """
 
     initial_capital: float = 10_000.0
     leverage: int = 10  # margin = 1/leverage
     spread_ticks: float = 35.0  # → spread param (relative)
     slippage_ticks: float = 5.0
     commission_per_lot: float = 10.0  # → callable commission
-    atr_stop_multiplier: float = 1.0
-    atr_tp_multiplier: float = 2.0  # ATR multiplier for take-profit (0 = disabled)
+    atr_stop_multiplier: float = 2.0  # Must match [labels] atr_sl_multiplier
+    atr_tp_multiplier: float = (
+        2.0  # Must match [labels] atr_tp_multiplier; 0 = disabled
+    )
     lots_per_trade: float = 0.1  # base lot size for position sizing
-    min_lots: float = 0.05  # minimum lot size (low-conviction floor)
-    max_lots: float = 0.1  # maximum lot size (high-conviction cap)
+    min_lots: float = 0.01  # minimum lot size (low-conviction floor)
+    max_lots: float = 0.5  # maximum lot size (high-conviction cap)
     confidence_threshold: float = (
-        0.55  # min predicted probability to act (0 = disabled)
+        0.50  # min predicted probability to act (0 = disabled)
     )
     max_drawdown_cutoff: float = (
         0.30  # circuit breaker: stop if equity < peak * (1 - cutoff)
@@ -237,18 +258,6 @@ class WorkflowConfig:
 
 
 @dataclass
-class StackingConfig:
-    """True stacking parameters."""
-
-    base_models: list[str] = field(default_factory=lambda: ["gru", "lgbm"])
-    meta_model: str = "lightgbm"
-    use_probability_features_only: bool = True
-    min_meta_train_folds: int = 1
-    min_meta_train_rows: int = 500
-    final_refit: bool = True
-
-
-@dataclass
 class PathsConfig:
     """Artifact paths with session-based output support."""
 
@@ -263,7 +272,6 @@ class PathsConfig:
     model: str = "models/lightgbm_model.pkl"
     gru_model: str = "models/gru_model.pt"
     predictions: str = "data/predictions/final_predictions.parquet"
-    stack_bundle: str = "models/stacking_bundle.joblib"
     backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
     session_dir: str = ""  # Set at runtime by pipeline
@@ -286,7 +294,6 @@ class Config:
     model: LGBMConfig = field(default_factory=LGBMConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     gru: GRUConfig = field(default_factory=GRUConfig)
-    stacking: StackingConfig = field(default_factory=StackingConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
@@ -304,7 +311,6 @@ _SECTION_MAP: dict[str, type] = {
     "model": LGBMConfig,
     "backtest": BacktestConfig,
     "gru": GRUConfig,
-    "stacking": StackingConfig,
     "workflow": WorkflowConfig,
     "paths": PathsConfig,
 }

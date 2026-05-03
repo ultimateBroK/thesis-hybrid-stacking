@@ -12,8 +12,7 @@ The core experiment is:
 2. Create deterministic technical features.
 3. Generate a 3-class target: `Short`, `Hold`, `Long`.
 4. Validate with walk-forward time-series splits and purge/embargo gaps.
-5. Train a compact hybrid model: GRU temporal embedding + LightGBM classifier,
-   or a full stacking ensemble (configurable via `model.architecture`).
+5. Train a compact hybrid model: GRU temporal embedding + LightGBM classifier.
 6. Report ML metrics first: accuracy, F1, baseline comparison, confusion matrix.
 7. Use backtest metrics only as an application demo.
 
@@ -67,7 +66,6 @@ All defaults below match `config.toml` and `src/thesis/config.py` dataclasses.
 | `embargo_bars` | `50` | Additional gap after purge for extra safety. |
 | `min_train_bars` | `10000` | Minimum training bars required to produce a window. Windows below this are skipped. |
 | `oof_ensemble` | `true` | Aggregate out-of-fold predictions across all walk-forward windows. |
-| `wf_optuna_trials` | `0` | Optuna hyperparameter trials per walk-forward window. `0` means fixed params (faster, more reproducible). |
 
 Walk-forward window sizes are **bar-based**, not fixed calendar durations. For
 example, `4380` H1 bars is only approximately six months; weekends, holidays,
@@ -106,8 +104,7 @@ static_feature_cols = [
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `architecture` | `"hybrid"` | Model architecture: `"hybrid"` (GRU embedding + LightGBM) or `"stacking"` (full stacking ensemble). |
-| `use_optuna` | `false` | Enable Optuna hyperparameter search for LightGBM. |
+| `architecture` | `"hybrid"` | Model architecture: `"static"` (LightGBM only) or `"hybrid"` (GRU embedding + LightGBM). |
 | `num_leaves` | `31` | LightGBM leaf count. Controls tree complexity. |
 | `max_depth` | `6` | LightGBM max tree depth. |
 | `learning_rate` | `0.05` | LightGBM learning rate. |
@@ -138,17 +135,6 @@ Default `feature_cols`:
 ```toml
 feature_cols = ["log_returns", "rsi_14", "atr_14", "macd_hist", "return_4h", "bb_width"]
 ```
-
-### `[stacking]`
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `base_models` | `["gru", "lgbm"]` | List of base models that generate meta-features. |
-| `meta_model` | `"lightgbm"` | Meta-learner type for the second stacking stage. |
-| `use_probability_features_only` | `true` | If true, meta-features are base-model class probabilities only (no raw features). |
-| `min_meta_train_folds` | `1` | Minimum walk-forward folds required to train the meta-model. |
-| `min_meta_train_rows` | `500` | Minimum rows required for meta-model training. |
-| `final_refit` | `true` | If true, refit all models on full training data after stacking validation. |
 
 ### `[backtest]`
 
@@ -205,10 +191,8 @@ Use these for experiments:
 | Section | Parameter | Why it matters |
 | --- | --- | --- |
 | `validation` | `train_window_bars`, `test_window_bars` | Controls time-series evaluation stability. |
-| `validation` | `wf_optuna_trials` | Per-window hyperparameter tuning (0 = off). |
-| `stacking` | `base_models`, `meta_model` | Controls ensemble composition and meta-learner. |
 | `labels` | `atr_multiplier`, `horizon_bars` | Defines the target classes. This changes the ML problem. |
-| `model` | `architecture` | Switches between `"hybrid"` and `"stacking"`. |
+| `model` | `architecture` | Set to `"hybrid"` for the default architecture. |
 | `model` | `num_leaves`, `max_depth`, `n_estimators` | Controls LightGBM capacity and overfitting. |
 | `gru` | `hidden_size`, `sequence_length`, `epochs` | Controls temporal model capacity and runtime. |
 | `backtest` | `confidence_threshold`, `lots_per_trade` | Demo-only risk/filter controls. Do not use them to claim model quality. |
@@ -220,7 +204,6 @@ The default `config.toml` is intentionally conservative:
 ```toml
 [model]
 architecture = "hybrid"
-use_optuna = false
 num_leaves = 31
 max_depth = 6
 n_estimators = 200
@@ -233,17 +216,9 @@ batch_size = 256
 
 [validation]
 method = "sliding"
-wf_optuna_trials = 0
-
-[stacking]
-base_models = ["gru", "lgbm"]
-meta_model = "lightgbm"
-final_refit = true
 ```
 
-This gives faster runs and more repeatable comparisons. Use Optuna only after
-you have a stable baseline table; otherwise the thesis can look like parameter
-search instead of model engineering.
+This gives faster runs and more repeatable comparisons.
 
 ## Evaluation Rules
 

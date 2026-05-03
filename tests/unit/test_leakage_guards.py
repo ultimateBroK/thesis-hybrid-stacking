@@ -28,7 +28,9 @@ FORBIDDEN_COLS = {
 def test_forbidden_cols_not_in_features() -> None:
     """EXCLUDE_COLS must contain all raw OHLCV + label-derived columns."""
     for col in FORBIDDEN_COLS:
-        assert col in EXCLUDE_COLS, f"Forbidden column {col!r} missing from EXCLUDE_COLS"
+        assert col in EXCLUDE_COLS, (
+            f"Forbidden column {col!r} missing from EXCLUDE_COLS"
+        )
 
 
 @pytest.mark.unit
@@ -48,9 +50,7 @@ def test_no_negative_shift_in_features_source() -> None:
                 if isinstance(arg, ast.UnaryOp) and isinstance(arg.op, ast.USub):
                     violations.append(f"Line ~{node.lineno}: shift with negative value")
 
-    assert len(violations) == 0, (
-        f"Found shift(-n) calls (future-looking): {violations}"
-    )
+    assert len(violations) == 0, f"Found shift(-n) calls (future-looking): {violations}"
 
 
 @pytest.mark.unit
@@ -86,10 +86,14 @@ def test_oof_predictions_unique_timestamps() -> None:
         eager=True,
     )
 
-    oof = pl.DataFrame({
-        "timestamp": timestamps,
-        "pred_long": rng.random(n),
-        "pred_short": rng.random(n),
-    })
+    oof = pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "pred_long": rng.random(n),
+            "pred_short": rng.random(n),
+        }
+    )
 
-    assert oof["timestamp"].is_unique().all(), "OOF predictions must have unique timestamps"
+    assert oof["timestamp"].is_unique().all(), (
+        "OOF predictions must have unique timestamps"
+    )

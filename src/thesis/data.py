@@ -196,7 +196,8 @@ def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
     duplicate_count = len(ohlcv) - ohlcv.get_column("timestamp").n_unique()
     if duplicate_count > 0:
         logger.warning(
-            "Found %d duplicate OHLCV bar timestamps before dedup; keeping first",
+            "Found %d duplicate OHLCV bar timestamps before dedup; keeping first. "
+            "Likely overlapping raw files; downstream stages now validate uniqueness.",
             duplicate_count,
         )
     ohlcv = ohlcv.unique(subset=["timestamp"], keep="first").sort("timestamp")

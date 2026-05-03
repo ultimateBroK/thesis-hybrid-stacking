@@ -408,7 +408,6 @@ The pipeline generates **static charts** in `reports/` and an **interactive Boke
 |------|-----------------|
 | `equity_curve.png` | Equity curve over time. Should trend upward with manageable drawdowns. |
 | `feature_importance.png` | Top-20 features by importance. Check if GRU features dominate or if static features contribute. |
-| `shap_summary.png` | SHAP value breakdown by class (Long/Hold/Short). Shows which features push predictions toward each class. |
 
 ### Interactive Backtest Chart (`backtest/`)
 
@@ -426,7 +425,7 @@ The `pixi run streamlit` dashboard provides additional interactive charts powere
 - **Feature distributions** — Per-feature histogram across the dataset
 - **Confusion matrix** — Model accuracy breakdown by class
 - **Confidence distribution** — Prediction confidence for correct vs. incorrect predictions
-- **Feature importance & SHAP** — Interactive bar charts for feature analysis
+- **Feature importance** — Interactive bar charts for feature analysis
 - **Equity & drawdown** — Interactive equity curve with drawdown overlay
 - **PnL histogram** — Distribution of trade profits and losses
 - **Monthly returns heatmap** — Calendar heatmap of monthly returns

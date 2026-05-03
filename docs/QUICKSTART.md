@@ -111,14 +111,13 @@ flowchart TD
 
 ### Architecture Choice
 
-The pipeline supports two model architectures, controlled by `model.architecture` in `config.toml`:
+The pipeline uses the **hybrid architecture**, controlled by `model.architecture` in `config.toml`:
 
 | Architecture | Description | Config |
 |---|---|---|
 | **hybrid** (default) | GRU hidden states concatenated with static features → LightGBM | `model.architecture = "hybrid"` |
-| **stacking** | Full stacking ensemble — GRU and LightGBM as base learners, meta-learner on top | `model.architecture = "stacking"` |
 
-Both architectures use walk-forward sliding-window validation when `validation.method = "sliding"`.
+The hybrid architecture uses walk-forward sliding-window validation when `validation.method = "sliding"`.
 
 ---
 
@@ -144,17 +143,6 @@ results/XAUUSD_1H_YYYYMMDD_HHMMSS/
 | `config/config_snapshot.toml` | The exact config used for this run |
 | `config/session_info.json` | Session metadata (run ID, timestamps, stage durations) |
 | `logs/pipeline.log` | Detailed execution log (ANSI-stripped) |
-
-### Stacking-Only Artifacts
-
-When using `model.architecture = "stacking"`, additional files appear:
-
-| File | What It Contains |
-|------|-----------------|
-| `models/stacking_bundle.joblib` | Deployment bundle (model paths, class order, feature columns) |
-| `models/base_oof_predictions.parquet` | Out-of-fold predictions from base learners |
-| `models/lgbm_base_model.pkl` | Standalone LightGBM base model |
-| `models/training_history.json` | Per-model training details (iterations, feature cols) |
 
 ### Quick Look at Results
 
@@ -219,7 +207,7 @@ All settings live in **`config.toml`**. Edit this file to change:
 - Model parameters (learning rate, number of trees, etc.)
 - Backtest parameters (capital, leverage, spread, etc.)
 - GRU architecture (hidden size, layers, sequence length, etc.)
-- Model architecture (`hybrid` vs `stacking`)
+- Model architecture (hybrid)
 
 See the [Configuration Guide](CONFIGURATION.md) for detailed instructions.
 

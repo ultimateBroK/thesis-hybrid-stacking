@@ -33,7 +33,7 @@ def generate_labels(config: Config) -> None:
     """
     Generate direction-barrier labels and write them to the configured labels path.
 
-    Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes asymmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_tp_multiplier`, `atr_sl_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
+    Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes asymmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_tp_multiplier`, `atr_sl_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`, `event_end`, `sample_weight`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
 
     Args:
         config (Config): Application configuration containing:
@@ -62,7 +62,11 @@ def generate_labels(config: Config) -> None:
         ["timestamp", "open", "high", "low", "close"]
     )
 
+    _validate_unique_timestamps(df_feat, "features")
+    _validate_unique_timestamps(df_ohlcv, "OHLCV")
+
     df = df_feat.join(df_ohlcv, on="timestamp", how="inner")
+    _validate_unique_timestamps(df, "joined feature/OHLCV")
     logger.info("Joined rows: %d", len(df))
 
     atr_col = f"atr_{config.features.atr_period}"
@@ -96,9 +100,22 @@ def generate_labels(config: Config) -> None:
         ambiguous_count,
     )
 
-    df = _merge_label_columns(df, labels_arr, upper_arr, lower_arr, touched_bars_arr)
+    event_end_arr = compute_event_end(touched_bars_arr, config.labels.horizon_bars)
+    sample_weight_arr = compute_average_uniqueness(event_end_arr)
+
+    df = _merge_label_columns(
+        df,
+        labels_arr,
+        upper_arr,
+        lower_arr,
+        touched_bars_arr,
+        event_end_arr,
+        sample_weight_arr,
+    )
+    _log_label_profitability(df, config)
     df = _filter_censored(df)
     _log_distribution(df)
+    _log_weight_stats(df)
 
     out_path = Path(config.paths.labels)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -164,6 +181,7 @@ def _compute_labels(
             if upper_hit and lower_hit:
                 # OHLC bars do not reveal intra-bar path; keep ambiguous samples neutral.
                 ambiguous_count += 1
+                touched_bars[i] = j - i
                 break
             if upper_hit:
                 label = 1  # Long
@@ -176,6 +194,76 @@ def _compute_labels(
         labels[i] = label
 
     return labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count
+
+
+@njit
+def compute_event_end(touched_bars: np.ndarray, horizon: int) -> np.ndarray:
+    """Convert touched-bar offsets to absolute event-end indices.
+
+    Hold/ambiguous labels with ``touched_bar == -1`` are active for the full
+    horizon. Censored rows are assigned the full horizon too; they are dropped
+    before training, but keeping a finite value makes diagnostics stable.
+    """
+    n = len(touched_bars)
+    event_end = np.empty(n, dtype=np.int32)
+    for i in range(n):
+        offset = touched_bars[i]
+        if offset < 0:
+            offset = horizon
+        event_end[i] = i + offset
+    return event_end
+
+
+@njit
+def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
+    """Compute López de Prado average-uniqueness sample weights.
+
+    For sample ``i`` active over ``[i, event_end[i]]``, uniqueness is the mean
+    of ``1 / concurrency[t]`` across its active bars. Highly overlapping labels
+    receive lower weights. Output is clipped to a small positive floor and
+    normalized to mean 1 so optimizers keep their usual loss scale.
+    """
+    n = len(event_end)
+    diff = np.zeros(n + 1, dtype=np.float64)
+    for i in range(n):
+        end = event_end[i]
+        if end < i:
+            end = i
+        if end >= n:
+            end = n - 1
+        diff[i] += 1.0
+        diff[end + 1] -= 1.0
+
+    concurrency = np.empty(n, dtype=np.float64)
+    running = 0.0
+    for i in range(n):
+        running += diff[i]
+        concurrency[i] = max(running, 1.0)
+
+    inv_prefix = np.zeros(n + 1, dtype=np.float64)
+    for i in range(n):
+        inv_prefix[i + 1] = inv_prefix[i] + 1.0 / concurrency[i]
+
+    weights = np.empty(n, dtype=np.float64)
+    total = 0.0
+    for i in range(n):
+        end = event_end[i]
+        if end < i:
+            end = i
+        if end >= n:
+            end = n - 1
+        span = end - i + 1
+        weight = (inv_prefix[end + 1] - inv_prefix[i]) / span
+        weight = max(weight, 0.05)
+        weights[i] = weight
+        total += weight
+
+    mean = total / n if n > 0 else 1.0
+    if mean <= 0.0:
+        mean = 1.0
+    for i in range(n):
+        weights[i] /= mean
+    return weights
 
 
 # ---------------------------------------------------------------------------
@@ -191,12 +279,26 @@ def _validate_paths(features_path: Path, ohlcv_path: Path) -> None:
         raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
 
 
+def _validate_unique_timestamps(df: pl.DataFrame, name: str) -> None:
+    """Fail fast if a stage boundary contains duplicate timestamps."""
+    if "timestamp" not in df.columns:
+        return
+    duplicate_count = len(df) - df["timestamp"].n_unique()
+    if duplicate_count > 0:
+        raise ValueError(
+            f"{name} data contains {duplicate_count} duplicate timestamps; "
+            "deduplicate before label generation."
+        )
+
+
 def _merge_label_columns(
     df: pl.DataFrame,
     labels_arr: np.ndarray,
     upper_arr: np.ndarray,
     lower_arr: np.ndarray,
     touched_bars_arr: np.ndarray,
+    event_end_arr: np.ndarray,
+    sample_weight_arr: np.ndarray,
 ) -> pl.DataFrame:
     """Build and join label columns into the main dataframe."""
     ts_dtype = df["timestamp"].dtype
@@ -207,6 +309,8 @@ def _merge_label_columns(
             "upper_barrier": upper_arr,
             "lower_barrier": lower_arr,
             "touched_bar": touched_bars_arr,
+            "event_end": event_end_arr,
+            "sample_weight": sample_weight_arr,
         }
     )
     return df.join(labels_df, on="timestamp", how="left")
@@ -264,3 +368,132 @@ def _log_distribution(df: pl.DataFrame) -> None:
     for row in counts.iter_rows():
         label, count = row
         logger.info("  Class %s: %d (%.1f%%)", label, count, count / total * 100)
+
+
+def _log_weight_stats(df: pl.DataFrame) -> None:
+    """Log average-uniqueness sample-weight diagnostics."""
+    if "sample_weight" not in df.columns:
+        return
+    stats = df.select(
+        [
+            pl.col("sample_weight").min().alias("min"),
+            pl.col("sample_weight").median().alias("median"),
+            pl.col("sample_weight").max().alias("max"),
+            pl.col("sample_weight").mean().alias("mean"),
+        ]
+    ).row(0, named=True)
+    logger.info(
+        "Average-uniqueness sample weights: min=%.4f median=%.4f max=%.4f mean=%.4f",
+        stats["min"] or 0.0,
+        stats["median"] or 0.0,
+        stats["max"] or 0.0,
+        stats["mean"] or 0.0,
+    )
+
+
+def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
+    """Log label profitability diagnostics after trading costs.
+
+    Computes the percentage of Long labels (+1) and Short labels (-1) that
+    would have been profitable after accounting for spread, slippage, and
+    commission. The net return per bar is:
+
+        net_return = (close[i+horizon] - close[i+1]) / close[i] * leverage - costs
+
+    where ``costs`` expressed as a fraction of the notional value using
+    ``BacktestConfig`` cost parameters and ``DataConfig.tick_size``.
+
+    Long labels are profitable when ``net_return > 0``; Short labels are
+    profitable when ``net_return < 0`` (price moved opposite of the
+    long-oriented formula). If both classes fall below 60 % the labels are
+    flagged as economically questionable.
+
+    Args:
+        df: Full joined feature + OHLCV + label DataFrame (pre-censoring).
+        config: Application configuration.
+    """
+    required = {"close", "label", "timestamp"}
+    if not required.issubset(df.columns):
+        return
+
+    horizon = config.labels.horizon_bars
+    leverage = config.backtest.leverage
+    tick_size = config.data.tick_size
+    spread_ticks = config.backtest.spread_ticks
+    slippage_ticks = config.backtest.slippage_ticks
+    commission_per_lot = config.backtest.commission_per_lot
+    contract_size = config.data.contract_size
+
+    # Sort by timestamp so positional shifts are strictly chronological.
+    df = df.sort("timestamp")
+
+    # Fixed-cost numerator expressed in price terms so cost_frac = num / close[i]
+    # is a fraction of notional value that can be subtracted from the leveraged
+    # return expression.
+    cost_numerator = (spread_ticks + slippage_ticks) * tick_size + (
+        commission_per_lot * 2.0
+    ) / contract_size
+
+    # net_return = (close[i+horizon] - close[i+1]) / close[i] * leverage - costs
+    net_return_expr = (
+        pl.col("close").shift(-horizon) - pl.col("close").shift(-1)
+    ) / pl.col("close") * pl.lit(leverage) - (pl.lit(cost_numerator) / pl.col("close"))
+
+    result = df.with_columns(net_return_expr.alias("_net_return"))
+
+    # Exclude censored rows (-2) and rows where the shift produced a null
+    # (last ``horizon`` rows naturally have no valid close[i+horizon]).
+    result = result.filter(
+        (pl.col("label") != -2) & pl.col("_net_return").is_not_null()
+    )
+
+    if len(result) == 0:
+        logger.warning("Label profitability: no valid samples after filtering.")
+        return
+
+    long_pct = 0.0
+    short_pct = 0.0
+
+    for label_val, label_name, condition in [
+        (1, "Long", pl.col("_net_return") > 0),
+        (-1, "Short (net negative)", pl.col("_net_return") < 0),
+    ]:
+        class_df = result.filter(pl.col("label") == label_val)
+        total = len(class_df)
+        if total == 0:
+            logger.info("  Class %d (%s): no samples", label_val, label_name)
+            continue
+        profitable = class_df.filter(condition).height
+        pct = profitable / total * 100.0
+        logger.info(
+            "%% of %s labels that are profitable after costs: %.1f%% (%d/%d)",
+            label_name.split(" (")[0],
+            pct,
+            profitable,
+            total,
+        )
+        if label_val == 1:
+            long_pct = pct
+        elif label_val == -1:
+            short_pct = pct
+
+    # Hold class for completeness
+    hold_df = result.filter(pl.col("label") == 0)
+    hold_total = len(hold_df)
+    if hold_total > 0:
+        hold_up = hold_df.filter(pl.col("_net_return") > 0).height
+        hold_down = hold_df.filter(pl.col("_net_return") < 0).height
+        logger.info(
+            "  Class 0 (Hold): %d samples (net pos: %d, net neg: %d)",
+            hold_total,
+            hold_up,
+            hold_down,
+        )
+
+    if long_pct < 60.0 and short_pct < 60.0:
+        logger.warning(
+            "LABEL PROFITABILITY LOW: Long %.1f%%, Short %.1f%% -- "
+            "labels may not be economically useful after trading costs",
+            long_pct,
+            short_pct,
+        )

@@ -19,9 +19,7 @@
 - [x] **GRU feature extractor** — 2-layer GRU, 32 hidden units, 48-bar sequences (`src/thesis/gru.py`)
 - [x] **LightGBM classifier** — Tuned hyperparameters with class weight balancing (`src/thesis/model.py`)
 - [x] **Hybrid training pipeline** — GRU hidden states + static features → LightGBM (`src/thesis/pipeline.py`)
-- [x] **Stacking ensemble** — Multi-window base models + meta-model for final predictions (`src/thesis/pipeline.py`)
-- [x] **SHAP feature importance** — Interpretability analysis of the hybrid model (`src/thesis/model.py`)
-- [x] **Optuna hyperparameter search** — Integrated auto-tuning with `optuna_trials` and `optuna_timeout` config options
+
 
 ### Evaluation
 
@@ -102,13 +100,13 @@
 | Category          | Completed | Pending | Total |
 |-------------------|-----------|---------|-------|
 | Core Pipeline     | 5         | 0       | 5     |
-| Models            | 6         | 4       | 10    |
+| Models            | 3         | 4       | 7     |
 | Evaluation        | 7         | 5       | 12    |
 | Visualization     | 6         | 0       | 6     |
 | Infrastructure    | 9         | 0       | 9     |
 | Documentation     | 7         | 0       | 7     |
 | Operational       | 0         | 3       | 3     |
 | Research          | 0         | 3       | 3     |
-| **Total**         | **40**    | **15**  | **55**|
+| **Total**         | **37**    | **15**  | **52**|
 
-> **Overall: 73% complete** — Core research pipeline is fully functional. Remaining items are enhancements and production features.
+> **Overall: 71% complete** — Core research pipeline is fully functional. Remaining items are enhancements and production features.

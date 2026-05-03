@@ -10,10 +10,16 @@ end_date = "2026-03-31"
 tick_size = 0.01
 contract_size = 100
 
-# ── Splitting (static mode only) ──────────────────────────────────────
-# Only used when validation.method = "static". Default is walk-forward
-# (sliding-window), so these fields are inactive unless you switch method.
-# [splitting] section is intentionally omitted; defaults live in config.py.
+# ── Split manifest / static mode ranges ───────────────────────────────
+# Sliding walk-forward still uses bar windows below. These ranges document the
+# thesis evaluation period and drive static split mode/session metadata.
+[splitting]
+train_start = "2018-01-01"
+train_end = "2022-12-31 23:59:59"
+val_start = "2023-01-01"
+val_end = "2023-12-31 23:59:59"
+test_start = "2024-01-01"
+test_end = "2026-03-31 23:59:59"
 
 [validation]
 method = "sliding"
@@ -23,7 +29,6 @@ step_bars = 4380
 purge_bars = 25
 embargo_bars = 50
 min_train_bars = 10000
-wf_optuna_trials = 0        # fixed params: faster and more reproducible
 
 [features]
 rsi_period = 14
@@ -62,13 +67,22 @@ static_feature_cols = [
 ]
 
 [labels]
-atr_tp_multiplier = 2.0
-atr_sl_multiplier = 1.0
+# 2xATR barriers (~$40-50 move) provide margin above round-trip costs ($~2.40)
+atr_tp_multiplier = 2.0  # widened for better signal-to-noise vs trading costs
+atr_sl_multiplier = 2.0  # symmetric for balanced labels
 horizon_bars = 24
 
 [model]
-architecture = "hybrid"    # "stacking" mode is experimental — not recommended for thesis defense
-use_optuna = false
+# Architecture options:
+#   "static"  = LightGBM on technical/static features only. Fast baseline.
+#   "hybrid"  = GRU sequence features + static features -> LightGBM. Main model.
+# Rule: run "static" first; keep "hybrid" only if it clearly beats static.
+architecture = "hybrid"
+# Objective: "multiclass" (3-class: Short/Hold/Long) or "regression" (continuous returns).
+# Regression directly optimizes P&L: target = (close[i+horizon] - close[i]) / close[i],
+# GRU trains with MSE loss, LightGBM is a regressor, predictions thresholded at 0.
+objective = "multiclass"
+static_expanded = false
 num_leaves = 31
 max_depth = 6
 learning_rate = 0.02
@@ -80,7 +94,8 @@ reg_lambda = 5.0
 early_stopping_rounds = 40
 
 [gru]
-feature_cols = ["log_returns", "return_1h", "return_4h", "atr_14", "close_vs_ema_34", "ema34_vs_ema89", "price_position_20", "candle_body_ratio"]
+feature_cols = ["log_returns", "return_1h", "return_4h", "atr_14", "close_vs_ema_34", "ema34_vs_ema89", "price_position_20", "candle_body_ratio", "macd_hist", "rsi_14", "atr_percentile", "trend_strength", "volume_zscore_20"]
+input_size = 13
 hidden_size = 64
 num_layers = 2
 sequence_length = 48
@@ -90,19 +105,23 @@ batch_size = 256
 epochs = 50
 patience = 15
 min_epochs = 5
+contrastive_pretrain_epochs = 10
+temperature_scaling = false
+pca_components = 16
 
+# Must match [labels] atr multipliers for barrier alignment
 [backtest]
 initial_capital = 10000.0
 leverage = 10
 spread_ticks = 35
 slippage_ticks = 5
 commission_per_lot = 10.0
-atr_stop_multiplier = 1.0
+atr_stop_multiplier = 2.0
 atr_tp_multiplier = 2.0
 lots_per_trade = 0.1
-min_lots = 0.05
-max_lots = 0.1
-confidence_threshold = 0.55
+min_lots = 0.01
+max_lots = 0.5
+confidence_threshold = 0.5
 max_drawdown_cutoff = 0.30
 
 [workflow]

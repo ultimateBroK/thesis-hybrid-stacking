@@ -1,5 +1,10 @@
 """Interactive ECharts chart builders for thesis visualization.
 
+.. deprecated::
+    This is a supplementary visualization module. It is NOT required for the
+    core thesis pipeline.  The core pipeline (data → features → labels →
+    model → backtest → report) functions independently of dashboard/charts.
+
 Each function builds a pyecharts chart object that can be:
 - Rendered via st_pyecharts() in Streamlit (pyecharts charts)
 - Exported as HTML via chart.render("path.html")
@@ -122,17 +127,6 @@ def load_session_data(config: Config) -> dict[str, Any]:
             data["feature_importance"] = json.load(f)
     else:
         data["feature_importance"] = {}
-
-    # SHAP values (JSON)
-    if config.paths.session_dir:
-        shap_path = Path(config.paths.session_dir) / "reports" / "shap_values.json"
-    else:
-        shap_path = Path("results/shap_values.json")
-    if shap_path.exists():
-        with open(shap_path) as f:
-            data["shap_values"] = json.load(f)
-    else:
-        data["shap_values"] = None
 
     logger.info("Session data loaded from %s", config.paths.session_dir or "default")
     return data
@@ -741,81 +735,6 @@ def build_feature_importance_chart(
     return chart
 
 
-def build_shap_chart(shap_data: dict, top_n: int = 20) -> Bar:
-    """Build a stacked horizontal SHAP-importance chart by class.
-
-    Args:
-        shap_data: SHAP payload containing feature names, class names, and
-            mean absolute SHAP arrays.
-        top_n: Number of top features to display.
-
-    Returns:
-        A pyecharts ``Bar`` chart showing class-wise mean |SHAP| values, or an
-        empty chart when SHAP input is incomplete.
-    """
-    features = shap_data.get("features", [])
-    class_names = shap_data.get("class_names", ["Short", "Hold", "Long"])
-    mean_abs_shap = shap_data.get("mean_abs_shap", [])
-
-    if not features or not mean_abs_shap:
-        return Bar()
-
-    # Validate that SHAP array lengths match feature count
-    for cls_idx, cls_vals in enumerate(mean_abs_shap):
-        if len(cls_vals) != len(features):
-            logger.warning(
-                "SHAP class %d has %d values but %d features — skipping chart",
-                cls_idx,
-                len(cls_vals),
-                len(features),
-            )
-            return Bar()
-
-    # Compute total importance per feature for sorting
-    totals = [
-        sum(cls_vals[i] for cls_vals in mean_abs_shap) for i in range(len(features))
-    ]
-    sorted_indices = sorted(
-        range(len(features)), key=lambda i: totals[i], reverse=True
-    )[:top_n]
-    sorted_indices = sorted_indices[
-        ::-1
-    ]  # Reverse for horizontal bar (bottom = highest)
-
-    sorted_features = [features[i] for i in sorted_indices]
-    class_colors = [COLORS["short"], COLORS["flat"], COLORS["long"]]
-
-    chart = Bar(init_opts=opts.InitOpts(height="600px"))
-    chart.add_xaxis(sorted_features)
-
-    for cls_idx, cls_name in enumerate(class_names):
-        if cls_idx < len(mean_abs_shap):
-            cls_vals = mean_abs_shap[cls_idx]
-            y_data = [round(cls_vals[i], 4) for i in sorted_indices]
-        else:
-            y_data = [0] * len(sorted_features)
-        chart.add_yaxis(
-            series_name=cls_name,
-            y_axis=y_data,
-            stack="shap",
-            label_opts=opts.LabelOpts(is_show=False),
-            itemstyle_opts=opts.ItemStyleOpts(
-                color=class_colors[cls_idx]
-                if cls_idx < len(class_colors)
-                else COLORS["primary"]
-            ),
-        )
-
-    chart.reversal_axis().set_global_opts(
-        title_opts=opts.TitleOpts(title="SHAP Feature Importance by Class"),
-        xaxis_opts=opts.AxisOpts(name="Mean |SHAP Value|"),
-        yaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(font_size=9)),
-        tooltip_opts=opts.TooltipOpts(trigger="axis"),
-        legend_opts=opts.LegendOpts(),
-    )
-    return chart
-
-
 # =============================================================================
 # Backtest Charts (equity, drawdown, PnL, monthly returns, rolling Sharpe)
 # =============================================================================
@@ -1249,7 +1168,6 @@ __all__ = [
     "build_confusion_matrix_chart",
     "build_confidence_distribution_chart",
     "build_feature_importance_chart",
-    "build_shap_chart",
     # Backtest charts
     "build_equity_drawdown_chart",
     "build_pnl_histogram_chart",

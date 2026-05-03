@@ -11,8 +11,10 @@ Public API::
         prepare_sequences,
         train_gru,
         extract_hidden_states,
+        predict_gru_proba,
         save_gru_model,
         load_gru_model,
+        load_gru_classifier,
     )
 """
 
@@ -227,12 +229,18 @@ class FocalLoss(nn.Module):
         else:
             self.alpha = None
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        sample_weight: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """Compute focal loss.
 
         Args:
             logits: ``(N, C)`` raw scores.
             targets: ``(N,)`` integer class labels.
+            sample_weight: Optional per-sample weights aligned to ``targets``.
 
         Returns:
             Scalar loss tensor.
@@ -257,7 +265,45 @@ class FocalLoss(nn.Module):
             alpha_t = 1.0
 
         loss = alpha_t * focal_weight * ce_loss
+        if sample_weight is not None:
+            loss = loss * sample_weight.to(logits.device).float()
         return loss.mean()
+
+
+def _nt_xent_loss(
+    z1: torch.Tensor, z2: torch.Tensor, temperature: float = 0.1
+) -> torch.Tensor:
+    """NT-Xent (InfoNCE) contrastive loss with cosine similarity.
+
+    Computes the normalized temperature-scaled cross-entropy loss
+    between two views of each sample. Each anchor in view 1 is
+    paired with the corresponding sample in view 2 as a positive,
+    while all other samples in the batch serve as negatives.
+
+    Args:
+        z1: First view embeddings, shape ``(N, D)``.
+        z2: Second view embeddings, shape ``(N, D)``.
+        temperature: Temperature scaling parameter (lower = harder
+            positives, more uniform distribution). Default 0.1.
+
+    Returns:
+        Scalar loss tensor.
+    """
+    z1 = F.normalize(z1, dim=1)
+    z2 = F.normalize(z2, dim=1)
+
+    N = z1.shape[0]
+    z = torch.cat([z1, z2], dim=0)  # (2N, D)
+    sim = z @ z.T / temperature  # (2N, 2N)
+
+    # Mask self-similarity so each sample is not its own positive
+    mask = torch.eye(2 * N, dtype=torch.bool, device=z.device)
+    sim = sim.masked_fill(mask, float("-inf"))
+
+    # Positive pairs: (i, i+N) for i in [0,N) and (i+N, i) for i in [0,N)
+    labels = torch.cat([torch.arange(N, 2 * N), torch.arange(N)], dim=0).to(z.device)
+
+    return F.cross_entropy(sim, labels)
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +328,7 @@ class SequenceDataset(Dataset):
         self,
         sequences: np.ndarray,
         labels: np.ndarray | None = None,
+        sample_weights: np.ndarray | None = None,
         mean: np.ndarray | None = None,
         std: np.ndarray | None = None,
     ) -> None:
@@ -297,6 +344,7 @@ class SequenceDataset(Dataset):
                 n_features)``.  Standardized and stored as a float tensor.
             labels: Optional 1D array of labels with length ``n_samples``.
                 Stored internally as a long tensor copy when provided.
+            sample_weights: Optional 1D array of per-sample training weights.
             mean: Optional per-feature mean array (shape ``(1, 1, n_features)``)
                 from the training set.  Computed from ``sequences`` when ``None``.
             std: Optional per-feature std array (shape ``(1, 1, n_features)``)
@@ -314,8 +362,17 @@ class SequenceDataset(Dataset):
             self.std = sequences.std(axis=(0, 1), keepdims=True) + 1e-8
         standardized = (sequences - self.mean) / self.std
         self.sequences = torch.from_numpy(standardized.copy()).float()
-        self.labels = (
-            torch.from_numpy(labels.copy()).long() if labels is not None else None
+        if labels is not None:
+            if labels.dtype.kind == "f":
+                self.labels = torch.from_numpy(labels.copy()).float()
+            else:
+                self.labels = torch.from_numpy(labels.copy()).long()
+        else:
+            self.labels = None
+        self.sample_weights = (
+            torch.from_numpy(sample_weights.copy()).float()
+            if sample_weights is not None
+            else None
         )
 
     def __len__(self) -> int:
@@ -326,7 +383,7 @@ class SequenceDataset(Dataset):
         """
         return len(self.sequences)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor | None]:
+    def __getitem__(self, idx: int) -> tuple:
         """Retrieve a single sequence sample.
 
         Args:
@@ -337,6 +394,8 @@ class SequenceDataset(Dataset):
             labels were not provided.
         """
         if self.labels is not None:
+            if self.sample_weights is not None:
+                return self.sequences[idx], self.labels[idx], self.sample_weights[idx]
             return self.sequences[idx], self.labels[idx]
         return self.sequences[idx], None
 
@@ -421,6 +480,15 @@ def _extract_labels(
     return df[label_col].to_numpy()[sequence_length - 1 :]
 
 
+def _extract_sample_weights(
+    df: pl.DataFrame, sequence_length: int
+) -> np.ndarray | None:
+    """Extract average-uniqueness weights aligned to sequence end indices."""
+    if "sample_weight" not in df.columns:
+        return None
+    return df["sample_weight"].to_numpy()[sequence_length - 1 :].astype(np.float32)
+
+
 def _identify_static_cols(
     df: pl.DataFrame, gru_cols: list[str], exclude_cols: frozenset[str], label_col: str
 ) -> list[str]:
@@ -496,7 +564,7 @@ def _build_model_and_classifier(
     config: Config,
     input_size: int | None = None,
 ) -> tuple[GRUExtractor, nn.Linear]:
-    """Build GRU model and classification head.
+    """Build GRU model and classification/regression head.
 
     Device placement is handled externally (Accelerate or manual .to()).
 
@@ -506,7 +574,8 @@ def _build_model_and_classifier(
             falls back to ``config.gru.input_size``.
 
     Returns:
-        Tuple of (GRUExtractor, nn.Linear classifier).
+        Tuple of (GRUExtractor, nn.Linear) where the linear head outputs
+        3 logits for multiclass or 1 value for regression.
     """
     gru_cfg = config.gru
     model = GRUExtractor(
@@ -516,15 +585,20 @@ def _build_model_and_classifier(
         dropout=gru_cfg.dropout,
     )
 
-    num_classes = config.labels.num_classes
-    classifier = nn.Linear(gru_cfg.hidden_size, num_classes)
+    if config.model.objective == "regression":
+        output_size = 1
+    else:
+        output_size = config.labels.num_classes
+
+    classifier = nn.Linear(gru_cfg.hidden_size, output_size)
 
     total_params = sum(p.numel() for p in model.parameters())
     logger.info(
-        "GRU: %d params, %d layers, hidden=%d",
+        "GRU: %d params, %d layers, hidden=%d, output=%d",
         total_params,
         gru_cfg.num_layers,
         gru_cfg.hidden_size,
+        output_size,
     )
     return model, classifier
 
@@ -533,10 +607,11 @@ def _train_epoch(
     model: GRUExtractor,
     classifier: nn.Linear,
     train_loader: DataLoader,
-    criterion: FocalLoss,
+    criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     accelerator: Any | None = None,
+    is_regression: bool = False,
 ) -> tuple[float, float]:
     """Run one training epoch.
 
@@ -548,31 +623,48 @@ def _train_epoch(
 
     Args:
         model: GRU feature extractor.
-        classifier: Linear classification head.
+        classifier: Linear classification/regression head.
         train_loader: Training data loader.
-        criterion: Loss function.
+        criterion: Loss function (FocalLoss for multiclass, MSELoss for regression).
         optimizer: Optimizer.
         device: Target device (unused when accelerator handles placement).
         accelerator: Optional Accelerate accelerator instance.
+        is_regression: If True, treats target as continuous, reports loss only.
 
     Returns:
-        Tuple of (average_loss, accuracy).
+        Tuple of (average_loss, accuracy_or_mae). For regression, second value is
+        mean absolute error; for classification, it's accuracy.
     """
     model.train()
     classifier.train()
     train_loss = 0.0
-    train_correct = 0
+    train_metric_sum = 0.0  # classification accuracy or regression MAE
     train_total = 0
 
-    for batch_x, batch_y in train_loader:
+    for batch in train_loader:
+        if len(batch) == 3:
+            batch_x, batch_y, batch_w = batch
+        else:
+            batch_x, batch_y = batch
+            batch_w = None
         if accelerator is None:
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
+            if batch_w is not None:
+                batch_w = batch_w.to(device)
 
         hidden = model(batch_x)
-        logits = classifier(hidden)
+        output = classifier(hidden)
 
-        loss = criterion(logits, batch_y)
+        if is_regression:
+            preds = output.squeeze(-1)  # (batch,) continuous
+            loss = criterion(preds, batch_y)
+            mae = (preds - batch_y).abs().sum().item()
+            train_metric_sum += mae
+        else:
+            loss = criterion(output, batch_y, batch_w)
+            train_metric_sum += (output.argmax(dim=1) == batch_y).sum().item()
+
         optimizer.zero_grad()
 
         if accelerator is not None:
@@ -589,19 +681,22 @@ def _train_epoch(
         optimizer.step()
 
         train_loss += loss.item() * len(batch_x)
-        train_correct += (logits.argmax(dim=1) == batch_y).sum().item()
         train_total += len(batch_y)
 
-    return train_loss / train_total, train_correct / train_total
+    return (
+        train_loss / train_total,
+        train_metric_sum / train_total if train_total > 0 else 0.0,
+    )
 
 
 def _validate_epoch(
     model: GRUExtractor,
     classifier: nn.Linear,
     val_loader: DataLoader,
-    criterion: FocalLoss,
+    criterion: nn.Module,
     device: torch.device,
     accelerator: Any | None = None,
+    is_regression: bool = False,
 ) -> tuple[float, float]:
     """Run one validation epoch.
 
@@ -611,19 +706,20 @@ def _validate_epoch(
 
     Args:
         model: GRU feature extractor.
-        classifier: Linear classification head.
+        classifier: Linear classification/regression head.
         val_loader: Validation data loader.
-        criterion: Loss function.
+        criterion: Loss function (FocalLoss or MSELoss).
         device: Target device (unused when accelerator handles placement).
         accelerator: Optional Accelerate accelerator instance.
+        is_regression: If True, treats target as continuous.
 
     Returns:
-        Tuple of (average_loss, accuracy).
+        Tuple of (average_loss, accuracy_or_mae).
     """
     model.eval()
     classifier.eval()
     val_loss = 0.0
-    val_correct = 0
+    val_metric_sum = 0.0
     val_total = 0
 
     with torch.no_grad():
@@ -633,14 +729,247 @@ def _validate_epoch(
                 batch_y = batch_y.to(device)
 
             hidden = model(batch_x)
-            logits = classifier(hidden)
+            output = classifier(hidden)
 
-            loss = criterion(logits, batch_y)
+            if is_regression:
+                preds = output.squeeze(-1)
+                loss = criterion(preds, batch_y)
+                val_metric_sum += (preds - batch_y).abs().sum().item()
+            else:
+                loss = criterion(output, batch_y)
+                val_metric_sum += (output.argmax(dim=1) == batch_y).sum().item()
+
             val_loss += loss.item() * len(batch_x)
-            val_correct += (logits.argmax(dim=1) == batch_y).sum().item()
             val_total += len(batch_y)
 
-    return val_loss / val_total, val_correct / val_total
+    return val_loss / val_total, val_metric_sum / val_total if val_total > 0 else 0.0
+
+
+def _pretrain_contrastive(
+    model: GRUExtractor,
+    train_loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    accelerator: Any,
+    epochs: int,
+    temperature: float = 0.1,
+) -> list[float]:
+    """Pretrain GRU encoder with contrastive InfoNCE loss.
+
+    Adjacent windows in the batch form positive pairs (temporal
+    proximity); all other samples serve as negatives. Uses NT-Xent
+    loss with cosine similarity on GRU hidden states. This forces
+    the GRU to learn meaningful temporal representations before
+    fine-tuning for the downstream classification/regression task.
+
+    Args:
+        model: GRU feature extractor (classifier not needed).
+        train_loader: Non-shuffled DataLoader preserving temporal
+            adjacency for positive pair construction.
+        optimizer: Optimizer for GRU parameters only.
+        accelerator: Accelerate accelerator instance.
+        epochs: Number of contrastive pretraining epochs.
+        temperature: NT-Xent temperature (default 0.1).
+
+    Returns:
+        List of per-epoch average contrastive losses.
+
+    Raises:
+        ValueError: If ``epochs`` is less than 1.
+    """
+    if epochs < 1:
+        raise ValueError("contrastive pretrain epochs must be >= 1")
+
+    history: list[float] = []
+
+    for epoch in range(epochs):
+        model.train()
+        epoch_loss = 0.0
+        epoch_samples = 0
+
+        for batch in train_loader:
+            if len(batch) == 3:
+                batch_x, _, _ = batch
+            else:
+                batch_x, _ = batch
+
+            N = batch_x.shape[0]
+            # NT-Xent requires even batch size for symmetric pairing
+            if N % 2 != 0:
+                batch_x = batch_x[:-1]
+                N -= 1
+            if N < 2:
+                continue
+
+            # Get hidden states from GRU (no classifier)
+            hidden = model(batch_x)  # (N, hidden_dim)
+
+            # Split into two views: even indices (adjacent anchors)
+            # paired with odd indices (temporal neighbours)
+            z1 = hidden[0::2]  # (N/2, D)
+            z2 = hidden[1::2]  # (N/2, D)
+
+            loss = _nt_xent_loss(z1, z2, temperature)
+
+            optimizer.zero_grad()
+            accelerator.backward(loss)
+            accelerator.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            epoch_loss += loss.item() * N
+            epoch_samples += N
+
+        avg_loss = epoch_loss / epoch_samples if epoch_samples > 0 else 0.0
+        history.append(avg_loss)
+        logger.info(
+            "Contrastive pretrain epoch %d/%d: loss=%.4f",
+            epoch + 1,
+            epochs,
+            avg_loss,
+        )
+
+    logger.info(
+        "Contrastive pretraining finished: losses=%s",
+        [round(x, 4) for x in history],
+    )
+    return history
+
+
+# ---------------------------------------------------------------------------
+# Temperature scaling calibration
+# ---------------------------------------------------------------------------
+
+
+def _compute_ece(probs: torch.Tensor, labels: torch.Tensor, n_bins: int = 10) -> float:
+    """Compute Expected Calibration Error (ECE).
+
+    Partitions predictions into ``n_bins`` equal-width confidence bins
+    and measures the absolute difference between average confidence
+    and accuracy within each bin, weighted by bin size.
+
+    Args:
+        probs: Softmax probabilities with shape ``(N, C)``.
+        labels: Ground-truth class indices with shape ``(N,)``.
+        n_bins: Number of confidence bins (default 10).
+
+    Returns:
+        ECE value (0.0 = perfectly calibrated).
+    """
+    confidences, predictions = probs.max(dim=1)
+    accuracies = (predictions == labels).float()
+
+    ece = 0.0
+    for i in range(n_bins):
+        bin_lower = i / n_bins
+        bin_upper = (i + 1) / n_bins
+        in_bin = (confidences > bin_lower) & (confidences <= bin_upper)
+        bin_size = in_bin.sum().item()
+        if bin_size > 0:
+            bin_conf = confidences[in_bin].mean().item()
+            bin_acc = accuracies[in_bin].mean().item()
+            ece += (bin_size / len(probs)) * abs(bin_conf - bin_acc)
+
+    return ece
+
+
+def _calibrate_model(
+    model: GRUExtractor,
+    classifier: nn.Linear,
+    val_loader: DataLoader,
+    device: torch.device,
+    accelerator: Any | None = None,
+) -> float:
+    """Calibrate classifier probabilities via temperature scaling.
+
+    Collects logits from the validation set and optimizes a single
+    temperature parameter ``T`` to minimise cross-entropy, following
+    Guo et al. (2017) *"On Calibration of Modern Neural Networks"*.
+
+    After calibration the predicted probabilities are computed as
+    ``softmax(logits / T)`` instead of ``softmax(logits)``.
+
+    **Interpretation**:
+        - ``T > 1.0`` → model was overconfident (softens probabilities).
+        - ``T < 1.0`` → model was underconfident (sharpens probabilities).
+        - ``T ≈ 1.0`` → model was already well-calibrated.
+
+    Args:
+        model: Trained GRU feature extractor (unwrapped, in eval mode).
+        classifier: Trained classification head (unwrapped, in eval mode).
+        val_loader: Validation data loader yielding ``(x, y)`` batches.
+        device: Computation device.
+        accelerator: Optional Accelerate accelerator instance.  When
+            provided, device placement is handled automatically.
+
+    Returns:
+        Optimised temperature value as a Python float.
+    """
+    model.eval()
+    classifier.eval()
+
+    # Collect all logits and labels from the validation set.
+    all_logits: list[torch.Tensor] = []
+    all_labels: list[torch.Tensor] = []
+
+    with torch.no_grad():
+        for batch_x, batch_y in val_loader:
+            if accelerator is None:
+                batch_x = batch_x.to(device)
+                batch_y = batch_y.to(device)
+            hidden = model(batch_x)
+            logits = classifier(hidden)
+            all_logits.append(logits.cpu())
+            all_labels.append(batch_y.cpu())
+
+    logits_tensor = torch.cat(all_logits, dim=0)
+    labels_tensor = torch.cat(all_labels, dim=0)
+
+    n_samples, n_classes = logits_tensor.shape
+    logger.info(
+        "Temperature scaling: %d val samples, %d classes",
+        n_samples,
+        n_classes,
+    )
+
+    # Optimise the single temperature parameter with LBFGS.
+    # This is a 1-D convex problem — LBFGS converges in a few iterations.
+    temperature_param = nn.Parameter(torch.ones(1))
+
+    def _closure() -> torch.Tensor:
+        optimizer.zero_grad()  # type: ignore[name-defined]  # noqa: F821
+        scaled_logits = logits_tensor / temperature_param
+        loss = F.cross_entropy(scaled_logits, labels_tensor)
+        loss.backward()
+        return loss
+
+    optimizer = torch.optim.LBFGS(
+        [temperature_param],
+        lr=0.01,
+        max_iter=100,
+        line_search_fn="strong_wolfe",
+    )
+    optimizer.step(_closure)
+
+    T = float(temperature_param.item())
+
+    # Log pre- and post-calibration NLL and ECE.
+    with torch.no_grad():
+        pre_probs = torch.softmax(logits_tensor, dim=1)
+        post_probs = torch.softmax(logits_tensor / T, dim=1)
+        pre_nll = F.cross_entropy(logits_tensor, labels_tensor).item()
+        post_nll = F.cross_entropy(logits_tensor / T, labels_tensor).item()
+        pre_ece = _compute_ece(pre_probs, labels_tensor)
+        post_ece = _compute_ece(post_probs, labels_tensor)
+
+    logger.info(
+        "Temperature scaling: T=%.4f, NLL %.4f→%.4f, ECE %.4f→%.4f",
+        T,
+        pre_nll,
+        post_nll,
+        pre_ece,
+        post_ece,
+    )
+
+    return T
 
 
 # ---------------------------------------------------------------------------
@@ -652,6 +981,7 @@ def train_gru(
     config: Config,
     train_df: pl.DataFrame,
     val_df: pl.DataFrame,
+    window_index: int = 0,
 ) -> tuple[
     GRUExtractor,
     nn.Linear,
@@ -674,6 +1004,10 @@ def train_gru(
         config: Application configuration containing GRU and labeling settings.
         train_df: Training split as a time-series DataFrame.
         val_df: Validation split as a time-series DataFrame.
+        window_index: Walk-forward window index used to diversify the random
+            seed per window.  When > 0, the effective seed becomes
+            ``config.workflow.random_seed + window_index`` so each window
+            starts from a different weight initialisation.
 
     Returns:
         A tuple containing ``(model, classifier, train_hidden, val_hidden,
@@ -685,6 +1019,8 @@ def train_gru(
     gru_cfg = config.gru
     gru_cols = list(config.gru.feature_cols)
     seed = config.workflow.random_seed
+    is_regression = config.model.objective == "regression"
+    label_col = "regression_target" if is_regression else "label"
 
     # Dynamically filter GRU columns to those surviving correlation filtering.
     # ``prepare_sequences`` adds ``log_returns`` on-the-fly via
@@ -706,9 +1042,11 @@ def train_gru(
         "GRU input: %d features (config had %d)", input_size, len(configured_set)
     )
 
-    # Set seeds for reproducibility
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+    # Set seeds for reproducibility — offset by window_index so each
+    # walk-forward window starts from a different weight initialisation,
+    # increasing ensemble diversity across windows.
+    torch.manual_seed(seed + window_index)
+    np.random.seed(seed + window_index)
 
     # Accelerate handles device placement, mixed precision, and multi-GPU.
     # fp16 is useful on CUDA, but on CPU it adds no value and can cause
@@ -718,11 +1056,12 @@ def train_gru(
 
     # Prepare sequences
     train_seq, train_labels, _ = prepare_sequences(
-        train_df, gru_cols, gru_cfg.sequence_length
+        train_df, gru_cols, gru_cfg.sequence_length, label_col=label_col
     )
     val_seq, val_labels, _ = prepare_sequences(
-        val_df, gru_cols, gru_cfg.sequence_length
+        val_df, gru_cols, gru_cfg.sequence_length, label_col=label_col
     )
+    train_sample_weights = _extract_sample_weights(train_df, gru_cfg.sequence_length)
 
     if train_seq.shape[0] == 0:
         raise ValueError(
@@ -739,14 +1078,22 @@ def train_gru(
             "Ensure val_df has >= sequence_length rows."
         )
 
-    # Remap labels from {-1, 0, 1} to {0, 1, 2} for PyTorch indexing
-    if train_labels is not None:
-        train_labels = (train_labels + 1).astype(np.int32)
-    if val_labels is not None:
-        val_labels = (val_labels + 1).astype(np.int32)
+    # Remap labels from {-1, 0, 1} to {0, 1, 2} for PyTorch indexing (multiclass only)
+    if is_regression:
+        if train_labels is not None:
+            train_labels = train_labels.astype(np.float32)
+        if val_labels is not None:
+            val_labels = val_labels.astype(np.float32)
+    else:
+        if train_labels is not None:
+            train_labels = (train_labels + 1).astype(np.int32)
+        if val_labels is not None:
+            val_labels = (val_labels + 1).astype(np.int32)
 
     # Create datasets & loaders — use training statistics for val to prevent leakage
-    train_dataset = SequenceDataset(train_seq, train_labels)
+    train_dataset = SequenceDataset(
+        train_seq, train_labels, sample_weights=train_sample_weights
+    )
     val_dataset = SequenceDataset(
         val_seq, val_labels, mean=train_dataset.mean, std=train_dataset.std
     )
@@ -789,6 +1136,35 @@ def train_gru(
         model, classifier, optimizer, train_loader, val_loader
     )
 
+    # Contrastive pretraining (opt-in — epochs=0 skips entirely)
+    if gru_cfg.contrastive_pretrain_epochs > 0:
+        logger.info(
+            "Starting contrastive pretraining for %d epoch(s)",
+            gru_cfg.contrastive_pretrain_epochs,
+        )
+
+        # Non-shuffled loader preserves temporal adjacency for pairing
+        pretrain_loader = DataLoader(
+            train_dataset,
+            batch_size=gru_cfg.batch_size,
+            shuffle=False,
+            drop_last=False,
+        )
+        pretrain_loader = accelerator.prepare(pretrain_loader)
+
+        pretrain_optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=gru_cfg.learning_rate,
+        )
+
+        _pretrain_contrastive(
+            model=model,
+            train_loader=pretrain_loader,
+            optimizer=pretrain_optimizer,
+            accelerator=accelerator,
+            epochs=gru_cfg.contrastive_pretrain_epochs,
+        )
+
     # LR scheduler: 3-epoch linear warmup → cosine annealing with warm restarts
     # (T_0=10, T_mult=2)
     warmup_epochs = 3
@@ -808,23 +1184,27 @@ def train_gru(
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _lr_lambda)
 
-    # Class-weighted Focal Loss to handle label imbalance. Build a full
-    # num_classes-length alpha vector so windows missing a class still train.
-    unique_classes = np.unique(train_labels)
-    class_weights_arr = compute_class_weight(
-        "balanced", classes=unique_classes, y=train_labels
-    )
-    class_weights_full = np.ones(config.labels.num_classes, dtype=np.float32)
-    for cls, weight in zip(unique_classes, class_weights_arr):
-        class_weights_full[int(cls)] = float(weight)
-    class_weights_tensor = torch.tensor(class_weights_full, dtype=torch.float32).to(
-        accelerator.device
-    )
-    criterion = FocalLoss(
-        gamma=gru_cfg.focal_loss_gamma,
-        alpha=class_weights_tensor,
-        num_classes=config.labels.num_classes,
-    )
+    # Loss function: FocalLoss for multiclass, MSELoss for regression
+    if is_regression:
+        criterion: nn.Module = nn.MSELoss()
+    else:
+        # Class-weighted Focal Loss to handle label imbalance. Build a full
+        # num_classes-length alpha vector so windows missing a class still train.
+        unique_classes = np.unique(train_labels)
+        class_weights_arr = compute_class_weight(
+            "balanced", classes=unique_classes, y=train_labels
+        )
+        class_weights_full = np.ones(config.labels.num_classes, dtype=np.float32)
+        for cls, weight in zip(unique_classes, class_weights_arr):
+            class_weights_full[int(cls)] = float(weight)
+        class_weights_tensor = torch.tensor(class_weights_full, dtype=torch.float32).to(
+            accelerator.device
+        )
+        criterion = FocalLoss(
+            gamma=gru_cfg.focal_loss_gamma,
+            alpha=class_weights_tensor,
+            num_classes=config.labels.num_classes,
+        )
 
     # Training loop with early stopping
     best_val_loss = float("inf")
@@ -834,6 +1214,9 @@ def train_gru(
     history: list[dict[str, float]] = []
     stage_start = time.perf_counter()
 
+    metric_label = "mae" if is_regression else "acc"
+    t_metric_label = "t_" + metric_label
+    v_metric_label = "v_" + metric_label
     progress = Progress(
         SpinnerColumn(),
         TextColumn("[bold blue]GRU training"),
@@ -841,10 +1224,10 @@ def train_gru(
         MofNCompleteColumn(),
         TextColumn("•"),
         TextColumn("[cyan]t_loss={task.fields[t_loss]:.4f}"),
-        TextColumn("[green]t_acc={task.fields[t_acc]:.3f}"),
+        TextColumn("[green]{}={{task.fields[t_metric]:.4f}}".format(t_metric_label)),
         TextColumn("•"),
         TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
-        TextColumn("[green]v_acc={task.fields[v_acc]:.3f}"),
+        TextColumn("[green]{}={{task.fields[v_metric]:.4f}}".format(v_metric_label)),
         TimeElapsedColumn(),
         transient=False,
         console=Console(stderr=True),
@@ -855,13 +1238,13 @@ def train_gru(
             "epochs",
             total=gru_cfg.epochs,
             t_loss=0.0,
-            t_acc=0.0,
+            t_metric=0.0,
             v_loss=0.0,
-            v_acc=0.0,
+            v_metric=0.0,
         )
 
         for epoch in range(gru_cfg.epochs):
-            train_loss, train_acc = _train_epoch(
+            train_loss, train_metric = _train_epoch(
                 model,
                 classifier,
                 train_loader,
@@ -869,14 +1252,16 @@ def train_gru(
                 optimizer,
                 device,
                 accelerator=accelerator,
+                is_regression=is_regression,
             )
-            val_loss, val_acc = _validate_epoch(
+            val_loss, val_metric = _validate_epoch(
                 model,
                 classifier,
                 val_loader,
                 criterion,
                 device,
                 accelerator=accelerator,
+                is_regression=is_regression,
             )
             scheduler.step()
 
@@ -884,9 +1269,9 @@ def train_gru(
                 {
                     "epoch": epoch + 1,
                     "train_loss": round(train_loss, 4),
-                    "train_acc": round(train_acc, 4),
+                    f"train_{metric_label}": round(train_metric, 4),
                     "val_loss": round(val_loss, 4),
-                    "val_acc": round(val_acc, 4),
+                    f"val_{metric_label}": round(val_metric, 4),
                 }
             )
 
@@ -894,9 +1279,9 @@ def train_gru(
                 task,
                 advance=1,
                 t_loss=train_loss,
-                t_acc=train_acc,
+                t_metric=train_metric,
                 v_loss=val_loss,
-                v_acc=val_acc,
+                v_metric=val_metric,
             )
 
             # Early stopping — enforce min_epochs before allowing patience
@@ -929,14 +1314,16 @@ def train_gru(
 
     # Summary
     total_time = time.perf_counter() - stage_start
-    best_val_acc = history[best_epoch - 1]["val_acc"] if history else 0.0
+    best_metric_key = f"val_{metric_label}"
+    best_val_metric = history[best_epoch - 1][best_metric_key] if history else 0.0
     logger.info(
-        "GRU done: %d/%d epochs, best=e%d v_loss=%.4f v_acc=%.3f (%.1fs)",
+        "GRU done: %d/%d epochs, best=e%d v_loss=%.4f v_%s=%.4f (%.1fs)",
         len(history),
         gru_cfg.epochs,
         best_epoch,
         best_val_loss,
-        best_val_acc,
+        metric_label,
+        best_val_metric,
         total_time,
     )
 
@@ -944,6 +1331,21 @@ def train_gru(
     if best_state is not None:
         accelerator.unwrap_model(model).load_state_dict(best_state["model"])
         accelerator.unwrap_model(classifier).load_state_dict(best_state["classifier"])
+
+    # Temperature scaling calibration (multiclass only — not applicable to regression)
+    temperature: float = 1.0
+    if not is_regression and gru_cfg.temperature_scaling:
+        unwrapped_model = accelerator.unwrap_model(model)
+        unwrapped_classifier = accelerator.unwrap_model(classifier)
+        temperature = _calibrate_model(
+            unwrapped_model,
+            unwrapped_classifier,
+            val_loader,
+            device,
+            accelerator=accelerator,
+        )
+        unwrapped_model.temperature = temperature  # type: ignore[attr-defined]
+        logger.info("Temperature T=%.4f stored on GRU model", temperature)
 
     # Extract hidden states for LightGBM (use unwrapped model)
     # Apply training-set standardization so inference matches what the model saw
@@ -1049,6 +1451,7 @@ def predict_gru_proba(
     device: torch.device | None = None,
     mean: np.ndarray | None = None,
     std: np.ndarray | None = None,
+    temperature: float | None = None,
 ) -> np.ndarray:
     """Predict class probabilities from a trained GRU backbone + classifier.
 
@@ -1061,12 +1464,20 @@ def predict_gru_proba(
             otherwise CPU.
         mean: Optional training-set feature mean for standardization.
         std: Optional training-set feature std for standardization.
+        temperature: Temperature scaling parameter for calibrated
+            probabilities.  When ``None``, the value is read from
+            ``model.temperature`` if available; otherwise ``T=1.0``
+            (no scaling) is used.
 
     Returns:
         Array of shape ``(n_samples, n_classes)`` with softmax probabilities.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Resolve temperature: explicit arg → model attribute → default 1.0.
+    if temperature is None:
+        temperature = getattr(model, "temperature", 1.0)
 
     model.eval()
     classifier.eval()
@@ -1083,6 +1494,8 @@ def predict_gru_proba(
             batch = all_sequences[i : i + batch_size].to(device)
             hidden = model(batch)
             logits = classifier(hidden)
+            if temperature != 1.0:
+                logits = logits / temperature
             probabilities.append(torch.softmax(logits, dim=1).cpu().numpy())
 
     return np.concatenate(probabilities, axis=0)
@@ -1100,6 +1513,7 @@ def save_gru_model(
     mean: np.ndarray | None = None,
     std: np.ndarray | None = None,
     classifier: nn.Linear | None = None,
+    temperature: float | None = None,
 ) -> None:
     """Persist GRU weights, architecture metadata, and normalization stats.
 
@@ -1114,6 +1528,9 @@ def save_gru_model(
             standardization, or ``None`` when not available.
         classifier: Optional trained classification head to persist alongside
             the GRU backbone for stacking inference.
+        temperature: Temperature scaling parameter from calibration.  When
+            ``None`` and the model has a ``temperature`` attribute, that value
+            is used automatically.
 
     Returns:
         None.
@@ -1123,6 +1540,10 @@ def save_gru_model(
 
     gru_cfg = config.gru
     raw_model = getattr(model, "_orig_mod", model)
+
+    # Auto-detect temperature from model attribute if not explicitly provided.
+    if temperature is None and hasattr(raw_model, "temperature"):
+        temperature = float(raw_model.temperature)
 
     # Use actual model input_size (may differ from config if correlation
     # filtering dropped some GRU features)
@@ -1143,6 +1564,8 @@ def save_gru_model(
         checkpoint["mean"] = mean
     if std is not None:
         checkpoint["std"] = std
+    if temperature is not None:
+        checkpoint["temperature"] = temperature
     torch.save(checkpoint, path)
     logger.info("GRU model saved: %s", path)
 
@@ -1175,6 +1598,10 @@ def load_gru_model(path: str | Path) -> tuple[GRUExtractor, dict[str, Any]]:
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
+
+    # Restore temperature scaling parameter if present in checkpoint.
+    if "temperature" in checkpoint:
+        model.temperature = float(checkpoint["temperature"])  # type: ignore[attr-defined]
 
     metadata = {k: v for k, v in checkpoint.items() if k != "model_state_dict"}
 

@@ -7,12 +7,11 @@
 ## What Does This Project Do?
 
 This project builds a reproducible **time-series classification pipeline** on
-gold (XAU/USD) 1-hour data. It supports **two architectures**:
+gold (XAU/USD) 1-hour data. It uses the **hybrid architecture**:
 
-1. **Hybrid** (default) — GRU hidden states + static features → LightGBM.
-2. **Stacking** — GRU and LightGBM as base learners → LightGBM meta-learner on OOF probabilities.
+GRU hidden states + static features → LightGBM.
 
-Both use **walk-forward sliding window validation** to produce out-of-fold predictions,
+It uses **walk-forward sliding window validation** to produce out-of-fold predictions,
 which are then backtested and reported.
 
 The primary output is an ML evaluation report. The backtest is included as an
@@ -122,7 +121,7 @@ Each window:
 5. **Builds the hybrid feature matrix** (GRU hidden states + static indicators).
 6. **Trains LightGBM** on the hybrid features. LightGBM validation is the last
    20% of the sequence-aligned outer train rows and is used for tree early
-   stopping or per-window Optuna.
+   stopping.
 7. **Predicts on the test slice** and collects as one OOF chunk.
 
 After all windows: OOF chunks are concatenated into a single prediction file
@@ -201,57 +200,6 @@ flowchart LR
 | GRU only | Captures time patterns | Misses indicator information |
 | LightGBM only | Good with indicators | No sense of time order |
 | **Hybrid** | **Captures both time + indicators** | More complex, slower to train |
-| **Stacking** | **Learns optimal combination from data** | Needs more folds, longer training |
-
----
-
-## Stacking Architecture (Alternative — Experimental)
-
-> ⚠️ **Experimental**: Stacking mode is experimental and not the default workflow.
-> The primary thesis pipeline uses **hybrid** mode. Do not use stacking for thesis
-> defense unless explicitly discussed with your advisor.
-
-When `model.architecture = "stacking"` is set in `config.toml`, the pipeline uses a
-**two-level ensemble** instead of the simpler hybrid concatenation:
-
-```mermaid
-flowchart TD
-    subgraph Base["Level 0 — Base Learners"]
-        GRU_B["GRU<br/>sequence features"] --> GRU_P["GRU OOF<br/>probabilities (3)"]
-        LGBM_B["LightGBM<br/>static features"] --> LGBM_P["LightGBM OOF<br/>probabilities (3)"]
-    end
-
-    GRU_P --> META_FEAT["Meta-Features<br/>6 probability columns"]
-    LGBM_P --> META_FEAT
-
-    META_FEAT --> META["Level 1 — Meta-Learner<br/>LightGBM"]
-    META --> PRED["Final Prediction<br/>Long / Flat / Short"]
-
-    style META fill:#D97706,color:#fff
-    style META_FEAT fill:#D97706,color:#fff
-```
-
-### How it works (per walk-forward window)
-
-1. **Train base learners independently:**
-   - **GRU base:** Trains on sequence features, produces 3-class probabilities on the test slice.
-   - **LightGBM base:** Trains on static features, produces 3-class probabilities on the test slice.
-2. **Collect base OOF probabilities** from both learners (`gru_pred_proba_class_*` + `lgbm_pred_proba_class_*`).
-3. **Warm-up period:** The meta-learner requires a minimum number of prior folds before it starts training (`stacking.min_meta_train_folds`, default 1).
-4. **Train meta-learner** (LightGBM) on the concatenated prior-fold base probabilities.
-5. **Generate final predictions** from the meta-learner using the current fold's base probabilities.
-
-After all windows, the pipeline can optionally **final-refit** both base models and the meta-learner
-on the full dataset for deployment (`stacking.final_refit = true`).
-
-Stacking-specific artifacts (in addition to the standard session output):
-
-| Artifact | Description |
-|----------|-------------|
-| `predictions/base_oof_predictions.parquet` | All base-learner OOF probabilities |
-| `models/stacking_bundle.joblib` | Deployable bundle with all model paths and config |
-| `models/lgbm_base_model.pkl` | Final-refit LightGBM base model |
-| `models/training_history.json` | Training details for base and meta models |
 
 ---
 
@@ -265,7 +213,6 @@ Stacking-specific artifacts (in addition to the standard session output):
 | **No bidirectional GRU** | Prevents look-ahead bias (seeing future data) |
 | **Small attention pooling** | Summarizes the 48-bar GRU output into one fixed-size embedding |
 | **LightGBM as the decision maker** | Better interpretability, handles mixed feature types |
-| **Stacking as opt-in alternative (experimental)** | Learns optimal base-model weighting from data; needs more folds; not recommended for thesis defense |
 | **Polars instead of Pandas** | 10-50x faster for time-series operations |
 | **Session-based output folders** | Each run is isolated — easy to compare experiments |
 | **Correlation filtering on train only** | Prevents data leakage from test set |
@@ -294,7 +241,7 @@ thesis/
 │   ├── labels.py            # Triple-barrier labeling (Stage 2)
 │   ├── validation.py        # Walk-forward window generation + static split
 │   ├── gru.py               # GRU feature extractor (train, predict, save)
-│   ├── model.py             # LightGBM training (fixed params + Optuna)
+│   ├── model.py             # LightGBM training (fixed params)
 │   ├── backtest.py          # CFD trading simulation (Stage 5)
 │   ├── report.py            # Report + chart generation (Stage 5)
 │   ├── charts.py            # Interactive ECharts (Streamlit)
@@ -422,16 +369,6 @@ flowchart TD
     SESSION --> LOG["logs/<br/>pipeline.log"]
 
     style SESSION fill:#2563EB,color:#fff
-```
-
-**Additional stacking artifacts** (when `model.architecture = "stacking"`):
-
-```mermaid
-flowchart TD
-    SESSION["Session folder"] --> STACK_PRED["predictions/<br/>base_oof_predictions.parquet"]
-    SESSION --> STACK_MOD["models/<br/>stacking_bundle.joblib<br/>lgbm_base_model.pkl<br/>training_history.json"]
-
-    style SESSION fill:#7C3AED,color:#fff
 ```
 
 This means:

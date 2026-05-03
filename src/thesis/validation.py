@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+import numpy as np
 import polars as pl
 
 logger = logging.getLogger("thesis.validation")
@@ -54,6 +55,7 @@ def generate_windows(
     purge_bars: int = 25,
     embargo_bars: int = 50,
     min_train_bars: int = 5_000,
+    event_end: np.ndarray | None = None,
 ) -> list[WalkForwardWindow]:
     """Create bar-count walk-forward windows across *total_bars* observations.
 
@@ -85,14 +87,24 @@ def generate_windows(
         raw_train_end = test_start
         train_start = max(0, raw_train_end - train_window_bars)
 
-        window = apply_purge_embargo(
-            train_start=train_start,
-            raw_train_end=raw_train_end,
-            test_start=test_start,
-            test_end=test_end,
-            purge_bars=purge_bars,
-            embargo_bars=embargo_bars,
-        )
+        if event_end is None:
+            window = apply_purge_embargo(
+                train_start=train_start,
+                raw_train_end=raw_train_end,
+                test_start=test_start,
+                test_end=test_end,
+                purge_bars=purge_bars,
+                embargo_bars=embargo_bars,
+            )
+        else:
+            window = apply_event_time_purge(
+                train_start=train_start,
+                raw_train_end=raw_train_end,
+                test_start=test_start,
+                test_end=test_end,
+                event_end=event_end,
+                embargo_bars=embargo_bars,
+            )
 
         if (
             window is not None
@@ -102,7 +114,8 @@ def generate_windows(
 
         test_start += step_bars
 
-    logger.info("Generated %d bar-based walk-forward window(s)", len(windows))
+    purge_mode = "event-time" if event_end is not None else "fixed-bar"
+    logger.info("Generated %d %s walk-forward window(s)", len(windows), purge_mode)
     return windows
 
 
@@ -148,6 +161,13 @@ def apply_purge_embargo(
     adjusted_test_start = test_start + purge_bars + embargo_bars
 
     if adjusted_train_end <= train_start:
+        if raw_train_end == train_start:
+            logger.debug(
+                "Skipping pre-training window (start=%d, end=%d)",
+                train_start,
+                raw_train_end,
+            )
+            return None
         logger.warning(
             "Purge exhausted training period (start=%d, end=%d, purge=%d)",
             train_start,
@@ -162,6 +182,66 @@ def apply_purge_embargo(
             test_start,
             test_end,
             purge_bars + embargo_bars,
+        )
+        return None
+
+    return WalkForwardWindow(
+        train_start_idx=train_start,
+        train_end_idx=adjusted_train_end,
+        test_start_idx=adjusted_test_start,
+        test_end_idx=test_end,
+    )
+
+
+def apply_event_time_purge(
+    train_start: int,
+    raw_train_end: int,
+    test_start: int,
+    test_end: int,
+    event_end: np.ndarray,
+    embargo_bars: int = 50,
+) -> WalkForwardWindow | None:
+    """Adjust a window using label event-end times instead of fixed purge bars.
+
+    Training samples are retained only when their triple-barrier event ends
+    strictly before the raw test boundary. This prevents label lookahead from
+    reaching into the test period while avoiding unnecessary fixed-bar trimming.
+    Embargo still skips the first ``embargo_bars`` test rows.
+    """
+    if raw_train_end <= train_start:
+        logger.debug(
+            "Skipping pre-training window (start=%d, end=%d)",
+            train_start,
+            raw_train_end,
+        )
+        return None
+
+    if len(event_end) < raw_train_end:
+        raise ValueError(
+            f"event_end length ({len(event_end)}) is shorter than raw_train_end "
+            f"({raw_train_end})"
+        )
+
+    train_event_end = event_end[train_start:raw_train_end]
+    safe_offsets = np.flatnonzero(train_event_end < test_start)
+    if len(safe_offsets) == 0:
+        logger.warning(
+            "Event-time purge exhausted training period (start=%d, end=%d, test_start=%d)",
+            train_start,
+            raw_train_end,
+            test_start,
+        )
+        return None
+
+    adjusted_train_end = train_start + int(safe_offsets[-1]) + 1
+    adjusted_test_start = test_start + embargo_bars
+
+    if adjusted_test_start >= test_end:
+        logger.warning(
+            "Embargo exhausted test period (start=%d, end=%d, embargo=%d)",
+            test_start,
+            test_end,
+            embargo_bars,
         )
         return None
 

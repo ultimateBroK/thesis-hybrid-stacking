@@ -330,7 +330,9 @@ def test_load_nonexistent_file() -> None:
 
 @pytest.mark.unit
 @pytest.mark.models
-def test_save_load_round_trip_with_classifier(gru_config: Config, tmp_path: Path) -> None:
+def test_save_load_round_trip_with_classifier(
+    gru_config: Config, tmp_path: Path
+) -> None:
     """Classifier-aware checkpoints should reload the same probabilities."""
     model = GRUExtractor(
         input_size=gru_config.gru.input_size,
@@ -338,7 +340,9 @@ def test_save_load_round_trip_with_classifier(gru_config: Config, tmp_path: Path
         num_layers=gru_config.gru.num_layers,
         dropout=gru_config.gru.dropout,
     )
-    classifier = torch.nn.Linear(gru_config.gru.hidden_size, gru_config.labels.num_classes)
+    classifier = torch.nn.Linear(
+        gru_config.gru.hidden_size, gru_config.labels.num_classes
+    )
     model.eval()
     classifier.eval()
 
@@ -372,8 +376,8 @@ def test_train_gru_returns_correct_shapes(
     train_df = synthetic_df.slice(0, split)
     val_df = synthetic_df.slice(split)
 
-    model, _classifier, train_hidden, val_hidden, history, mean, std, _gru_cols = train_gru(
-        gru_config, train_df, val_df
+    model, _classifier, train_hidden, val_hidden, history, mean, std, _gru_cols = (
+        train_gru(gru_config, train_df, val_df)
     )
 
     seq_len = gru_config.gru.sequence_length
@@ -399,9 +403,47 @@ def test_train_gru_hidden_states_finite(
     train_df = synthetic_df.slice(0, split)
     val_df = synthetic_df.slice(split)
 
-    _, _classifier, train_hidden, val_hidden, history, _mean, _std, _gru_cols = train_gru(
-        gru_config, train_df, val_df
+    _, _classifier, train_hidden, val_hidden, history, _mean, _std, _gru_cols = (
+        train_gru(gru_config, train_df, val_df)
     )
 
     assert np.isfinite(train_hidden).all()
     assert np.isfinite(val_hidden).all()
+
+
+@pytest.mark.integration
+@pytest.mark.models
+def test_train_gru_seed_diversity(
+    gru_config: Config, synthetic_df: pl.DataFrame
+) -> None:
+    """Different window_index values should produce different initial weights.
+
+    When ``window_index`` differs, the effective seed (``seed + window_index``)
+    changes, so each walk-forward window starts from a unique weight
+    initialisation.  After training on identical data, the resulting hidden
+    states should diverge.
+    """
+    n = len(synthetic_df)
+    split = int(n * 0.8)
+    train_df = synthetic_df.slice(0, split)
+    val_df = synthetic_df.slice(split)
+
+    model0, _, _, _, _, _, _, _ = train_gru(
+        gru_config, train_df, val_df, window_index=0
+    )
+    model1, _, _, _, _, _, _, _ = train_gru(
+        gru_config, train_df, val_df, window_index=1
+    )
+
+    # At least one parameter should differ between the two models.
+    params0 = dict(model0.named_parameters())
+    params1 = dict(model1.named_parameters())
+    any_differ = False
+    for name in params0:
+        if not torch.equal(params0[name], params1[name]):
+            any_differ = True
+            break
+    assert any_differ, (
+        "Expected different parameters for window_index=0 vs window_index=1, "
+        "but all parameters are identical — seed diversity is not working"
+    )

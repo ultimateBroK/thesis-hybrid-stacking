@@ -86,9 +86,6 @@ def pipeline_config(temp_pipeline_dir: Path) -> Config:
     )
     config.paths.model = str(temp_pipeline_dir / "models" / "lightgbm_model.pkl")
     config.paths.gru_model = str(temp_pipeline_dir / "models" / "gru_model.pt")
-    config.paths.stack_bundle = str(
-        temp_pipeline_dir / "models" / "stacking_bundle.joblib"
-    )
     config.paths.predictions = str(
         temp_pipeline_dir / "data" / "predictions" / "final_predictions.parquet"
     )
@@ -341,21 +338,15 @@ def test_pipeline_labels_without_features_fails(pipeline_config: Config) -> None
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_pipeline_true_stacking_smoke(pipeline_config: Config) -> None:
-    """Sliding true stacking should produce deployable and OOF artifacts."""
+def test_pipeline_static_baseline_smoke(pipeline_config: Config) -> None:
+    """Sliding static-only baseline should emit OOF diagnostics and predictions."""
     setup_ohlcv_data(pipeline_config, n_rows=1200)
 
-    pipeline_config.model.architecture = "stacking"
+    pipeline_config.model.architecture = "static"
     pipeline_config.model.use_optuna = False
     pipeline_config.model.n_estimators = 10
     pipeline_config.model.num_leaves = 8
     pipeline_config.model.max_depth = 4
-
-    pipeline_config.gru.sequence_length = 12
-    pipeline_config.gru.hidden_size = 8
-    pipeline_config.gru.batch_size = 16
-    pipeline_config.gru.epochs = 2
-    pipeline_config.gru.patience = 1
 
     pipeline_config.validation.method = "sliding"
     pipeline_config.validation.train_window_bars = 240
@@ -366,27 +357,21 @@ def test_pipeline_true_stacking_smoke(pipeline_config: Config) -> None:
     pipeline_config.validation.min_train_bars = 200
     pipeline_config.validation.wf_optuna_trials = 0
 
-    pipeline_config.stacking.min_meta_train_folds = 1
-    pipeline_config.stacking.min_meta_train_rows = 60
-    pipeline_config.stacking.final_refit = True
-
     pipeline_config.backtest.confidence_threshold = 0.0
     pipeline_config.backtest.atr_tp_multiplier = 1.0
 
     run_pipeline(pipeline_config)
 
     assert Path(pipeline_config.paths.predictions).exists()
-    assert Path(pipeline_config.paths.stack_bundle).exists()
     assert Path(pipeline_config.paths.model).exists()
-    assert Path(pipeline_config.paths.gru_model).exists()
     assert Path(pipeline_config.paths.backtest_results).exists()
 
-    base_oof_path = (
+    history_path = (
         Path(pipeline_config.paths.session_dir)
-        / "predictions"
-        / "base_oof_predictions.parquet"
+        / "reports"
+        / "walk_forward_history.json"
     )
-    assert base_oof_path.exists()
+    assert history_path.exists()
 
     preds = pl.read_parquet(pipeline_config.paths.predictions)
     assert len(preds) > 0

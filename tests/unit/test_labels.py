@@ -12,7 +12,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.labels import _compute_labels, _merge_label_columns
+from thesis.labels import (
+    _compute_labels,
+    _merge_label_columns,
+    compute_average_uniqueness,
+    compute_event_end,
+)
 
 
 @pytest.mark.unit
@@ -128,7 +133,7 @@ def test_same_bar_both_hit_counted_as_ambiguous_hold() -> None:
     )
 
     assert labels[0] == 0
-    assert touched_bars[0] == -1
+    assert touched_bars[0] == 1
     assert ambiguous_count == 1
 
 
@@ -143,12 +148,45 @@ def test_label_columns_do_not_emit_legacy_tp_sl_aliases() -> None:
         upper_arr=np.array([102.0, 103.0, 104.0]),
         lower_arr=np.array([98.0, 97.0, 96.0]),
         touched_bars_arr=np.array([1, -1, 2], dtype=np.int32),
+        event_end_arr=np.array([1, 3, 4], dtype=np.int32),
+        sample_weight_arr=np.array([1.0, 0.8, 1.2]),
     )
 
     assert "upper_barrier" in result.columns
     assert "lower_barrier" in result.columns
+    assert "event_end" in result.columns
+    assert "sample_weight" in result.columns
     assert "tp_price" not in result.columns
     assert "sl_price" not in result.columns
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_event_end_uses_touch_or_horizon() -> None:
+    """Touched labels end at touch offset; Hold/censored use full horizon."""
+    touched = np.array([1, -1, 3, -2], dtype=np.int32)
+    event_end = compute_event_end(touched, horizon=5)
+    np.testing.assert_array_equal(event_end, np.array([1, 6, 5, 8], dtype=np.int32))
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_average_uniqueness_no_overlap_is_one() -> None:
+    """Non-overlapping events keep unit sample weights after normalization."""
+    event_end = np.array([0, 1, 2, 3], dtype=np.int32)
+    weights = compute_average_uniqueness(event_end)
+    np.testing.assert_allclose(weights, np.ones(4), rtol=1e-6)
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_average_uniqueness_downweights_overlap() -> None:
+    """Overlapping events get lower relative uniqueness than isolated events."""
+    event_end = np.array([3, 3, 3, 3, 4], dtype=np.int32)
+    weights = compute_average_uniqueness(event_end)
+    assert weights[1] < weights[4]
+    assert weights[2] < weights[4]
+    assert np.all(weights > 0)
 
 
 @pytest.mark.unit
