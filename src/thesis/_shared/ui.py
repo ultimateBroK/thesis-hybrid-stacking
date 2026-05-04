@@ -18,37 +18,37 @@ console = Console()
 # Stage colour map (used by pipeline + training)
 # ---------------------------------------------------------------------------
 STAGE_STYLES: dict[int, str] = {
-    0: "bold blue",
-    1: "bold green",
-    2: "bold yellow",
-    3: "bold cyan",
-    4: "bold magenta",
-    5: "bold red",
+    1: "bold blue",
+    2: "bold green",
+    3: "bold yellow",
+    4: "bold cyan",
+    5: "bold magenta",
+    6: "bold red",
 }
 
 STAGE_LABELS: dict[int, str] = {
-    0: "Data Preparation",
-    1: "Feature Engineering",
-    2: "Triple-Barrier Labeling",
-    3: "Walk-Forward Training",
-    4: "Backtest",
-    5: "Report Generation",
+    1: "Data Preparation",
+    2: "Feature Engineering",
+    3: "Label Generation",
+    4: "Model Training",
+    5: "Backtest",
+    6: "Report Generation",
 }
 
 
 # ---------------------------------------------------------------------------
 # UI helpers
 # ---------------------------------------------------------------------------
-def stage_header(stage: int, total: int = 6) -> None:
+def stage_header(stage: int) -> None:
     """Print a visually distinct stage banner via console (Rich) and logger.
 
     Args:
-        stage: Stage number (0-indexed).
-        total: Total number of pipeline stages.
+        stage: Stage number (1-indexed, 1–6).
     """
     _logger = logging.getLogger("thesis")
     style = STAGE_STYLES.get(stage, "bold")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
+    total = 6
     # Rich console output for visual display
     console.print()
     console.rule(
@@ -67,7 +67,7 @@ def stage_skip(stage: int, reason: str) -> None:
     """Print a dim skip line via console (Rich) and logger.
 
     Args:
-        stage: Stage number (0-indexed).
+        stage: Stage number (1-indexed, 1–6).
         reason: Why the stage is being skipped.
     """
     _logger = logging.getLogger("thesis")

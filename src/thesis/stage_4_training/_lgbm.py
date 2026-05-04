@@ -26,15 +26,19 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from thesis.config import Config
-from thesis.constants import DIST_SHIFT_CLIP_MAX, DIST_SHIFT_CLIP_MIN, EXCLUDE_COLS
-from thesis.gru import (
+from thesis._shared.config import Config
+from thesis._shared.constants import (
+    DIST_SHIFT_CLIP_MAX,
+    DIST_SHIFT_CLIP_MIN,
+    EXCLUDE_COLS,
+)
+from thesis.stage_4_training._gru import (
     extract_hidden_states,
     prepare_sequences,
     save_gru_model,
     train_gru,
 )
-from thesis.ui import console
+from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.model")
 
@@ -508,7 +512,7 @@ def _save_predictions(
 
 
 def train_model(config: Config) -> None:
-    """Train and evaluate the hybrid GRU + LightGBM model.
+    """**Pipeline Stage 4 (of 6):** Train and evaluate the hybrid GRU + LightGBM model.
 
     This stage trains the GRU feature extractor, builds hybrid features,
     trains LightGBM, saves artifacts, and computes interpretation outputs.

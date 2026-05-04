@@ -62,48 +62,48 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.config import load_config
+          from thesis._shared.config import load_config
           config = load_config('config.toml')
           print('Config loading works')
           "
 
-          # Aggregation (Stage 0)
+          # Data preparation (Stage 1)
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.agg.ohlcv import _aggregate_file, prepare_data
-          print('Aggregation module imports successfully')
+          from thesis.stage_1_data import prepare_data
+          print('Data preparation module imports successfully')
           "
 
-          # Features (Stage 1)
+          # Features (Stage 2)
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.features.indicators import generate_features
+          from thesis.stage_2_features import generate_features
           print('Features module imports successfully')
           "
 
-          # Labeling (Stage 2)
+          # Labels (Stage 3)
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.labeling.triple_barrier import generate_labels
-          print('Labeling module imports successfully')
+          from thesis.stage_3_labels import generate_labels
+          print('Labels module imports successfully')
           "
 
-          # Splitting (Stage 3)
+          # Validation / splitting (Stage 4)
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.splitting.split import split_data
-          print('Splitting module imports successfully')
+          from thesis.stage_4_training._validation import split_data
+          print('Validation module imports successfully')
           "
 
           # GRU model (Stage 4)
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.gru.arch import GRUExtractor
+          from thesis.stage_4_training._gru import GRUExtractor
           print('GRU module imports successfully')
           "
 
@@ -111,7 +111,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.hybrid.train import train_model
+          from thesis.stage_4_training import train_model
           print('Hybrid training module imports successfully')
           "
 
@@ -119,7 +119,7 @@ jobs:
           pixi run -- python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.backtest.strategy import run_backtest
+          from thesis.stage_5_backtest import run_backtest
           print('Backtest module imports successfully')
           "
 

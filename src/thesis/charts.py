@@ -29,14 +29,14 @@ import polars as pl
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Grid, HeatMap, Kline, Line, Pie, Scatter, Tab
 
-from thesis.constants import CHART_COLORS, EXCLUDED_FEATURE_COLS
+from thesis._shared.constants import CHART_COLORS, EXCLUDED_FEATURE_COLS
 
 if TYPE_CHECKING:
-    from thesis.config import Config
+    from thesis._shared.config import Config
 
 logger = logging.getLogger("thesis.charts")
 
-# --- Constants (single source: thesis.constants) ----------------------------
+# --- Constants (single source: thesis._shared.constants) --------------------
 
 COLORS: dict[str, str] = CHART_COLORS
 

@@ -14,8 +14,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.config import Config
-from thesis.gru import (
+from thesis._shared.config import Config
+from thesis.stage_4_training._gru import (
     GRUExtractor,
     SequenceDataset,
     _sliding_windows,

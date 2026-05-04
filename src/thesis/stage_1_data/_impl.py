@@ -22,7 +22,7 @@ from rich.progress import (
     TextColumn,
 )
 
-from thesis.config import Config
+from thesis._shared.config import Config
 
 logger = logging.getLogger("thesis.prepare")
 
@@ -324,11 +324,11 @@ def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
 
 
 def prepare_data(config: Config) -> None:
-    """Prepare OHLCV bars from raw tick parquet files.
+    """Pipeline Stage 1 (of 6): Prepare OHLCV bars from raw tick parquet files.
 
     Reads monthly tick files from the configured raw directory, aggregates them
-    into OHLCV bars at `config.data.timeframe`, removes duplicates, filters
-    corrupted timestamps, and writes the result to `config.paths.ohlcv`.
+    into OHLCV bars at ``config.data.timeframe``, removes duplicates, filters
+    corrupted timestamps, and writes the result to ``config.paths.ohlcv``.
 
     Args:
         config: Application configuration.

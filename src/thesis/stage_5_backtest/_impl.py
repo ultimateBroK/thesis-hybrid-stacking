@@ -31,7 +31,7 @@ import polars as pl
 from backtesting import Strategy
 from backtesting.lib import FractionalBacktest
 
-from thesis.config import Config
+from thesis._shared.config import Config
 
 logger = logging.getLogger("thesis.backtest")
 
@@ -890,7 +890,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
 
 
 def run_backtest(config: Config) -> None:
-    """Run a full CFD backtest from files specified in config and persist results.
+    """**Pipeline Stage 5 (of 6):** Run a full CFD backtest from files specified in config and persist results.
 
     For walk-forward (sliding) validation, joins OOF predictions with the
     full labeled dataset (which contains OHLCV + features). For static
@@ -940,6 +940,25 @@ def run_backtest(config: Config) -> None:
         test_df = pl.read_parquet(labels_path)
 
     pdf = _prepare_df(test_df, preds_df)
+
+    # ── OOS date-range filter ────────────────────────────────────────────
+    bc = config.backtest
+    if bc.oob_start_date:
+        start_ts = pd.Timestamp(bc.oob_start_date)
+        pdf = pdf[pdf.index >= start_ts]
+        logger.info("OOS start filter: %s → %d bars", bc.oob_start_date, len(pdf))
+    if bc.oob_end_date:
+        end_ts = pd.Timestamp(bc.oob_end_date)
+        pdf = pdf[pdf.index <= end_ts]
+        logger.info("OOS end filter: %s → %d bars", bc.oob_end_date, len(pdf))
+    if bc.oob_start_date or bc.oob_end_date:
+        logger.info(
+            "OOS date range: %s to %s (%d bars)",
+            bc.oob_start_date or "start",
+            bc.oob_end_date or "end",
+            len(pdf),
+        )
+
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
     stats, bt = _run_bt(pdf, config)
 

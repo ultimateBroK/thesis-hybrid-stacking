@@ -1,7 +1,6 @@
-"""Report generation: markdown builder, statistics, charts, and orchestrator.
+"""Stage 6: Report generation — markdown builder, statistics, charts, and orchestrator.
 
-Merged from the former ``thesis.report`` package (``__init__``,
-``main``, ``builder``, ``stats``).
+Moved from ``thesis.report`` into ``thesis.stage_6_reporting``.
 """
 
 from __future__ import annotations
@@ -18,9 +17,9 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from thesis.config import Config
-from thesis.constants import H1_BARS_PER_YEAR
-from thesis.zones import _get_metric_zone
+from thesis._shared.config import Config
+from thesis._shared.constants import H1_BARS_PER_YEAR
+from thesis._shared.zones import _get_metric_zone
 
 logger = logging.getLogger("thesis.report")
 
@@ -2037,7 +2036,7 @@ def _load_feature_importance(config: Config, out_dir: Path) -> dict:
 
 
 def generate_report(config: Config) -> None:
-    """Generate thesis report with static charts and markdown.
+    """**Pipeline Stage 6 (of 6):** Generate thesis report with static charts and markdown.
 
     Args:
         config: Loaded application configuration.

@@ -14,10 +14,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.config import Config
+from thesis._shared.config import Config
 from thesis.pipeline import run_pipeline
-from thesis.features import generate_features
-from thesis.labels import generate_labels
+from thesis.stage_2_features import generate_features
+from thesis.stage_3_labels import generate_labels
 
 
 def create_synthetic_ohlcv(
@@ -383,3 +383,75 @@ def test_pipeline_static_baseline_smoke(pipeline_config: Config) -> None:
         "pred_proba_class_0",
         "pred_proba_class_1",
     }.issubset(preds.columns)
+
+
+@pytest.mark.integration
+def test_new_stage_package_layout() -> None:
+    """Verify all stage packages are importable and expose expected public API.
+
+    After the package reorganisation into thesis.stage_N_<name> packages,
+    every stage must be importable and re-export its documented symbols.
+    """
+    import thesis.stage_1_data
+    import thesis.stage_2_features
+    import thesis.stage_3_labels
+    import thesis.stage_4_training
+    import thesis.stage_5_backtest
+    import thesis.stage_6_reporting
+
+    # Stage 1 — data preparation
+    from thesis.stage_1_data import prepare_data
+
+    assert callable(prepare_data)
+
+    # Stage 2 — feature engineering
+    from thesis.stage_2_features import generate_features
+
+    assert callable(generate_features)
+
+    # Stage 3 — label generation
+    from thesis.stage_3_labels import (
+        compute_average_uniqueness,
+        compute_event_end,
+        generate_labels,
+    )
+
+    assert callable(compute_average_uniqueness)
+    assert callable(compute_event_end)
+    assert callable(generate_labels)
+
+    # Stage 4 — model training
+    from thesis.stage_4_training import (
+        WalkForwardWindow,
+        generate_windows,
+        train_gru,
+        train_model,
+    )
+
+    assert callable(generate_windows)
+    assert callable(train_gru)
+    assert callable(train_model)
+    assert WalkForwardWindow is not None
+
+    # Stage 5 — backtest
+    from thesis.stage_5_backtest import HybridGRUStrategy, run_backtest
+
+    assert callable(run_backtest)
+    assert HybridGRUStrategy is not None
+
+    # Stage 6 — reporting
+    from thesis.stage_6_reporting import generate_report
+
+    assert callable(generate_report)
+
+    # Package-level __all__ lists are non-empty
+    for name in (
+        "stage_1_data",
+        "stage_2_features",
+        "stage_3_labels",
+        "stage_4_training",
+        "stage_5_backtest",
+        "stage_6_reporting",
+    ):
+        pkg = getattr(thesis, name)
+        assert pkg.__all__, f"{name}.__all__ must be non-empty"

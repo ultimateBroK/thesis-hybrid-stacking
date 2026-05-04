@@ -1,4 +1,4 @@
-"""Project-wide constants shared across pipeline stages.
+"""Project-wide constants shared across pipeline stages — shared copy.
 
 This module is the single source of truth for column exclusion sets and other
 pipeline-level constants. Importing from here prevents the silent drift that

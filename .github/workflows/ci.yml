@@ -172,7 +172,7 @@ jobs:
           python -c "
           import sys
           sys.path.insert(0, 'src')
-          from thesis.config import load_config
+          from thesis._shared.config import load_config
           config = load_config('config.toml')
           print('Configuration loaded successfully')
           print(f'  Data range: {config.data.start_date} to {config.data.end_date}')

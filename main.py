@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Main entry point — simplified thesis pipeline.
+"""Main entry point — simplified thesis pipeline (6-stage contract).
+
+Stages:
+    1 — Data Preparation
+    2 — Feature Engineering
+    3 — Label Generation
+    4 — Model Training
+    5 — Backtest
+    6 — Reporting & Ablation
+
+Execution contract:
+    --stage N  means "start at Stage N and continue through Stage 6".
+    No --stage means the same as --stage 1 (i.e., run all stages).
+    Therefore --stage 3 skips only Stages 1–2, --stage 5 skips 1–4, etc.
+    Stage 1 is just Stage 1 — there is no "full run" pseudo-stage.
 
 Usage:
     python main.py [--config CONFIG] [--session SESSION] [--stage N] [--force]
@@ -7,13 +21,15 @@ Usage:
 Options:
     --session SESSION   Continue from an existing session directory name
                         (e.g., XAUUSD_H1_20260418_143052)
-    --stage N           Start pipeline from stage N (1-6). Use with --session.
-                        Default: resumes from first missing stage.
+    --stage N           Start at Stage N and continue through Stage 6 (1–6).
+                        Skipping stages before N. Default: --stage 1 (all).
     --force             Force re-run all stages (or stage with --stage)
 """
 
 import argparse
+from dataclasses import asdict
 from datetime import datetime
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -26,9 +42,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if (PROJECT_ROOT / "src").exists():
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from thesis.config import load_config  # noqa: E402
+from thesis._shared.config import load_config  # noqa: E402
 from thesis.pipeline import run_pipeline  # noqa: E402
-from thesis.session_paths import configure_session_paths, load_config_for_session  # noqa: E402
+from thesis._shared.session_paths import configure_session_paths, load_config_for_session  # noqa: E402
 
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -107,7 +123,11 @@ def main() -> None:
         type=int,
         choices=[1, 2, 3, 4, 5, 6],
         default=None,
-        help="Start from stage N (1-6). Skips stages before N.",
+        help=(
+            "Start at Stage N and continue through Stage 6. "
+            "Stage 3 means skip only Stages 1–2. "
+            "No --stage means the same as --stage 1 (run all)."
+        ),
     )
     parser.add_argument("--force", action="store_true", help="Force re-run all stages")
     args = parser.parse_args()
@@ -119,6 +139,26 @@ def main() -> None:
     config = _apply_force_flag(config, args.force)
 
     # Determine session directory and setup
+    # ── explicit 1–6 skip contract ──────────────────────────────────
+    # Rule: --stage N  →  skip stages 1..N-1, run N..6.
+    # No --stage is equivalent to --stage 1 (no stages disabled).
+    # So: --stage 3 disables only Stage 1+2; --stage 5 disables 1–4.
+    # Stage 1 IS "Data Preparation" — NOT a "full run" pseudo-stage.
+    # The same `stage > K` pattern applies to every stage uniformly.
+    # Applied BEFORE the session/new-session split so it works for both.
+    # ─────────────────────────────────────────────────────────────────
+    if args.stage is not None:
+        if args.stage > 1:
+            config.workflow.run_data_pipeline = False
+        if args.stage > 2:
+            config.workflow.run_feature_engineering = False
+        if args.stage > 3:
+            config.workflow.run_label_generation = False
+        if args.stage > 4:
+            config.workflow.run_model_training = False
+        if args.stage > 5:
+            config.workflow.run_backtest = False
+
     if args.session:
         # Continue from existing session
         session_dir = _find_session(args.session)
@@ -133,20 +173,6 @@ def main() -> None:
             session_dir.name.split("_")[-2] + "_" + session_dir.name.split("_")[-1]
         )
         config.workflow.session_timestamp = session_ts
-
-        # If --stage specified, disable stages BEFORE the target stage
-        # Stage 1: full run from data. Stage N: skip stages 1..N-1, run N..6.
-        if args.stage is not None:
-            if args.stage > 1:
-                config.workflow.run_data_pipeline = False
-            if args.stage > 2:
-                config.workflow.run_feature_engineering = False
-            if args.stage > 3:
-                config.workflow.run_label_generation = False
-            if args.stage > 4:
-                config.workflow.run_model_training = False
-            if args.stage > 5:
-                config.workflow.run_backtest = False
 
         log_mode = "a"  # Append to existing log
     else:
@@ -178,7 +204,7 @@ def main() -> None:
     # Logging setup — Rich for console, plain for file
     from rich.logging import RichHandler
 
-    from thesis.ui import console as _console
+    from thesis._shared.ui import console as _console
 
     _log_fmt = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
     plain_file_handler = logging.FileHandler(
@@ -229,7 +255,12 @@ def main() -> None:
 
     # Save session_info.json manifest (only for new sessions)
     if not args.session:
+        # Compute full config hash so each run is tied to its exact config
+        config_raw = json.dumps(asdict(config), sort_keys=True, default=str)
+        config_hash = hashlib.sha256(config_raw.encode()).hexdigest()
+
         session_info = {
+            "config_hash": config_hash,
             "symbol": config.data.symbol,
             "timeframe": config.data.timeframe,
             "session_timestamp": session_ts,

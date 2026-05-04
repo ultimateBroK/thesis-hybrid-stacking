@@ -1,4 +1,4 @@
-"""Centralized configuration for the thesis ML pipeline.
+"""Centralized configuration for the thesis ML pipeline — shared copy.
 
 This module is the single entry point for loading and sharing runtime
 configuration. TOML files may stay minimal: omitted fields fall back to the
@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from thesis.constants import CORE_STATIC_FEATURES
+from thesis._shared.constants import CORE_STATIC_FEATURES
 
 
 logger = logging.getLogger("thesis.config")
@@ -239,6 +239,8 @@ class BacktestConfig:
     dd_cooldown_bars: int = 12  # bars to pause after drawdown cutoff breach
     max_open_positions: int = 1  # max simultaneous open positions
     daily_loss_limit: float = 0.03  # stop trading for day after -N equity drawdown
+    oob_start_date: str = ""  # OOS date range start (empty = whole dataset)
+    oob_end_date: str = ""  # OOS date range end (empty = whole dataset)
 
 
 @dataclass
@@ -251,6 +253,7 @@ class WorkflowConfig:
     run_model_training: bool = True
     run_backtest: bool = True
     run_reporting: bool = True
+    cache_invalidation: str = "path"  # "path", "hash", or "none"
     force_rerun: bool = False
     random_seed: int = 2024
     n_jobs: int = -1

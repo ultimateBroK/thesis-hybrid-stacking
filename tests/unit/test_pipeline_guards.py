@@ -1,5 +1,6 @@
 """Tests for pipeline module — OOF guards and validation checks."""
 
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -8,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.config import Config
+from thesis._shared.config import Config
 
 
 # ---------------------------------------------------------------------------
@@ -32,12 +33,22 @@ def test_purge_guard_raises_on_insufficient_gap() -> None:
     mock_windows = [MagicMock()]  # non-empty to pass the first check
 
     with (
-        patch("thesis.pipeline.pl.read_parquet", return_value=mock_df),
-        patch("thesis.pipeline.generate_windows", return_value=mock_windows),
-        patch("thesis.pipeline.log_windows"),
+        patch(
+            "thesis.stage_4_training._walk_forward.Path",
+            return_value=MagicMock(),
+        ),
+        patch(
+            "thesis.stage_4_training._walk_forward.pl.read_parquet",
+            return_value=mock_df,
+        ),
+        patch(
+            "thesis.stage_4_training._walk_forward.generate_windows",
+            return_value=mock_windows,
+        ),
+        patch("thesis.stage_4_training._walk_forward.log_windows"),
         pytest.raises(ValueError, match="Leakage risk"),
     ):
-        from thesis.pipeline import _run_walk_forward_hybrid
+        from thesis.stage_4_training._walk_forward import _run_walk_forward_hybrid
 
         _run_walk_forward_hybrid(config)
 
@@ -57,11 +68,17 @@ def test_purge_guard_passes_with_sufficient_gap() -> None:
     mock_windows = [MagicMock()]
 
     with (
-        patch("thesis.pipeline.pl.read_parquet", return_value=mock_df),
-        patch("thesis.pipeline.generate_windows", return_value=mock_windows),
-        patch("thesis.pipeline.log_windows"),
+        patch(
+            "thesis.stage_4_training._walk_forward.pl.read_parquet",
+            return_value=mock_df,
+        ),
+        patch(
+            "thesis.stage_4_training._walk_forward.generate_windows",
+            return_value=mock_windows,
+        ),
+        patch("thesis.stage_4_training._walk_forward.log_windows"),
     ):
-        from thesis.pipeline import _run_walk_forward_hybrid
+        from thesis.stage_4_training._walk_forward import _run_walk_forward_hybrid
 
         # Should NOT raise the purge guard ValueError.
         # It will fail later (no real data), but the guard is what we test.
@@ -73,3 +90,48 @@ def test_purge_guard_passes_with_sufficient_gap() -> None:
         except (RuntimeError, FileNotFoundError, AttributeError):
             # Expected — no real data/model artifacts
             pass
+
+
+# ---------------------------------------------------------------------------
+# Stage numbering contract tests
+# ---------------------------------------------------------------------------
+
+
+class TestStageNumbering:
+    """Stage numbering contract: 1-indexed stages, correct labels, docstring."""
+
+    @pytest.mark.unit
+    def test_stage_header_1_outputs_correct_text(self, caplog) -> None:
+        """stage_header(1) logs 'STAGE 1/6' with 'Data Preparation' label."""
+        from thesis._shared.ui import stage_header
+
+        with caplog.at_level(logging.INFO, logger="thesis"):
+            stage_header(1)
+
+        log_text = " ".join(record.message for record in caplog.records)
+        assert "STAGE 1/6" in log_text
+        assert "Data Preparation" in log_text
+
+    @pytest.mark.unit
+    def test_stage_labels_keys_are_1_to_6(self) -> None:
+        """STAGE_LABELS dict keys must be 1–6, not 0–5."""
+        from thesis._shared.ui import STAGE_LABELS
+
+        assert sorted(STAGE_LABELS.keys()) == [1, 2, 3, 4, 5, 6]
+
+    @pytest.mark.unit
+    def test_run_pipeline_docstring_stage_numbering(self) -> None:
+        """run_pipeline.__doc__ must document Stage 1 (Data Preparation)."""
+        from thesis.pipeline import run_pipeline
+
+        assert run_pipeline.__doc__ is not None
+        assert "1. Data preparation" in run_pipeline.__doc__
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("stage", [0, 7])
+    def test_stage_header_out_of_range_is_graceful(self, stage: int) -> None:
+        """stage_header(0) and stage_header(7) must not raise exceptions."""
+        from thesis._shared.ui import stage_header
+
+        # Should complete without raising — uses .get() fallback
+        stage_header(stage)

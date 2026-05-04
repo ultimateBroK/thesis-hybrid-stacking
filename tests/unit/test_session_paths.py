@@ -6,8 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from thesis.config import Config
-from thesis.session_paths import configure_session_paths, load_config_for_session
+from thesis._shared.config import Config
+from thesis._shared.session_paths import (
+    configure_session_paths,
+    load_config_for_session,
+)
 
 
 def test_configure_session_paths_sets_model_gru_predictions_backtest_report(

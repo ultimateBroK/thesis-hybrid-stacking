@@ -282,7 +282,7 @@ def split_data(
 
     Uses integer-row slicing (not date-based filtering) so the indices
     in each :class:`WalkForwardWindow` map directly to row positions.
-    The default Stage 3 pipeline slices inline for readability; this helper is
+    The default Stage 4 pipeline slices inline for readability; this helper is
     retained for tests, notebooks, and external callers that need reusable
     train/test frame pairs.
 

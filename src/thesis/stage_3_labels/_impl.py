@@ -1,4 +1,4 @@
-"""Stage 2: asymmetric upper/lower barrier direction labeling.
+"""Stage 3: asymmetric upper/lower barrier direction labeling.
 
 Uses separate ``atr_tp_multiplier`` and ``atr_sl_multiplier`` for take-profit
 and stop-loss barriers. No DST detection, no session definitions, no
@@ -19,8 +19,8 @@ import numpy as np
 import polars as pl
 from numba import njit
 
-from thesis.config import Config
-from thesis.constants import (
+from thesis._shared.config import Config
+from thesis._shared.constants import (
     ATR_HIGH_QUANTILE,
     ATR_LOW_QUANTILE,
     CENSORED_LABEL,
@@ -39,7 +39,7 @@ logger = logging.getLogger("thesis.labels")
 
 def generate_labels(config: Config) -> None:
     """
-    Generate direction-barrier labels and write them to the configured labels path.
+    **Pipeline Stage 3 (of 6):** Generate direction-barrier labels and write them to the configured labels path.
 
     Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes asymmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_tp_multiplier`, `atr_sl_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`, `event_end`, `sample_weight`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
 
@@ -396,10 +396,16 @@ def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
 
 
 def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
-    """Remove censored rows (label == -2) where forward horizon is insufficient.
+    """Remove censored rows where forward horizon is insufficient.
 
-    Censored rows lack enough future data to evaluate the barrier outcome.
-    Keeping them as Hold would inject label noise, so they are dropped entirely.
+    Censored rows (``label == -2``) lack enough future data to evaluate the
+    barrier outcome.  Keeping them as Hold would inject label noise, so they
+    are dropped entirely.
+
+    When a ``regression_target`` column is present (regression objective),
+    rows with NaN regression target are also dropped.  This provides
+    defense-in-depth against zero-target tail leakage when stage-4
+    regression-target computation marks rows as censored.
 
     Args:
         df: DataFrame with a ``label`` column.
@@ -407,11 +413,29 @@ def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
     Returns:
         DataFrame with censored rows removed.
     """
+    n_before = len(df)
+    # Label-based censoring
     n_censored = int((df["label"] == CENSORED_LABEL).sum())
-    if n_censored <= 0:
-        return df
-    logger.info("Dropping %d censored rows (insufficient forward horizon)", n_censored)
-    return df.filter(pl.col("label") != CENSORED_LABEL)
+    if n_censored > 0:
+        df = df.filter(pl.col("label") != CENSORED_LABEL)
+
+    # NaN regression-target censoring (defense-in-depth for regression mode)
+    n_nan = 0
+    if "regression_target" in df.columns:
+        n_nan = int(df["regression_target"].is_nan().sum())
+        if n_nan > 0:
+            df = df.filter(pl.col("regression_target").is_not_nan())
+
+    n_dropped = n_before - len(df)
+    if n_dropped > 0:
+        logger.info(
+            "Dropped %d censored rows (label=%d, regression_nan=%d) — "
+            "insufficient forward horizon",
+            n_dropped,
+            n_censored,
+            n_nan,
+        )
+    return df
 
 
 def _log_distribution(df: pl.DataFrame) -> None:

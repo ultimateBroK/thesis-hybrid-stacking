@@ -12,8 +12,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.config import Config
-from thesis.labels import _log_distribution
+from thesis._shared.config import Config
+from thesis.stage_3_labels._impl import _log_distribution
 
 
 def create_synthetic_labeled_data(

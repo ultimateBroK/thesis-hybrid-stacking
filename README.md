@@ -116,28 +116,30 @@ thesis/
 ├── main.py                  # Entry point (CLI)
 ├── scripts/
 │   └── data_download.py     # Tick data downloader
-├── src/thesis/              # Source code (flat modules)
-│   ├── config.py            # TOML config loader + dataclasses
-│   ├── pipeline.py          # Stage orchestration (0–3, 5–6 walk-forward)
-│   ├── data.py              # Tick → OHLCV (Stage 0)
-│   ├── features.py          # 21 technical indicators (Stage 1)
-│   ├── labels.py            # Triple-barrier labeling (Stage 2)
-│   ├── validation.py        # Walk-forward window generation
-│   ├── gru.py               # GRU feature extractor
-│   ├── model.py             # LightGBM training (fixed + Optuna)
-│   ├── backtest.py          # CFD trading simulation (Stage 5)
-│   ├── report.py            # Report + chart generation (Stage 6)
-│   ├── constants.py         # Shared constants
-│   ├── session_paths.py     # Session directory setup
-│   ├── charts.py            # Interactive ECharts / pyecharts
-│   ├── dashboard.py         # Streamlit dashboard
-│   ├── ui.py                # Rich console utilities
-│   └── zones.py             # Metric zone classification
+├── src/thesis/
+│   ├── stage_1_data/        # Stage 1: Data preparation (tick → OHLCV)
+│   ├── stage_2_features/    # Stage 2: Feature engineering (21 indicators)
+│   ├── stage_3_labels/      # Stage 3: Label generation (triple barrier)
+│   ├── stage_4_training/    # Stage 4: Model training (GRU + LGBM + walk-forward)
+│   ├── stage_5_backtest/    # Stage 5: CFD backtest (application demo)
+│   ├── stage_6_reporting/   # Stage 6: Report generation (metrics + charts)
+│   ├── _shared/             # Shared: config, constants, UI, zones, session_paths
+│   ├── pipeline.py          # Thin orchestrator — runs stages 1–6
+│   ├── charts.py            # Interactive ECharts / pyecharts (supplementary)
+│   └── dashboard.py         # Streamlit dashboard (supplementary)
 ├── tests/                   # Test suite
 ├── data/raw/XAUUSD/         # Raw tick data
 ├── data/processed/          # Generated parquet files
 ├── results/                 # Session-based outputs
 └── docs/                    # Documentation
+```
+
+Each stage is a self-contained package that exposes a `run(ctx)` entry point.
+`pipeline.py` calls them in order; you can also run individual stages via `--stage N`:
+
+```bash
+pixi run workflow             # Full pipeline (stages 1–6)
+pixi run workflow --stage 4  # Stage 4 only (training)
 ```
 
 ---

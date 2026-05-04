@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from thesis.config import Config
-from thesis.report import (
+from thesis._shared.config import Config
+from thesis.stage_6_reporting._impl import (
     _assess_model_quality,
     _assess_trading_edge,
     _benchmark_comparison_table,
@@ -82,7 +82,9 @@ def test_benchmark_table_discloses_not_cost_equivalent(
             }
         ]
 
-    monkeypatch.setattr("thesis.report.compute_benchmark_comparison", fake_benchmarks)
+    monkeypatch.setattr(
+        "thesis.stage_6_reporting._impl.compute_benchmark_comparison", fake_benchmarks
+    )
     lines: list[str] = []
 
     _benchmark_comparison_table(lines, metrics, cfg)

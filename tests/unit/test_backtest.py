@@ -14,14 +14,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.backtest import (
-    _calendar_day,
-    _prepare_df,
-    _run_bt,
+from thesis._shared.config import Config
+from thesis.stage_5_backtest import (
+    HybridGRUStrategy,
     run_backtest_from_data,
     run_backtest_manual,
 )
-from thesis.config import Config
+from thesis.stage_5_backtest._impl import (
+    _calendar_day,
+    _prepare_df,
+    _run_bt,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -250,7 +253,7 @@ def test_signal_uses_index_minus_2(sample_config: Config) -> None:
     import numpy as np
     import polars as pl
 
-    from thesis.backtest import _prepare_df, _run_bt
+    from thesis.stage_5_backtest._impl import _prepare_df, _run_bt
 
     n_rows = 5
     timestamps = pl.datetime_range(
@@ -323,7 +326,6 @@ def test_calendar_day_strips_intraday_time() -> None:
 @pytest.mark.backtest
 def test_position_size_scales_with_confidence() -> None:
     """Higher confidence should produce larger position sizes."""
-    from thesis.backtest import HybridGRUStrategy
 
     # Can't instantiate Strategy without broker/data/params.
     # Use a lightweight mock with only the attributes _compute_lots reads.
@@ -360,7 +362,6 @@ def test_position_size_scales_with_confidence() -> None:
 @pytest.mark.backtest
 def test_position_size_returns_fixed_when_no_confidence() -> None:
     """Without confidence data, sizing falls back to fixed lots_per_trade."""
-    from thesis.backtest import HybridGRUStrategy
 
     strategy = type(
         "S",
@@ -384,7 +385,6 @@ def test_position_size_returns_fixed_when_no_confidence() -> None:
 @pytest.mark.backtest
 def test_position_size_below_threshold_returns_min() -> None:
     """Confidence below threshold should not be reached (caller gates)."""
-    from thesis.backtest import HybridGRUStrategy
 
     strategy = type(
         "S",
@@ -779,3 +779,179 @@ def test_perfect_prediction_backtest_sanity() -> None:
         f"real-cost return ({real_return:.2f}%). Trading costs "
         f"are not degrading performance as expected."
     )
+
+
+# ---------------------------------------------------------------------------
+# OOS date-range filtering tests
+# ---------------------------------------------------------------------------
+
+
+def _apply_oos_filter(
+    pdf: pd.DataFrame,
+    oob_start_date: str = "",
+    oob_end_date: str = "",
+) -> pd.DataFrame:
+    """Apply the OOS date-range filter logic from run_backtest.
+
+    Replicates the filtering from _impl.py:run_backtest lines 944-960.
+    """
+    if oob_start_date:
+        start_ts = pd.Timestamp(oob_start_date)
+        pdf = pdf[pdf.index >= start_ts]
+    if oob_end_date:
+        end_ts = pd.Timestamp(oob_end_date)
+        pdf = pdf[pdf.index <= end_ts]
+    return pdf
+
+
+class TestOOSFiltering:
+    """Tests for out-of-sample date-range filtering in backtest pipeline."""
+
+    @staticmethod
+    def _make_dataframe(
+        n_days: int = 7,
+        bars_per_day: int = 24,
+        start_date: str = "2024-01-01",
+    ) -> pd.DataFrame:
+        """Create a small test DataFrame with hourly timestamps over N days.
+
+        Returns a pandas DataFrame with a DatetimeIndex (matching what
+        _prepare_df produces), plus a 'value' column for sanity checks.
+        """
+        n_rows = n_days * bars_per_day
+        np.random.seed(42)
+        timestamps = pd.date_range(
+            start=start_date,
+            periods=n_rows,
+            freq="h",
+        )
+        pdf = pd.DataFrame(
+            {
+                "Open": np.random.randn(n_rows) + 100,
+                "High": np.random.randn(n_rows) + 101,
+                "Low": np.random.randn(n_rows) + 99,
+                "Close": np.random.randn(n_rows) + 100,
+                "Volume": np.ones(n_rows) * 1000.0,
+                "atr_14": np.full(n_rows, 20.0),
+                "pred_label": np.random.choice([-1, 0, 1], n_rows),
+                "value": np.arange(n_rows, dtype=float),
+            },
+            index=timestamps,
+        )
+        pdf.index = pd.DatetimeIndex(pdf.index)
+        return pdf
+
+    # ── Default (no filter) ──────────────────────────────────────────────
+
+    def test_oos_no_filter_preserves_all_bars(self):
+        """Default (empty strings) should return the full dataset unchanged."""
+        pdf = self._make_dataframe(n_days=5)
+        filtered = _apply_oos_filter(pdf)
+        assert len(filtered) == len(pdf)
+        pd.testing.assert_frame_equal(filtered, pdf)
+
+    def test_oos_empty_string_is_treated_as_no_filter(self):
+        """Explicit empty strings should behave identically to omitting params."""
+        pdf = self._make_dataframe(n_days=3)
+        filtered = _apply_oos_filter(pdf, oob_start_date="", oob_end_date="")
+        assert len(filtered) == len(pdf)
+
+    # ── Start-only filter ────────────────────────────────────────────────
+
+    def test_oos_start_only_filters_from_date(self):
+        """Only oob_start_date: keep bars on or after the date."""
+        pdf = self._make_dataframe(n_days=7, start_date="2024-01-01")
+        filtered = _apply_oos_filter(pdf, oob_start_date="2024-01-03")
+        expected_min = pd.Timestamp("2024-01-03")
+        assert len(filtered) > 0, "Filter should not remove all bars"
+        assert len(filtered) < len(pdf), "Filter should remove some bars"
+        assert filtered.index.min() >= expected_min
+
+    def test_oos_start_exact_boundary_included(self):
+        """A bar exactly at the start boundary should be kept."""
+        pdf = self._make_dataframe(n_days=3, start_date="2024-01-01")
+        # Use the exact timestamp of the first visible bar
+        boundary = str(pdf.index.min())
+        filtered = _apply_oos_filter(pdf, oob_start_date=boundary)
+        assert len(filtered) == len(pdf), "All bars should be kept at exact boundary"
+
+    # ── End-only filter ──────────────────────────────────────────────────
+
+    def test_oos_end_only_filters_to_date(self):
+        """Only oob_end_date: keep bars on or before the date."""
+        pdf = self._make_dataframe(n_days=7, start_date="2024-01-01")
+        filtered = _apply_oos_filter(pdf, oob_end_date="2024-01-04")
+        expected_max = pd.Timestamp("2024-01-04")
+        assert len(filtered) > 0, "Filter should not remove all bars"
+        assert len(filtered) < len(pdf), "Filter should remove some bars"
+        assert filtered.index.max() <= expected_max
+
+    def test_oos_end_exact_boundary_included(self):
+        """A bar exactly at the end boundary should be kept."""
+        pdf = self._make_dataframe(n_days=3, start_date="2024-01-01")
+        boundary = str(pdf.index.max())
+        filtered = _apply_oos_filter(pdf, oob_end_date=boundary)
+        assert len(filtered) == len(pdf), "All bars should be kept at exact boundary"
+
+    # ── Both dates ───────────────────────────────────────────────────────
+
+    def test_oos_both_dates_narrows_window(self):
+        """Both dates: keep only bars within [start, end]."""
+        pdf = self._make_dataframe(n_days=10, start_date="2024-01-01")
+        filtered = _apply_oos_filter(
+            pdf,
+            oob_start_date="2024-01-03",
+            oob_end_date="2024-01-07",
+        )
+        start_ts = pd.Timestamp("2024-01-03")
+        end_ts = pd.Timestamp("2024-01-07")
+        assert len(filtered) > 0, "Window should contain bars"
+        assert len(filtered) < len(pdf), "Window should be a subset"
+        assert filtered.index.min() >= start_ts
+        assert filtered.index.max() <= end_ts
+
+    def test_oos_both_dates_correct_row_count(self):
+        """Verify filtering retains the expected number of bars.
+
+        With 7 days × 24 bars starting 2024-01-01 00:00, filtering
+        [2024-01-03, 2024-01-06) includes 73 bars:
+        - 2024-01-03 00:00  (bar  48)  — first kept
+        - 2024-01-06 00:00  (bar 120)  — last kept (≤ midnight Jan 6)
+        """
+        pdf = self._make_dataframe(n_days=7, start_date="2024-01-01")
+        filtered = _apply_oos_filter(
+            pdf,
+            oob_start_date="2024-01-03",
+            oob_end_date="2024-01-06",
+        )
+        # Jan 3 00:00 through Jan 6 00:00 = 73 hourly bars
+        assert len(filtered) == 73, f"Expected 73 bars, got {len(filtered)}"
+
+    # ── Edge cases ───────────────────────────────────────────────────────
+
+    def test_oos_start_after_end_excludes_all(self):
+        """Start date after end date should exclude all bars."""
+        pdf = self._make_dataframe(n_days=5, start_date="2024-01-01")
+        filtered = _apply_oos_filter(
+            pdf,
+            oob_start_date="2024-01-10",
+            oob_end_date="2024-01-09",
+        )
+        assert len(filtered) == 0
+
+    def test_oos_filter_with_real_prepare_df(self):
+        """Integration: filter on output of _prepare_df from real synthetic data."""
+        test_df, preds_df = create_synthetic_backtest_data(
+            n_rows=168, signal_pattern="mixed"
+        )
+        pdf = _prepare_df(test_df, preds_df)
+        original_len = len(pdf)
+        # Filter to a middle 3-day window (168 rows / 7 days ≈ 24 rows/day)
+        mid_point = pdf.index[len(pdf) // 2]
+        start_ts = str(mid_point - pd.Timedelta(days=1))
+        end_ts = str(mid_point + pd.Timedelta(days=1))
+        filtered = _apply_oos_filter(pdf, oob_start_date=start_ts, oob_end_date=end_ts)
+        assert len(filtered) > 0, "Window should contain bars"
+        assert len(filtered) < original_len, "Window should be a subset"
+        assert filtered.index.min() >= pd.Timestamp(start_ts)
+        assert filtered.index.max() <= pd.Timestamp(end_ts)

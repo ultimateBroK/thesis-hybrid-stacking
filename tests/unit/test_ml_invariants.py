@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.backtest import run_backtest_manual
+from thesis.stage_5_backtest import run_backtest_manual
 
 
 def _make_synthetic_data(

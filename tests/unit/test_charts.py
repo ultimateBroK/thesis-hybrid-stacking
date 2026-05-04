@@ -5,7 +5,7 @@ import polars as pl
 import pytest
 
 pytest.importorskip("pyecharts")
-from pyecharts.charts import Bar, Grid, HeatMap, Kline, Line, Pie, Scatter, Tab
+from pyecharts.charts import Bar, Grid, HeatMap, Line, Pie, Scatter, Tab
 
 from thesis.charts import (
     EXCLUDED_FEATURE_COLS,
@@ -22,7 +22,7 @@ from thesis.charts import (
     build_pnl_histogram_chart,
     build_rolling_sharpe_chart,
 )
-from thesis.config import Config
+from thesis._shared.config import Config
 
 
 # ---------------------------------------------------------------------------

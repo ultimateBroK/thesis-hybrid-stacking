@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.config import Config
+from thesis._shared.config import Config
 
 
 def _apply_stage_flags(config: Config, stage: int) -> Config:
@@ -106,7 +106,7 @@ class TestPipelineEmptyWindowsGuard:
     @pytest.mark.unit
     def test_empty_windows_raises_runtime_error(self) -> None:
         """_run_walk_forward_hybrid must raise RuntimeError for empty windows."""
-        from thesis.pipeline import _run_walk_forward_hybrid
+        from thesis.stage_4_training._walk_forward import _run_walk_forward_hybrid
 
         cfg = Config()
         # Use tiny data that can't produce any windows
@@ -132,15 +132,21 @@ class TestPipelineEmptyWindowsGuard:
         )
 
         with (
-            patch("thesis.pipeline.Path") as mock_path_cls,
-            patch("thesis.pipeline.generate_windows", return_value=[]),
+            patch("thesis.stage_4_training._walk_forward.Path") as mock_path_cls,
+            patch(
+                "thesis.stage_4_training._walk_forward.generate_windows",
+                return_value=[],
+            ),
         ):
             # Make labels_path.exists() return True
             mock_path_instance = mock_path_cls.return_value
             mock_path_instance.exists.return_value = True
 
             # Make pl.read_parquet return our tiny df
-            with patch("thesis.pipeline.pl.read_parquet", return_value=tiny_df):
+            with patch(
+                "thesis.stage_4_training._walk_forward.pl.read_parquet",
+                return_value=tiny_df,
+            ):
                 with pytest.raises(RuntimeError, match="No valid walk-forward windows"):
                     _run_walk_forward_hybrid(cfg)
 
@@ -151,7 +157,64 @@ class TestPipelineEmptyWindowsGuard:
         # ``_save_wf_artifacts`` (delegated from ``_run_walk_forward_hybrid``).
         # Verify the error message exists as a contract somewhere in the module.
         import inspect as _inspect
-        import thesis.pipeline as pipeline_mod
+        import thesis.stage_4_training._walk_forward as wf_mod
 
-        source = _inspect.getsource(pipeline_mod._save_wf_artifacts)
+        source = _inspect.getsource(wf_mod._save_wf_artifacts)
         assert "No OOF predictions generated" in source
+
+
+# ---------------------------------------------------------------------------
+# Stage numbering contract — --stage N = start at N, continue through 6
+# ---------------------------------------------------------------------------
+
+
+class TestStageNumbering:
+    """Tests encoding the --stage CLI contract: --stage N runs stages N..6.
+
+    Uses _apply_stage_flags which replicates the exact logic from main.py.
+    """
+
+    @pytest.mark.unit
+    def test_stage_1_runs_stages_1_through_6(self) -> None:
+        """--stage 1 keeps all six workflow flags True."""
+        cfg = _apply_stage_flags(Config(), 1)
+
+        flags = {
+            "run_data_pipeline": cfg.workflow.run_data_pipeline,
+            "run_feature_engineering": cfg.workflow.run_feature_engineering,
+            "run_label_generation": cfg.workflow.run_label_generation,
+            "run_model_training": cfg.workflow.run_model_training,
+            "run_backtest": cfg.workflow.run_backtest,
+            "run_reporting": cfg.workflow.run_reporting,
+        }
+        for name, value in flags.items():
+            assert value is True, f"--stage 1: {name} must be True"
+
+    @pytest.mark.unit
+    def test_stage_3_runs_stages_3_through_6(self) -> None:
+        """--stage 3 disables stages 1-2, enables stages 3-6."""
+        cfg = _apply_stage_flags(Config(), 3)
+
+        assert cfg.workflow.run_data_pipeline is False
+        assert cfg.workflow.run_feature_engineering is False
+        assert cfg.workflow.run_label_generation is True
+        assert cfg.workflow.run_model_training is True
+        assert cfg.workflow.run_backtest is True
+        assert cfg.workflow.run_reporting is True
+
+    @pytest.mark.unit
+    def test_stage_6_runs_only_stage_6(self) -> None:
+        """--stage 6 disables stages 1-5, enables only stage 6 reporting."""
+        cfg = _apply_stage_flags(Config(), 6)
+
+        assert cfg.workflow.run_reporting is True
+        for field in (
+            "run_data_pipeline",
+            "run_feature_engineering",
+            "run_label_generation",
+            "run_model_training",
+            "run_backtest",
+        ):
+            assert getattr(cfg.workflow, field) is False, (
+                f"--stage 6: {field} must be False"
+            )

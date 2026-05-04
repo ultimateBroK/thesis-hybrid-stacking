@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from thesis.config import Config, load_config
+from thesis._shared.config import Config, load_config
 
 
 def configure_session_paths(config: Config, session_dir: str | Path) -> None:

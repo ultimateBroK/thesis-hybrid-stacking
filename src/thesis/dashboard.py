@@ -9,8 +9,8 @@ Launch: ``pixi run streamlit``
 
 Combines session discovery, metric cards, zone classification, and all
 five dashboard sections (Data, Model, Training, Backtest, Reports) into
-a single module.  Zone colour helpers are re-exported from
-``thesis.zones`` so that nothing in this file depends on the removed
+a single module.  Zone colour helpers are imported from
+``thesis._shared.zones`` so that nothing in this file depends on the removed
 ``dashboard/`` package.
 """
 
@@ -31,9 +31,9 @@ from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie
 
 # ---------------------------------------------------------------------------
-# Zone helpers (re-exported from thesis.zones – pure Python, no Streamlit)
+# Zone helpers (from thesis._shared.zones – pure Python, no Streamlit)
 # ---------------------------------------------------------------------------
-from thesis.zones import (
+from thesis._shared.zones import (
     _ZONE_COLORS,
     _get_metric_zone,
     _is_extreme_value,
@@ -58,7 +58,7 @@ from thesis.charts import (
     build_rolling_sharpe_chart,
     load_session_data,
 )
-from thesis.session_paths import load_config_for_session
+from thesis._shared.session_paths import load_config_for_session
 
 logger = logging.getLogger("thesis.app_streamlit")
 

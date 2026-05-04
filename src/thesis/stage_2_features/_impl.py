@@ -1,4 +1,4 @@
-"""Feature engineering — compact price-action + trend feature set.
+"""Feature engineering — stage 2 implementation module.
 
 The production feature pipeline intentionally stays small and interpretable for
 student projects:
@@ -16,10 +16,10 @@ from pathlib import Path
 
 import polars as pl
 
-from thesis.config import Config
-from thesis.constants import EXCLUDE_COLS as _EXCLUDE_COLS, FEATURE_EPS
+from thesis._shared.config import Config
+from thesis._shared.constants import EXCLUDE_COLS as _EXCLUDE_COLS, FEATURE_EPS
 
-logger = logging.getLogger("thesis.features")
+logger = logging.getLogger("thesis.stage_2_features")
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ logger = logging.getLogger("thesis.features")
 
 
 def generate_features(config: Config) -> None:
-    """Generate and persist feature-enriched OHLCV bars.
+    """**Pipeline Stage 2 (of 6):** Generate and persist feature-enriched OHLCV bars.
 
     Loads OHLCV data from ``config.paths.ohlcv``, computes technical
     indicators and normalized/session features, drops warm-up rows with

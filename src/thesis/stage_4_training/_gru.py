@@ -5,7 +5,7 @@ into fixed-length hidden-state vectors for downstream LightGBM training.
 
 Public API::
 
-    from thesis.gru import (
+    from thesis.stage_4_training._gru import (
         GRUExtractor,
         SequenceDataset,
         prepare_sequences,
@@ -45,8 +45,8 @@ from rich.progress import (
 from sklearn.utils.class_weight import compute_class_weight
 from torch.utils.data import DataLoader, Dataset
 
-from thesis.config import Config
-from thesis.constants import (
+from thesis._shared.config import Config
+from thesis._shared.constants import (
     CALIB_LR,
     CALIB_MAX_ITER,
     COSINE_T0,
