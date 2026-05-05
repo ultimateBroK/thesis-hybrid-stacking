@@ -19,9 +19,7 @@ from thesis._shared.constants import CORE_STATIC_FEATURES
 logger = logging.getLogger("thesis.config")
 
 
-# ---------------------------------------------------------------------------
 # Dataclasses — one per TOML section
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -302,9 +300,7 @@ class PathsConfig:
     session_dir: str = ""  # Set at runtime by pipeline
 
 
-# ---------------------------------------------------------------------------
 # Top-level Config
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -323,9 +319,7 @@ class Config:
     paths: PathsConfig = field(default_factory=PathsConfig)
 
 
-# ---------------------------------------------------------------------------
 # Loader
-# ---------------------------------------------------------------------------
 
 _SECTION_MAP: dict[str, type] = {
     "data": DataConfig,

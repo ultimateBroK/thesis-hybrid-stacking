@@ -15,9 +15,7 @@ import numpy.typing as npt
 import polars as pl
 
 
-# ---------------------------------------------------------------------------
 # OHLCV consistency
-# ---------------------------------------------------------------------------
 
 
 def compute_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
@@ -51,9 +49,7 @@ def compute_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
 # Missing-bar statistics
-# ---------------------------------------------------------------------------
 
 _INTERVAL_TD: dict[str, timedelta] = {
     "1m": timedelta(minutes=1),
@@ -123,9 +119,7 @@ def compute_missing_bar_stats(
     }
 
 
-# ---------------------------------------------------------------------------
 # Label distribution
-# ---------------------------------------------------------------------------
 
 
 def compute_label_distribution(
@@ -159,9 +153,7 @@ def compute_label_distribution(
     }
 
 
-# ---------------------------------------------------------------------------
 # Outlier returns
-# ---------------------------------------------------------------------------
 
 
 def compute_outlier_returns(
@@ -210,9 +202,7 @@ def compute_outlier_returns(
     }
 
 
-# ---------------------------------------------------------------------------
 # Markdown rendering
-# ---------------------------------------------------------------------------
 
 _CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
 
@@ -221,7 +211,6 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
     """Render all quality stats as a markdown section for the report."""
     lines: list[str] = ["## Data Quality Report", ""]
 
-    # OHLCV
     ohlcv = stats.get("ohlcv_consistency", {})
     lines.append("### OHLCV Consistency")
     lines.append("")
@@ -231,7 +220,6 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
     lines.append(f"- Consistent: {'Yes' if ohlcv.get('is_consistent') else 'No'}")
     lines.append("")
 
-    # Missing bars
     mb = stats.get("missing_bars", {})
     lines.append("### Missing Bar Analysis")
     lines.append("")
@@ -241,7 +229,6 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
     lines.append(f"- Missing ratio: {mb.get('missing_ratio', 0.0):.6f}")
     lines.append("")
 
-    # Labels
     lbl = stats.get("label_distribution")
     if lbl:
         lines.append("### Label Distribution")
@@ -254,7 +241,6 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
         lines.append(f"- Imbalance ratio: {lbl.get('imbalance_ratio', 'N/A')}")
         lines.append("")
 
-    # Outliers
     out = stats.get("outlier_returns", {})
     lines.append("### Outlier Returns")
     lines.append("")
@@ -267,9 +253,7 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
 
 
 def compute_data_quality_report(

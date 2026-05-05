@@ -20,9 +20,7 @@ import numpy as np
 import numpy.typing as npt
 
 
-# ---------------------------------------------------------------------------
 # Individual metric helpers
-# ---------------------------------------------------------------------------
 
 
 def accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -211,9 +209,7 @@ def high_confidence_accuracy(
     return {"accuracy": acc, "count": count, "pct_of_total": count / total * 100}
 
 
-# ---------------------------------------------------------------------------
 # Regression auxiliary metrics (continuous arrays)
-# ---------------------------------------------------------------------------
 
 
 def mae(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -279,9 +275,7 @@ def compute_regression_auxiliary(
     }
 
 
-# ---------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
 
 # Default class ordering and names for the 3-class directional model.
 _DEFAULT_CLASSES: list[int] = [-1, 0, 1]

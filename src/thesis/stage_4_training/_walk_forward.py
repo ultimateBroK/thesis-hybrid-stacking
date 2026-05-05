@@ -18,9 +18,7 @@ from thesis.stage_4_training._validation import generate_windows, log_windows
 
 logger = logging.getLogger("thesis.pipeline")
 
-# ---------------------------------------------------------------------------
 # Module-level constants
-# ---------------------------------------------------------------------------
 
 _CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
 
@@ -46,9 +44,7 @@ _REGRESSION_DIRECTION_THRESHOLD = (
 )
 
 
-# ---------------------------------------------------------------------------
 # Utility helpers
-# ---------------------------------------------------------------------------
 
 
 def _select_static_feature_cols(
@@ -420,9 +416,7 @@ def _log_gru_signal_quality(
         )
 
 
-# ---------------------------------------------------------------------------
 # Walk-forward training loop — hybrid
-# ---------------------------------------------------------------------------
 
 
 def _compute_regression_target(
@@ -765,7 +759,7 @@ def _wf_build_predict_phase(
     train_hidden = gru_state["train_hidden"]
     test_hidden = gru_state["test_hidden"]
 
-    # ── Build hybrid feature matrix ─────────────────────────────────────
+    # ── Build hybrid feature matrix ──
     static_cols = _select_static_feature_cols(config, train_aligned, feature_cols)
     pca_k = config.gru.pca_components
     hidden_components = pca_k if pca_k > 0 else config.gru.hidden_size
@@ -785,7 +779,7 @@ def _wf_build_predict_phase(
     if is_regression:
         reg_y_train = train_aligned["regression_target"].to_numpy().astype(np.float64)
 
-    # ── Diagnostics & weights ───────────────────────────────────────────
+    # ── Diagnostics & weights ──
     _log_gru_signal_quality(train_hidden, y_train, config)
     diag = _window_diagnostics(w_idx + 1, train_aligned, test_aligned, y_train, y_test)
     train_weights = (
@@ -794,7 +788,7 @@ def _wf_build_predict_phase(
         else None
     )
 
-    # ── Train LightGBM ──────────────────────────────────────────────────
+    # ── Train LightGBM ──
     val_split_idx = max(1, int(len(X_train) * _VALIDATION_SPLIT_FRACTION))
     X_tr = X_train[:-val_split_idx]
     w_tr = train_weights[:-val_split_idx] if train_weights is not None else None
@@ -816,7 +810,7 @@ def _wf_build_predict_phase(
         else:
             combined_weights = shift_weights
 
-    # ── Attach weight diagnostics to window diag ─────────────────────────
+    # ── Attach weight diagnostics to window diag ──
     diag["class_weights"] = (
         {str(k): v for k, v in class_weights.items()} if class_weights else None
     )
@@ -833,7 +827,7 @@ def _wf_build_predict_phase(
         sample_weight=combined_weights,
     )
 
-    # ── Predict ─────────────────────────────────────────────────────────
+    # ── Predict ──
     preds, aligned_proba, proba, raw_preds = _wf_format_predictions(
         model, X_test, all_feature_cols, is_regression
     )
@@ -1047,18 +1041,18 @@ def _save_wf_artifacts(
     from thesis.stage_4_training._gru import save_gru_model
     from thesis.stage_4_training._lgbm import _save_feature_importance
 
-    # ── Guard ───────────────────────────────────────────────────────────
+    # ── Guard ──
     if not all_oof_preds or gru_model is None:
         raise RuntimeError(
             "No OOF predictions generated — all walk-forward windows were skipped"
         )
 
-    # ── Save GRU model (last window) ────────────────────────────────────
+    # ── Save GRU model (last window) ──
     if config.paths.session_dir:
         gru_path = Path(config.paths.session_dir) / "models" / "gru_model.pt"
         save_gru_model(gru_model, config, gru_path, mean=gru_mean, std=gru_std)
 
-    # ── Concatenate & validate OOF ──────────────────────────────────────
+    # ── Concatenate & validate OOF ──
     oof_df = pl.concat(all_oof_preds)
     oof_df = _add_confidence_columns(oof_df)
 
@@ -1073,7 +1067,7 @@ def _save_wf_artifacts(
         windows_count=len(window_diagnostics),
     )
 
-    # ── Save LGBM model + feature importance ────────────────────────────
+    # ── Save LGBM model + feature importance ──
     if last_lgbm_model is not None:
         model_path = Path(config.paths.model)
         model_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1081,7 +1075,7 @@ def _save_wf_artifacts(
     if last_lgbm_model is not None and last_feature_cols:
         _save_feature_importance(last_lgbm_model, last_feature_cols, config)
 
-    # ── Save training history ───────────────────────────────────────────
+    # ── Save training history ──
     if config.paths.session_dir:
         models_dir = Path(config.paths.session_dir) / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
@@ -1137,7 +1131,7 @@ def _save_wf_artifacts(
             )
         logger.info("Training history saved to %s", history_path)
 
-    # ── Save walk-forward history ───────────────────────────────────────
+    # ── Save walk-forward history ──
     if config.paths.session_dir:
         wf_path = (
             Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
@@ -1239,9 +1233,7 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
 # Walk-forward training loop — static baseline
-# ---------------------------------------------------------------------------
 
 
 def _prepare_static_wf_data(
@@ -1630,9 +1622,7 @@ def _run_walk_forward_static(
     )
 
 
-# ---------------------------------------------------------------------------
 # Probability / label helpers
-# ---------------------------------------------------------------------------
 
 
 def _label_suffix(class_label: int) -> str:
@@ -1753,9 +1743,7 @@ def _add_confidence_columns(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
 # Public walk-forward entry points
-# ---------------------------------------------------------------------------
 
 
 def _run_walk_forward(config: Config) -> None:

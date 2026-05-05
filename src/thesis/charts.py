@@ -25,12 +25,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("thesis.charts")
 
-# --- Constants (single source: thesis._shared.constants) --------------------
+# --- Constants (single source: thesis._shared.constants) ---
 
 COLORS: dict[str, str] = CHART_COLORS
 
 
-# --- Helpers -----------------------------------------------------------------
+# --- Helpers ---
 
 
 def _get_feature_cols(df: pl.DataFrame) -> list[str]:
@@ -45,7 +45,7 @@ def _get_feature_cols(df: pl.DataFrame) -> list[str]:
     return [c for c in df.columns if c not in EXCLUDED_FEATURE_COLS]
 
 
-# --- Data Loading ------------------------------------------------------------
+# --- Data Loading ---
 
 
 def load_session_data(config: Config) -> dict[str, Any]:
@@ -60,14 +60,11 @@ def load_session_data(config: Config) -> dict[str, Any]:
     """
     data: dict[str, Any] = {}
 
-    # Session dir (for download paths)
     data["session_dir"] = config.paths.session_dir
 
-    # OHLCV
     ohlcv_path = Path(config.paths.ohlcv)
     data["ohlcv"] = pl.read_parquet(ohlcv_path) if ohlcv_path.exists() else None
 
-    # Features
     features_path = Path(config.paths.features)
     data["features"] = (
         pl.read_parquet(features_path) if features_path.exists() else None
@@ -77,7 +74,6 @@ def load_session_data(config: Config) -> dict[str, Any]:
     test_path = Path(config.paths.test_data)
     data["test"] = pl.read_parquet(test_path) if test_path.exists() else None
 
-    # Labels
     labels_path = Path(config.paths.labels)
     data["labels"] = pl.read_parquet(labels_path) if labels_path.exists() else None
 
@@ -121,9 +117,7 @@ def load_session_data(config: Config) -> dict[str, Any]:
     return data
 
 
-# =============================================================================
 # Data Exploration Charts (candlestick, correlation, labels, features)
-# =============================================================================
 
 
 def _downsample_ohlcv(df: pl.DataFrame, max_bars: int) -> pl.DataFrame:
@@ -528,9 +522,7 @@ def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
     return tab
 
 
-# =============================================================================
 # Model Performance Charts (confusion matrix, confidence, feature importance)
-# =============================================================================
 
 
 def build_confusion_matrix_chart(
@@ -724,9 +716,7 @@ def build_feature_importance_chart(
     return chart
 
 
-# =============================================================================
 # Backtest Charts (equity, drawdown, PnL, monthly returns, rolling Sharpe)
-# =============================================================================
 
 
 def build_equity_drawdown_chart(
@@ -1140,7 +1130,7 @@ def build_duration_pnl_scatter(trades: list[dict]) -> Scatter:
     return chart
 
 
-# --- Public API --------------------------------------------------------------
+# --- Public API ---
 
 __all__ = [
     # Constants

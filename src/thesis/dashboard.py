@@ -21,18 +21,14 @@ import streamlit as st
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie
 
-# ---------------------------------------------------------------------------
 # Zone helpers (from thesis._shared.zones – pure Python, no Streamlit)
-# ---------------------------------------------------------------------------
 from thesis._shared.zones import (
     _ZONE_COLORS,
     _get_metric_zone,
     _is_extreme_value,
 )
 
-# ---------------------------------------------------------------------------
 # Session management & chart builders
-# ---------------------------------------------------------------------------
 from thesis.charts import (
     COLORS,
     EXCLUDED_FEATURE_COLS,
@@ -53,17 +49,13 @@ from thesis._shared.session_paths import load_config_for_session
 
 logger = logging.getLogger("thesis.app_streamlit")
 
-# ---------------------------------------------------------------------------
 # Ensure src/ is on sys.path for sibling imports
-# ---------------------------------------------------------------------------
 _src = str(Path(__file__).resolve().parent.parent)
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
 
-# ===================================================================
 # Metric card helpers
-# ===================================================================
 
 
 def _render_zoned_metric(
@@ -167,9 +159,7 @@ def _render_metric_card(
     )
 
 
-# ===================================================================
 # Session discovery & loading
-# ===================================================================
 
 
 def _find_sessions() -> list[Path]:
@@ -265,9 +255,7 @@ def _session_selector_fragment() -> str | None:
     return selected
 
 
-# ===================================================================
 # Shared chart renderer
-# ===================================================================
 
 
 def _render_chart(chart: object, height: str = "500px") -> None:
@@ -280,9 +268,7 @@ def _render_chart(chart: object, height: str = "500px") -> None:
         st.warning(f"Chart render failed: {e}")
 
 
-# ===================================================================
 # Section: Data Exploration
-# ===================================================================
 
 
 def _render_data_section(data: dict, config: object) -> None:
@@ -417,9 +403,7 @@ def _render_data_section(data: dict, config: object) -> None:
         st.info("No features data available.")
 
 
-# ===================================================================
 # Section: Model Performance
-# ===================================================================
 
 
 def _render_model_section(data: dict, session_dir: str = "") -> None:
@@ -591,9 +575,7 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
         st.info("No feature importance data available.")
 
 
-# ===================================================================
 # Section: Training
-# ===================================================================
 
 
 def _render_training_section(data: dict, session_dir: str) -> None:
@@ -787,9 +769,7 @@ def _render_training_section(data: dict, session_dir: str) -> None:
         st.info("No pipeline log found for this session.")
 
 
-# ===================================================================
 # Section: Backtest Results
-# ===================================================================
 
 
 def _render_backtest_section(data: dict, config: object) -> None:
@@ -1031,9 +1011,7 @@ def _render_backtest_section(data: dict, config: object) -> None:
         st.info("No session directory available for downloads.")
 
 
-# ===================================================================
 # Section: Reports
-# ===================================================================
 
 
 def _render_reports_section(session_dir: str) -> None:
@@ -1125,9 +1103,7 @@ def _render_reports_section(session_dir: str) -> None:
             _render_chart(chart, height="600px")
 
 
-# ===================================================================
 # Main entry point
-# ===================================================================
 
 
 def main() -> None:

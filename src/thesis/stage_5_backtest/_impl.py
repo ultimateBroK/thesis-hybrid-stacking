@@ -31,9 +31,7 @@ from thesis._shared.ui import console
 logger = logging.getLogger("thesis.backtest")
 
 
-# ---------------------------------------------------------------------------
 # Module-level fallback defaults
-# ---------------------------------------------------------------------------
 
 #: Floor to prevent microscopic stops in low-volatility regimes.
 _MIN_ATR_FLOOR: float = 0.0001
@@ -115,9 +113,7 @@ def _calendar_day(value: object) -> object:
     return pd.Timestamp(value).date()
 
 
-# ---------------------------------------------------------------------------
 # Strategy
-# ---------------------------------------------------------------------------
 
 
 class HybridGRUStrategy(Strategy):
@@ -170,7 +166,7 @@ class HybridGRUStrategy(Strategy):
         min_bars_between_trades: Minimum bars after position exit before re-entry.
     """
 
-    # ── Strategy fallback defaults ─────────────────────────────────────────
+    # ── Strategy fallback defaults ──
     # Runtime configuration is passed through bt.run() keyword arguments.
     # These class attributes provide safety defaults for direct Strategy use
     # and for parameters omitted by a caller. Short Strategy attribute names
@@ -442,9 +438,7 @@ class HybridGRUStrategy(Strategy):
             self._position_was_open = True
 
 
-# ---------------------------------------------------------------------------
 # Statistics
-# ---------------------------------------------------------------------------
 
 
 def _normalize_stats(stats: pd.Series) -> dict:
@@ -489,9 +483,7 @@ def _normalize_stats(stats: pd.Series) -> dict:
     return out
 
 
-# ---------------------------------------------------------------------------
 # Persistence
-# ---------------------------------------------------------------------------
 
 
 def _trades_to_list(
@@ -650,9 +642,7 @@ def _save_bokeh_chart(
     logger.info("Bokeh chart saved: %s", chart_path)
 
 
-# ---------------------------------------------------------------------------
 # Runners — Data Preparation
-# ---------------------------------------------------------------------------
 
 
 def _validate_backtest_merge(
@@ -763,9 +753,7 @@ def _prepare_df(
     return pdf
 
 
-# ---------------------------------------------------------------------------
 # Runners — Configuration Helpers
-# ---------------------------------------------------------------------------
 
 
 def _compute_spread_rate(
@@ -878,9 +866,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
     return stats, bt
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 
 def run_backtest(config: Config) -> None:
@@ -942,7 +928,7 @@ def run_backtest(config: Config) -> None:
         preds_source=str(preds_path),
     )
 
-    # ── OOS date-range filter ────────────────────────────────────────────
+    # ── OOS date-range filter ──
     bc = config.backtest
     if bc.oob_start_date:
         start_ts = pd.Timestamp(bc.oob_start_date)

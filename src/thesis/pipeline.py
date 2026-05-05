@@ -25,9 +25,7 @@ from thesis.stage_6_reporting import generate_report
 logger = logging.getLogger("thesis.pipeline")
 
 
-# ---------------------------------------------------------------------------
 # Cache fingerprinting
-# ---------------------------------------------------------------------------
 
 # Config sections whose values affect each stage's output.
 # Used by _cache_hash to fingerprint the inputs.
@@ -96,9 +94,7 @@ def _resolve_cache_path(
     return p
 
 
-# ---------------------------------------------------------------------------
 # Stage runner with cache checking
-# ---------------------------------------------------------------------------
 
 
 def _run_stage(
@@ -164,9 +160,7 @@ def _run_backtest_with_barrier_guard(config: Config) -> None:
     run_backtest(config)
 
 
-# ---------------------------------------------------------------------------
 # Main pipeline
-# ---------------------------------------------------------------------------
 
 
 def run_pipeline(config: Config) -> None:

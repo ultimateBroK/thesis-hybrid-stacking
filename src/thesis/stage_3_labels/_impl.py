@@ -30,9 +30,7 @@ from thesis._shared.ui import console
 logger = logging.getLogger("thesis.labels")
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 
 def generate_labels(config: Config) -> None:
@@ -125,9 +123,7 @@ def generate_labels(config: Config) -> None:
     logger.info("Labels saved: %s (%d rows)", out_path, len(df))
 
 
-# ---------------------------------------------------------------------------
 # Core labeling logic
-# ---------------------------------------------------------------------------
 
 
 @njit
@@ -281,9 +277,7 @@ def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
     return weights
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _validate_paths(features_path: Path, ohlcv_path: Path) -> None:

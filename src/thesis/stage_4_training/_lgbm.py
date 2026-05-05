@@ -38,9 +38,7 @@ from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.model")
 
-# ---------------------------------------------------------------------------
 # LightGBM utilities
-# ---------------------------------------------------------------------------
 
 
 def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
@@ -198,9 +196,7 @@ def _filter_validation_to_seen_classes(
     return _wrap_np(X_val[mask], feature_cols), y_val[mask]
 
 
-# ---------------------------------------------------------------------------
 # LightGBM training — fixed hyperparameters
-# ---------------------------------------------------------------------------
 
 
 def _train_fixed(
@@ -387,9 +383,7 @@ def _save_feature_importance(
         logger.warning("Feature importance save failed: %s", e)
 
 
-# ---------------------------------------------------------------------------
 # Hybrid matrix helpers
-# ---------------------------------------------------------------------------
 
 
 def _normalize_label(lbl: int) -> str:
@@ -517,9 +511,7 @@ def _save_predictions(
     preds_df.write_csv(csv_path)
 
 
-# ---------------------------------------------------------------------------
 # Main entry point
-# ---------------------------------------------------------------------------
 
 
 def train_model(config: Config) -> None:
@@ -546,7 +538,6 @@ def train_model(config: Config) -> None:
                 f"Split data not found: {p}. Run split stage first."
             )
 
-    # Load splits
     with console.status("[cyan]Loading train/val/test splits[/]"):
         train_df = pl.read_parquet(train_path)
         val_df = pl.read_parquet(val_path)
@@ -647,7 +638,6 @@ def train_model(config: Config) -> None:
         sample_weight=train_weights,
     )
 
-    # Save LightGBM model
     model_path = Path(config.paths.model)
     model_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, model_path)
@@ -655,7 +645,6 @@ def train_model(config: Config) -> None:
 
     is_regression = config.model.objective == "regression"
 
-    # Save training history
     models_dir = model_path.parent
     history_path = models_dir / "training_history.json"
     lgbm_info: dict = {

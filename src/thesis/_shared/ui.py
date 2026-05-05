@@ -9,14 +9,10 @@ import logging
 from rich.console import Console
 from rich.text import Text
 
-# ---------------------------------------------------------------------------
 # Singleton console — every module imports this for consistent rendering
-# ---------------------------------------------------------------------------
 console = Console()
 
-# ---------------------------------------------------------------------------
 # Stage colour map (used by pipeline + training)
-# ---------------------------------------------------------------------------
 STAGE_STYLES: dict[int, str] = {
     1: "bold blue",
     2: "bold green",
@@ -36,9 +32,7 @@ STAGE_LABELS: dict[int, str] = {
 }
 
 
-# ---------------------------------------------------------------------------
 # UI helpers
-# ---------------------------------------------------------------------------
 def stage_header(stage: int) -> None:
     """Print a visually distinct stage banner via console (Rich) and logger.
 
@@ -49,7 +43,6 @@ def stage_header(stage: int) -> None:
     style = STAGE_STYLES.get(stage, "bold")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
     total = 6
-    # Rich console output for visual display
     console.print()
     console.rule(
         Text(f"  STAGE {stage}/{total}  ·  {label}  ", style=style),
@@ -72,7 +65,6 @@ def stage_skip(stage: int, reason: str) -> None:
     """
     _logger = logging.getLogger("thesis")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
-    # Rich console output
     console.print(Text(f"  ⊘ SKIP {label}: {reason}", style="dim"))
     # Logger output for file capture
     _logger.info("SKIP %s | %s", label, reason)

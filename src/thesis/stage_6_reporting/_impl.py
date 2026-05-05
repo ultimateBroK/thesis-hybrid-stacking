@@ -24,9 +24,7 @@ from thesis.stage_6_reporting import _calibration, _data_quality, _model_metrics
 
 logger = logging.getLogger("thesis.report")
 
-# ---------------------------------------------------------------------------
 # Module-level constants — extracted from function bodies
-# ---------------------------------------------------------------------------
 
 # Confidence & baseline
 _HIGH_CONFIDENCE_THRESHOLD: float = 0.70
@@ -67,9 +65,7 @@ _ECE_N_BINS: int = 10
 _ECE_WELL_CALIBRATED: float = 0.05
 _ECE_MODERATELY_CALIBRATED: float = 0.15
 
-# ---------------------------------------------------------------------------
 # Stats helpers
-# ---------------------------------------------------------------------------
 
 
 def _load_label_distribution(labels_path: Path) -> dict | None:
@@ -190,14 +186,10 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         return None
 
 
-# ---------------------------------------------------------------------------
 # Confusion cost matrix
-# ---------------------------------------------------------------------------
 
 
-# ---------------------------------------------------------------------------
 # Benchmark comparison helpers
-# ---------------------------------------------------------------------------
 
 _BARS_PER_YEAR = H1_BARS_PER_YEAR
 
@@ -450,9 +442,7 @@ def compute_benchmark_comparison(
     return results
 
 
-# ---------------------------------------------------------------------------
 # Markdown builder
-# ---------------------------------------------------------------------------
 
 _ZONE_EMOJI = {
     "excellent": "✅",
@@ -1172,7 +1162,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
         L: Output markdown lines list (mutated in-place).
         config: Application configuration.
     """
-    # ── Load walk-forward history ───────────────────────────────────────
+    # ── Load walk-forward history ──
     session_dir = config.paths.session_dir
     if not session_dir:
         L.append("## OOF vs OOS Generalization Check")
@@ -1211,7 +1201,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
         L.append("")
         return
 
-    # ── Aggregate OOF metrics across windows (weighted by test_rows) ────
+    # ── Aggregate OOF metrics across windows (weighted by test_rows) ──
     total_test_rows = 0
     weighted_acc = 0.0
     weighted_macro_f1 = 0.0
@@ -1253,7 +1243,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                 weighted_class_f1[cls_key] / sup if sup > 0 else None
             )
 
-    # ── Compute OOS metrics from predictions filtered to test period ────
+    # ── Compute OOS metrics from predictions filtered to test period ──
     oos_accuracy: float | None = None
     oos_macro_f1: float | None = None
     oos_class_f1: dict[str, float | None] = {"-1": None, "0": None, "1": None}
@@ -1326,7 +1316,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                     "Failed to compute OOS prediction metrics", exc_info=True
                 )
 
-    # ── Render table ─────────────────────────────────────────────────────
+    # ── Render table ──
     L.append("## OOF vs OOS Generalization Check")
     L.append("")
     L.append(
@@ -1360,7 +1350,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
     L.append("")
 
-    # ── Interpretive note ────────────────────────────────────────────────
+    # ── Interpretive note ──
     if oof_accuracy is not None and oos_accuracy is not None:
         gap = abs(oos_accuracy - oof_accuracy)
         if gap < 0.02:
@@ -1836,16 +1826,16 @@ def _build_markdown(
     _config_table(L, config)
     L.append("")
 
-    # ── SECTION 1: Data Quality ───────────────────────────────────────────
+    # ── SECTION 1: Data Quality ──
     _render_data_quality_section(L, config)
 
-    # ── SECTION 2: Label Design & Methodology ─────────────────────────────
+    # ── SECTION 2: Label Design & Methodology ──
     _render_label_design_section(L, config)
 
-    # ── SECTION 3: Validation Methodology ─────────────────────────────────
+    # ── SECTION 3: Validation Methodology ──
     _render_validation_methodology_section(L, config)
 
-    # ── SECTION 4: Classification Metrics (Primary) ───────────────────────
+    # ── SECTION 4: Classification Metrics (Primary) ──
     L.append("## Classification Metrics")
     L.append("")
     L.append(
@@ -1857,7 +1847,7 @@ def _build_markdown(
     _accuracy_table(L, pred_stats, config)
     L.append("")
 
-    # ── SECTION 5: Model Architecture & Features ──────────────────────────
+    # ── SECTION 5: Model Architecture & Features ──
     L.append("## Model Architecture & Features")
     L.append("")
     if config.model.architecture == "hybrid":
@@ -1865,16 +1855,16 @@ def _build_markdown(
     _feature_importance_table(L, feature_importance)
     L.append("")
 
-    # ── SECTION 6: Model Comparison ───────────────────────────────────────
+    # ── SECTION 6: Model Comparison ──
     _static_vs_hybrid_comparison(L, config)
 
-    # ── SECTION 6b: Baseline Comparison ───────────────────────────────────
+    # ── SECTION 6b: Baseline Comparison ──
     _render_baseline_comparison_section(L, config)
 
-    # ── SECTION 7: Auxiliary Regression Metrics ───────────────────────────
+    # ── SECTION 7: Auxiliary Regression Metrics ──
     _render_auxiliary_regression_section(L, pred_stats)
 
-    # ── SECTION 8: Application Demo — Backtest Results ────────────────────
+    # ── SECTION 8: Application Demo — Backtest Results ──
     L.append("## Application Demo: Backtest Results")
     L.append("")
     L.append(
@@ -1888,15 +1878,15 @@ def _build_markdown(
     _render_metric_zones_section(L, metrics, trades)
     L.append("")
 
-    # ── SECTION 9: Application Demo — Benchmark Comparison ────────────────
+    # ── SECTION 9: Application Demo — Benchmark Comparison ──
     L.append("## Application Demo: Benchmark Comparison")
     L.append("")
     _benchmark_comparison_table(L, metrics, config)
 
-    # ── SECTION 10: OOF vs OOS Generalization Check ───────────────────────
+    # ── SECTION 10: OOF vs OOS Generalization Check ──
     _render_oof_vs_oos_section(L, config)
 
-    # ── SECTION 11: Issues & Recommendations ──────────────────────────────
+    # ── SECTION 11: Issues & Recommendations ──
     L.append("## Issues & Recommendations")
     L.append("")
     _issues_list(L, metrics, trades, config, pred_stats)
@@ -1988,9 +1978,7 @@ def _build_model_evaluation_markdown(
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
 # Section builders
-# ---------------------------------------------------------------------------
 
 
 def _exec_table(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
@@ -2928,9 +2916,7 @@ def _issues_list(
     _render_issues(L, issues, recs)
 
 
-# ---------------------------------------------------------------------------
 # Chart helpers
-# ---------------------------------------------------------------------------
 
 
 def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None:
@@ -3028,9 +3014,7 @@ def _load_feature_importance(config: Config, out_dir: Path) -> dict:
         return json.load(f)
 
 
-# ---------------------------------------------------------------------------
 # Public entry point
-# ---------------------------------------------------------------------------
 
 
 def generate_report(config: Config) -> None:
@@ -3061,7 +3045,6 @@ def generate_report(config: Config) -> None:
         out_dir = Path("results")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load backtest results
     bt_path = Path(config.paths.backtest_results)
     metrics: dict = {}
     trades: list[dict] = []

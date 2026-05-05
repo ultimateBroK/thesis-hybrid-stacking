@@ -10,9 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 
-# ---------------------------------------------------------------------------
 # Individual baseline strategies
-# ---------------------------------------------------------------------------
 
 
 def naive_direction(y_returns: npt.NDArray) -> npt.NDArray:
@@ -52,9 +50,7 @@ def random_baseline(
     return rng.choice(classes, size=n_samples).astype(np.int8)
 
 
-# ---------------------------------------------------------------------------
 # Metric computation (reuses stage_6_reporting where possible)
-# ---------------------------------------------------------------------------
 
 
 def compute_baseline_metrics(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict:
@@ -72,9 +68,7 @@ def compute_baseline_metrics(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
 # Run all baselines
-# ---------------------------------------------------------------------------
 
 
 def run_all_baselines(

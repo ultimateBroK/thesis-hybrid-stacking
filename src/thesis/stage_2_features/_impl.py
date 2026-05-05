@@ -23,9 +23,7 @@ from thesis._shared.ui import console
 logger = logging.getLogger("thesis.stage_2_features")
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 
 def generate_features(config: Config) -> None:
@@ -112,9 +110,7 @@ def generate_features(config: Config) -> None:
     logger.info("Feature columns (%d): %s", len(feature_cols), feature_cols)
 
 
-# ---------------------------------------------------------------------------
 # Shared ATR expression helper
-# ---------------------------------------------------------------------------
 
 
 def _compute_atr_expr(period: int) -> pl.Expr:
@@ -244,9 +240,7 @@ def _drop_warmup_rows(df: pl.DataFrame, feature_cols: list[str]) -> pl.DataFrame
     return df
 
 
-# ---------------------------------------------------------------------------
 # Core indicator helpers (all Polars-native)
-# ---------------------------------------------------------------------------
 
 
 def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -307,9 +301,7 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
 # New normalized features
-# ---------------------------------------------------------------------------
 
 
 def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -452,9 +444,7 @@ def _compute_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
     ).drop(["prev_pivot", "prev_r1", "prev_s1"])
 
 
-# ---------------------------------------------------------------------------
 # Price-action candle and bar structure features
-# ---------------------------------------------------------------------------
 
 
 def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -574,9 +564,7 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
 # Volume z-score
-# ---------------------------------------------------------------------------
 
 
 def _add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -600,9 +588,7 @@ def _add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
 # Normalized OHLCV prices for GRU sequence input
-# ---------------------------------------------------------------------------
 
 
 def _add_ohlcv_norm(df: pl.DataFrame) -> pl.DataFrame:
@@ -647,9 +633,7 @@ def _add_ohlcv_norm(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
 # Log return features
-# ---------------------------------------------------------------------------
 
 
 def _add_log_returns(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -675,9 +659,7 @@ def _add_log_returns(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df.with_columns(cols)
 
 
-# ---------------------------------------------------------------------------
 # High-low range feature
-# ---------------------------------------------------------------------------
 
 
 def _add_high_low_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -703,9 +685,7 @@ def _add_high_low_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
 # Regime features — ADX, EMA slope, regime strength
-# ---------------------------------------------------------------------------
 
 
 def _add_adx(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -808,9 +788,7 @@ def _add_regime(df: pl.DataFrame) -> pl.DataFrame:
     return df.with_columns(regime.alias("regime_strength"))
 
 
-# ---------------------------------------------------------------------------
 # Feature list sidecar
-# ---------------------------------------------------------------------------
 
 
 def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
