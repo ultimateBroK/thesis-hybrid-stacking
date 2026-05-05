@@ -1,12 +1,7 @@
-"""Pipeline orchestration — sequential stage runner.
+"""Pipeline orchestration for the sequential thesis workflow.
 
-Stages:
-    1. Data preparation (tick → OHLCV)
-    2. Feature engineering
-    3. Triple-barrier labeling
-    4. Walk-forward training (dispatches to stage_4_training)
-    5. Backtest (optional application demo — on concatenated OOF predictions)
-    6. Model evaluation report generation (primary output)
+Runs data preparation, feature engineering, labeling, model training,
+optional backtesting, and report generation in order.
 """
 
 from __future__ import annotations
@@ -177,13 +172,8 @@ def _run_backtest_with_barrier_guard(config: Config) -> None:
 def run_pipeline(config: Config) -> None:
     """Execute the full thesis pipeline.
 
-    Stages:
-        1. Data preparation (tick → OHLCV)
-        2. Feature engineering
-        3. Triple-barrier labeling
-        4. Walk-forward model training (GRU + LightGBM per window)
-        5. Backtest (optional application demo — on concatenated OOF predictions)
-        6. Model evaluation report generation (primary output)
+    Runs data preparation, feature engineering, triple-barrier labeling,
+    walk-forward model training, optional backtesting, and report generation.
 
     Args:
         config: Loaded application configuration.

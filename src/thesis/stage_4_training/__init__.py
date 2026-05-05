@@ -1,4 +1,4 @@
-"""Stage 4: Model training — walk-forward validation, GRU, LightGBM."""
+"""Model training package for walk-forward GRU and LightGBM workflows."""
 
 from thesis.stage_4_training._baselines import (
     compute_baseline_metrics,

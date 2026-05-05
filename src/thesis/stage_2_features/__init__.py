@@ -1,7 +1,4 @@
-"""Stage 2: Feature engineering.
-
-Exports ``generate_features`` as the primary entry point.
-"""
+"""Feature engineering package for OHLCV-derived indicators."""
 
 from ._impl import generate_features
 

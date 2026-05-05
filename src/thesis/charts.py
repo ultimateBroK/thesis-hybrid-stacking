@@ -1,18 +1,7 @@
 """Interactive ECharts chart builders for thesis visualization.
 
-.. deprecated::
-    This is a supplementary visualization module. It is NOT required for the
-    core thesis pipeline.  The core pipeline (data → features → labels →
-    model → backtest → report) functions independently of dashboard/charts.
-
-Each function builds a pyecharts chart object that can be:
-- Rendered via st_pyecharts() in Streamlit (pyecharts charts)
-- Exported as HTML via chart.render("path.html")
-
-Usage:
-    from thesis.charts import build_candlestick_chart
-    chart = build_candlestick_chart(ohlcv_df, config)
-    chart.render("candlestick.html")
+Each builder returns a pyecharts chart that can be rendered in Streamlit or
+exported as standalone HTML.
 """
 
 from __future__ import annotations

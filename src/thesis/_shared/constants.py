@@ -1,8 +1,7 @@
-"""Project-wide constants shared across pipeline stages — shared copy.
+"""Project-wide constants shared across pipeline stages.
 
-This module is the single source of truth for column exclusion sets and other
-pipeline-level constants. Importing from here prevents the silent drift that
-occurs when each stage maintains its own copy.
+Single source of truth for column exclusion sets and other pipeline-level
+constants. Import from here to keep stages in sync.
 """
 
 # ---------------------------------------------------------------------------
@@ -17,7 +16,7 @@ occurs when each stage maintains its own copy.
 #:  - label              → target variable (look-ahead)
 #:  - upper_barrier/lower_barrier/touched_bar/event_end/sample_weight →
 #:    label-derived metadata; not predictive features
-#:  - tp_price/sl_price → legacy label aliases from older cached artifacts
+#:  - tp_price/sl_price → label price metadata, not predictive features
 #:  - open_right/high_right/low_right/close_right → label-derived look-ahead
 #:  - open/high/low/close/volume → raw OHLCV, excluded to avoid raw price leakage
 #:  - avg_spread/tick_count → microstructure columns kept for backtest
@@ -55,7 +54,7 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
     ]
 )
 
-# Backward-compatible private alias used by internal modules
+# Private alias used by internal modules.
 _EXCLUDE_COLS = EXCLUDE_COLS
 
 # Annualization constant for hourly XAU/USD-style markets.

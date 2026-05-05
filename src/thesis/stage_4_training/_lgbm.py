@@ -1,8 +1,4 @@
-"""Hybrid GRU + LightGBM model — training, tuning, and interpretation.
-
-Merged from ``hybrid/train.py``, ``hybrid/lgbm.py``, and ``hybrid/interpret.py``
-into a single module for walk-forward pipeline integration.
-"""
+"""Hybrid GRU + LightGBM model — training, tuning, and interpretation."""
 
 from __future__ import annotations
 
@@ -527,7 +523,7 @@ def _save_predictions(
 
 
 def train_model(config: Config) -> None:
-    """**Pipeline Stage 4 (of 6):** Train and evaluate the hybrid GRU + LightGBM model.
+    """Train and evaluate the hybrid GRU + LightGBM model.
 
     This stage trains the GRU feature extractor, builds hybrid features,
     trains LightGBM, saves artifacts, and computes interpretation outputs.

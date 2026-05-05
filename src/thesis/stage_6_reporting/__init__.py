@@ -1,7 +1,4 @@
-"""Stage 6: Report generation.
-
-Exports ``generate_report`` as the primary entry point.
-"""
+"""Report generation package for thesis outputs."""
 
 from ._impl import generate_report
 

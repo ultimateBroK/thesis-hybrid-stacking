@@ -1,11 +1,4 @@
-"""Stage 5: CFD backtest simulation.
-
-Public API:
-    run_backtest         — full pipeline from Parquet files.
-    run_backtest_from_data — from in-memory DataFrames.
-    run_backtest_manual  — with explicit keyword parameters.
-    HybridGRUStrategy    — strategy class for backtesting.py.
-"""
+"""CFD backtest simulation package."""
 
 from ._impl import (
     HybridGRUStrategy,

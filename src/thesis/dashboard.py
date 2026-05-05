@@ -1,17 +1,8 @@
-"""Interactive Streamlit dashboard for thesis visualization.
+"""Interactive Streamlit dashboard for thesis session visualization.
 
-.. deprecated::
-    This is a supplementary visualization module. It is NOT required for the
-    core thesis pipeline.  The core pipeline (data → features → labels →
-    model → backtest → report) functions independently of dashboard/charts.
-
-Launch: ``pixi run streamlit``
-
-Combines session discovery, metric cards, zone classification, and all
-five dashboard sections (Data, Model, Training, Backtest, Reports) into
-a single module.  Zone colour helpers are imported from
-``thesis._shared.zones`` so that nothing in this file depends on the removed
-``dashboard/`` package.
+Launch with ``pixi run streamlit``. The dashboard combines session discovery,
+metric cards, zone classification, and five sections: Data, Model, Training,
+Backtest, and Reports.
 """
 
 from __future__ import annotations
@@ -187,7 +178,8 @@ def _find_sessions() -> list[Path]:
     if not results.exists():
         return []
 
-    def parse_session_timestamp(path: Path) -> datetime | None:
+    def _parse_session_timestamp(path: Path) -> datetime | None:
+        """Parse a session directory name into a datetime."""
         m = re.search(r"(\d{8})_(\d{6})$", path.name)
         if not m:
             return None
@@ -198,7 +190,7 @@ def _find_sessions() -> list[Path]:
 
     sessions = sorted(
         [p for p in results.iterdir() if p.is_dir() and (p / "config").exists()],
-        key=lambda p: parse_session_timestamp(p) or datetime.min,
+        key=lambda p: _parse_session_timestamp(p) or datetime.min,
         reverse=True,
     )
     return sessions

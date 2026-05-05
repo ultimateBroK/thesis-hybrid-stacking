@@ -1,8 +1,4 @@
-"""Walk-forward training orchestration — hybrid (GRU+LGBM) and static (LGBM-only).
-
-Moved from ``thesis.pipeline`` to a dedicated stage-4 module so ``pipeline.py``
-becomes a thin orchestrator that only imports from stage packages.
-"""
+"""Walk-forward training orchestration — hybrid (GRU+LGBM) and static (LGBM-only)."""
 
 from __future__ import annotations
 
@@ -1793,11 +1789,9 @@ def _run_static_train(config: Config) -> None:
     Args:
         config: Application configuration.
 
-    Warning:
-        Static split does not apply purge/embargo at the split boundary.
-        With triple-barrier labels (horizon_bars > 0), labels near the
-        boundary may use future information from the adjacent split. For
-        thesis evaluation, use ``validation.method = "sliding"`` instead.
+    Static split does not apply purge or embargo at the split boundary. With
+    triple-barrier labels, boundary labels may use future information from the
+    adjacent split. For thesis evaluation, use sliding validation instead.
     """
     from thesis.stage_4_training._lgbm import train_model
 

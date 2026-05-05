@@ -2,20 +2,6 @@
 
 Provides an attention-pooled GRU that encodes sliding-window price sequences
 into fixed-length hidden-state vectors for downstream LightGBM training.
-
-Public API::
-
-    from thesis.stage_4_training._gru import (
-        GRUExtractor,
-        SequenceDataset,
-        prepare_sequences,
-        train_gru,
-        extract_hidden_states,
-        predict_gru_proba,
-        save_gru_model,
-        load_gru_model,
-        load_gru_classifier,
-    )
 """
 
 from __future__ import annotations
@@ -107,9 +93,8 @@ class GRUExtractor(nn.Module):
     positions in the input sequence are most informative, rather than
     blindly using the final hidden state.
 
-    Architecture::
-
-        input → LayerNorm → VariationalDropout → GRU(2-layer) → attention → weighted sum → output
+    The architecture applies LayerNorm, variational dropout, GRU encoding,
+    attention pooling, and an optional projection for bidirectional outputs.
 
     Args:
         input_size: Number of features per timestep.
@@ -143,9 +128,6 @@ class GRUExtractor(nn.Module):
                 sees both past and future context.  When enabled the GRU
                 output dimension doubles to ``hidden_size * 2`` and a linear
                 projection layer reduces it back to ``hidden_size``.
-
-        Returns:
-            None.
         """
         super().__init__()
         self.hidden_size = hidden_size
@@ -209,15 +191,9 @@ class FocalLoss(nn.Module):
     on hard, misclassified samples.  This is critical when one class
     dominates (e.g. Hold ≈ 69 % in 3-class financial labeling).
 
-    Formula::
-
-        FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
-
-    where::
-
-        p_t  = probability of the correct class
-        gamma >= 0  (focusing parameter; higher → more emphasis on hard examples)
-        alpha_t    = per-class weight (optional)
+    The loss is ``-alpha_t * (1 - p_t)^gamma * log(p_t)``, where ``p_t`` is
+    the predicted probability of the correct class and ``alpha_t`` is an
+    optional per-class weight.
 
     Args:
         gamma: Focusing parameter.  ``gamma=0`` reduces to standard
@@ -227,10 +203,8 @@ class FocalLoss(nn.Module):
             Typically set to inverse class frequencies.
         num_classes: Number of target classes (default 3).
 
-    Shape:
-        - logits: ``(N, C)`` — raw scores before softmax.
-        - targets: ``(N,)`` — integer class indices.
-        - output: scalar tensor.
+    Inputs use logits with shape ``(N, C)`` and targets with shape ``(N,)``;
+    the output is a scalar tensor.
     """
 
     def __init__(
@@ -374,9 +348,6 @@ class SequenceDataset(Dataset):
                 from the training set.  Computed from ``sequences`` when ``None``.
             std: Optional per-feature std array (shape ``(1, 1, n_features)``)
                 from the training set.  Computed from ``sequences`` when ``None``.
-
-        Returns:
-            None.
         """
         # Per-feature standardization: use provided stats or compute from data
         if mean is not None and std is not None:

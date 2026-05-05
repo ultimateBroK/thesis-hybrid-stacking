@@ -1,13 +1,10 @@
-"""Stage 3: asymmetric upper/lower barrier direction labeling.
+"""Asymmetric upper/lower barrier direction labeling.
 
 Uses separate ``atr_tp_multiplier`` and ``atr_sl_multiplier`` for take-profit
 and stop-loss barriers. No DST detection, no session definitions, no
 dead-hour filtering.
 
-Classes:
-    +1  Long  (upper barrier hit first)
-     0  Hold  (neither barrier hit within horizon)
-    -1  Short (lower barrier hit first)
+Labels are encoded as ``+1`` for long, ``0`` for hold, and ``-1`` for short.
 """
 
 from __future__ import annotations
@@ -39,25 +36,19 @@ logger = logging.getLogger("thesis.labels")
 
 
 def generate_labels(config: Config) -> None:
-    """
-    **Pipeline Stage 3 (of 6):** Generate direction-barrier labels and write them to the configured labels path.
+    """Generate direction-barrier labels and write them to parquet.
 
-    Loads features and OHLCV parquet files, joins them on `timestamp`, validates the presence of the ATR feature named `atr_{atr_period}`, computes asymmetric upper/lower barrier direction labels using `config.labels` parameters (`atr_tp_multiplier`, `atr_sl_multiplier`, `horizon_bars`, `min_atr`), merges label columns (`label`, `upper_barrier`, `lower_barrier`, `touched_bar`, `event_end`, `sample_weight`) into the dataset, logs the label distribution, and persists the result to `config.paths.labels`.
+    Loads engineered features and OHLCV bars, joins them by timestamp, computes
+    asymmetric upper/lower barrier labels, appends label metadata, logs the
+    class distribution, and writes the configured labels output.
 
     Args:
-        config (Config): Application configuration containing:
-            - paths.features: path to features parquet
-            - paths.ohlcv: path to OHLCV parquet
-            - paths.labels: output path for labels parquet
-            - features.atr_period: integer ATR period (used to form `atr_{period}` column)
-            - labels.atr_tp_multiplier: ATR multiplier for take-profit (upper barrier)
-            - labels.atr_sl_multiplier: ATR multiplier for stop-loss (lower barrier)
-            - labels.horizon_bars: forward horizon in bars
-            - labels.min_atr: minimum ATR value to use
+        config: Application configuration containing feature, OHLCV, label,
+            ATR, and barrier settings.
 
     Raises:
         FileNotFoundError: If the features or OHLCV input paths do not exist.
-        ValueError: If the required ATR column (`atr_{atr_period}`) is missing from the features.
+        ValueError: If the required ATR column is missing from the features.
     """
     features_path = Path(config.paths.features)
     ohlcv_path = Path(config.paths.ohlcv)

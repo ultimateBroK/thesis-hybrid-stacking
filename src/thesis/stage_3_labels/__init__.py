@@ -1,3 +1,5 @@
+"""Triple-barrier label generation package."""
+
 from thesis.stage_3_labels._impl import (
     compute_average_uniqueness,
     compute_event_end,

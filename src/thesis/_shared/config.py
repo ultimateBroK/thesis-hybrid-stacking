@@ -1,4 +1,4 @@
-"""Centralized configuration for the thesis ML pipeline — shared copy.
+"""Centralized configuration for the thesis ML pipeline.
 
 This module is the single entry point for loading and sharing runtime
 configuration. TOML files may stay minimal: omitted fields fall back to the

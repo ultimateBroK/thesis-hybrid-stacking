@@ -1,4 +1,4 @@
-"""Stage 5: CFD backtest simulation via backtesting.py.
+"""CFD backtest simulation via backtesting.py.
 
 Combines strategy, runners, persistence, and stats into a single module.
 
@@ -10,12 +10,6 @@ barriers are placed at ±2×ATR; setting backtest SL/TP to any other
 multiple would create a mismatch between the model's training target
 and the execution risk envelope, degrading out-of-sample performance.
 Both config sections should equal 2.0 for the thesis evaluation.
-
-Public API:
-    run_backtest         — full pipeline from Parquet files.
-    run_backtest_from_data — from in-memory DataFrames.
-    run_backtest_manual  — with explicit keyword parameters.
-    HybridGRUStrategy    — strategy class for backtesting.py.
 """
 
 from __future__ import annotations
@@ -38,32 +32,25 @@ logger = logging.getLogger("thesis.backtest")
 
 
 # ---------------------------------------------------------------------------
-# Module-level defaults — extracted from magic numbers
-# See .weave/plans/audit-hardcoded-values.md
+# Module-level fallback defaults
 # ---------------------------------------------------------------------------
 
 #: Floor to prevent microscopic stops in low-volatility regimes.
-#: Audit #33: backtest.py:148, severity High.
 _MIN_ATR_FLOOR: float = 0.0001
 
 #: Default initial capital used as fallback when BacktestConfig is unavailable.
-#: Audit #26, #43, #46: backtest.py:60,520,848, severity Medium.
 _DEFAULT_INITIAL_CAPITAL: float = 10_000.0
 
 #: Default commission per lot — fallback for _trades_to_list when config absent.
-#: Audit #42: backtest.py:436-437, severity Medium.
 _DEFAULT_COMMISSION_PER_LOT: float = 20.0
 
 #: Default contract size (units per lot) — fallback for _trades_to_list.
-#: Audit #42: backtest.py:436-437, severity Medium.
 _DEFAULT_CONTRACT_SIZE: float = 100.0
 
 #: Minimum bars required before the shifted-signal logic can activate.
-#: Audit #40: backtest.py:317, severity Medium.
 _MIN_BARS_FOR_SIGNAL: int = 2
 
 #: Minimum order size in units (backtesting.py requires whole-number sizes).
-#: Audit #41: backtest.py:366, severity Medium.
 _MIN_ORDER_SIZE: int = 1
 
 
@@ -163,15 +150,8 @@ class HybridGRUStrategy(Strategy):
     entry_price ± (ATR × atr_tp_mult), creating an asymmetric
     risk-reward profile (e.g. 1:2 with SL=1×ATR, TP=2×ATR).
 
-    Risk management:
-        - Max drawdown circuit breaker: if equity drops below
-          ``max_drawdown_cutoff`` fraction of peak equity, trading pauses
-          for ``dd_cooldown_bars`` bars.
-        - Max open positions: limits simultaneous positions to
-          ``max_open_positions`` (default 1).
-        - Daily loss limit: if equity drops by ``daily_loss_limit``
-          fraction from the day's starting equity, trading pauses
-          until the next calendar day.
+    Risk management includes a max-drawdown circuit breaker, a maximum open
+    position limit, and a daily loss limit based on the day's starting equity.
 
     Attributes:
         atr_stop_mult: ATR multiplier for stop-loss distance.
@@ -190,41 +170,11 @@ class HybridGRUStrategy(Strategy):
         min_bars_between_trades: Minimum bars after position exit before re-entry.
     """
 
-    # ── STRATEGY FALLBACK DEFAULTS ────────────────────────────────────────
-    # **Contract**: BacktestConfig is the authoritative source for all
-    # trading parameters.  These class-level attributes act only as *safe
-    # guardrail defaults* — they are overridden at runtime by bt.run()
-    # keyword arguments that carry values from BacktestConfig (or
-    # equivalent manual keyword arguments).  When bt.run() provides a
-    # value for a parameter, the attribute below is never consulted.
-    #
-    # **When the Strategy default applies**: only when the Strategy is
-    # used directly *without* the full config pipeline or when a specific
-    # parameter is omitted from bt.run() kwargs (not the case in current
-    # orchestration — every parameter is passed explicitly).
-    #
-    # **Naming convention**: Strategy attribute names use short forms
-    # (e.g. ``atr_stop_mult``, ``lot_per_trade``) while BacktestConfig
-    # uses canonical long names (e.g. ``atr_stop_multiplier``,
-    # ``lots_per_trade``).  The mapping is done inside _run_bt() and
-    # run_backtest_manual().
-    #
-    # **Divergent defaults** (Strategy vs BacktestConfig):
-    #   atr_stop_mult:          1.0  vs  2.0  (BacktestConfig is stricter)
-    #   lots_per_trade:         0.2  vs  0.1
-    #   min_lots:               0.1  vs  0.01
-    #   confidence_threshold:   0.0  vs  0.50 (Strategy trades all by default)
-    #   max_drawdown_cutoff:    0.50 vs  0.30 (Strategy is more permissive)
-    # Attributes with **identical** defaults: atr_tp_mult, max_lots,
-    #   dd_cooldown_bars, max_open_positions, daily_loss_limit.
-    #
-    # **Config-only parameters** (no Strategy attribute): leverage,
-    #   spread_ticks, slippage_ticks, commission_per_lot, initial_capital.
-    #
-    # **Labels-derived parameters**: horizon_bars comes from LabelsConfig,
-    #   contract_size from DataConfig — both injected via bt.run() kwargs.
-    #
-    # See .weave/plans/audit-hardcoded-values.md for extraction rationale.
+    # ── Strategy fallback defaults ─────────────────────────────────────────
+    # Runtime configuration is passed through bt.run() keyword arguments.
+    # These class attributes provide safety defaults for direct Strategy use
+    # and for parameters omitted by a caller. Short Strategy attribute names
+    # are mapped from configuration fields in _run_bt() and run_backtest_manual().
     # ───────────────────────────────────────────────────────────────────────
 
     atr_stop_mult = 1.0  # cf. BacktestConfig.atr_stop_multiplier = 2.0
@@ -254,11 +204,8 @@ class HybridGRUStrategy(Strategy):
         internal ``_has_proba`` flag indicating whether per-class probability
         columns exist.
 
-        Risk-management state initialised:
-            - ``_peak_equity``: running maximum equity for drawdown tracking.
-            - ``_dd_cooldown_left``: bars remaining in drawdown cooldown.
-            - ``_daily_start_equity``: equity at start of each calendar day.
-            - ``_current_date``: current calendar day for daily reset logic.
+        Initializes peak-equity tracking, drawdown cooldown, daily start
+        equity, and current-date state for risk management.
         """
         self._initial_capital = self.equity
 
@@ -308,23 +255,10 @@ class HybridGRUStrategy(Strategy):
 
         Called every bar in ``next()`` before any trading decisions.
 
-        Maintains the following risk-management state:
-
-        - ``_peak_equity``: running maximum equity (used for drawdown
-          calculation).
-        - ``_dd_cooldown_left``: bars remaining in drawdown cooldown
-          (decremented each bar).
-        - ``_daily_start_equity``: equity at the start of the current
-          calendar day.
-        - ``_current_date``: calendar day tracker for daily reset logic.
-
-        Note:
-            The drawdown circuit breaker is a **permanent shutdown** — once
-            triggered, no new positions are opened for the remainder of the
-            backtest. This is intentional for thesis evaluation: a strategy
-            that loses more than the cutoff is deemed unfit. The
-            ``dd_cooldown_bars`` parameter is unused in the current
-            implementation.
+        Maintains peak equity, drawdown cooldown, daily start equity, and the
+        calendar-day tracker for daily reset logic. The drawdown circuit
+        breaker is a permanent shutdown: once triggered, no new positions are
+        opened for the rest of the backtest.
         """
         eq = self.equity
         self._peak_equity = max(self._peak_equity, eq)
@@ -411,16 +345,10 @@ class HybridGRUStrategy(Strategy):
     def next(self) -> None:
         """Evaluate the latest model signal and place orders if appropriate.
 
-        Processing order:
-            0. Cooldown tracking — detect position closure from SL/TP.
-            1. Risk state update — peak equity, cooldown, daily tracking.
-            2. Time-based exit — close positions exceeding horizon_bars.
-            3. Risk gate check — skip new trades if any gate blocks.
-            4. Confidence gate — skip low-confidence signals.
-            5. Compute fixed-risk position size.
-            6. Submit market orders with native ATR-based stop-loss. The
-               backtesting engine fills these orders on the next bar, so
-               signal bar ``i`` cannot trade at the same bar's close.
+        Processes cooldown tracking, risk-state updates, time-based exits,
+        risk gates, confidence gates, position sizing, and ATR-based market
+        orders. The backtesting engine fills orders on the next bar, so signal
+        bar ``i`` cannot trade at the same bar's close.
         """
         # Step 0: cooldown tracking — detect auto-closure from framework SL/TP
         if self._position_was_open and not self.position:
@@ -659,9 +587,8 @@ def _save_equity_curve_csv(
     Each row represents a closed trade with the running equity, peak equity,
     and drawdown percentage.
 
-    Note:
-        The equity curve is trade-by-trade (closed-trade PnL), not
-        mark-to-market. Intra-trade drawdowns are not visible.
+    The equity curve is trade-by-trade closed PnL, not mark-to-market, so
+    intra-trade drawdowns are not visible.
 
     Args:
         trades: List of trade dictionaries with pnl and exit_time.
@@ -957,16 +884,14 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
 
 
 def run_backtest(config: Config) -> None:
-    """**Pipeline Stage 5 (of 6):** Run a full CFD backtest from files specified in config and persist results.
+    """Run a full CFD backtest from files specified in config.
 
     For walk-forward (sliding) validation, joins OOF predictions with the
     full labeled dataset (which contains OHLCV + features). For static
     validation, uses the traditional test split file.
 
-    Written outputs include:
-        - JSON file with normalized metrics and trade records.
-        - Optional trades detail CSV and equity-curve CSV when trades are present.
-        - Optional Bokeh HTML chart under the configured session directory.
+    Writes normalized metrics and trade records as JSON, optional trade-detail
+    and equity-curve CSV files, and an optional Bokeh HTML chart.
 
     Args:
         config: Application configuration object containing paths and

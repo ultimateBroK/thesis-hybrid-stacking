@@ -461,7 +461,7 @@ def _save_data_quality_json(stats: dict, config: Config) -> None:
 
 
 def prepare_data(config: Config) -> None:
-    """Pipeline Stage 1 (of 6): Prepare OHLCV bars from raw tick parquet files.
+    """Prepare OHLCV bars from raw tick parquet files.
 
     Reads monthly tick files from the configured raw directory, aggregates them
     into OHLCV bars at ``config.data.timeframe``, removes duplicates, filters

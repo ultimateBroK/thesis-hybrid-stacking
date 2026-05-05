@@ -1,4 +1,4 @@
-"""Feature engineering — stage 2 implementation module.
+"""Feature engineering — production pipeline for price-action features.
 
 The production feature pipeline intentionally stays small and interpretable for
 student projects:
@@ -29,7 +29,7 @@ logger = logging.getLogger("thesis.stage_2_features")
 
 
 def generate_features(config: Config) -> None:
-    """**Pipeline Stage 2 (of 6):** Generate and persist feature-enriched OHLCV bars.
+    """Generate and persist feature-enriched OHLCV bars.
 
     Loads OHLCV data from ``config.paths.ohlcv``, computes technical
     indicators and normalized/session features, drops warm-up rows with
@@ -460,13 +460,8 @@ def _compute_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
 def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add price-action candle and bar structure features.
 
-    Features:
-        candle_body_ratio: |close - open| / (high - low) — candle strength
-        upper_wick_ratio: (high - max(open,close)) / (high - low) — rejection signal
-        lower_wick_ratio: (min(open,close) - low) / (high - low) — support signal
-        gap_ratio: (open - prev_close) / ATR14 — gap detection
-        consecutive_bars: rolling sum of bar direction (±1) over 5 bars — momentum streak
-        price_position_20: (close - low_20) / (high_20 - low_20) — position in N-bar range
+    Adds candle body, wick, gap, consecutive-bar, and 20-bar price-position
+    features derived from OHLCV and ATR values.
 
     Args:
         df: Input DataFrame with OHLCV and ATR columns.
@@ -524,9 +519,8 @@ def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame
 def _add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add EMA 34/89 crossover features — user's preferred trading stack.
 
-    Features:
-        close_vs_ema_34: (close - EMA34) / ATR14 — price distance from EMA 34
-        ema34_vs_ema89: (EMA34 - EMA89) / ATR14 — crossover signal / trend direction
+    Adds ``close_vs_ema_34`` and ``ema34_vs_ema89`` as ATR-normalized trend
+    distance features.
 
     Args:
         df: Input DataFrame with OHLCV and ATR columns.

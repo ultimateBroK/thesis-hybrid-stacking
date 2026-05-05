@@ -42,14 +42,8 @@ def _is_extreme_value(metric_name: str, value: float) -> tuple[bool, float]:
 def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     """Return (color_name, zone_label, recommendation) for a given metric.
 
-    Zone colors:
-        - excellent (green): Target zone.
-        - good (light green): Acceptable zone, solid performance.
-        - moderate (yellow): Marginal, needs attention.
-        - poor (orange): Below average, review needed.
-        - dangerous (red): Critical issues, high risk.
-
-    All zones are optimized based on industry benchmarks.
+    Zone labels range from excellent, good, and moderate to poor and
+    dangerous. All zones are optimized based on industry benchmarks.
 
     Args:
         metric_name: The metric key (e.g., 'sharpe_ratio', 'max_drawdown_pct').

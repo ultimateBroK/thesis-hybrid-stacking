@@ -1,7 +1,4 @@
-"""Stage 6: Report generation — markdown builder, statistics, charts, and orchestrator.
-
-Moved from ``thesis.report`` into ``thesis.stage_6_reporting``.
-"""
+"""Report generation — markdown builder, statistics, charts, and orchestrator."""
 
 from __future__ import annotations
 
@@ -71,7 +68,7 @@ _ECE_WELL_CALIBRATED: float = 0.05
 _ECE_MODERATELY_CALIBRATED: float = 0.15
 
 # ---------------------------------------------------------------------------
-# Stats helpers (formerly report/stats.py)
+# Stats helpers
 # ---------------------------------------------------------------------------
 
 
@@ -199,7 +196,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Benchmark comparison helpers (formerly report/stats.py)
+# Benchmark comparison helpers
 # ---------------------------------------------------------------------------
 
 _BARS_PER_YEAR = H1_BARS_PER_YEAR
@@ -382,11 +379,7 @@ def compute_benchmark_comparison(
 ) -> list[dict]:
     """Compute benchmark comparison metrics for naive strategies vs hybrid model.
 
-    Strategies computed:
-        1. Buy & Hold — unleveraged, no costs.
-        2. Always Long — leveraged, no timing.
-        3. Random Signal — random long/short with leverage.
-        4. Hybrid Model — actual backtest results.
+    Computes buy-and-hold, always-long, random-signal, and hybrid-model rows.
 
     Args:
         test_data_path: Path to the static test parquet file.
@@ -458,7 +451,7 @@ def compute_benchmark_comparison(
 
 
 # ---------------------------------------------------------------------------
-# Markdown builder (formerly report/builder.py)
+# Markdown builder
 # ---------------------------------------------------------------------------
 
 _ZONE_EMOJI = {
@@ -1504,15 +1497,10 @@ def _render_metric_zones_section(
 ) -> None:
     """Render backtest metric quality zones with emoji indicators and recommended ranges.
 
-    Each metric is annotated with:
-        - Value
-        - Zone emoji + description (e.g. ``🔴 Below 0 — Negative``)
-        - Recommended range (e.g. ``> 1.0``)
+    Each metric includes its value, zone emoji, zone description, and
+    recommended range using a three-level quality scheme.
 
-    Zone definitions follow the 3-level scheme:
-        🔴 = poor/dangerous  │  🟡 = marginal/moderate  │  🟢 = good
-
-    Arguments:
+    Args:
         L: Output markdown lines list (mutated in-place).
         metrics: Backtest metrics dictionary.
         trades: Optional trade records for computing win/loss ratio.
@@ -1678,8 +1666,8 @@ def _build_model_comparison_rows(
 ) -> list[dict[str, Any]]:
     """Build thesis-level model comparison rows with available metrics.
 
-    Columns are aligned with the thesis table:
-    Directional Acc, Accuracy, Macro F1, Long F1, Short F1, optional regression metrics.
+    Rows include directional accuracy, accuracy, macro F1, long/short F1, and
+    optional regression metrics.
     """
     rows: list[dict[str, Any]] = []
 
@@ -2351,8 +2339,8 @@ def _render_primary_issue(L: list[str], metrics: dict, pred_stats: dict) -> None
 def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
     """One-paragraph ML-first overall assessment with synthesized verdict.
 
-    Delegates to three rendering helpers that each handle one aspect:
-    ML quality paragraph, synthesized verdict, and primary issue.
+    Delegates to rendering helpers for ML quality, synthesized verdict, and
+    primary issue text.
 
     Args:
         L: Output markdown lines.
@@ -2941,7 +2929,7 @@ def _issues_list(
 
 
 # ---------------------------------------------------------------------------
-# Chart helpers (formerly report/main.py)
+# Chart helpers
 # ---------------------------------------------------------------------------
 
 
@@ -2980,9 +2968,8 @@ def _build_equity_series(
 ) -> tuple[list, list]:
     """Build timestamp and cumulative equity series from trades.
 
-    Note:
-        The equity curve is trade-by-trade (closed-trade PnL), not
-        mark-to-market. Intra-trade drawdowns are not visible.
+    The equity curve is trade-by-trade closed PnL, not mark-to-market, so
+    intra-trade drawdowns are not visible.
     """
     times = [pd.to_datetime(trades[0]["entry_time"])]
     equity = [initial_capital]
@@ -3042,12 +3029,12 @@ def _load_feature_importance(config: Config, out_dir: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Public entry point (formerly report/main.py → generate_report)
+# Public entry point
 # ---------------------------------------------------------------------------
 
 
 def generate_report(config: Config) -> None:
-    """**Pipeline Stage 6 (of 6):** Generate thesis report with static charts and markdown.
+    """Generate thesis report with static charts and markdown.
 
     Args:
         config: Loaded application configuration.
