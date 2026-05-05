@@ -1757,64 +1757,6 @@ def _add_confidence_columns(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _split_tail_frame(
-    df: pl.DataFrame,
-    *,
-    fraction: float = _VALIDATION_SPLIT_FRACTION,
-) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Split a DataFrame into head train and tail validation slices.
-
-    Args:
-        df: Polars DataFrame to split.
-        fraction: Fraction of rows to reserve for validation (default 0.2).
-
-    Returns:
-        ``(train_df, val_df)`` — the larger head portion and the
-        smaller tail portion.
-
-    Raises:
-        ValueError: If the DataFrame has fewer than 2 rows.
-    """
-    if len(df) < 2:
-        raise ValueError("Need at least 2 rows to create a train/validation split")
-    val_size = min(max(1, int(len(df) * fraction)), len(df) - 1)
-    return df.head(len(df) - val_size), df.tail(val_size)
-
-
-def _split_tail_arrays(
-    X: np.ndarray,
-    y: np.ndarray,
-    reference_prices: np.ndarray,
-    *,
-    fraction: float = _VALIDATION_SPLIT_FRACTION,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float]:
-    """Split matrices into train/validation tails and return val price anchor.
-
-    Args:
-        X: Feature matrix ``(N, D)``.
-        y: Target vector ``(N,)``.
-        reference_prices: Price array used to compute the validation
-            price anchor (median of the tail).
-        fraction: Fraction of rows reserved for validation (default 0.2).
-
-    Returns:
-        ``(X_tr, y_tr, X_val, y_val, reference_price)`` — train and
-        validation splits plus the median price of the validation tail.
-
-    Raises:
-        ValueError: If fewer than 2 rows are provided.
-    """
-    if len(X) < 2:
-        raise ValueError("Need at least 2 rows to create a train/validation split")
-    val_size = min(max(1, int(len(X) * fraction)), len(X) - 1)
-    X_tr = X[:-val_size]
-    y_tr = y[:-val_size]
-    X_val = X[-val_size:]
-    y_val = y[-val_size:]
-    reference_price = float(np.median(reference_prices[-val_size:]))
-    return X_tr, y_tr, X_val, y_val, reference_price
-
-
 # ---------------------------------------------------------------------------
 # Public walk-forward entry points
 # ---------------------------------------------------------------------------

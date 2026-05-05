@@ -1,17 +1,27 @@
 # Hybrid GRU + LightGBM
 
-## Reproducible ML Pipeline for Time-Series Signal Prediction
+## Evaluating Short-Term Direction Prediction for XAU/USD Time Series
 
 [![Python 3.13](https://img.shields.io/badge/Python-3.13-blue.svg)](https://www.python.org/)
 [![Pixi](https://img.shields.io/badge/Pixi-Package%20Manager-orange.svg)](https://pixi.sh/)
 [![LightGBM](https://img.shields.io/badge/LightGBM-4.6-green.svg)](https://lightgbm.readthedocs.io/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.10-red.svg)](https://pytorch.org/)
 
-**Student-friendly machine-learning pipeline** for time-series classification using
-a compact hybrid GRU + LightGBM architecture (temporal GRU features feeding a
-LightGBM classifier).
-XAU/USD is used as the case study, but the thesis focus is data processing,
-leakage-safe validation, model training, and reproducible evaluation rather than
+> This thesis builds and evaluates a Machine Learning pipeline for predicting
+> short-term direction of XAU/USD using a Hybrid GRU + LightGBM model. The focus
+> is on data quality, time-leakage prevention, walk-forward training, model
+> comparison, and **classification evaluation** (Directional Accuracy, Macro F1,
+> Confusion Matrix). The backtest section is an **application demo** that
+> illustrates how signals *could* be used — it is **not** primary evidence of
+> profitability.
+
+**Primary output:** model evaluation metrics (accuracy, F1, per-class
+precision/recall, confusion matrix) compared against baselines.
+**Secondary output:** a lightweight backtest demo showing how predicted signals
+translate into hypothetical trades.
+
+XAU/USD is used as the case study. The thesis focus is data processing,
+leakage-safe validation, model training, and reproducible evaluation — not
 financial strategy design.
 
 Bachelor's thesis — Thuy Loi University
@@ -72,7 +82,8 @@ The hybrid model works in two steps:
 
 1. **GRU** reads 48 hours of normalized history and outputs a **64-number temporal embedding**.
 2. **LightGBM** combines that embedding with **21 stable tabular indicators** and predicts: **Short**, **Hold**, or **Long**.
-3. **Evaluation** compares against majority and directional baselines before showing the backtest as an application demo.
+3. **Evaluation** (primary output) compares the hybrid model against majority-class and directional baselines using Directional Accuracy, Macro F1, per-class Precision/Recall, and Confusion Matrix.
+4. **Backtest** (application demo, optional appendix) translates predicted signals into hypothetical trades with fixed costs — shown only to illustrate signal usage, not as evidence of profitability.
 
 ---
 
@@ -99,11 +110,12 @@ The hybrid model works in two steps:
 | Timeframe | 1 hour (H1) |
 | Data range | January 2013 – March 2026 |
 | Validation | Walk-forward sliding window (3-year train, 6-month test) |
-| Model | GRU (64-dim) → LightGBM (85 features) |
+| Model | GRU (64-dim) -> LightGBM (85 features) |
 | Features | 21 technical indicators + 64 GRU hidden states |
 | Labels | Triple Barrier (Long / Flat / Short) |
 | Charts | 12 static (matplotlib) + interactive (Streamlit/ECharts) |
-| Backtest | Lightweight application demo with fixed costs and capped risk |
+| **Primary output** | Classification metrics: Directional Accuracy, Macro F1, Precision/Recall, Confusion Matrix |
+| **Backtest** | Lightweight application demo (fixed costs, capped risk) — optional appendix, not primary evidence |
 | Python | 3.13 (Pixi) |
 
 ---
@@ -164,7 +176,12 @@ pixi run workflow --stage 4  # Stage 4 only (training)
 
 ## Tổng quan
 
-Xây dựng pipeline end-to-end cho bài toán phân loại chuỗi thời gian trên dữ liệu **XAU/USD H1** bằng kiến trúc **Hybrid GRU + LightGBM**. Trọng tâm của đồ án là quy trình ML chuẩn: xử lý dữ liệu, tránh rò rỉ, huấn luyện mô hình, đánh giá bằng baseline và trình bày kết quả có thể tái lập.
+Đồ án xây dựng và đánh giá pipeline Machine Learning dự báo xu hướng ngắn hạn
+của XAU/USD bằng mô hình **Hybrid GRU + LightGBM**. Trọng tâm là chất lượng dữ
+liệu, chống rò rỉ thời gian, phương pháp huấn luyện walk-forward, so sánh mô
+hình và **đánh giá hiệu suất dự báo** (Directional Accuracy, Macro F1, Confusion
+Matrix). Backtest chỉ là phần **minh họa ứng dụng** tín hiệu, không phải bằng
+chứng chính về lợi nhuận.
 
 ```mermaid
 flowchart LR
@@ -181,7 +198,8 @@ flowchart LR
 4. Xây dựng đặc trưng kỹ thuật + định lượng bằng Feature Importance / SHAP
 5. Huấn luyện mô hình GRU nền + LightGBM nền
 6. Chọn kiến trúc **Hybrid** (mặc định) hoặc **Static** (chỉ LightGBM, baseline so sánh)
-7. Giải thích mô hình + backtest minh họa ứng dụng trên OOS
+7. **Đánh giá phân loại** (kết quả chính): Directional Accuracy, Macro F1, Precision/Recall, Confusion Matrix so với baseline
+8. Backtest minh họa ứng dụng trên OOS (phụ lục, không phải bằng chứng chính)
 
 ## Đặc trưng kỹ thuật
 

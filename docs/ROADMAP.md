@@ -26,6 +26,13 @@
 
 ### Evaluation
 
+- [x] **Evaluation-first report restructure** — Report reorganised around ML metrics (classification accuracy, F1, confusion matrix) as primary evidence; backtest demoted to application demo (`src/thesis/stage_6_reporting/_impl.py`)
+- [x] **Classification metrics as primary** — Accuracy, macro-F1, per-class precision/recall, directional accuracy, high-confidence accuracy computed in `_model_metrics.py`; rendered first in report
+- [x] **Regression auxiliary metrics** — MAE, RMSE, R² on return magnitude as supplementary evidence alongside classification (`_model_metrics.py`)
+- [x] **Baseline model comparison** — Naive direction (persistence), majority-class, random, and buy-and-hold baselines computed on same walk-forward windows as hybrid model (`_baselines.py`); comparison table in report
+- [x] **Probability calibration** — ECE, Brier score, log-loss, confidence-bin reliability (`_calibration.py`)
+- [x] **Data quality evidence** — OHLCV consistency, missing-bar gaps, outlier returns, label distribution, volatility regime statistics (`_data_quality.py`); rendered as evidence section in report
+- [x] **Metric zone gauges** — Color-coded metric evaluation (green/yellow/red) with boringedge recommendations (`_shared/zones.py`)
 - [x] **CFD backtest** — via `backtesting.py` with native margin, spread, commission, ATR stop-loss, circuit breakers, trade cooldown (`src/thesis/stage_5_backtest/`)
 - [x] **Fixed-risk sizing after confidence filter** — Confidence filters trades but no longer amplifies lot size
 - [x] **Trade cooldown** — min_bars_between_trades=6 prevents overtrading
@@ -105,14 +112,14 @@
 
 | Category          | Completed | Pending | Total |
 |-------------------|-----------|---------|-------|
-| Core Pipeline     | 5         | 0       | 5     |
-| Models            | 3         | 4       | 7     |
-| Evaluation        | 7         | 5       | 12    |
+| Core Pipeline     | 6         | 0       | 6     |
+| Models            | 5         | 4       | 9     |
+| Evaluation        | 17        | 5       | 22    |
 | Visualization     | 6         | 0       | 6     |
 | Infrastructure    | 9         | 0       | 9     |
 | Documentation     | 7         | 0       | 7     |
 | Operational       | 0         | 3       | 3     |
 | Research          | 0         | 3       | 3     |
-| **Total**         | **37**    | **15**  | **52**|
+| **Total**         | **50**    | **15**  | **65**|
 
-> **Overall: 71% complete** — Core research pipeline is fully functional. Remaining items are enhancements and production features.
+> **Overall: 77% complete** — Core research pipeline is fully functional. Evaluation-first report restructure done. Remaining items are enhancements and production features.

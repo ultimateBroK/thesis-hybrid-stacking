@@ -31,7 +31,7 @@ STAGE_LABELS: dict[int, str] = {
     2: "Feature Engineering",
     3: "Label Generation",
     4: "Model Training",
-    5: "Backtest",
+    5: "Application Demo / Backtest",
     6: "Report Generation",
 }
 

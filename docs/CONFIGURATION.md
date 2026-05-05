@@ -63,6 +63,25 @@ All defaults below match `config.toml` and `src/thesis/config.py` dataclasses.
 | `tick_size` | `0.01` | Minimum price movement. |
 | `contract_size` | `100` | Units per trading lot (for backtest demo). |
 
+### `[splitting]`
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `train_start` | `"2018-01-01"` | Inclusive start of training period (static split mode). |
+| `train_end` | `"2022-12-31 23:59:59"` | Inclusive end of training period. |
+| `val_start` | `"2023-01-01"` | Inclusive start of validation period. |
+| `val_end` | `"2023-12-31 23:59:59"` | Inclusive end of validation period. |
+| `test_start` | `"2024-01-01"` | Inclusive start of test (OOS) period. |
+| `test_end` | `"2026-04-30 23:59:59"` | Inclusive end of test period. |
+| `purge_bars` | `25` | Bars removed at split boundaries (same role as validation purge). |
+| `embargo_bars` | `50` | Additional gap after purge for leakage prevention. |
+| `embargo_scale_by_timeframe` | `true` | Auto-scale embargo bars when using non-1H timeframes. |
+| `embargo_reference_timeframe` | `"1H"` | Reference timeframe for embargo scaling. |
+
+Only used when `validation.method = "static"`. The default workflow uses
+walk-forward sliding windows (see `[validation]`). Split ranges also appear in
+session metadata and report headers regardless of validation mode.
+
 ### `[validation]`
 
 | Parameter | Default | Description |
@@ -227,6 +246,8 @@ stability on non-stationary financial data.
 | `dd_cooldown_bars` | `12` | Bars to pause trading after a drawdown cutoff breach. |
 | `max_open_positions` | `1` | Maximum simultaneous open positions. |
 | `daily_loss_limit` | `0.03` | Stop trading for the day after a `-N` equity drawdown (e.g. 3%). |
+| `oob_start_date` | `""` | OOS date-range start for backtest filtering (empty = whole dataset). |
+| `oob_end_date` | `""` | OOS date-range end for backtest filtering (empty = whole dataset). |
 
 **Position sizing rule:** Confidence filters entries only. Lot size stays fixed at
 `lots_per_trade` and is clamped to `[min_lots, max_lots]`. Confidence-based lot
@@ -240,6 +261,14 @@ in the latest OOS run.
 | `force_rerun` | `false` | Ignore cache and rerun all pipeline stages. |
 | `random_seed` | `2024` | Global random seed for reproducibility. |
 | `n_jobs` | `-1` | Parallel worker count (`-1` = all CPUs). |
+| `run_backtest` | `true` | Enable Stage 5 backtest (application demo). |
+| `run_reporting` | `true` | Enable Stage 6 evaluation report. |
+
+> **Note:** The `run_backtest` workflow flag controls Stage 5. Backtest is an
+> **optional application demo** — it is not required for model evaluation. The
+> primary output of the pipeline is the Stage 6 model evaluation report (ML
+> metrics: accuracy, F1, confusion matrix, baseline comparison). Backtest
+> metrics are supplementary and should not be used to claim model quality.
 
 ### `[paths]`
 
@@ -258,6 +287,43 @@ in the latest OOS run.
 | `predictions` | `"data/predictions/final_predictions.parquet"` | Final predictions. |
 | `backtest_results` | `"results/backtest_results.json"` | Backtest output. |
 | `report` | `"results/thesis_report.md"` | Generated report. |
+| `data_quality_json` | `"data/processed/data_quality.json"` | Cached data quality evidence JSON. |
+| `session_dir` | `""` | Set at runtime — session output directory (`results/<SYMBOL>_<TF>_<timestamp>/`). |
+
+---
+
+## Module Reference
+
+Internal sub-modules that contribute to reporting and training stages.
+
+### Reporting Modules (`stage_6_reporting/`)
+
+| Module | Purpose |
+| --- | --- |
+| `_model_metrics.py` | **Primary metrics** — classification (accuracy, macro-F1, precision, recall, confusion matrix, directional accuracy, high-confidence accuracy) and **regression auxiliary** metrics (MAE, RMSE, R² on return magnitude). Stateless numpy functions; canonical metric source for report and dashboard. |
+| `_calibration.py` | Probability calibration — Expected Calibration Error (ECE), Brier score, log-loss, confidence-bin reliability. Evaluates whether predicted probabilities match observed frequencies. |
+| `_data_quality.py` | Data quality evidence — OHLCV consistency checks, missing-bar gaps, label distribution analysis, outlier-return detection, volatility regime statistics. Renders a markdown section for the thesis report. |
+| `_impl.py` | Report assembly — orchestrates model metrics, calibration, data quality, and backtest sections into the final markdown report. |
+
+### Training Modules (`stage_4_training/`)
+
+| Module | Purpose |
+| --- | --- |
+| `_baselines.py` | Baseline prediction strategies — naive direction (persistence), majority-class, random, and buy-and-hold. All baselines operate on the same walk-forward windows as the hybrid model to prevent leakage. |
+| `_gru.py` | GRU feature extractor — 2-layer GRU, focal loss, cosine-annealing schedule, contrastive pre-training. |
+| `_lgbm.py` | LightGBM classifier — multiclass with distribution-shift weight correction. |
+| `_validation.py` | Walk-forward split logic — rolling windows with purge/embargo gaps. |
+| `_walk_forward.py` | Walk-forward orchestration — runs hybrid/static training across windows, collects OOF predictions. |
+
+### Shared Utilities (`_shared/`)
+
+| Module | Purpose |
+| --- | --- |
+| `config.py` | Typed dataclass configuration loaded from `config.toml`. |
+| `constants.py` | Shared constants (feature name lists, class labels). |
+| `session_paths.py` | Session-based output directory management. |
+| `ui.py` | Console output formatting helpers. |
+| `zones.py` | Metric evaluation zones — color-coded gauge rendering (green/yellow/red) with recommended thresholds from boringedge. |
 
 ---
 

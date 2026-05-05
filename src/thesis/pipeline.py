@@ -5,8 +5,8 @@ Stages:
     2. Feature engineering
     3. Triple-barrier labeling
     4. Walk-forward training (dispatches to stage_4_training)
-    5. Backtest (on concatenated OOF predictions)
-    6. Report generation
+    5. Backtest (optional application demo — on concatenated OOF predictions)
+    6. Model evaluation report generation (primary output)
 """
 
 from __future__ import annotations
@@ -182,8 +182,8 @@ def run_pipeline(config: Config) -> None:
         2. Feature engineering
         3. Triple-barrier labeling
         4. Walk-forward model training (GRU + LightGBM per window)
-        5. Backtest (on concatenated OOF predictions)
-        6. Report generation
+        5. Backtest (optional application demo — on concatenated OOF predictions)
+        6. Model evaluation report generation (primary output)
 
     Args:
         config: Loaded application configuration.
@@ -218,7 +218,7 @@ def run_pipeline(config: Config) -> None:
         logger.info("Using static train/val/test split")
         _run_stage(4, config, "run_model_training", None, _run_static_train)
 
-    # Stage 5: Backtest
+    # Stage 5: Backtest (Optional Application Demo)
     _run_stage(
         5,
         config,

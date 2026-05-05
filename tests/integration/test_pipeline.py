@@ -358,7 +358,9 @@ def test_pipeline_static_baseline_smoke(pipeline_config: Config) -> None:
     pipeline_config.validation.wf_optuna_trials = 0
 
     pipeline_config.backtest.confidence_threshold = 0.0
-    pipeline_config.backtest.atr_tp_multiplier = 1.0
+    pipeline_config.backtest.atr_tp_multiplier = (
+        pipeline_config.labels.atr_tp_multiplier
+    )
 
     run_pipeline(pipeline_config)
 

@@ -437,7 +437,7 @@ class TestOofVsOosSection:
         _render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
 
-        assert "OOF vs OOS Comparison" in rendered
+        assert "OOF vs OOS Generalization Check" in rendered
         assert "OOF (Walk-Forward)" in rendered
         assert "OOS (2024-2026)" in rendered
         # OOF accuracy: (0.55*100 + 0.57*100) / 200 = 0.56 = 56.0%
@@ -515,7 +515,7 @@ class TestOofVsOosSection:
         _render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
 
-        assert "OOF vs OOS Comparison" in rendered
+        assert "OOF vs OOS Generalization Check" in rendered
         assert "OOF (Walk-Forward)" in rendered
         assert "OOS (2024-2026)" in rendered
         assert "Delta" in rendered
@@ -546,7 +546,7 @@ class TestOofVsOosSection:
         _render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
 
-        assert "OOF vs OOS Comparison" in rendered
+        assert "OOF vs OOS Generalization Check" in rendered
         # All metric values should be N/A since total_test_rows == 0
         assert rendered.count("N/A") >= 5  # Accuracy + Macro F1 + 3 class F1s
 

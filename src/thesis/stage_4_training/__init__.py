@@ -1,5 +1,12 @@
 """Stage 4: Model training — walk-forward validation, GRU, LightGBM."""
 
+from thesis.stage_4_training._baselines import (
+    compute_baseline_metrics,
+    majority_class_baseline,
+    naive_direction,
+    random_baseline,
+    run_all_baselines,
+)
 from thesis.stage_4_training._gru import (
     extract_hidden_states,
     prepare_sequences,
@@ -26,4 +33,9 @@ __all__ = [
     "generate_windows",
     "_run_walk_forward",
     "_run_static_train",
+    "run_all_baselines",
+    "compute_baseline_metrics",
+    "naive_direction",
+    "majority_class_baseline",
+    "random_baseline",
 ]

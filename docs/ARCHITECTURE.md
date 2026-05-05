@@ -17,10 +17,38 @@ features for **3-class prediction** (Short/Hold/Long). Regression embeddings are
 available for experiments but are not the stable default.
 
 It uses **walk-forward sliding window validation** to produce out-of-fold predictions,
-which are then backtested and reported.
+which are then evaluated and reported.
 
-The primary output is an ML evaluation report. The backtest is included as an
-application demo for the predicted classes, not as the main thesis claim.
+### Evaluation-First Principle
+
+The **primary output** of this pipeline is the **ML model evaluation report** —
+classification metrics, model comparison tables, data quality evidence, and
+metric zone gauges. This is the thesis claim.
+
+The backtest (Stage 5) is an **optional application demo** that translates predicted
+classes into a simulated trading narrative. It is NOT a primary proof of model
+quality. Backtest results depend heavily on execution assumptions (lot size,
+spread, cooldown, slippage) and should not be used as standalone evidence.
+
+### Model Comparison Groups
+
+The pipeline compares **4 model groups** to isolate each component's contribution:
+
+| Group | Architecture | Purpose |
+|-------|-------------|---------|
+| **Naive Direction** | Previous-bar direction → prediction | Baseline (no learning) |
+| **LightGBM Static** | 22 static features only | Tabular feature ceiling |
+| **GRU-only** | GRU hidden states only | Temporal feature ceiling |
+| **Hybrid GRU+LightGBM** | GRU PCA 16 + 22 static → LightGBM | Full system (thesis contribution) |
+
+### Metric Hierarchy
+
+Metrics are prioritized by their relevance to the thesis claim:
+
+1. **Classification (primary)** — Directional Accuracy, Macro F1, Confusion Matrix,
+   per-class Precision/Recall. These directly measure the 3-class prediction quality.
+2. **Regression auxiliary** — MAE, RMSE, R² on forward returns. These provide
+   supporting evidence about prediction magnitude but are not the thesis target.
 
 ---
 
@@ -40,8 +68,11 @@ flowchart LR
     G --> H
 
     H --> I["Concatenate<br/>OOF Predictions"]
-    I --> J["Backtest<br/>Application Demo"]
-    I --> K["ML Report<br/>Charts + Markdown"]
+    I --> K["ML Report<br/>Charts + Markdown<br/><b>PRIMARY OUTPUT</b>"]
+    I -.-> J["Backtest<br/>Application Demo<br/><i>(Optional)</i>"]
+
+    style K fill:#059669,color:#fff,stroke:#000,stroke-width:3px
+    style J fill:#9CA3AF,color:#fff,stroke-dasharray: 5 5
 ```
 
 ---
@@ -57,8 +88,8 @@ flowchart TD
     S2["<b>Stage 2</b><br/>Features<br/><i>~28 indicators</i>"]
     S3["<b>Stage 3</b><br/>Labels<br/><i>Triple Barrier</i>"]
     S4["<b>Stage 4</b><br/>Walk-Forward Training<br/><i>GRU (multiclass) + LightGBM (multiclass) per window</i>"]
-    S5["<b>Stage 5</b><br/>Backtest<br/><i>CFD Simulation</i>"]
-    S6["<b>Stage 6</b><br/>Report<br/><i>Charts + Markdown</i>"]
+    S5["<b>Stage 5</b><br/>Backtest<br/><i>Application Demo (Optional)</i>"]
+    S6["<b>Stage 6</b><br/>Report<br/><i>ML Evaluation (Primary Output)</i>"]
 
     S1 --> S2 --> S3 --> S4 --> S5 --> S6
 
@@ -66,8 +97,8 @@ flowchart TD
     style S2 fill:#2563EB,color:#fff
     style S3 fill:#2563EB,color:#fff
     style S4 fill:#7C3AED,color:#fff
-    style S5 fill:#059669,color:#fff
-    style S6 fill:#059669,color:#fff
+    style S5 fill:#9CA3AF,color:#fff,stroke-dasharray: 5 5
+    style S6 fill:#059669,color:#fff,stroke:#000,stroke-width:3px
 ```
 
 | # | Stage | Module | What It Does | Input | Output |
@@ -76,8 +107,8 @@ flowchart TD
 | 2 | **Features** | `stage_2_features/` | Calculate ~28 technical indicators + regime features | `ohlcv.parquet` | `features.parquet` |
 | 3 | **Labels** | `stage_3_labels/` | Generate buy/sell/hold labels using the Triple Barrier method | `features.parquet` | `labels.parquet` |
 | 4 | **Walk-Forward Training** | `stage_4_training/` | Per window: train GRU (multiclass) → extract hidden states → train LightGBM (multiclass) → predict test slice → collect OOF predictions | `labels.parquet` | `final_predictions.parquet` + model files |
-| 5 | **Backtest** | `stage_5_backtest/` | Simulate CFD trading on concatenated OOF predictions with cooldown, confidence filtering, and fixed lot size | OOF predictions | `backtest_results.json` + `trades_detail.csv` |
-| 6 | **Report** | `stage_6_reporting/` | ML metrics, data quality analysis, OOF/OOS comparison, metric zone gauges, charts, and thesis report | All outputs | Charts + `thesis_report.md` |
+| 5 | **Backtest** *(optional demo)* | `stage_5_backtest/` | Simulate CFD trading on concatenated OOF predictions with cooldown, confidence filtering, and fixed lot size. **Application demo, not primary proof.** | OOF predictions | `backtest_results.json` + `trades_detail.csv` |
+| 6 | **Report** *(primary output)* | `stage_6_reporting/` | ML evaluation metrics, 4-group model comparison, data quality analysis, OOF/OOS comparison, metric zone gauges, charts, and thesis report. **This is the thesis claim.** | All outputs | Charts + `thesis_report.md` |
 
 > When `validation.method = "static"` in `config.toml`, stage 4 performs a
 > traditional train/val/test split and single-pass LightGBM training instead of
@@ -111,10 +142,12 @@ flowchart LR
     TE2 --> OOF
     TEN --> OOF
 
-    OOF --> BT["Backtest"]
-    OOF --> RPT["Report"]
+    OOF --> BT["Backtest<br/><i>(Optional Demo)</i>"]
+    OOF --> RPT["Report<br/><b>PRIMARY</b>"]
 
     style OOF fill:#D97706,color:#fff
+    style RPT fill:#059669,color:#fff,stroke:#000,stroke-width:3px
+    style BT fill:#9CA3AF,color:#fff
 ```
 
 Each window:
@@ -252,6 +285,8 @@ decision problem.
 | **Trade cooldown (min_bars_between_trades=6)** | Prevents overtrading, reduces correlation between consecutive trades |
 | **Fixed lot sizing after confidence filter** | Prevents confidence from amplifying wrong high-conviction predictions |
 | **Backtest as demo only** | Keeps the thesis focused on ML quality instead of trading optimization |
+| **4-group model comparison** | Naive Direction, LightGBM Static, GRU-only, Hybrid GRU+LightGBM — isolates each component's contribution |
+| **Classification-first metric hierarchy** | Directional Accuracy / Macro F1 / Confusion Matrix (primary) > MAE/RMSE/R² (auxiliary). Thesis claim rests on classification. |
 | **Cosine-annealing LR schedule** | Warm restarts improve GRU convergence on non-stationary financial data |
 
 ---
@@ -323,7 +358,7 @@ thesis/
 | `stage_4_training/_gru.py` | GRU feature extractor (multiclass default; regression experimental) |
 | `stage_4_training/_lgbm.py` | LightGBM training (multiclass) |
 | `stage_4_training/_walk_forward.py` | Walk-forward orchestration |
-| `stage_5_backtest/` | Stage 5: CFD simulation with cooldown |
+| `stage_5_backtest/` | Stage 5: CFD simulation with cooldown *(optional application demo)* |
 | `stage_6_reporting/` | Stage 6: Report + charts + metric zones |
 | `pipeline.py` | Stage orchestration |
 | `_shared/config.py` | TOML config → dataclasses |
@@ -350,12 +385,13 @@ flowchart TD
     T2 -->|"Stage 3"| T3["Labels<br/><i>+ buy/sell/hold + TP/SL prices</i>"]
     T3 -->|"Stage 4<br/>walk-forward<br/>sliding windows"| T4["Per Window:<br/>Train slice → GRU (multiclass)<br/>→ hidden states → PCA<br/>→ LightGBM (multiclass)<br/>→ OOF predictions + confidence"]
     T4 -->|"concatenate<br/>OOF chunks"| T5["Final OOF Predictions<br/><i>timestamp + true_label + pred_label + probabilities + confidence</i>"]
-    T5 -->|"Stage 5"| T6["Backtest<br/><i>trades, PnL, metrics, cooldown</i>"]
-    T5 -->|"Stage 6"| T7["Report<br/><i>markdown + charts + data quality + OOF/OOS comparison + metric gauges</i>"]
+    T5 -->|"Stage 5<br/>(Optional Demo)"| T6["Backtest<br/><i>trades, PnL, metrics, cooldown</i>"]
+    T5 -->|"Stage 6<br/><b>PRIMARY</b>"| T7["Report<br/><i>markdown + charts + data quality + OOF/OOS comparison + metric gauges + 4-group model comparison</i>"]
 
     style T0 fill:#6B7280,color:#fff
     style T4 fill:#7C3AED,color:#fff
-    style T7 fill:#059669,color:#fff
+    style T6 fill:#9CA3AF,color:#fff
+    style T7 fill:#059669,color:#fff,stroke:#000,stroke-width:3px
 ```
 
 ---

@@ -14,26 +14,35 @@ results/XAUUSD_1H_20260414_042000/
 
 ```mermaid
 flowchart TD
-    ROOT["results/XAUUSD_1H_.../"] --> BT["backtest/<br/>backtest_results.json<br/><b>⬅ Start here</b>"]
-    ROOT --> REP["reports/<br/>thesis_report.md<br/><b>⬅ Then read this</b>"]
-    ROOT --> RPT["reports/<br/>walk_forward_history.json"]
+    ROOT["results/XAUUSD_1H_.../"] --> MODEVAL["reports/<br/>model_evaluation.md<br/>model_metrics.json<br/><b>⬅ Start here</b>"]
+    ROOT --> PREDS["predictions/<br/>prediction_details.csv<br/><b>⬅ Per-row predictions</b>"]
+    ROOT --> WF["reports/<br/>walk_forward_history.json"]
+    ROOT --> DQ["reports/<br/>data_quality_report.md"]
+    ROOT --> REP["reports/<br/>thesis_report.md"]
     ROOT --> CHART["reports/<br/>equity_curve.png, feature_importance.png"]
     ROOT --> CFG["config/<br/>config_snapshot.toml"]
     ROOT --> LOG["logs/<br/>pipeline.log"]
+    ROOT --> BT["backtest/<br/>backtest_results.json<br/><i>Application demo (see Appendix)</i>"]
 
-    style BT fill:#059669,color:#fff
-    style REP fill:#2563EB,color:#fff
+    style MODEVAL fill:#059669,color:#fff
+    style PREDS fill:#2563EB,color:#fff
+    style BT fill:#9CA3AF,color:#fff
 ```
 
-The most important files are:
+### Model Evaluation Artifacts (Primary)
+
+These files answer the core question: **"Does the model predict direction correctly?"**
 
 | File | What to Look At |
 |------|----------------|
-| `backtest/backtest_results.json` | All the numbers (metrics + trade list) |
-| `reports/thesis_report.md` | Written summary with charts |
-| `reports/data_quality_report.md` | Data quality analysis — missing bars, volatility, seasonal patterns |
+| `reports/model_evaluation.md` | Classification report — directional accuracy, per-class F1, confusion matrix |
+| `reports/model_metrics.json` | Machine-readable metrics: accuracy, macro F1, precision/recall per class |
 | `reports/walk_forward_history.json` | Per-window diagnostics: class weights, shift weights, per-class metrics |
 | `predictions/prediction_details.csv` | Per-row predictions with confidence scores |
+| `reports/data_quality_report.md` | Data quality analysis — missing bars, volatility, seasonal patterns |
+| `reports/thesis_report.md` | Written summary with charts |
+
+> **Evaluation philosophy:** Classification metrics (Directional Accuracy, Macro F1, Confusion Matrix) are **primary** — they answer *"mô hình có đoán đúng hướng không?"* Regression metrics (MAE, RMSE, R²) are **auxiliary** — they answer *"mô hình có ước lượng được độ lớn biến động không?"* The thesis is about directional prediction, so classification is what matters most.
 
 ---
 
@@ -134,9 +143,24 @@ confidence information:
 
 ---
 
-## The Metrics — Explained Simply
+## Classification vs. Regression Metrics
 
-Here is every metric the backtest calculates, explained in plain language.
+This project frames prediction as a **classification** problem (Long / Flat / Short). The evaluation hierarchy is:
+
+| Priority | Metric Type | What It Answers | Examples |
+|----------|-----------|-----------------|----------|
+| **Primary** | Classification | "Mô hình có đoán đúng hướng không?" | Directional Accuracy, Macro F1, Confusion Matrix, Per-class Precision/Recall |
+| **Auxiliary** | Regression | "Mô hình có ước lượng được độ lớn biến động không?" | MAE, RMSE, R² on price change magnitude |
+
+**Why classification first?** A trading signal only needs the right direction — the backtest handles position sizing and risk management separately. A model with 55% directional accuracy and good risk control can be profitable even if its price-magnitude estimates are poor.
+
+---
+
+## Backtest Trading Metrics — Application Demo
+
+The backtest is an **application demo** that translates directional signals into simulated trades. It proves the model's signals are actionable, but the backtest metrics (Sharpe, drawdown, profit factor) are downstream consequences of classification accuracy.
+
+Below are the trading metrics the backtest calculates, explained in plain language.
 
 ### Trading Activity
 

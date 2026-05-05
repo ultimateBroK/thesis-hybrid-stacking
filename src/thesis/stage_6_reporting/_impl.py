@@ -21,6 +21,8 @@ from thesis._shared.config import Config
 from thesis._shared.constants import H1_BARS_PER_YEAR
 from thesis._shared.ui import console
 from thesis._shared.zones import _get_metric_zone
+from thesis.stage_4_training import _baselines
+from thesis.stage_6_reporting import _calibration, _data_quality, _model_metrics
 
 logger = logging.getLogger("thesis.report")
 
@@ -115,107 +117,70 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
     if not preds_path.exists():
         return None
     try:
-        cols = ["true_label", "pred_label"]
+        df = pl.read_parquet(preds_path)
+        true = df["true_label"].to_numpy()
+        pred = df["pred_label"].to_numpy()
+
         proba_cols = [
             "pred_proba_class_minus1",
             "pred_proba_class_0",
             "pred_proba_class_1",
         ]
-        # Try loading with probability columns
-        try:
-            df = pl.read_parquet(preds_path)
-        except Exception:
-            logger.warning(
-                "Failed to load full predictions parquet; retrying required columns: %s",
-                preds_path,
-                exc_info=True,
-            )
-            df = pl.read_parquet(preds_path, columns=cols)
+        proba = df.select(proba_cols).to_numpy() if all(
+            c in df.columns for c in proba_cols
+        ) else None
 
-        true = df["true_label"].to_numpy()
-        pred = df["pred_label"].to_numpy()
-        total = len(true)
-
-        # Overall accuracy: fraction of predictions matching true labels
-        accuracy = float((true == pred).mean())
-        # Majority baseline: accuracy if we always predict the most common class
-        majority_baseline = float(max((true == lv).sum() for lv in [-1, 0, 1]) / total)
-
-        # Directional accuracy: evaluate only on non-Hold predictions
-        non_hold_mask = (true != 0) & (pred != 0)
-        if non_hold_mask.sum() > 0:
-            directional_correct = true[non_hold_mask] == pred[non_hold_mask]
-            directional_accuracy = float(directional_correct.mean())
-            directional_baseline = _DIRECTIONAL_BASELINE
-        else:
-            directional_accuracy = 0.0
-            directional_baseline = _DIRECTIONAL_BASELINE
-
-        # Per-class metrics
-        per_class: dict = {}
-        for lv, ln in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
-            true_mask = true == lv
-            pred_mask = pred == lv
-            recall = float((pred[true_mask] == lv).mean()) if true_mask.sum() > 0 else 0
-            precision = (
-                float((true[pred_mask] == lv).mean()) if pred_mask.sum() > 0 else 0
-            )
-            f1 = (
-                2 * precision * recall / (precision + recall)
-                if (precision + recall) > 0
-                else 0
-            )
-            per_class[ln] = {
-                "true_count": int(true_mask.sum()),
-                "pred_count": int(pred_mask.sum()),
-                "recall": recall,
-                "precision": precision,
-                "f1": f1,
+        raw_metrics = _model_metrics.compute_all_classification_metrics(
+            true,
+            pred,
+            y_proba=proba,
+        )
+        per_class_metrics = raw_metrics["precision_recall_f1_per_class"]
+        class_map = {-1: "Short", 0: "Hold", 1: "Long"}
+        per_class_counts = {
+            class_map[c]: {
+                "true_count": int((true == c).sum()),
+                "pred_count": int((pred == c).sum()),
+                "precision": float(per_class_metrics[class_map[c]]["precision"]),
+                "recall": float(per_class_metrics[class_map[c]]["recall"]),
+                "f1": float(per_class_metrics[class_map[c]]["f1"]),
             }
-
-        # Confusion matrix
-        cm: dict = {}
-        for true_lv, true_name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
-            row: dict = {}
-            for pred_lv, pred_name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
-                row[pred_name] = int(((true == true_lv) & (pred == pred_lv)).sum())
-            cm[true_name] = row
-
-        result: dict = {
-            "total": total,
-            "accuracy": accuracy,
-            "directional_accuracy": directional_accuracy,
-            "directional_baseline": directional_baseline,
-            "majority_baseline": majority_baseline,
-            "per_class": per_class,
-            "confusion_matrix": cm,
+            for c in (-1, 0, 1)
         }
 
-        # Confidence-filtered accuracy
-        has_proba = all(c in df.columns for c in proba_cols)
-        if has_proba:
-            proba = df.select(proba_cols).to_numpy()
-            max_proba = proba.max(axis=1)
-            threshold = _HIGH_CONFIDENCE_THRESHOLD
-            hc_mask = max_proba >= threshold
-            if hc_mask.sum() > 0:
-                hc_acc = float((true[hc_mask] == pred[hc_mask]).mean())
-                hc_total = int(hc_mask.sum())
-                non_hold = pred[hc_mask] != 0
-                if non_hold.sum() > 0:
-                    dir_acc = float(
-                        (true[hc_mask][non_hold] == pred[hc_mask][non_hold]).mean()
-                    )
-                else:
-                    dir_acc = 0
-                result["high_confidence"] = {
-                    "threshold": threshold,
-                    "count": hc_total,
-                    "pct_of_total": hc_total / total * 100,
-                    "accuracy": hc_acc,
-                    "directional_accuracy": dir_acc,
-                }
+        result: dict[str, Any] = {
+            "total": int(raw_metrics["total"]),
+            "accuracy": float(raw_metrics["accuracy"]),
+            "balanced_accuracy": float(raw_metrics["balanced_accuracy"]),
+            "directional_accuracy": float(raw_metrics["directional_accuracy"]),
+            "directional_baseline": _DIRECTIONAL_BASELINE,
+            "majority_baseline": float(raw_metrics["majority_baseline_accuracy"]),
+            "macro_f1": float(raw_metrics["macro_f1"]),
+            "weighted_f1": float(raw_metrics["weighted_f1"]),
+            "per_class": per_class_counts,
+            "confusion_matrix": raw_metrics["confusion_matrix"],
+            "direction_confusion_matrix": raw_metrics["direction_confusion_matrix"],
+        }
 
+        if proba is not None:
+            max_proba = proba.max(axis=1)
+            hc_mask = max_proba >= _HIGH_CONFIDENCE_THRESHOLD
+            hc_count = int(hc_mask.sum())
+            hc_acc = float((true[hc_mask] == pred[hc_mask]).mean()) if hc_count else 0.0
+            hc_non_hold = hc_mask & (pred != 0)
+            hc_non_hold_count = int(hc_non_hold.sum())
+            hc_dir_acc = (
+                float((true[hc_non_hold] == pred[hc_non_hold]).mean())
+                if hc_non_hold_count
+                else 0.0
+            )
+            result["high_confidence"] = {
+                "threshold": _HIGH_CONFIDENCE_THRESHOLD,
+                "count": hc_count,
+                "pct_of_total": (hc_count / len(true) * 100.0) if len(true) else 0.0,
+                "accuracy": hc_acc,
+                "directional_accuracy": hc_dir_acc,
+            }
         return result
     except Exception:
         logger.warning(
@@ -948,6 +913,255 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
     L.append(_tbl_row("Data End", str(dq.get("end_date", "N/A"))))
     L.append("")
 
+    # --- Computed data quality from _data_quality module ---
+    ohlcv_path = Path(config.paths.ohlcv)
+    if ohlcv_path.exists():
+        try:
+            ohlcv_df = pl.read_parquet(ohlcv_path)
+            computed_dq = _data_quality.compute_data_quality_report(ohlcv_df)
+            ohlcv_c = computed_dq.get("ohlcv_consistency", {})
+            missing = computed_dq.get("missing_bars", {})
+            outliers = computed_dq.get("outlier_returns", {})
+
+            L.append("### OHLCV Consistency (computed)")
+            L.append("")
+            L.append(_tbl_row("Check", "Result"))
+            L.append(_tbl_row("-----", "------"))
+            L.append(
+                _tbl_row(
+                    "Total rows",
+                    f"{ohlcv_c.get('total_rows', 0):,}",
+                )
+            )
+            L.append(
+                _tbl_row(
+                    "OHLC violations",
+                    f"{ohlcv_c.get('ohlc_violations', 0):,}",
+                )
+            )
+            L.append(
+                _tbl_row(
+                    "Negative prices",
+                    f"{ohlcv_c.get('price_negative_count', 0):,}",
+                )
+            )
+            L.append(
+                _tbl_row(
+                    "Consistent",
+                    "✅ Yes" if ohlcv_c.get("is_consistent") else "❌ No",
+                )
+            )
+            L.append("")
+
+            L.append("### Missing Bar Analysis (computed)")
+            L.append("")
+            L.append(_tbl_row("Metric", "Value"))
+            L.append(_tbl_row("------", "-----"))
+            L.append(
+                _tbl_row(
+                    "Total bars",
+                    f"{missing.get('total_bars', 0):,}",
+                )
+            )
+            L.append(
+                _tbl_row(
+                    "Gaps found",
+                    f"{missing.get('gaps_found', 0):,}",
+                )
+            )
+            L.append(
+                _tbl_row(
+                    "Weekend gaps",
+                    f"{missing.get('weekend_gaps', 0):,}",
+                )
+            )
+            L.append(
+                _tbl_row(
+                    "Missing ratio",
+                    f"{missing.get('missing_ratio', 0.0):.6f}",
+                )
+            )
+            L.append("")
+
+            if outliers:
+                L.append("### Outlier Returns (computed)")
+                L.append("")
+                L.append(_tbl_row("Metric", "Value"))
+                L.append(_tbl_row("------", "-----"))
+                L.append(
+                    _tbl_row(
+                        "Outlier count",
+                        str(outliers.get("outlier_count", 0)),
+                    )
+                )
+                L.append(
+                    _tbl_row(
+                        "Outlier ratio",
+                        f"{outliers.get('outlier_ratio', 0.0):.6f}",
+                    )
+                )
+                L.append(
+                    _tbl_row(
+                        "Max return",
+                        f"{outliers.get('max_return', 0.0):.8f}",
+                    )
+                )
+                L.append(
+                    _tbl_row(
+                        "Min return",
+                        f"{outliers.get('min_return', 0.0):.8f}",
+                    )
+                )
+                L.append("")
+        except Exception:
+            logger.warning("Failed to compute data quality from OHLCV", exc_info=True)
+
+
+def _render_label_design_section(L: list[str], config: Config) -> None:
+    """Render the Label Design & Methodology explanation section.
+
+    Describes the triple-barrier labeling method, class definitions, and
+    ATR-based barrier configuration used to produce the classification
+    target (Short / Hold / Long).
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        config: Application configuration.
+    """
+    L.append("## Label Design & Methodology")
+    L.append("")
+    labels_cfg = config.labels
+    split_cfg = config.splitting
+    L.append(
+        "Labels are generated using the **triple-barrier method**: for each "
+        "bar, ATR-scaled take-profit and stop-loss barriers are placed "
+        "symmetrically. The first barrier touched within the forward horizon "
+        "determines the class label."
+    )
+    L.append("")
+    L.append(_tbl_row("Parameter", "Value"))
+    L.append(_tbl_row("---------", "-----"))
+    L.append(_tbl_row("ATR TP multiplier", f"{labels_cfg.atr_tp_multiplier}×"))
+    L.append(_tbl_row("ATR SL multiplier", f"{labels_cfg.atr_sl_multiplier}×"))
+    L.append(_tbl_row("Horizon", f"{labels_cfg.horizon_bars} bars"))
+    L.append(_tbl_row("Classes", str(labels_cfg.num_classes)))
+    L.append(
+        _tbl_row(
+            "Class mapping",
+            "Short (-1) / Hold (0) / Long (+1)",
+        )
+    )
+    L.append(
+        _tbl_row("Train period", f"{split_cfg.train_start} → {split_cfg.train_end}")
+    )
+    L.append(
+        _tbl_row("Validation period", f"{split_cfg.val_start} → {split_cfg.val_end}")
+    )
+    L.append(
+        _tbl_row("Test (OOS) period", f"{split_cfg.test_start} → {split_cfg.test_end}")
+    )
+    L.append("")
+
+    # Label distribution
+    labels_path = Path(config.paths.labels)
+    dist = _load_label_distribution(labels_path)
+    if dist:
+        L.append("**Class distribution:**")
+        L.append("")
+        L.append(_tbl_row("Class", "Count", "Share"))
+        L.append(_tbl_row("-----", "-----", "-----"))
+        for name in ("Short", "Hold", "Long"):
+            count, pct = dist[name]
+            L.append(_tbl_row(name, f"{count:,}", f"{pct:.1f}%"))
+        L.append(_tbl_row("Total", f"{dist['total']:,}", ""))
+        L.append("")
+
+
+def _render_validation_methodology_section(L: list[str], config: Config) -> None:
+    """Render the Validation Methodology section (walk-forward, purge/embargo).
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        config: Application configuration.
+    """
+    L.append("## Validation Methodology")
+    L.append("")
+    val_cfg = config.validation
+    split_cfg = config.splitting
+
+    method_label = (
+        "Walk-forward (sliding window)"
+        if val_cfg.method == "sliding"
+        else "Static train/val/test split"
+    )
+    L.append(
+        "Model evaluation uses a **walk-forward (anchored sliding-window)** "
+        "cross-validation scheme to prevent look-ahead bias and simulate "
+        "realistic deployment conditions."
+    )
+    L.append("")
+    L.append(_tbl_row("Parameter", "Value"))
+    L.append(_tbl_row("---------", "-----"))
+    L.append(_tbl_row("Method", method_label))
+    L.append(
+        _tbl_row(
+            "Train window",
+            f"{val_cfg.train_window_bars:,} bars (~{val_cfg.train_window_bars // 8760}y)",
+        )
+    )
+    L.append(
+        _tbl_row(
+            "Test window",
+            f"{val_cfg.test_window_bars:,} bars (~{val_cfg.test_window_bars // 730}mo)",
+        )
+    )
+    L.append(_tbl_row("Step", f"{val_cfg.step_bars:,} bars"))
+    L.append(_tbl_row("Purge gap", f"{val_cfg.purge_bars} bars at train/test boundary"))
+    L.append(_tbl_row("Embargo gap", f"{val_cfg.embargo_bars} bars after purge"))
+    L.append(_tbl_row("Min train bars", f"{val_cfg.min_train_bars:,}"))
+    L.append(
+        _tbl_row(
+            "Split purge",
+            f"{split_cfg.purge_bars} bars / embargo {split_cfg.embargo_bars} bars",
+        )
+    )
+    L.append("")
+    L.append(
+        "*The **purge** gap removes bars at the train/test boundary to prevent "
+        "label leakage from the forward-looking horizon. The **embargo** gap "
+        "adds an additional buffer after the purge to further isolate the test "
+        "set. Together they ensure strict temporal separation between training "
+        "and evaluation data.*"
+    )
+    L.append("")
+
+
+def _render_auxiliary_regression_section(L: list[str], pred_stats: dict | None) -> None:
+    """Render auxiliary regression metrics section (MAE/RMSE/R²) if available.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        pred_stats: Preloaded prediction statistics.
+    """
+    L.append("## Auxiliary: Regression Metrics")
+    L.append("")
+    if pred_stats and any(k in pred_stats for k in ("mae", "rmse", "r2")):
+        L.append(_tbl_row("Metric", "Value"))
+        L.append(_tbl_row("------", "-----"))
+        for key, label in [("mae", "MAE"), ("rmse", "RMSE"), ("r2", "R²")]:
+            val = pred_stats.get(key)
+            if val is not None:
+                L.append(_tbl_row(label, f"{val:.4f}"))
+        L.append("")
+    else:
+        L.append(
+            "*Regression metrics (MAE, RMSE, R²) are not available for the "
+            "current multiclass classification objective. When the model is "
+            'configured with `objective = "regression"`, this section will '
+            "show continuous-return prediction quality.*"
+        )
+        L.append("")
+
 
 def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
     """Render OOF vs OOS comparison section with side-by-side metrics table.
@@ -964,7 +1178,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
     # ── Load walk-forward history ───────────────────────────────────────
     session_dir = config.paths.session_dir
     if not session_dir:
-        L.append("## OOF vs OOS Comparison")
+        L.append("## OOF vs OOS Generalization Check")
         L.append("")
         L.append("*Comparison unavailable — no session directory configured.*")
         L.append("")
@@ -972,7 +1186,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
     wf_path = Path(session_dir) / "reports" / "walk_forward_history.json"
     if not wf_path.exists():
-        L.append("## OOF vs OOS Comparison")
+        L.append("## OOF vs OOS Generalization Check")
         L.append("")
         L.append("*Comparison unavailable — walk-forward history not found.*")
         L.append("")
@@ -984,7 +1198,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
         logger.warning(
             "Failed to load walk-forward history: %s", wf_path, exc_info=True
         )
-        L.append("## OOF vs OOS Comparison")
+        L.append("## OOF vs OOS Generalization Check")
         L.append("")
         L.append("*Comparison unavailable — failed to load walk-forward history.*")
         L.append("")
@@ -992,7 +1206,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
     window_details = wf.get("window_details", [])
     if not window_details:
-        L.append("## OOF vs OOS Comparison")
+        L.append("## OOF vs OOS Generalization Check")
         L.append("")
         L.append(
             "*Comparison unavailable — no window details in walk-forward history.*"
@@ -1116,7 +1330,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                 )
 
     # ── Render table ─────────────────────────────────────────────────────
-    L.append("## OOF vs OOS Comparison")
+    L.append("## OOF vs OOS Generalization Check")
     L.append("")
     L.append(
         "*OOF (Out-Of-Fold) metrics are aggregated across all walk-forward "
@@ -1371,6 +1585,221 @@ def _render_metric_zones_section(
     L.append("")
 
 
+def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
+    """Render baseline strategy comparison using the _baselines module.
+
+    Loads true labels from the predictions parquet and bar returns from
+    OHLCV data, then computes naive, majority, always-long/short/hold,
+    and random baseline metrics for comparison with the model.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        config: Application configuration.
+    """
+    L.append("## Baseline Comparison")
+    L.append("")
+
+    preds_path = Path(config.paths.predictions)
+    if not preds_path.exists():
+        L.append("*Predictions not available — baseline comparison skipped.*")
+        L.append("")
+        return
+
+    try:
+        df = pl.read_parquet(preds_path)
+    except Exception:
+        logger.warning("Failed to load predictions for baselines", exc_info=True)
+        L.append("*Predictions file could not be read.*")
+        L.append("")
+        return
+
+    if "true_label" not in df.columns:
+        L.append("*true_label column missing — baseline comparison skipped.*")
+        L.append("")
+        return
+
+    y_true = df["true_label"].to_numpy()
+
+    # Get bar returns for naive_direction baseline
+    y_returns: np.ndarray | None = None
+    ohlcv_path = Path(config.paths.ohlcv)
+    if ohlcv_path.exists():
+        try:
+            ohlcv = pl.read_parquet(ohlcv_path, columns=["close"])
+            close = ohlcv["close"].to_numpy()
+            if len(close) > 1:
+                bar_returns = np.diff(close) / close[:-1]
+                n = min(len(y_true), len(bar_returns))
+                y_returns = bar_returns[-n:]
+                y_true = y_true[-n:]
+        except Exception:
+            logger.warning("Failed to load OHLCV for baseline returns", exc_info=True)
+
+    if y_returns is None:
+        # Fallback: label-derived synthetic returns (approximate)
+        y_returns = y_true.astype(np.float64)
+
+    try:
+        baselines = _baselines.run_all_baselines(
+            y_true, y_returns, seed=config.workflow.random_seed
+        )
+    except Exception:
+        logger.warning("Failed to compute baselines", exc_info=True)
+        L.append("*Baseline computation failed.*")
+        L.append("")
+        return
+
+    L.append(
+        "*Baseline strategies computed on the same prediction labels as reference. "
+        "The model should outperform all baselines on directional accuracy and macro F1.*"
+    )
+    L.append("")
+    L.append(_tbl_row("Strategy", "Accuracy", "Macro F1", "Dir. Accuracy"))
+    L.append(_tbl_row("--------", "--------", "---------", "-------------"))
+    for name, m in baselines.items():
+        display = name.replace("_", " ").title()
+        L.append(
+            _tbl_row(
+                display,
+                f"{m['accuracy'] * 100:.1f}%",
+                f"{m['macro_f1']:.3f}",
+                f"{m['directional_accuracy'] * 100:.1f}%",
+            )
+        )
+    L.append("")
+
+
+def _build_model_comparison_rows(
+    config: Config, pred_stats: dict | None
+) -> list[dict[str, Any]]:
+    """Build thesis-level model comparison rows with available metrics.
+
+    Columns are aligned with the thesis table:
+    Directional Acc, Accuracy, Macro F1, Long F1, Short F1, optional regression metrics.
+    """
+    rows: list[dict[str, Any]] = []
+
+    if pred_stats:
+        per_class = pred_stats.get("per_class", {})
+        reg_aux = pred_stats.get("regression_auxiliary", {})
+        rows.append(
+            {
+                "model": _model_label(config),
+                "directional_accuracy": pred_stats.get("directional_accuracy"),
+                "accuracy": pred_stats.get("accuracy"),
+                "macro_f1": pred_stats.get("macro_f1"),
+                "long_f1": per_class.get("Long", {}).get("f1"),
+                "short_f1": per_class.get("Short", {}).get("f1"),
+                "mae_return": reg_aux.get("mae"),
+                "rmse_return": reg_aux.get("rmse"),
+                "r2_return": reg_aux.get("r_squared"),
+                "source": "current_session",
+            }
+        )
+
+    preds_path = Path(config.paths.predictions)
+    if preds_path.exists():
+        try:
+            df = pl.read_parquet(preds_path)
+            y_true = df["true_label"].to_numpy()
+            close_path = Path(config.paths.ohlcv)
+            y_returns = y_true.astype(np.float64)
+            if close_path.exists():
+                ohlcv = pl.read_parquet(close_path, columns=["close"])
+                close = ohlcv["close"].to_numpy()
+                if len(close) > 1:
+                    bar_returns = np.diff(close) / close[:-1]
+                    n = min(len(y_true), len(bar_returns))
+                    y_returns = bar_returns[-n:]
+                    y_true = y_true[-n:]
+            baselines = _baselines.run_all_baselines(
+                y_true, y_returns, seed=config.workflow.random_seed
+            )
+            for baseline_key, label in (
+                ("naive_direction", "Naive Direction"),
+                ("majority_class", "Majority Baseline"),
+                ("random", "Random Baseline"),
+            ):
+                if baseline_key not in baselines:
+                    continue
+                m = baselines[baseline_key]
+                rows.append(
+                    {
+                        "model": label,
+                        "directional_accuracy": m.get("directional_accuracy"),
+                        "accuracy": m.get("accuracy"),
+                        "macro_f1": m.get("macro_f1"),
+                        "long_f1": None,
+                        "short_f1": None,
+                        "mae_return": None,
+                        "rmse_return": None,
+                        "r2_return": None,
+                        "source": "derived_baseline",
+                    }
+                )
+        except Exception:
+            logger.warning("Failed to build baseline rows for model comparison", exc_info=True)
+
+    # Keep planned model slots visible even when not yet available.
+    existing = {str(r["model"]).lower() for r in rows}
+    for model_name in ("LightGBM Static", "GRU-only", "Hybrid GRU+LightGBM"):
+        if model_name.lower() in existing:
+            continue
+        rows.append(
+            {
+                "model": model_name,
+                "directional_accuracy": None,
+                "accuracy": None,
+                "macro_f1": None,
+                "long_f1": None,
+                "short_f1": None,
+                "mae_return": None,
+                "rmse_return": None,
+                "r2_return": None,
+                "source": "pending_experiment",
+            }
+        )
+    return rows
+
+
+def _write_model_comparison_artifacts(
+    out_dir: Path, rows: list[dict[str, Any]]
+) -> tuple[Path, Path]:
+    """Write model comparison table to CSV and Markdown."""
+    csv_path = out_dir / "model_comparison.csv"
+    md_path = out_dir / "model_comparison.md"
+    frame = pd.DataFrame(rows)
+    frame.to_csv(csv_path, index=False)
+
+    display_cols = [
+        "model",
+        "directional_accuracy",
+        "accuracy",
+        "macro_f1",
+        "long_f1",
+        "short_f1",
+        "mae_return",
+        "rmse_return",
+        "r2_return",
+        "source",
+    ]
+    with md_path.open("w") as f:
+        f.write("# Model Comparison\n\n")
+        f.write(
+            "Primary focus: Directional Accuracy, Accuracy, Macro F1, and per-class F1. "
+            "Rows with empty values require additional experiment runs.\n\n"
+        )
+        f.write("| " + " | ".join(display_cols) + " |\n")
+        f.write("|" + "|".join(["---"] * len(display_cols)) + "|\n")
+        for row in rows:
+            vals = []
+            for col in display_cols:
+                val = row.get(col)
+                vals.append("" if val is None else str(val))
+            f.write("| " + " | ".join(vals) + " |\n")
+    return csv_path, md_path
+
+
 def _build_markdown(
     config: Config,
     metrics: dict,
@@ -1413,44 +1842,154 @@ def _build_markdown(
     _config_table(L, config)
     L.append("")
 
-    # -- Data Quality --
+    # ── SECTION 1: Data Quality ───────────────────────────────────────────
     _render_data_quality_section(L, config)
 
-    # -- Model Performance --
-    L.append("## Model Performance")
+    # ── SECTION 2: Label Design & Methodology ─────────────────────────────
+    _render_label_design_section(L, config)
+
+    # ── SECTION 3: Validation Methodology ─────────────────────────────────
+    _render_validation_methodology_section(L, config)
+
+    # ── SECTION 4: Classification Metrics (Primary) ───────────────────────
+    L.append("## Classification Metrics")
+    L.append("")
+    L.append(
+        "*Classification metrics are the primary evaluation criterion for "
+        "this thesis. Directional Accuracy and Macro F1 measure the model's "
+        "ability to predict market direction (Short / Hold / Long).*"
+    )
     L.append("")
     _accuracy_table(L, pred_stats, config)
+    L.append("")
+
+    # ── SECTION 5: Model Architecture & Features ──────────────────────────
+    L.append("## Model Architecture & Features")
+    L.append("")
     if config.model.architecture == "hybrid":
         _gru_summary(L, config)
     _feature_importance_table(L, feature_importance)
     L.append("")
 
-    # -- OOF vs OOS Comparison --
-    _render_oof_vs_oos_section(L, config)
+    # ── SECTION 6: Model Comparison ───────────────────────────────────────
+    _static_vs_hybrid_comparison(L, config)
 
-    # -- Backtest Results --
-    L.append("## Backtest Results")
+    # ── SECTION 6b: Baseline Comparison ───────────────────────────────────
+    _render_baseline_comparison_section(L, config)
+
+    # ── SECTION 7: Auxiliary Regression Metrics ───────────────────────────
+    _render_auxiliary_regression_section(L, pred_stats)
+
+    # ── SECTION 8: Application Demo — Backtest Results ────────────────────
+    L.append("## Application Demo: Backtest Results")
+    L.append("")
+    L.append(
+        "*Backtest results are presented as an application demo to illustrate "
+        "how classification signals *could* be translated into trades. "
+        "They are **not** the primary evaluation criterion.*"
+    )
     L.append("")
     _backtest_params_table(L, config)
     _backtest_metrics_table(L, metrics, config)
     _render_metric_zones_section(L, metrics, trades)
     L.append("")
 
-    # -- Benchmark Comparison --
-    L.append("## Benchmark Comparison")
+    # ── SECTION 9: Application Demo — Benchmark Comparison ────────────────
+    L.append("## Application Demo: Benchmark Comparison")
     L.append("")
     _benchmark_comparison_table(L, metrics, config)
 
-    # -- Hybrid vs Static Comparison --
-    _static_vs_hybrid_comparison(L, config)
+    # ── SECTION 10: OOF vs OOS Generalization Check ───────────────────────
+    _render_oof_vs_oos_section(L, config)
 
-    # -- Issues & Recommendations --
+    # ── SECTION 11: Issues & Recommendations ──────────────────────────────
     L.append("## Issues & Recommendations")
     L.append("")
     _issues_list(L, metrics, trades, config, pred_stats)
     L.append("")
 
     return "\n".join(L)
+
+
+def _build_model_evaluation_markdown(
+    config: Config, pred_stats: dict | None, model_comparison_rows: list[dict[str, Any]]
+) -> str:
+    """Build compact evaluation-first markdown artifact."""
+    lines: list[str] = ["# Model Evaluation", ""]
+    lines.append(
+        "This file is the primary ML evidence artifact. Backtest metrics are intentionally excluded."
+    )
+    lines.append("")
+    lines.append(f"- Model: {_model_label(config)}")
+    lines.append(f"- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("")
+
+    if not pred_stats:
+        lines.append("*Prediction statistics unavailable.*")
+        return "\n".join(lines)
+
+    lines.append("## Classification Metrics (Primary)")
+    lines.append("")
+    lines.append("| Metric | Value |")
+    lines.append("|---|---|")
+    lines.append(f"| Accuracy | {pred_stats.get('accuracy', 0.0) * 100:.2f}% |")
+    lines.append(
+        f"| Directional Accuracy | {pred_stats.get('directional_accuracy', 0.0) * 100:.2f}% |"
+    )
+    lines.append(f"| Macro F1 | {pred_stats.get('macro_f1', 0.0):.4f} |")
+    lines.append(
+        f"| Balanced Accuracy | {pred_stats.get('balanced_accuracy', 0.0) * 100:.2f}% |"
+    )
+    lines.append("")
+    lines.append("## Per-Class Metrics")
+    lines.append("")
+    lines.append("| Class | Precision | Recall | F1 |")
+    lines.append("|---|---:|---:|---:|")
+    for class_name in ("Short", "Hold", "Long"):
+        pc = pred_stats.get("per_class", {}).get(class_name, {})
+        lines.append(
+            f"| {class_name} | {pc.get('precision', 0.0):.4f} | {pc.get('recall', 0.0):.4f} | {pc.get('f1', 0.0):.4f} |"
+        )
+    lines.append("")
+
+    reg_aux = pred_stats.get("regression_auxiliary")
+    if reg_aux:
+        lines.append("## Regression Auxiliary Metrics")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        lines.append(f"| MAE Return | {reg_aux.get('mae', float('nan')):.6f} |")
+        lines.append(f"| RMSE Return | {reg_aux.get('rmse', float('nan')):.6f} |")
+        lines.append(f"| R² Return | {reg_aux.get('r_squared', float('nan')):.6f} |")
+        lines.append("")
+
+    lines.append("## Model Comparison")
+    lines.append("")
+    lines.append("| Model | Directional Acc | Accuracy | Macro F1 | Long F1 | Short F1 |")
+    lines.append("|---|---:|---:|---:|---:|---:|")
+    for row in model_comparison_rows:
+        lines.append(
+            "| {model} | {da} | {acc} | {mf1} | {lf1} | {sf1} |".format(
+                model=row.get("model", ""),
+                da=""
+                if row.get("directional_accuracy") is None
+                else f"{float(row['directional_accuracy']) * 100:.2f}%",
+                acc=""
+                if row.get("accuracy") is None
+                else f"{float(row['accuracy']) * 100:.2f}%",
+                mf1=""
+                if row.get("macro_f1") is None
+                else f"{float(row['macro_f1']):.4f}",
+                lf1=""
+                if row.get("long_f1") is None
+                else f"{float(row['long_f1']):.4f}",
+                sf1=""
+                if row.get("short_f1") is None
+                else f"{float(row['short_f1']):.4f}",
+            )
+        )
+    lines.append("")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -1943,9 +2482,7 @@ def _compute_ece_numpy(
 ) -> float:
     """Compute Expected Calibration Error (ECE) from NumPy arrays.
 
-    Partitions predictions into ``n_bins`` equal-width confidence bins
-    and measures the absolute difference between average confidence
-    and accuracy within each bin, weighted by bin size.
+    Delegates to :func:`thesis.stage_6_reporting._calibration.expected_calibration_error`.
 
     Args:
         proba: Softmax probabilities with shape ``(N, C)``.
@@ -1955,22 +2492,11 @@ def _compute_ece_numpy(
     Returns:
         ECE value (0.0 = perfectly calibrated).
     """
-    confidences = proba.max(axis=1)
-    predictions = proba.argmax(axis=1)
-    accuracies = (predictions == labels).astype(np.float64)
-
-    ece = 0.0
-    for i in range(n_bins):
-        bin_lower = i / n_bins
-        bin_upper = (i + 1) / n_bins
-        in_bin = (confidences > bin_lower) & (confidences <= bin_upper)
-        bin_size = in_bin.sum()
-        if bin_size > 0:
-            bin_conf = confidences[in_bin].mean()
-            bin_acc = accuracies[in_bin].mean()
-            ece += (bin_size / len(proba)) * abs(bin_conf - bin_acc)
-
-    return ece
+    n_classes = proba.shape[1]
+    y_onehot = np.zeros((len(labels), n_classes), dtype=np.float64)
+    for i, lbl in enumerate(labels):
+        y_onehot[i, lbl] = 1.0
+    return _calibration.expected_calibration_error(y_onehot, proba, n_bins=n_bins)
 
 
 def _calibration_summary_text(config: Config) -> str | None:
@@ -2012,15 +2538,25 @@ def _calibration_summary_text(config: Config) -> str | None:
         return None
 
     proba = df.select(proba_cols).to_numpy()
-    labels = df["true_label"].to_numpy()
+    true_labels = df["true_label"].to_numpy()
+    pred_labels = df["pred_label"].to_numpy() if "pred_label" in df.columns else None
 
     # Map label values (-1, 0, 1) → class indices (0, 1, 2)
-    class_indices = np.zeros(len(labels), dtype=np.int64)
-    class_indices[labels == 0] = 1
-    class_indices[labels == 1] = 2
-    # class_indices[labels == -1] stays 0
+    class_indices = np.zeros(len(true_labels), dtype=np.int64)
+    class_indices[true_labels == 0] = 1
+    class_indices[true_labels == 1] = 2
 
     ece = _compute_ece_numpy(proba, class_indices)
+
+    # Full calibration suite from _calibration module
+    calib_metrics = _calibration.compute_all_calibration_metrics(
+        true_labels,
+        pred_labels if pred_labels is not None else np.argmax(proba, axis=1) - 1,
+        proba,
+        classes=[-1, 0, 1],
+    )
+    brier = calib_metrics.get("brier_score", float("nan"))
+    logloss = calib_metrics.get("log_loss", float("nan"))
 
     if ece < _ECE_WELL_CALIBRATED:
         quality = "well-calibrated"
@@ -2043,7 +2579,15 @@ def _calibration_summary_text(config: Config) -> str | None:
             "likelihoods. Consider temperature scaling or isotonic regression."
         )
 
-    logger.info("Calibration summary: ECE=%.4f (%s)", ece, quality)
+    note += f" Brier score = {brier:.4f}, Log-loss = {logloss:.4f}."
+
+    logger.info(
+        "Calibration summary: ECE=%.4f, Brier=%.4f, LogLoss=%.4f (%s)",
+        ece,
+        brier,
+        logloss,
+        quality,
+    )
     return note
 
 
@@ -2299,34 +2843,6 @@ def _render_issues(
             L.append(f"{i}. {icon} {desc}")
 
 
-def _count_features(config: Config) -> int:
-    """Count total features from the features parquet or GRU config.
-
-    Args:
-        config: Application configuration.
-
-    Returns:
-        Total feature count — either from the features parquet column
-        count (excluding OHLCV/label columns) or as a fallback sum of
-        GRU hidden size plus static feature count.
-    """
-    features_path = Path(config.paths.features)
-    if features_path.exists():
-        try:
-            import polars as pl  # noqa: F811
-
-            df = pl.read_parquet(features_path)
-            exclude = {"timestamp", "open", "high", "low", "close", "volume", "label"}
-            return sum(1 for c in df.columns if c not in exclude)
-        except Exception:
-            logger.warning(
-                "Failed to count features from features parquet: %s",
-                features_path,
-                exc_info=True,
-            )
-    return config.gru.hidden_size + len(config.features.static_feature_cols)
-
-
 def _issues_list(
     L: list[str],
     metrics: dict,
@@ -2568,6 +3084,7 @@ def generate_report(config: Config) -> None:
     # Markdown Report
     with console.status("[cyan]Building thesis markdown[/]"):
         pred_stats = _load_prediction_stats(Path(config.paths.predictions))
+        model_comparison_rows = _build_model_comparison_rows(config, pred_stats)
         md = _build_markdown(
             config,
             metrics,
@@ -2575,8 +3092,26 @@ def generate_report(config: Config) -> None:
             feature_importance,
             pred_stats,
         )
+        model_eval_md = _build_model_evaluation_markdown(
+            config, pred_stats, model_comparison_rows
+        )
     report_path = Path(config.paths.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w") as f:
         f.write(md)
     logger.info("Report saved: %s", report_path)
+
+    model_eval_path = out_dir / "model_evaluation.md"
+    with model_eval_path.open("w") as f:
+        f.write(model_eval_md)
+    logger.info("Model evaluation saved: %s", model_eval_path)
+
+    model_metrics_path = out_dir / "model_metrics.json"
+    with model_metrics_path.open("w") as f:
+        json.dump(pred_stats or {}, f, indent=2)
+    logger.info("Model metrics saved: %s", model_metrics_path)
+
+    model_cmp_csv, model_cmp_md = _write_model_comparison_artifacts(
+        out_dir, model_comparison_rows
+    )
+    logger.info("Model comparison saved: %s, %s", model_cmp_csv, model_cmp_md)
