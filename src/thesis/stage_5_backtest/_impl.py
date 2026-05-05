@@ -627,7 +627,7 @@ def _save_bokeh_chart(
     """
     if not session_dir:
         return
-    if not stats["_trades"]:
+    if stats["_trades"].empty:
         logger.info("No trades — skipping Bokeh chart")
         return
     chart_dir = session_dir / "backtest"
