@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from pathlib import Path
+import time
 from typing import Any
 
 import joblib
@@ -28,13 +28,13 @@ from thesis._shared.constants import (
     DIST_SHIFT_CLIP_MIN,
     EXCLUDE_COLS,
 )
+from thesis._shared.ui import console
 from thesis.stage_4_training._gru import (
     extract_hidden_states,
     prepare_sequences,
     save_gru_model,
     train_gru,
 )
-from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.model")
 
@@ -232,7 +232,8 @@ def _train_fixed(
     gru_feature_count = sum(1 for name in feature_cols if name.startswith("gru_h"))
     static_feature_count = len(feature_cols) - gru_feature_count
     logger.info(
-        "LightGBM: %s leaves=%d depth=%d lr=%.4f n_est=%d constraints=[%d GRU, %d static]",
+        "LightGBM: %s leaves=%d depth=%d lr=%.4f"
+        " n_est=%d constraints=[%d GRU, %d static]",
         "regressor" if is_regression else "classifier",
         m.num_leaves,
         m.max_depth,
@@ -379,7 +380,7 @@ def _save_feature_importance(
             "Feature importance saved (top 5: %s)",
             [p[0] for p in pairs[:5]],
         )
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.warning("Feature importance save failed: %s", e)
 
 
@@ -734,7 +735,8 @@ def train_model(config: Config) -> None:
             f"[bold green]Stage 4 complete[/]\n"
             f"  Accuracy: [bold]{acc:.4f}[/]\n"
             f"  GRU: {hidden_size} features ({config.gru.num_layers} layers)\n"
-            f"  LightGBM: {len(all_feature_cols)} features, best_iter={getattr(model, 'best_iteration_', 'N/A')}\n"
+            f"  LightGBM: {len(all_feature_cols)} features,"
+            f" best_iter={getattr(model, 'best_iteration_', 'N/A')}\n"
             f"  Time: {stage_time:.1f}s",
             style="green",
             padding=(0, 2),

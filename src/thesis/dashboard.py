@@ -7,19 +7,21 @@ Backtest, and Reports.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 import html
 import json
 import logging
+from pathlib import Path
 import re
 import sys
-from datetime import datetime, timedelta
-from pathlib import Path
 
 import numpy as np
 import polars as pl
-import streamlit as st
 from pyecharts import options as opts
 from pyecharts.charts import Bar, Line, Pie
+import streamlit as st
+
+from thesis._shared.session_paths import load_config_for_session
 
 # Zone helpers (from thesis._shared.zones – pure Python, no Streamlit)
 from thesis._shared.zones import (
@@ -45,7 +47,6 @@ from thesis.charts import (
     build_rolling_sharpe_chart,
     load_session_data,
 )
-from thesis._shared.session_paths import load_config_for_session
 
 logger = logging.getLogger("thesis.app_streamlit")
 
@@ -56,6 +57,19 @@ if _src not in sys.path:
 
 
 # Metric card helpers
+
+# CSS style strings extracted to avoid embedding long inline attributes.
+_CSS_METRIC_LABEL = (
+    "font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase;"
+    " letter-spacing: 0.05em; margin-bottom: 4px;"
+)
+_CSS_METRIC_VALUE = (
+    "font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;"
+)
+_CSS_METRIC_REC = (
+    "font-size: 0.65rem; color: inherit; opacity: 0.6;"
+    " margin-top: 4px; line-height: 1.3;"
+)
 
 
 def _render_zoned_metric(
@@ -94,8 +108,8 @@ def _render_zoned_metric(
             box-sizing: border-box;
         ">
             <div>
-                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{safe_label}</div>
-                <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">
+                <div style="{_CSS_METRIC_LABEL}">{safe_label}</div>
+                <div style="{_CSS_METRIC_VALUE}">
                     {safe_value}{safe_unit}{display_suffix}
                 </div>
             </div>
@@ -110,7 +124,7 @@ def _render_zoned_metric(
                     text-transform: uppercase;
                     letter-spacing: 0.03em;
                 ">{safe_zone}</span>
-                <div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{safe_rec}</div>
+                <div style="{_CSS_METRIC_REC}">{safe_rec}</div>
             </div>
         </div>
         """,
@@ -129,7 +143,7 @@ def _render_metric_card(
     safe_label = html.escape(label)
     safe_value = html.escape(value)
     caption_html = (
-        f'<div style="font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;">{html.escape(caption)}</div>'
+        f'<div style="{_CSS_METRIC_REC}">{html.escape(caption)}</div>'
         if caption
         else ""
     )
@@ -149,8 +163,8 @@ def _render_metric_card(
             box-sizing: border-box;
         ">
             <div>
-                <div style="font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">{safe_label}</div>
-                <div style="font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;">{safe_value}</div>
+                <div style="{_CSS_METRIC_LABEL}">{safe_label}</div>
+                <div style="{_CSS_METRIC_VALUE}">{safe_value}</div>
             </div>
             {caption_html}
         </div>
@@ -264,7 +278,7 @@ def _render_chart(chart: object, height: str = "500px") -> None:
         from streamlit_echarts import st_pyecharts
 
         st_pyecharts(chart, height=height)
-    except Exception as e:
+    except ImportError as e:
         st.warning(f"Chart render failed: {e}")
 
 
@@ -280,7 +294,8 @@ def _render_data_section(data: dict, config: object) -> None:
     if ohlcv is not None:
         st.caption(
             f"{len(ohlcv):,} bars | "
-            f"{ohlcv['timestamp'].cast(pl.Utf8).min()} → {ohlcv['timestamp'].cast(pl.Utf8).max()}"
+            f"{ohlcv['timestamp'].cast(pl.Utf8).min()}"
+            f" → {ohlcv['timestamp'].cast(pl.Utf8).max()}"
         )
     features = data.get("features")
     labels = data.get("labels")
@@ -341,8 +356,9 @@ def _render_data_section(data: dict, config: object) -> None:
                 )
             elif info["downsampled"]:
                 st.caption(
-                    f"Showing {info['displayed_bars']:,} of {info['total_bars']:,} bars "
-                    f"(downsampled). Use DataZoom to navigate."
+                    f"Showing {info['displayed_bars']:,} of"
+                    f" {info['total_bars']:,} bars"
+                    " (downsampled). Use DataZoom to navigate."
                 )
         else:
             st.info("No data in selected date range.")
@@ -501,7 +517,8 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
             with col:
                 st.markdown(f"**{name}**")
                 st.caption(
-                    f"True: {cls_metrics['true_count']:,} | Predicted: {cls_metrics['pred_count']:,}"
+                    f"True: {cls_metrics['true_count']:,}"
+                    f" | Predicted: {cls_metrics['pred_count']:,}"
                 )
                 st.progress(
                     cls_metrics["recall"], text=f"Recall: {cls_metrics['recall']:.1%}"
@@ -793,7 +810,8 @@ def _render_backtest_section(data: dict, config: object) -> None:
 
         st.markdown("**📊 Core Financial Metrics**")
         st.caption(
-            "Kept intentionally small: return, risk, edge, consistency, and sample size."
+            "Kept intentionally small: return, risk, edge,"
+            " consistency, and sample size."
         )
         kpi_cols = st.columns(3, gap="small")
         _render_zoned_metric(
@@ -848,7 +866,8 @@ def _render_backtest_section(data: dict, config: object) -> None:
         )
 
         st.caption(
-            "🟢 Excellent  🟡 Good  🟠 Moderate  🔴 Poor/Dangerous  ⚪ N/A (context-dependent)"
+            "🟢 Excellent  🟡 Good  🟠 Moderate"
+            "  🔴 Poor/Dangerous  ⚪ N/A (context-dependent)"
         )
 
     st.divider()
@@ -1213,8 +1232,10 @@ def main() -> None:
     # ── Configuration sidebar ──
     with st.sidebar.expander("⚙️ Configuration", expanded=False):
         st.markdown(
-            f"**GRU**: hidden={config.gru.hidden_size}, layers={config.gru.num_layers}, "
-            f"seq={config.gru.sequence_length}, epochs={config.gru.epochs}"
+            f"**GRU**: hidden={config.gru.hidden_size},"
+            f" layers={config.gru.num_layers},"
+            f" seq={config.gru.sequence_length},"
+            f" epochs={config.gru.epochs}"
         )
         st.markdown(
             f"**LightGBM**: leaves={config.model.num_leaves}, "

@@ -61,7 +61,8 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
         return (
             "dangerous",
             "Extreme",
-            f"Value {value:.1f} exceeds threshold {threshold:.1f} — verify for overfitting/data issues",
+            f"Value {value:.1f} exceeds threshold {threshold:.1f}"
+            " — verify for overfitting/data issues",
         )
 
     # ========== Sharpe Ratio ==========

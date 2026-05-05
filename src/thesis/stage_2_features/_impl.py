@@ -17,7 +17,8 @@ from pathlib import Path
 import polars as pl
 
 from thesis._shared.config import Config
-from thesis._shared.constants import EXCLUDE_COLS as _EXCLUDE_COLS, FEATURE_EPS, STD_EPS
+from thesis._shared.constants import EXCLUDE_COLS as _EXCLUDE_COLS
+from thesis._shared.constants import FEATURE_EPS, STD_EPS
 from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.stage_2_features")

@@ -14,7 +14,6 @@ import numpy as np
 import numpy.typing as npt
 import polars as pl
 
-
 # OHLCV consistency
 
 

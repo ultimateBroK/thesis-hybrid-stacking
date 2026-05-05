@@ -6,10 +6,10 @@ optional backtesting, and report generation in order.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 import hashlib
 import json
 import logging
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +18,7 @@ from thesis._shared.ui import console, stage_header, stage_skip
 from thesis.stage_1_data import prepare_data
 from thesis.stage_2_features import generate_features
 from thesis.stage_3_labels import generate_labels
-from thesis.stage_4_training._walk_forward import _run_walk_forward, _run_static_train
+from thesis.stage_4_training._walk_forward import _run_static_train, _run_walk_forward
 from thesis.stage_5_backtest import run_backtest
 from thesis.stage_6_reporting import generate_report
 
@@ -130,10 +130,9 @@ def _run_stage(
         stage_num,
     )
 
-    if effective is not None:
-        if not config.workflow.force_rerun and effective.exists():
-            stage_skip(stage_num, f"cached ({effective.name})")
-            return
+    if effective is not None and not config.workflow.force_rerun and effective.exists():
+        stage_skip(stage_num, f"cached ({effective.name})")
+        return
 
     stage_header(stage_num)
     work_fn(config)
@@ -166,8 +165,14 @@ def _run_backtest_with_barrier_guard(config: Config) -> None:
 def run_pipeline(config: Config) -> None:
     """Execute the full thesis pipeline.
 
-    Runs data preparation, feature engineering, triple-barrier labeling,
-    walk-forward model training, optional backtesting, and report generation.
+    Runs all six stages in order:
+
+    1. Data preparation — download and cache OHLCV bars.
+    2. Feature engineering — compute technical indicators.
+    3. Triple-barrier labeling — generate directional labels.
+    4. Model training — walk-forward or static GRU + LightGBM.
+    5. Backtesting — optional simulation of model signals.
+    6. Report generation — write Markdown and HTML artefacts.
 
     Args:
         config: Loaded application configuration.

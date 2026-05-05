@@ -14,16 +14,17 @@ Both config sections should equal 2.0 for the thesis evaluation.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import csv
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
-import pandas as pd
-import polars as pl
 from backtesting import Strategy
 from backtesting.lib import FractionalBacktest
+import pandas as pd
+import polars as pl
 
 from thesis._shared.config import Config
 from thesis._shared.ui import console
@@ -183,7 +184,8 @@ class HybridGRUStrategy(Strategy):
         _MIN_ATR_FLOOR  # floor to prevent microscopic stops (module-level constant)
     )
     contract_size = 100  # units per lot; overridden via DataConfig.contract_size
-    horizon_bars = 0  # 0 = disabled (hold until opposite signal or stop); overridden via LabelsConfig
+    # 0 = disabled (hold until opposite signal or stop); overridden via LabelsConfig
+    horizon_bars = 0
     max_drawdown_cutoff = 0.50  # circuit breaker threshold; cf. BacktestConfig = 0.30
     dd_cooldown_bars = (
         12  # pause duration after drawdown breach; matches BacktestConfig
@@ -625,7 +627,7 @@ def _save_bokeh_chart(
     """
     if not session_dir:
         return
-    if len(stats["_trades"]) == 0:
+    if not stats["_trades"]:
         logger.info("No trades — skipping Bokeh chart")
         return
     chart_dir = session_dir / "backtest"
@@ -693,6 +695,10 @@ def _prepare_df(
         test_df: Market data with timestamp, OHLCV, and atr_14 columns.
         preds_df: Predictions with timestamp, pred_label, and optional
             pred_proba_class_* columns.
+        test_source: Human-readable label for the test data source used in
+            validation error messages.
+        preds_source: Human-readable label for the predictions source used
+            in validation error messages.
 
     Returns:
         Pandas DataFrame indexed by timestamp (DatetimeIndex) with renamed
@@ -907,7 +913,8 @@ def run_backtest(config: Config) -> None:
         labels_path = Path(config.paths.labels)
         if not labels_path.exists():
             raise FileNotFoundError(
-                f"Labels file not found ({labels_path}) — needed for walk-forward backtest"
+                f"Labels file not found ({labels_path})"
+                " — needed for walk-forward backtest"
             )
         with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
             test_df = pl.read_parquet(labels_path)
@@ -1038,7 +1045,8 @@ def run_backtest_manual(
         slippage_ticks: Slippage in ticks.
         commission_per_lot: Commission per lot.
         atr_stop_multiplier: ATR multiplier for stop-loss distance (default 1.0).
-        atr_tp_multiplier: ATR multiplier for take-profit distance (default 2.0, 0 = disabled).
+        atr_tp_multiplier: ATR multiplier for take-profit distance
+            (default 2.0, 0 = disabled).
         horizon_bars: Time-based exit after N bars (default 10).
         contract_size: Units per lot.
         tick_size: Price tick size in dollars (default 0.01).
@@ -1047,7 +1055,8 @@ def run_backtest_manual(
         dd_cooldown_bars: Bars to pause after drawdown breach.
         max_open_positions: Max simultaneous open positions.
         daily_loss_limit: Daily equity loss fraction before pause.
-        min_bars_between_trades: Minimum bars between position exit and next entry (0 = disabled, default 6).
+        min_bars_between_trades: Minimum bars between position exit and next
+            entry (0 = disabled, default 6).
 
     Returns:
         Tuple of (metrics dict, trades list). Metrics contains normalized

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import datetime, timedelta
 import json
 import logging
 import math
-import tomllib
-from collections.abc import Callable
-from datetime import datetime, timedelta
 from pathlib import Path
+import tomllib
 from typing import Any
 
 import numpy as np
@@ -90,7 +90,7 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
             dist[name] = (count, pct)
         dist["total"] = total
         return dist
-    except Exception:
+    except (pl.ComputeError, OSError):
         logger.warning(
             "Failed to load label distribution: %s", labels_path, exc_info=True
         )
@@ -179,7 +179,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
                 "directional_accuracy": hc_dir_acc,
             }
         return result
-    except Exception:
+    except (pl.ComputeError, pl.ColumnNotFoundError, OSError):
         logger.warning(
             "Failed to load prediction statistics: %s", preds_path, exc_info=True
         )
@@ -316,7 +316,7 @@ def _load_close_prices_for_benchmark(
         try:
             df = pl.read_parquet(test_data_path, columns=["close"])
             return df["close"].to_numpy()
-        except Exception:
+        except (pl.ComputeError, OSError):
             logger.warning(
                 "Failed to load static test data for benchmarks: %s",
                 test_data_path,
@@ -338,7 +338,7 @@ def _load_close_prices_for_benchmark(
 
     try:
         df = pl.read_parquet(ohlcv_path)
-    except Exception:
+    except (pl.ComputeError, OSError):
         logger.warning(
             "Failed to load OHLCV for benchmarks: %s", ohlcv_path, exc_info=True
         )
@@ -556,7 +556,7 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
     try:
         current_history = json.loads(current_wf_path.read_text())
         sibling_history = json.loads(sibling_wf_path.read_text())
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         logger.warning(
             "Failed to load walk-forward history for hybrid-vs-static comparison",
             exc_info=True,
@@ -605,7 +605,7 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
         from scipy.stats import ttest_rel
 
         t_stat, p_value = ttest_rel(current_accs, sibling_accs)
-    except Exception:
+    except (ValueError, TypeError):
         logger.warning("ttest_rel failed", exc_info=True)
         L.append("#### Hybrid vs Static Comparison")
         L.append("")
@@ -748,7 +748,7 @@ def _find_architecture_session(
             if arch == target_arch:
                 # Use directory modification time for recency
                 candidates.append((session_dir.stat().st_mtime, session_dir))
-        except Exception:
+        except (OSError, ValueError):
             logger.debug(
                 "Skipping session %s during architecture search",
                 session_dir.name,
@@ -864,7 +864,7 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
     try:
         with open(dq_path) as f:
             dq = json.load(f)
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         logger.warning("Failed to load data quality JSON: %s", dq_path, exc_info=True)
         L.append("*Data quality JSON could not be read.*")
         L.append("")
@@ -1000,7 +1000,7 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
                     )
                 )
                 L.append("")
-        except Exception:
+        except (pl.ComputeError, pl.ColumnNotFoundError, ValueError):
             logger.warning("Failed to compute data quality from OHLCV", exc_info=True)
 
 
@@ -1093,7 +1093,8 @@ def _render_validation_methodology_section(L: list[str], config: Config) -> None
     L.append(
         _tbl_row(
             "Train window",
-            f"{val_cfg.train_window_bars:,} bars (~{val_cfg.train_window_bars // 8760}y)",
+            f"{val_cfg.train_window_bars:,} bars"
+            f" (~{val_cfg.train_window_bars // 8760}y)",
         )
     )
     L.append(
@@ -1181,7 +1182,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
     try:
         wf = json.loads(wf_path.read_text())
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         logger.warning(
             "Failed to load walk-forward history: %s", wf_path, exc_info=True
         )
@@ -1265,7 +1266,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                     if ts_col.dtype != pl.Datetime:
                         try:
                             ts_col = ts_col.str.strptime(pl.Datetime)
-                        except Exception:
+                        except (pl.ComputeError, ValueError):
                             ts_col = ts_col.cast(pl.Datetime)
                     start_dt = _parse_date(oos_start)
                     end_dt = _parse_date(oos_end)
@@ -1311,7 +1312,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                             oos_class_f1 = {
                                 k: per_class_metrics[k]["f1"] for k in ("-1", "0", "1")
                             }
-            except Exception:
+            except (pl.ColumnNotFoundError, ValueError, pl.ComputeError):
                 logger.warning(
                     "Failed to compute OOS prediction metrics", exc_info=True
                 )
@@ -1485,7 +1486,7 @@ def _render_metric_zones_section(
     metrics: dict,
     trades: list[dict] | None = None,
 ) -> None:
-    """Render backtest metric quality zones with emoji indicators and recommended ranges.
+    """Render backtest metric quality zones with emoji indicators.
 
     Each metric includes its value, zone emoji, zone description, and
     recommended range using a three-level quality scheme.
@@ -1589,7 +1590,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
 
     try:
         df = pl.read_parquet(preds_path)
-    except Exception:
+    except (pl.ComputeError, OSError):
         logger.warning("Failed to load predictions for baselines", exc_info=True)
         L.append("*Predictions file could not be read.*")
         L.append("")
@@ -1614,7 +1615,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
                 n = min(len(y_true), len(bar_returns))
                 y_returns = bar_returns[-n:]
                 y_true = y_true[-n:]
-        except Exception:
+        except (pl.ComputeError, pl.ColumnNotFoundError, ValueError):
             logger.warning("Failed to load OHLCV for baseline returns", exc_info=True)
 
     if y_returns is None:
@@ -1625,15 +1626,16 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
         baselines = _baselines.run_all_baselines(
             y_true, y_returns, seed=config.workflow.random_seed
         )
-    except Exception:
+    except (ValueError, TypeError):
         logger.warning("Failed to compute baselines", exc_info=True)
         L.append("*Baseline computation failed.*")
         L.append("")
         return
 
     L.append(
-        "*Baseline strategies computed on the same prediction labels as reference. "
-        "The model should outperform all baselines on directional accuracy and macro F1.*"
+        "*Baseline strategies computed on the same prediction labels as"
+        " reference.  The model should outperform all baselines on"
+        " directional accuracy and macro F1.*"
     )
     L.append("")
     L.append(_tbl_row("Strategy", "Accuracy", "Macro F1", "Dir. Accuracy"))
@@ -1719,7 +1721,7 @@ def _build_model_comparison_rows(
                         "source": "derived_baseline",
                     }
                 )
-        except Exception:
+        except (pl.ColumnNotFoundError, ValueError):
             logger.warning(
                 "Failed to build baseline rows for model comparison", exc_info=True
             )
@@ -1770,8 +1772,9 @@ def _write_model_comparison_artifacts(
     with md_path.open("w") as f:
         f.write("# Model Comparison\n\n")
         f.write(
-            "Primary focus: Directional Accuracy, Accuracy, Macro F1, and per-class F1. "
-            "Rows with empty values require additional experiment runs.\n\n"
+            "Primary focus: Directional Accuracy, Accuracy, Macro F1,"
+            " and per-class F1.  Rows with empty values require"
+            " additional experiment runs.\n\n"
         )
         f.write("| " + " | ".join(display_cols) + " |\n")
         f.write("|" + "|".join(["---"] * len(display_cols)) + "|\n")
@@ -1901,7 +1904,8 @@ def _build_model_evaluation_markdown(
     """Build compact evaluation-first markdown artifact."""
     lines: list[str] = ["# Model Evaluation", ""]
     lines.append(
-        "This file is the primary ML evidence artifact. Backtest metrics are intentionally excluded."
+        "This file is the primary ML evidence artifact."
+        " Backtest metrics are intentionally excluded."
     )
     lines.append("")
     lines.append(f"- Model: {_model_label(config)}")
@@ -1918,7 +1922,8 @@ def _build_model_evaluation_markdown(
     lines.append("|---|---|")
     lines.append(f"| Accuracy | {pred_stats.get('accuracy', 0.0) * 100:.2f}% |")
     lines.append(
-        f"| Directional Accuracy | {pred_stats.get('directional_accuracy', 0.0) * 100:.2f}% |"
+        f"| Directional Accuracy |"
+        f" {pred_stats.get('directional_accuracy', 0.0) * 100:.2f}% |"
     )
     lines.append(f"| Macro F1 | {pred_stats.get('macro_f1', 0.0):.4f} |")
     lines.append(
@@ -1932,7 +1937,9 @@ def _build_model_evaluation_markdown(
     for class_name in ("Short", "Hold", "Long"):
         pc = pred_stats.get("per_class", {}).get(class_name, {})
         lines.append(
-            f"| {class_name} | {pc.get('precision', 0.0):.4f} | {pc.get('recall', 0.0):.4f} | {pc.get('f1', 0.0):.4f} |"
+            f"| {class_name} | {pc.get('precision', 0.0):.4f}"
+            f" | {pc.get('recall', 0.0):.4f}"
+            f" | {pc.get('f1', 0.0):.4f} |"
         )
     lines.append("")
 
@@ -2153,19 +2160,22 @@ def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | Non
         (
             lambda: dd > _ISSUE_DD_CATASTROPHIC,
             lambda: (
-                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}% — catastrophic capital erosion"
+                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}%"
+                " — catastrophic capital erosion"
             ),
         ),
         (
             lambda: pf < _EDGE_PF_NEGATIVE,
             lambda: (
-                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f} — strategy loses money on average"
+                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f}"
+                " — strategy loses money on average"
             ),
         ),
         (
             lambda: da > 0 and da < _QUALITY_DIR_ACC_FAIR,
             lambda: (
-                f"Directional accuracy {da:.1%} < {_QUALITY_DIR_ACC_FAIR:.0%} — predicts worse than random"
+                f"Directional accuracy {da:.1%} < {_QUALITY_DIR_ACC_FAIR:.0%}"
+                " — predicts worse than random"
             ),
         ),
         (
@@ -2175,13 +2185,15 @@ def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | Non
         (
             lambda: pf < _ISSUE_PF_MARGINAL_EDGE and pf >= _EDGE_PF_NEGATIVE,
             lambda: (
-                f"Profit factor {pf:.2f} < {_ISSUE_PF_MARGINAL_EDGE:.1f} — barely covers transaction costs"
+                f"Profit factor {pf:.2f} < {_ISSUE_PF_MARGINAL_EDGE:.1f}"
+                " — barely covers transaction costs"
             ),
         ),
         (
             lambda: sh < _ISSUE_SHARPE_POOR and sh >= 0,
             lambda: (
-                f"Sharpe {sh:.2f} < {_ISSUE_SHARPE_POOR:.1f} — poor risk-adjusted returns"
+                f"Sharpe {sh:.2f} < {_ISSUE_SHARPE_POOR:.1f}"
+                " — poor risk-adjusted returns"
             ),
         ),
         (
@@ -2197,7 +2209,8 @@ def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | Non
         (
             lambda: sh < _EDGE_SHARPE_MARGINAL and sh >= _ISSUE_SHARPE_POOR,
             lambda: (
-                f"Sharpe {sh:.2f} < {_EDGE_SHARPE_MARGINAL:.1f} — below professional threshold"
+                f"Sharpe {sh:.2f} < {_EDGE_SHARPE_MARGINAL:.1f}"
+                " — below professional threshold"
             ),
         ),
         (
@@ -2207,19 +2220,22 @@ def _identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | Non
         (
             lambda: dd > _ISSUE_DD_CFD_ELEVATED and dd <= _ISSUE_DD_ELEVATED,
             lambda: (
-                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CFD_ELEVATED:.0f}% — elevated for CFD trading"
+                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CFD_ELEVATED:.0f}%"
+                " — elevated for CFD trading"
             ),
         ),
         (
             lambda: wr < _ISSUE_WIN_RATE_VIABILITY and wr >= 0,
             lambda: (
-                f"Win rate {wr:.1f}% < {_ISSUE_WIN_RATE_VIABILITY:.0f}% — below trading viability"
+                f"Win rate {wr:.1f}% < {_ISSUE_WIN_RATE_VIABILITY:.0f}%"
+                " — below trading viability"
             ),
         ),
         (
             lambda: da > 0 and da < _QUALITY_DIR_ACC_GOOD,
             lambda: (
-                f"Directional accuracy {da:.1%} < {_QUALITY_DIR_ACC_GOOD:.0%} — unreliable"
+                f"Directional accuracy {da:.1%} < {_QUALITY_DIR_ACC_GOOD:.0%}"
+                " — unreliable"
             ),
         ),
         (
@@ -2413,7 +2429,9 @@ def _config_table(L: list[str], config: Config) -> None:
             (
                 "Labels",
                 "atr_mult / horizon",
-                f"{config.labels.atr_tp_multiplier}/{config.labels.atr_sl_multiplier} / {config.labels.horizon_bars}",
+                f"{config.labels.atr_tp_multiplier}"
+                f"/{config.labels.atr_sl_multiplier}"
+                f" / {config.labels.horizon_bars}",
             ),
             (
                 "GRU",
@@ -2466,7 +2484,8 @@ def _compute_ece_numpy(
 ) -> float:
     """Compute Expected Calibration Error (ECE) from NumPy arrays.
 
-    Delegates to :func:`thesis.stage_6_reporting._calibration.expected_calibration_error`.
+    Delegates to
+    :func:`thesis.stage_6_reporting._calibration.expected_calibration_error`.
 
     Args:
         proba: Softmax probabilities with shape ``(N, C)``.
@@ -2508,7 +2527,7 @@ def _calibration_summary_text(config: Config) -> str | None:
     ]
     try:
         df = pl.read_parquet(preds_path)
-    except Exception:
+    except (pl.ComputeError, OSError):
         logger.warning(
             "Failed to load predictions for calibration check: %s",
             preds_path,
@@ -2545,22 +2564,26 @@ def _calibration_summary_text(config: Config) -> str | None:
     if ece < _ECE_WELL_CALIBRATED:
         quality = "well-calibrated"
         note = (
-            f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            f"(ECE < {_ECE_WELL_CALIBRATED:.2f}). Predicted probabilities closely match observed frequencies."
+            f"**Calibration**: ECE = {ece:.4f} — confidence scores are"
+            f" **{quality}** (ECE < {_ECE_WELL_CALIBRATED:.2f})."
+            " Predicted probabilities closely match observed frequencies."
         )
     elif ece < _ECE_MODERATELY_CALIBRATED:
         quality = "moderately calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            f"({_ECE_WELL_CALIBRATED:.2f} ≤ ECE < {_ECE_MODERATELY_CALIBRATED:.2f}). Probabilities are somewhat aligned with outcomes; "
-            "the model may be slightly over- or under-confident in some bins."
+            f"({_ECE_WELL_CALIBRATED:.2f} ≤ ECE"
+            f" < {_ECE_MODERATELY_CALIBRATED:.2f}). Probabilities are"
+            " somewhat aligned with outcomes; the model may be slightly"
+            " over- or under-confident in some bins."
         )
     else:
         quality = "poorly calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            f"(ECE ≥ {_ECE_MODERATELY_CALIBRATED:.2f}). Predicted probabilities do not reliably reflect true "
-            "likelihoods. Consider temperature scaling or isotonic regression."
+            f"(ECE ≥ {_ECE_MODERATELY_CALIBRATED:.2f}). Predicted"
+            " probabilities do not reliably reflect true likelihoods."
+            " Consider temperature scaling or isotonic regression."
         )
 
     note += f" Brier score = {brier:.4f}, Log-loss = {logloss:.4f}."
@@ -2672,7 +2695,8 @@ def _feature_importance_table(L: list[str], feature_importance: dict) -> None:
         src = "GRU" if name.startswith("gru_") else "Technical"
         L.append(_tbl_row(str(i), f"`{name}`", src, f"{imp:.0f}"))
     L.append(
-        f"Top-10: {gru_count}/{len(items)} GRU features ({gru_count / len(items) * 100:.0f}%)"
+        f"Top-10: {gru_count}/{len(items)} GRU features"
+        f" ({gru_count / len(items) * 100:.0f}%)"
     )
     L.append("")
 
@@ -2865,7 +2889,8 @@ def _issues_list(
         issues.append(
             (
                 "critical",
-                "Zero trades executed — model produces no actionable signals in test period.",
+                "Zero trades executed — model produces no actionable"
+                " signals in test period.",
             )
         )
 
@@ -2873,7 +2898,8 @@ def _issues_list(
         issues.append(
             (
                 "critical",
-                f"Sharpe {sharpe:.2f} is negative — strategy underperforms risk-free rate.",
+                f"Sharpe {sharpe:.2f} is negative"
+                " — strategy underperforms risk-free rate.",
             )
         )
 
@@ -2881,7 +2907,8 @@ def _issues_list(
         issues.append(
             (
                 "critical",
-                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}% — catastrophic capital erosion.",
+                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}%"
+                " — catastrophic capital erosion.",
             )
         )
 
@@ -2889,7 +2916,8 @@ def _issues_list(
         issues.append(
             (
                 "critical",
-                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f} — strategy loses money on average.",
+                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f}"
+                " — strategy loses money on average.",
             )
         )
 
@@ -2897,7 +2925,9 @@ def _issues_list(
         issues.append(
             (
                 "critical",
-                f"Directional accuracy {dir_acc:.1%} < {_QUALITY_DIR_ACC_FAIR:.0%} — model predicts worse than random.",
+                f"Directional accuracy {dir_acc:.1%}"
+                f" < {_QUALITY_DIR_ACC_FAIR:.0%}"
+                " — model predicts worse than random.",
             )
         )
 
@@ -2909,7 +2939,8 @@ def _issues_list(
         recs.append(
             (
                 "info",
-                "Consider walk-forward validation for production readiness and robustness testing.",
+                "Consider walk-forward validation for production"
+                " readiness and robustness testing.",
             )
         )
 

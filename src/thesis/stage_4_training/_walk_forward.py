@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from pathlib import Path
+import time
 from typing import Any
 
 import numpy as np
@@ -72,7 +72,7 @@ def _select_static_feature_cols(
 
 def _counts_dict(values: np.ndarray) -> dict[str, int]:
     """Return compact class/count diagnostics with string keys for JSON."""
-    if len(values) == 0:
+    if values.size == 0:
         return {}
     labels, counts = np.unique(values.astype(np.int32), return_counts=True)
     return {str(int(label)): int(count) for label, count in zip(labels, counts)}
@@ -88,7 +88,7 @@ def _pct_dict(counts: dict[str, int]) -> dict[str, float]:
 
 def _window_dates(df: pl.DataFrame) -> dict[str, str]:
     """Return start/end timestamps for a window slice."""
-    if len(df) == 0 or "timestamp" not in df.columns:
+    if df.is_empty() or "timestamp" not in df.columns:
         return {"start": "", "end": ""}
     return {"start": str(df["timestamp"][0]), "end": str(df["timestamp"][-1])}
 
@@ -99,13 +99,14 @@ def _validate_predictions(df: pl.DataFrame, path: Path) -> None:
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Predictions missing columns {sorted(missing)}: file={path}")
-    if len(df) == 0:
+    if df.is_empty():
         raise ValueError(f"Predictions are empty: file={path}")
 
     ts_col = df["timestamp"]
     if ts_col.null_count() > 0:
         raise ValueError(
-            f"Predictions timestamp has nulls: actual={ts_col.null_count()}, file={path}"
+            f"Predictions timestamp has nulls:"
+            f" actual={ts_col.null_count()}, file={path}"
         )
     if ts_col.n_unique() < len(ts_col):
         dup_count = len(ts_col) - ts_col.n_unique()
@@ -125,7 +126,8 @@ def _validate_predictions(df: pl.DataFrame, path: Path) -> None:
     invalid = sorted(set(pred_col.unique().to_list()) - {-1, 0, 1})
     if invalid:
         raise ValueError(
-            f"Invalid pred_label values: expected={{-1,0,1}}, actual={invalid}, file={path}"
+            f"Invalid pred_label values: expected={{-1,0,1}},"
+            f" actual={invalid}, file={path}"
         )
 
     null_cols = {
@@ -348,11 +350,11 @@ def _log_gru_signal_quality(
         logger.warning("sklearn not available — skipping GRU signal quality check")
         return
 
-    if hidden_states is None or len(hidden_states) == 0:
+    if hidden_states is None or hidden_states.size == 0:
         logger.warning("GRU signal quality: empty hidden states, skipping")
         return
 
-    if labels is None or len(labels) == 0:
+    if labels is None or labels.size == 0:
         logger.warning("GRU signal quality: empty labels, skipping")
         return
 
@@ -385,7 +387,7 @@ def _log_gru_signal_quality(
 
     try:
         f_scores, _p_values = f_classif(hidden_states, labels)
-    except Exception as exc:
+    except (ValueError, TypeError) as exc:
         logger.warning("GRU signal quality: f_classif failed — %s", exc)
         return
 
@@ -540,7 +542,8 @@ def _prepare_wf_data(
     )
     if not windows:
         raise RuntimeError(
-            "No valid walk-forward windows generated — check data size and window parameters"
+            "No valid walk-forward windows generated"
+            " — check data size and window parameters"
         )
 
     # P0-1: Guard against sequence leakage
@@ -582,9 +585,9 @@ def _wf_gru_phase(
     import torch
 
     from thesis.stage_4_training._gru import (
-        train_gru,
         extract_hidden_states,
         prepare_sequences,
+        train_gru,
     )
 
     # Slice
@@ -633,7 +636,7 @@ def _wf_gru_phase(
     # Align DataFrames
     train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
     test_aligned = test_df.slice(seq_len - 1, len(test_hidden))
-    if len(train_aligned) == 0 or len(test_aligned) == 0:
+    if train_aligned.is_empty() or test_aligned.is_empty():
         logger.warning("Window %d: aligned data empty, skipping", w_idx + 1)
         return None
     train_dates = _window_dates(train_df)
@@ -673,7 +676,8 @@ def _wf_gru_phase(
         )
         if explained < _PCA_VARIANCE_THRESHOLD:
             logger.warning(
-                "GRU hidden state space appears mostly noise (%.1f%% explained by %d PCs)",
+                "GRU hidden state space appears mostly noise"
+                " (%.1f%% explained by %d PCs)",
                 explained * 100,
                 pca_k,
             )
@@ -1309,7 +1313,7 @@ def _train_and_predict_static_window(
     test_df = df.slice(
         window.test_start_idx, window.test_end_idx - window.test_start_idx
     )
-    if len(train_df) < _STATIC_MIN_TRAIN_ROWS or len(test_df) == 0:
+    if len(train_df) < _STATIC_MIN_TRAIN_ROWS or test_df.is_empty():
         logger.warning("Static window %d too small; skipping", w_idx + 1)
         return None
     if expanded_features:
@@ -1485,7 +1489,9 @@ def _save_static_wf_artifacts(
                     "lightgbm": {
                         "artifact_strategy": "last_walk_forward_window",
                         "validation_protocol": {
-                            "outer_windows": "bar_based_walk_forward_with_purge_embargo",
+                            "outer_windows": (
+                                "bar_based_walk_forward_with_purge_embargo"
+                            ),
                             "lgbm_validation": "tail_20_percent_of_outer_train",
                         },
                         "last_window_accuracy": last_window_accuracy,

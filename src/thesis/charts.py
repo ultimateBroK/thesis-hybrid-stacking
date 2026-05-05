@@ -6,9 +6,9 @@ exported as standalone HTML.
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -490,7 +490,7 @@ def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
 
     for col in feature_cols:
         vals = df[col].drop_nulls().to_numpy()
-        if len(vals) == 0:
+        if vals.size == 0:
             continue
 
         counts, bin_edges = np.histogram(vals, bins=50)
@@ -751,7 +751,7 @@ def build_equity_drawdown_chart(
         for t in trades:
             times.append(pd.to_datetime(t["exit_time"]).strftime("%Y-%m-%d %H:%M"))
         x_labels = times
-    except Exception:
+    except (ValueError, TypeError, KeyError):
         x_labels = [str(i) for i in range(len(equity))]
 
     total_trades = metrics.get("total_trades", len(trades))
@@ -770,7 +770,9 @@ def build_equity_drawdown_chart(
         )
         .set_global_opts(
             title_opts=opts.TitleOpts(
-                title=f"Equity Curve — {total_trades} trades, {total_return:.2f}% return"
+                title=(
+                    f"Equity Curve — {total_trades} trades, {total_return:.2f}% return"
+                )
             ),
             yaxis_opts=opts.AxisOpts(name="Equity (USD)", is_scale=True),
             xaxis_opts=opts.AxisOpts(is_show=False),
@@ -1014,7 +1016,7 @@ def build_rolling_sharpe_chart(
         exit_ = pd.to_datetime(trades[-1]["exit_time"])
         days = max((exit_ - entry).days, 1)
         trades_per_year = len(trades) / (days / 365.25)
-    except Exception:
+    except (ValueError, TypeError, KeyError):
         trades_per_year = 100  # Fallback
 
     annualization_factor = np.sqrt(trades_per_year)

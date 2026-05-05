@@ -10,9 +10,9 @@ only the small OHLCV results (~56K rows for 8 years of 1H bars).
 
 from __future__ import annotations
 
+from datetime import timedelta
 import json
 import logging
-from datetime import timedelta
 from pathlib import Path
 
 import polars as pl

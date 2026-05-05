@@ -1,0 +1,44 @@
+# Ruff configuration aligned with the Google Python Style Guide.
+# https://google.github.io/styleguide/pyguide.html
+
+line-length = 88        # Black-compatible; Google recommends 80, practical limit 88
+target-version = "py313"
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names, etc.)
+    "I",    # isort  (§3.13 – import ordering: stdlib, third-party, local; alphabetical)
+    "N",    # pep8-naming (§3.16 – snake_case / PascalCase / UPPER_CASE)
+    "D",    # pydocstyle (§3.8 – Google docstring convention)
+    "UP",   # pyupgrade – modern Python idioms
+    "B",    # flake8-bugbear – common correctness pitfalls
+    "SIM",  # flake8-simplify – redundant code patterns
+]
+ignore = [
+    # ── Docstring style conflicts ──────────────────────────────────────────
+    # D203 (one-blank-line-before-class) conflicts with D211 – Google uses D211
+    "D203",
+    # D213 (multi-line-summary-second-line) conflicts with D212 – Google uses D212
+    "D213",
+
+    # ── ML / scientific naming exceptions (§3.16 – well-known notation) ──
+    # Uppercase single-letter names (X, T, …) are standard in ML/linear algebra.
+    "N803",  # invalid-argument-name (e.g. X: np.ndarray)
+    "N806",  # non-lowercase-variable-in-function (e.g. X = ...)
+
+    # ── Practical suppressions ────────────────────────────────────────────
+    # B905: zip() without explicit strict= – not required by Google guide
+    "B905",
+    # SIM108: ternary operator – sometimes hurts readability in ML code
+    "SIM108",
+]
+
+[lint.pydocstyle]
+convention = "google"   # §3.8 – Args/Returns/Raises sections, summary on first line
+
+[lint.isort]
+# §3.13 – three groups: stdlib | third-party | first-party; each alphabetical
+known-first-party = ["thesis"]
+force-sort-within-sections = true

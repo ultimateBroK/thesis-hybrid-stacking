@@ -9,16 +9,13 @@ from __future__ import annotations
 import copy
 import logging
 import math
-import time
 from pathlib import Path
+import time
 from typing import Any
 
+from accelerate import Accelerator
 import numpy as np
 import polars as pl
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from accelerate import Accelerator
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -28,6 +25,9 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from sklearn.utils.class_weight import compute_class_weight
+import torch
+import torch.nn as nn
+import torch.nn.functional as F  # noqa: N812 – standard PyTorch abbreviation
 from torch.utils.data import DataLoader, Dataset
 
 from thesis._shared.config import Config
@@ -144,9 +144,11 @@ class GRUExtractor(nn.Module):
         )
         # Bidirectional GRU concatenates forward + backward → hidden_size * 2
         gru_output_dim = hidden_size * 2 if bidirectional else hidden_size
-        # Learned attention scorer: maps each timestep's hidden state to a scalar score.
+        # Learned attention scorer: maps each timestep hidden state to a
+        # scalar score.
         self.attn_scorer = nn.Linear(gru_output_dim, 1)
-        # Project bidirectional output back to hidden_size; Identity when unidirectional.
+        # Project bidirectional output back to hidden_size;
+        # Identity when unidirectional.
         self.proj = (
             nn.Linear(gru_output_dim, hidden_size) if bidirectional else nn.Identity()
         )
@@ -1102,9 +1104,10 @@ def train_gru(
         val_seq, val_labels, mean=train_dataset.mean, std=train_dataset.std
     )
 
-    # Note: shuffle=True for training loader shuffles which sequences are processed in each
-    # epoch (not the sequence order itself). This is standard practice for mini-batch RNN
-    # training to improve generalization. Val loader keeps shuffle=False to preserve order.
+    # Note: shuffle=True shuffles which sequences are batched each epoch,
+    # not the internal sequence order.  This is standard mini-batch RNN
+    # practice to improve generalisation.  Val loader keeps shuffle=False
+    # to preserve temporal order.
     train_loader = DataLoader(
         train_dataset,
         batch_size=gru_cfg.batch_size,
@@ -1241,10 +1244,10 @@ def train_gru(
         MofNCompleteColumn(),
         TextColumn("•"),
         TextColumn("[cyan]t_loss={task.fields[t_loss]:.4f}"),
-        TextColumn("[green]{}={{task.fields[t_metric]:.4f}}".format(t_metric_label)),
+        TextColumn(f"[green]{t_metric_label}={{task.fields[t_metric]:.4f}}"),
         TextColumn("•"),
         TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
-        TextColumn("[green]{}={{task.fields[v_metric]:.4f}}".format(v_metric_label)),
+        TextColumn(f"[green]{v_metric_label}={{task.fields[v_metric]:.4f}}"),
         TimeElapsedColumn(),
         transient=True,
         console=console,

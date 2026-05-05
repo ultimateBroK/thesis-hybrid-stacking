@@ -12,9 +12,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from numba import njit
 import numpy as np
 import polars as pl
-from numba import njit
 
 from thesis._shared.config import Config
 from thesis._shared.constants import (
@@ -89,7 +89,8 @@ def generate_labels(config: Config) -> None:
     )
 
     logger.info(
-        "Direction-barrier params: tp_mult=%.2f, sl_mult=%.2f, horizon=%d, min_atr=%.6f",
+        "Direction-barrier params: tp_mult=%.2f, sl_mult=%.2f,"
+        " horizon=%d, min_atr=%.6f",
         config.labels.atr_tp_multiplier,
         config.labels.atr_sl_multiplier,
         config.labels.horizon_bars,
@@ -137,8 +138,7 @@ def _compute_labels(
     horizon: int,
     min_atr: float,
 ) -> tuple:
-    """
-    Compute asymmetric direction-barrier outcomes for each bar.
+    """Compute asymmetric direction-barrier outcomes for each bar.
 
     For each index i this sets upper = close[i] + tp_mult * max(atr[i], min_atr)
     and lower = close[i] - sl_mult * max(atr[i], min_atr), then inspects bars
@@ -177,7 +177,8 @@ def _compute_labels(
             upper_hit = high[j] >= upper
             lower_hit = low[j] <= lower
             if upper_hit and lower_hit:
-                # OHLC bars do not reveal intra-bar path; keep ambiguous samples neutral.
+                # OHLC bars do not reveal intra-bar path; keep ambiguous
+                # samples neutral.
                 ambiguous_count += 1
                 touched_bars[i] = j - i
                 break
@@ -427,10 +428,11 @@ def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _log_distribution(df: pl.DataFrame) -> None:
-    """
-    Log counts and percentages for each value in the dataframe's `label` column.
+    """Log counts and percentages for each value in the dataframe's `label` column.
 
-    If the `label` column is not present the function returns without logging. Each logged line reports the label value, its absolute count, and its percentage of the dataframe rows.
+    If the ``label`` column is not present the function returns without
+    logging.  Each logged line reports the label value, its absolute count,
+    and its percentage of the dataframe rows.
 
     Args:
         df (pl.DataFrame): DataFrame expected to contain a `label` column.
@@ -525,7 +527,7 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
         (pl.col("label") != CENSORED_LABEL) & pl.col("_net_return").is_not_null()
     )
 
-    if len(result) == 0:
+    if result.is_empty():
         logger.warning("Label profitability: no valid samples after filtering.")
         return
 

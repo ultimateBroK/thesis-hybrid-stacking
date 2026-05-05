@@ -19,7 +19,6 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-
 # Individual metric helpers
 
 
@@ -67,7 +66,10 @@ def mda_including_hold(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
 
 
 def mda_binary(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
-    """MDA for Long vs Short only.  Hold predictions on directional bars count as wrong."""
+    """MDA for Long vs Short only.
+
+    Hold predictions on directional bars count as wrong.
+    """
     mask = y_true != 0
     if mask.sum() == 0:
         return 0.0

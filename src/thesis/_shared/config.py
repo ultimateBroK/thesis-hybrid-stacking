@@ -5,16 +5,15 @@ configuration. TOML files may stay minimal: omitted fields fall back to the
 dataclass defaults below.
 """
 
-import logging
-import re
-import tomllib
 from dataclasses import dataclass, field
 from functools import lru_cache
+import logging
 from pathlib import Path
+import re
+import tomllib
 from typing import Any
 
 from thesis._shared.constants import CORE_STATIC_FEATURES
-
 
 logger = logging.getLogger("thesis.config")
 

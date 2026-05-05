@@ -9,8 +9,8 @@ boundary to prevent information leakage.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
+import logging
 
 import numpy as np
 import polars as pl
@@ -68,6 +68,8 @@ def generate_windows(
         purge_bars: Bars removed from the end of the training period.
         embargo_bars: Additional gap inserted after the purge zone.
         min_train_bars: Minimum training bars required to yield a window.
+        event_end: Optional array of event-end bar indices used to apply
+            label-aware purging instead of bar-count purging.
 
     Returns:
         Ordered list of :class:`WalkForwardWindow` objects.
@@ -233,9 +235,10 @@ def apply_event_time_purge(
 
     train_event_end = event_end[train_start:raw_train_end]
     safe_offsets = np.flatnonzero(train_event_end < test_start)
-    if len(safe_offsets) == 0:
+    if safe_offsets.size == 0:
         logger.warning(
-            "Event-time purge exhausted training period (start=%d, end=%d, test_start=%d)",
+            "Event-time purge exhausted training period"
+            " (start=%d, end=%d, test_start=%d)",
             train_start,
             raw_train_end,
             test_start,
