@@ -12,6 +12,38 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from thesis._shared.config import Config
 
 
+@pytest.mark.unit
+def test_backtest_barrier_mismatch_raises() -> None:
+    """Stage 5 must fail fast when label/backtest ATR barriers diverge."""
+    from thesis.pipeline import _run_backtest_with_barrier_guard
+
+    config = Config()
+    config.labels.atr_tp_multiplier = 2.0
+    config.labels.atr_sl_multiplier = 1.0
+    config.backtest.atr_tp_multiplier = 3.0
+    config.backtest.atr_stop_multiplier = 1.0
+
+    with pytest.raises(ValueError, match="ATR barrier mismatch"):
+        _run_backtest_with_barrier_guard(config)
+
+
+@pytest.mark.unit
+def test_backtest_barrier_match_calls_backtest() -> None:
+    """Matching barriers should allow Stage 5 to reach run_backtest."""
+    from thesis.pipeline import _run_backtest_with_barrier_guard
+
+    config = Config()
+    config.labels.atr_tp_multiplier = 2.0
+    config.labels.atr_sl_multiplier = 1.0
+    config.backtest.atr_tp_multiplier = 2.0
+    config.backtest.atr_stop_multiplier = 1.0
+
+    with patch("thesis.pipeline.run_backtest") as run_bt:
+        _run_backtest_with_barrier_guard(config)
+
+    run_bt.assert_called_once_with(config)
+
+
 # ---------------------------------------------------------------------------
 # Purge guard — pipeline raises ValueError when gap < sequence_length
 # ---------------------------------------------------------------------------

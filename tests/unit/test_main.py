@@ -10,24 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis._shared.config import Config
-
-
-def _apply_stage_flags(config: Config, stage: int) -> Config:
-    """Replicate the --stage flag logic from main.py without filesystem ops.
-
-    Stage N (1-based): skip stages 1..N-1, run N..6.
-    """
-    if stage > 1:
-        config.workflow.run_data_pipeline = False
-    if stage > 2:
-        config.workflow.run_feature_engineering = False
-    if stage > 3:
-        config.workflow.run_label_generation = False
-    if stage > 4:
-        config.workflow.run_model_training = False
-    if stage > 5:
-        config.workflow.run_backtest = False
-    return config
+from main import _apply_stage_flags
 
 
 class TestStageResumeLogic:
@@ -86,6 +69,24 @@ class TestStageResumeLogic:
         assert cfg.workflow.run_label_generation is False
         assert cfg.workflow.run_model_training is False
         assert cfg.workflow.run_backtest is False
+
+    @pytest.mark.unit
+    def test_stage_flags_reapply_after_session_config_load(self) -> None:
+        """--session reload must not reset --stage workflow flags."""
+        session_cfg = Config()
+        session_cfg.workflow.run_data_pipeline = True
+        session_cfg.workflow.run_feature_engineering = True
+        session_cfg.workflow.run_label_generation = True
+        session_cfg.workflow.run_model_training = True
+
+        result = _apply_stage_flags(session_cfg, 5)
+
+        assert result.workflow.run_data_pipeline is False
+        assert result.workflow.run_feature_engineering is False
+        assert result.workflow.run_label_generation is False
+        assert result.workflow.run_model_training is False
+        assert result.workflow.run_backtest is True
+        assert result.workflow.run_reporting is True
 
     @pytest.mark.unit
     def test_force_flag_reapplied_after_session_config_load(self) -> None:

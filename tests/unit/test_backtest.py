@@ -89,6 +89,33 @@ def create_synthetic_backtest_data(
     return test_df, preds_df
 
 
+@pytest.mark.unit
+def test_prepare_df_raises_when_prediction_merge_coverage_low() -> None:
+    """Backtest join must not silently drop missing prediction timestamps."""
+    test_df, preds_df = create_synthetic_backtest_data(n_rows=100)
+    shifted_preds = preds_df.with_columns(pl.col("timestamp") + pl.duration(days=30))
+
+    with pytest.raises(ValueError, match="coverage below 99%"):
+        _prepare_df(
+            test_df,
+            shifted_preds,
+            test_source="labels.parquet",
+            preds_source="final_predictions.parquet",
+        )
+
+
+@pytest.mark.unit
+def test_prepare_df_allows_full_prediction_merge_coverage(caplog) -> None:
+    """Aligned predictions should pass merge guard and log row coverage."""
+    test_df, preds_df = create_synthetic_backtest_data(n_rows=20)
+
+    with caplog.at_level(logging.INFO):
+        pdf = _prepare_df(test_df, preds_df)
+
+    assert len(pdf) == 20
+    assert any("coverage=100.00%" in rec.message for rec in caplog.records)
+
+
 @pytest.fixture
 def sample_config() -> Config:
     """Create a sample config for testing."""

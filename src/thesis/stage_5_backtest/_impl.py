@@ -728,7 +728,44 @@ def _save_bokeh_chart(
 # ---------------------------------------------------------------------------
 
 
-def _prepare_df(test_df: pl.DataFrame, preds_df: pl.DataFrame) -> pd.DataFrame:
+def _validate_backtest_merge(
+    *,
+    feature_rows: int,
+    prediction_rows: int,
+    merged_rows: int,
+    test_source: str = "<in-memory test/features>",
+    preds_source: str = "<in-memory predictions>",
+) -> None:
+    """Guard against silent timestamp loss in the backtest inner join."""
+    coverage = merged_rows / prediction_rows if prediction_rows else 0.0
+    dropped = prediction_rows - merged_rows
+    logger.info(
+        "Backtest merge: features_rows=%d predictions_rows=%d merged_rows=%d "
+        "coverage=%.2f%% dropped_predictions=%d",
+        feature_rows,
+        prediction_rows,
+        merged_rows,
+        coverage * 100.0,
+        dropped,
+    )
+    if coverage < 0.99:
+        raise ValueError(
+            "Backtest merge coverage below 99%: "
+            f"expected>=99.00%, actual={coverage * 100.0:.2f}%, "
+            f"features_rows={feature_rows}, predictions_rows={prediction_rows}, "
+            f"merged_rows={merged_rows}, dropped_predictions={dropped}, "
+            f"features_path={test_source}, predictions_path={preds_source}. "
+            "Check timestamp alignment before backtesting."
+        )
+
+
+def _prepare_df(
+    test_df: pl.DataFrame,
+    preds_df: pl.DataFrame,
+    *,
+    test_source: str = "<in-memory test/features>",
+    preds_source: str = "<in-memory predictions>",
+) -> pd.DataFrame:
     """Prepare a pandas DataFrame merging market data and predictions.
 
     Renames price columns to backtesting.py's expected PascalCase format
@@ -764,6 +801,13 @@ def _prepare_df(test_df: pl.DataFrame, preds_df: pl.DataFrame) -> pd.DataFrame:
             pred_cols.append(col)
 
     merged = test.join(preds.select(pred_cols), on="timestamp", how="inner")
+    _validate_backtest_merge(
+        feature_rows=len(test),
+        prediction_rows=len(preds),
+        merged_rows=len(merged),
+        test_source=test_source,
+        preds_source=preds_source,
+    )
 
     if "atr_14" not in merged.columns:
         raise ValueError(
@@ -966,7 +1010,12 @@ def run_backtest(config: Config) -> None:
         with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
             test_df = pl.read_parquet(labels_path)
 
-    pdf = _prepare_df(test_df, preds_df)
+    pdf = _prepare_df(
+        test_df,
+        preds_df,
+        test_source=str(test_path if test_path.exists() and is_static else labels_path),
+        preds_source=str(preds_path),
+    )
 
     # ── OOS date-range filter ────────────────────────────────────────────
     bc = config.backtest

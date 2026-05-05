@@ -101,6 +101,75 @@ def _window_dates(df: pl.DataFrame) -> dict[str, str]:
     return {"start": str(df["timestamp"][0]), "end": str(df["timestamp"][-1])}
 
 
+def _validate_predictions(df: pl.DataFrame, path: Path) -> None:
+    """Validate final OOF predictions before writing the parquet artifact."""
+    required = {"timestamp", "pred_label"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Predictions missing columns {sorted(missing)}: file={path}")
+    if len(df) == 0:
+        raise ValueError(f"Predictions are empty: file={path}")
+
+    ts_col = df["timestamp"]
+    if ts_col.null_count() > 0:
+        raise ValueError(
+            f"Predictions timestamp has nulls: actual={ts_col.null_count()}, file={path}"
+        )
+    if ts_col.n_unique() < len(ts_col):
+        dup_count = len(ts_col) - ts_col.n_unique()
+        raise ValueError(
+            f"OOF predictions contain {dup_count} duplicate timestamps — "
+            "walk-forward test windows should be non-overlapping. "
+            f"Check step_bars vs test_window_bars. file={path}"
+        )
+    if ts_col.to_list() != sorted(ts_col.to_list()):
+        raise ValueError(f"OOF predictions must be sorted by timestamp: file={path}")
+
+    pred_col = df["pred_label"]
+    if pred_col.null_count() > 0:
+        raise ValueError(
+            f"pred_label has nulls: actual={pred_col.null_count()}, file={path}"
+        )
+    invalid = sorted(set(pred_col.unique().to_list()) - {-1, 0, 1})
+    if invalid:
+        raise ValueError(
+            f"Invalid pred_label values: expected={{-1,0,1}}, actual={invalid}, file={path}"
+        )
+
+    null_cols = {
+        col: df[col].null_count() for col in df.columns if df[col].null_count()
+    }
+    if null_cols:
+        raise ValueError(f"Predictions contain nulls: actual={null_cols}, file={path}")
+
+
+def _write_prediction_manifest(
+    df: pl.DataFrame,
+    path: Path,
+    *,
+    windows_count: int,
+) -> None:
+    """Write compact diagnostics beside final_predictions.parquet."""
+    mean_confidence = (
+        float(df["max_confidence"].mean()) if "max_confidence" in df.columns else None
+    )
+    manifest = {
+        "row_count": len(df),
+        "start": str(df["timestamp"][0]),
+        "end": str(df["timestamp"][-1]),
+        "label_distribution": _counts_dict(df["true_label"].to_numpy())
+        if "true_label" in df.columns
+        else {},
+        "prediction_distribution": _counts_dict(df["pred_label"].to_numpy()),
+        "mean_confidence": mean_confidence,
+        "windows_count": windows_count,
+    }
+    manifest_path = path.with_name("prediction_manifest.json")
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    logger.info("Prediction manifest saved: %s", manifest_path)
+
+
 def _window_diagnostics(
     window_idx: int,
     train_df: pl.DataFrame,
@@ -577,6 +646,24 @@ def _wf_gru_phase(
     if len(train_aligned) == 0 or len(test_aligned) == 0:
         logger.warning("Window %d: aligned data empty, skipping", w_idx + 1)
         return None
+    train_dates = _window_dates(train_df)
+    test_dates = _window_dates(test_df)
+    pred_dates = _window_dates(test_aligned)
+    logger.info(
+        "Window %d alignment: train_start=%s train_end=%s test_start=%s "
+        "test_end=%s raw_test_rows=%d aligned_test_rows=%d "
+        "dropped_by_sequence=%d pred_start=%s pred_end=%s",
+        w_idx + 1,
+        train_dates["start"],
+        train_dates["end"],
+        test_dates["start"],
+        test_dates["end"],
+        len(test_df),
+        len(test_aligned),
+        len(test_df) - len(test_aligned),
+        pred_dates["start"],
+        pred_dates["end"],
+    )
 
     # PCA on GRU hidden states
     pca_k = config.gru.pca_components
@@ -977,22 +1064,18 @@ def _save_wf_artifacts(
 
     # ── Concatenate & validate OOF ──────────────────────────────────────
     oof_df = pl.concat(all_oof_preds)
-    ts_col = oof_df["timestamp"]
-    if ts_col.n_unique() < len(ts_col):
-        dup_count = len(ts_col) - ts_col.n_unique()
-        raise ValueError(
-            f"OOF predictions contain {dup_count} duplicate timestamps — "
-            "walk-forward test windows should be non-overlapping. "
-            "Check step_bars vs test_window_bars."
-        )
-
-    # ── Add confidence columns ──────────────────────────────────────────
     oof_df = _add_confidence_columns(oof_df)
 
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
+    _validate_predictions(oof_df, preds_path)
     oof_df.write_parquet(preds_path)
     oof_df.write_csv(preds_path.with_suffix(".csv"))
+    _write_prediction_manifest(
+        oof_df,
+        preds_path,
+        windows_count=len(window_diagnostics),
+    )
 
     # ── Save LGBM model + feature importance ────────────────────────────
     if last_lgbm_model is not None:
@@ -1371,21 +1454,18 @@ def _save_static_wf_artifacts(
         raise RuntimeError("No static OOF predictions generated")
 
     oof_df = pl.concat(all_oof_preds)
-    ts_col = oof_df["timestamp"]
-    if ts_col.n_unique() < len(ts_col):
-        dup_count = len(ts_col) - ts_col.n_unique()
-        raise ValueError(
-            f"OOF predictions contain {dup_count} duplicate timestamps — "
-            "walk-forward test windows should be non-overlapping."
-        )
-
-    # ── Add confidence columns ──────────────────────────────────────────
     oof_df = _add_confidence_columns(oof_df)
 
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
+    _validate_predictions(oof_df, preds_path)
     oof_df.write_parquet(preds_path)
     oof_df.write_csv(preds_path.with_suffix(".csv"))
+    _write_prediction_manifest(
+        oof_df,
+        preds_path,
+        windows_count=len(window_diagnostics),
+    )
 
     model_path = Path(config.paths.model)
     model_path.parent.mkdir(parents=True, exist_ok=True)

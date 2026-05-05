@@ -152,6 +152,23 @@ def _run_stage(
         effective.touch()
 
 
+def _run_backtest_with_barrier_guard(config: Config) -> None:
+    """Run backtest only when label and execution ATR barriers match."""
+    label_tp = config.labels.atr_tp_multiplier
+    label_sl = config.labels.atr_sl_multiplier
+    backtest_tp = config.backtest.atr_tp_multiplier
+    backtest_sl = config.backtest.atr_stop_multiplier
+    if label_tp != backtest_tp or label_sl != backtest_sl:
+        raise ValueError(
+            "Label/Backtest ATR barrier mismatch: "
+            f"labels(tp={label_tp}, sl={label_sl}) != "
+            f"backtest(tp={backtest_tp}, sl={backtest_sl}). "
+            "Expected matching multipliers so training target and "
+            "execution exits measure the same event."
+        )
+    run_backtest(config)
+
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
@@ -202,27 +219,12 @@ def run_pipeline(config: Config) -> None:
         _run_stage(4, config, "run_model_training", None, _run_static_train)
 
     # Stage 5: Backtest
-    if config.workflow.run_backtest:
-        tp_l = config.labels.atr_tp_multiplier
-        sl_l = config.labels.atr_sl_multiplier
-        tp_b = config.backtest.atr_tp_multiplier
-        sl_b = config.backtest.atr_stop_multiplier
-        if tp_l != tp_b or sl_l != sl_b:
-            logger.warning(
-                "Label and backtest barrier multipliers differ: "
-                "labels (%.1f/%.1f) vs backtest (%.1f/%.1f)",
-                tp_l,
-                sl_l,
-                tp_b,
-                sl_b,
-            )
-
     _run_stage(
         5,
         config,
         "run_backtest",
         None,
-        run_backtest,
+        _run_backtest_with_barrier_guard,
     )
 
     # Stage 6: Report

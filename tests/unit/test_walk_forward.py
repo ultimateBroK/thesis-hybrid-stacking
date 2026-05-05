@@ -5,11 +5,17 @@ Tests for confidence column enrichment added to OOF predictions (task 13).
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import polars as pl
 import pytest
 
-from thesis.stage_4_training._walk_forward import _add_confidence_columns
+from thesis.stage_4_training._walk_forward import (
+    _add_confidence_columns,
+    _validate_predictions,
+    _write_prediction_manifest,
+)
 
 
 def _make_oof_df(n_rows: int = 20) -> pl.DataFrame:
@@ -23,6 +29,8 @@ def _make_oof_df(n_rows: int = 20) -> pl.DataFrame:
                 interval="1h",
                 eager=True,
             ),
+            "true_label": rng.choice([-1, 0, 1], n_rows),
+            "pred_label": rng.choice([-1, 0, 1], n_rows),
             "pred_proba_class_minus1": rng.uniform(0.1, 0.5, n_rows),
             "pred_proba_class_0": rng.uniform(0.1, 0.6, n_rows),
             "pred_proba_class_1": rng.uniform(0.1, 0.5, n_rows),
@@ -81,7 +89,9 @@ def test_add_confidence_columns_bin_logic() -> None:
         if max_conf[i] >= 0.6:
             assert bins[i] == "high", f"Row {i}: conf={max_conf[i]:.3f}, bin={bins[i]}"
         elif max_conf[i] >= 0.4:
-            assert bins[i] == "medium", f"Row {i}: conf={max_conf[i]:.3f}, bin={bins[i]}"
+            assert bins[i] == "medium", (
+                f"Row {i}: conf={max_conf[i]:.3f}, bin={bins[i]}"
+            )
         else:
             assert bins[i] == "low", f"Row {i}: conf={max_conf[i]:.3f}, bin={bins[i]}"
 
@@ -139,3 +149,45 @@ def test_add_confidence_columns_bins_categorical() -> None:
 
     assert result["confidence_bin"].dtype == pl.Utf8
     assert result["confidence_bin"].null_count() == 0
+
+
+@pytest.mark.unit
+def test_validate_predictions_rejects_duplicate_timestamps(tmp_path) -> None:
+    """OOF predictions must have unique timestamps (no window overlap)."""
+    df = _add_confidence_columns(_make_oof_df(4))
+    bad = df.with_columns(pl.lit(df["timestamp"][0]).alias("timestamp"))
+
+    with pytest.raises(ValueError, match="duplicate timestamps"):
+        _validate_predictions(bad, tmp_path / "final_predictions.parquet")
+
+
+@pytest.mark.unit
+def test_validate_predictions_rejects_invalid_label(tmp_path) -> None:
+    """pred_label must stay in {-1, 0, 1}."""
+    df = _add_confidence_columns(_make_oof_df(4)).with_columns(
+        pl.when(pl.arange(0, pl.len()) == 0)
+        .then(2)
+        .otherwise(pl.col("pred_label"))
+        .alias("pred_label")
+    )
+
+    with pytest.raises(ValueError, match="Invalid pred_label"):
+        _validate_predictions(df, tmp_path / "final_predictions.parquet")
+
+
+@pytest.mark.unit
+def test_write_prediction_manifest(tmp_path) -> None:
+    """Prediction manifest should summarize final_predictions.parquet."""
+    df = _add_confidence_columns(_make_oof_df(5))
+    preds_path = tmp_path / "final_predictions.parquet"
+
+    _validate_predictions(df, preds_path)
+    _write_prediction_manifest(df, preds_path, windows_count=2)
+
+    with open(tmp_path / "prediction_manifest.json") as f:
+        manifest = json.load(f)
+    assert manifest["row_count"] == 5
+    assert manifest["windows_count"] == 2
+    assert manifest["start"] == str(df["timestamp"][0])
+    assert manifest["end"] == str(df["timestamp"][-1])
+    assert manifest["mean_confidence"] is not None

@@ -44,7 +44,10 @@ if (PROJECT_ROOT / "src").exists():
 
 from thesis._shared.config import load_config  # noqa: E402
 from thesis.pipeline import run_pipeline  # noqa: E402
-from thesis._shared.session_paths import configure_session_paths, load_config_for_session  # noqa: E402
+from thesis._shared.session_paths import (  # noqa: E402
+    configure_session_paths,
+    load_config_for_session,
+)
 
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -101,6 +104,23 @@ def _apply_force_flag(config: object, force: bool) -> object:
     return config
 
 
+def _apply_stage_flags(config: object, stage: int | None) -> object:
+    """Apply CLI stage skip contract after config/session config is loaded."""
+    if stage is None:
+        return config
+    if stage > 1:
+        config.workflow.run_data_pipeline = False
+    if stage > 2:
+        config.workflow.run_feature_engineering = False
+    if stage > 3:
+        config.workflow.run_label_generation = False
+    if stage > 4:
+        config.workflow.run_model_training = False
+    if stage > 5:
+        config.workflow.run_backtest = False
+    return config
+
+
 def main() -> None:
     """
     Command-line entry point that runs the thesis ML pipeline and records a session.
@@ -139,26 +159,6 @@ def main() -> None:
     config = _apply_force_flag(config, args.force)
 
     # Determine session directory and setup
-    # ── explicit 1–6 skip contract ──────────────────────────────────
-    # Rule: --stage N  →  skip stages 1..N-1, run N..6.
-    # No --stage is equivalent to --stage 1 (no stages disabled).
-    # So: --stage 3 disables only Stage 1+2; --stage 5 disables 1–4.
-    # Stage 1 IS "Data Preparation" — NOT a "full run" pseudo-stage.
-    # The same `stage > K` pattern applies to every stage uniformly.
-    # Applied BEFORE the session/new-session split so it works for both.
-    # ─────────────────────────────────────────────────────────────────
-    if args.stage is not None:
-        if args.stage > 1:
-            config.workflow.run_data_pipeline = False
-        if args.stage > 2:
-            config.workflow.run_feature_engineering = False
-        if args.stage > 3:
-            config.workflow.run_label_generation = False
-        if args.stage > 4:
-            config.workflow.run_model_training = False
-        if args.stage > 5:
-            config.workflow.run_backtest = False
-
     if args.session:
         # Continue from existing session
         session_dir = _find_session(args.session)
@@ -200,6 +200,10 @@ def main() -> None:
         shutil.copy2(args.config, session_dir / "config" / "config_snapshot.toml")
 
         log_mode = "w"  # New log file
+
+    # Apply --stage after the final config source is known. Session config
+    # snapshots otherwise reset workflow flags loaded from the CLI config.
+    config = _apply_stage_flags(config, args.stage)
 
     # Logging setup — Rich for console, plain for file
     from rich.logging import RichHandler
