@@ -17,7 +17,8 @@ from pathlib import Path
 import polars as pl
 
 from thesis._shared.config import Config
-from thesis._shared.constants import EXCLUDE_COLS as _EXCLUDE_COLS, FEATURE_EPS
+from thesis._shared.constants import EXCLUDE_COLS as _EXCLUDE_COLS, FEATURE_EPS, STD_EPS
+from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.stage_2_features")
 
@@ -48,7 +49,8 @@ def generate_features(config: Config) -> None:
         raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
 
     logger.info("Loading OHLCV: %s", ohlcv_path)
-    df = pl.read_parquet(ohlcv_path)
+    with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
+        df = pl.read_parquet(ohlcv_path)
     logger.info("Input bars: %d", len(df))
     _validate_ohlcv_input(df, config)
 
@@ -66,12 +68,19 @@ def generate_features(config: Config) -> None:
     df = _add_high_low_range(df, config)
 
     # --- Trend quality ---
-    df = _add_trend_strength(df)
+    df = _add_adx(df, config)
+    df = _add_ema_slope(df, config)
+
+    # --- Regime composite ---
+    df = _add_regime(df)
 
     # --- Minimal indicators ---
     df = _add_rsi(df, config)
     df = _add_macd(df, config)
     df = _add_volume_zscore(df, config)
+
+    # --- Normalized raw prices for GRU sequence input ---
+    df = _add_ohlcv_norm(df)
 
     # Backward compatibility: GRU pipeline may request `log_returns`.
     if "return_1h" in df.columns and "log_returns" not in df.columns:
@@ -598,6 +607,53 @@ def _add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Normalized OHLCV prices for GRU sequence input
+# ---------------------------------------------------------------------------
+
+
+def _add_ohlcv_norm(df: pl.DataFrame) -> pl.DataFrame:
+    """Add rolling z-score normalized OHLCV prices for GRU price-level awareness.
+
+    The GRU sequence encoder receives only derived indicators by default.
+    Adding normalized raw price columns (open, high, low, close) gives the
+    GRU direct access to price levels and ranges, which is critical for
+    regime detection — the GRU needs to see actual price dynamics, not just
+    derived features.
+
+    Each column is normalized as (value - rolling_mean_20) / (rolling_std_20 + eps)
+    so the scale is comparable across features and time periods.
+
+    Args:
+        df: Input DataFrame with ``open``, ``high``, ``low``, ``close`` columns.
+
+    Returns:
+        DataFrame with added ``open_norm``, ``high_norm``, ``low_norm``,
+        ``close_norm`` columns.
+    """
+    window = 20
+    return df.with_columns(
+        [
+            (
+                (pl.col("open") - pl.col("open").rolling_mean(window_size=window))
+                / (pl.col("open").rolling_std(window_size=window) + STD_EPS)
+            ).alias("open_norm"),
+            (
+                (pl.col("high") - pl.col("high").rolling_mean(window_size=window))
+                / (pl.col("high").rolling_std(window_size=window) + STD_EPS)
+            ).alias("high_norm"),
+            (
+                (pl.col("low") - pl.col("low").rolling_mean(window_size=window))
+                / (pl.col("low").rolling_std(window_size=window) + STD_EPS)
+            ).alias("low_norm"),
+            (
+                (pl.col("close") - pl.col("close").rolling_mean(window_size=window))
+                / (pl.col("close").rolling_std(window_size=window) + STD_EPS)
+            ).alias("close_norm"),
+        ]
+    )
+
+
+# ---------------------------------------------------------------------------
 # Log return features
 # ---------------------------------------------------------------------------
 
@@ -654,23 +710,25 @@ def _add_high_low_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Regime features — trend_strength
+# Regime features — ADX, EMA slope, regime strength
 # ---------------------------------------------------------------------------
 
 
-def _add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
-    """Add ``trend_strength`` column — Wilder-smoothed ADX.
+def _add_adx(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add ADX (Average Directional Index) — config-driven trend strength.
 
     ADX > 25 typically indicates a trending market; ADX < 20 suggests a
-    range-bound market.
+    range-bound market.  Uses Wilder smoothing with period from
+    ``config.features.adx_period``.
 
     Args:
         df: Input OHLCV DataFrame.
-        period: Lookback period for ADX smoothing (default 14).
+        config: Configuration with ``features.adx_period``.
 
     Returns:
-        DataFrame with an added ``trend_strength`` column.
+        DataFrame with an added ``adx_{p}`` column.
     """
+    period = config.features.adx_period
     alpha = 1.0 / period
 
     # True Range
@@ -705,7 +763,55 @@ def _add_trend_strength(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
     dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di + FEATURE_EPS)
     adx = dx.ewm_mean(alpha=alpha, adjust=False)
 
-    return df.with_columns(adx.alias("trend_strength"))
+    return df.with_columns(adx.alias(f"adx_{period}"))
+
+
+def _add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add EMA slope — short-term rate-of-change of smooth trend line.
+
+    Computes the 5-bar percentage change of an EMA span, yielding a
+    directional signal: positive = rising trend, negative = declining
+    trend, near-zero = flat.
+
+    Args:
+        df: Input OHLCV DataFrame.
+        config: Configuration with ``features.ema_slope_period``.
+
+    Returns:
+        DataFrame with an added ``ema_slope_{p}`` column.
+    """
+    p = config.features.ema_slope_period
+    ema = pl.col("close").ewm_mean(span=p, adjust=False)
+    slope = (ema - ema.shift(5)) / (ema.shift(5).abs() + FEATURE_EPS)
+    return df.with_columns(slope.alias(f"ema_slope_{p}"))
+
+
+def _add_regime(df: pl.DataFrame) -> pl.DataFrame:
+    """Add composite regime strength — ADX intensity × EMA slope direction.
+
+    Combines the trend-strength (how strongly trending) with the EMA
+    slope sign (which direction) into a single bipolar feature:
+
+    - Positive = strong uptrend
+    - Negative = strong downtrend
+    - Near 0  = ranging / flat market
+
+    Requires both ``adx_14`` and ``ema_slope_20`` columns already present
+    in the DataFrame.
+
+    Args:
+        df: DataFrame with ``adx_14`` and ``ema_slope_20`` columns.
+
+    Returns:
+        DataFrame with an added ``regime_strength`` column.
+    """
+    adx = pl.col("adx_14")
+    # ADX > 20 → trending signal grows; ADX <= 20 → 0 (ranging)
+    adx_signal = ((adx - 20) / 20).clip(0, 3)
+    # Direction: +1 for rising EMA, -1 for falling
+    slope_sign = pl.col("ema_slope_20").sign()
+    regime = adx_signal * slope_sign
+    return df.with_columns(regime.alias("regime_strength"))
 
 
 # ---------------------------------------------------------------------------

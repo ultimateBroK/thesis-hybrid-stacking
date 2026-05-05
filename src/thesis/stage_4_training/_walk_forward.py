@@ -17,6 +17,7 @@ import polars as pl
 
 from thesis._shared.config import Config
 from thesis._shared.constants import CENSORED_LABEL, EXCLUDE_COLS
+from thesis._shared.ui import console
 from thesis.stage_4_training._validation import generate_windows, log_windows
 
 logger = logging.getLogger("thesis.pipeline")
@@ -142,16 +143,51 @@ def _window_diagnostics(
     return diag
 
 
+def _compute_per_class_metrics(
+    preds: np.ndarray,
+    y_test: np.ndarray,
+) -> dict[str, dict[str, float]]:
+    """Compute per-class precision, recall, F1, and support from predictions.
+
+    Uses ``sklearn.metrics.precision_recall_fscore_support`` with
+    ``zero_division=0`` so missing classes return 0.0 rather than raising.
+
+    Args:
+        preds: Predicted class labels as a NumPy array.
+        y_test: Ground-truth class labels.
+
+    Returns:
+        Mapping ``{class_label_str: {"precision", "recall", "f1", "support"}}``
+        with string keys (``"-1"``, ``"0"``, ``"1"``) for JSON serialization.
+    """
+    from sklearn.metrics import precision_recall_fscore_support
+
+    classes = np.array([-1, 0, 1], dtype=np.int32)
+    p, r, f1, s = precision_recall_fscore_support(
+        y_test, preds, labels=classes, zero_division=0
+    )
+    return {
+        str(int(cls)): {
+            "precision": float(p[i]),
+            "recall": float(r[i]),
+            "f1": float(f1[i]),
+            "support": int(s[i]),
+        }
+        for i, cls in enumerate(classes)
+    }
+
+
 def _add_prediction_diagnostics(
     diag: dict[str, Any],
     preds: np.ndarray,
     y_test: np.ndarray,
     proba: np.ndarray,
 ) -> None:
-    """Attach prediction distribution and confidence diagnostics in-place.
+    """Attach prediction distribution, confidence, and per-class metrics.
 
     Mutates ``diag`` by adding prediction counts, accuracy, mean
-    confidence, high-confidence fraction, and long/short ratio.
+    confidence, high-confidence fraction, long/short ratio, and per-class
+    precision / recall / F1.
 
     Args:
         diag: Per-window diagnostics dict (mutated in-place).
@@ -167,6 +203,7 @@ def _add_prediction_diagnostics(
     short_count = pred_counts.get("-1", 0)
     ls_ratio = long_count / short_count if short_count > 0 else float("inf")
 
+    per_class = _compute_per_class_metrics(preds, y_test) if len(y_test) else {}
     diag.update(
         {
             "prediction_counts": pred_counts,
@@ -179,6 +216,7 @@ def _add_prediction_diagnostics(
             if len(confidence)
             else None,
             "ls_ratio": round(ls_ratio, 4) if short_count > 0 else None,
+            "per_class": per_class,
         }
     )
     logger.info(
@@ -189,11 +227,39 @@ def _add_prediction_diagnostics(
         diag["mean_confidence"] or 0.0,
         ls_ratio if short_count > 0 else float("nan"),
     )
+    if per_class:
+        logger.info(
+            "Window %d per-class | SHORT: P=%.3f R=%.3f F1=%.3f | "
+            "HOLD: P=%.3f R=%.3f F1=%.3f | "
+            "LONG: P=%.3f R=%.3f F1=%.3f",
+            diag["window"],
+            per_class["-1"]["precision"],
+            per_class["-1"]["recall"],
+            per_class["-1"]["f1"],
+            per_class["0"]["precision"],
+            per_class["0"]["recall"],
+            per_class["0"]["f1"],
+            per_class["1"]["precision"],
+            per_class["1"]["recall"],
+            per_class["1"]["f1"],
+        )
     if short_count > 0 and long_count / short_count < _SHORT_BIAS_RATIO_THRESHOLD:
         logger.warning(
             "Window %d: SHORT bias — LONG/SHORT ratio = %.2f",
             diag["window"],
             long_count / short_count,
+        )
+    elif long_count > 0 and short_count / long_count < _SHORT_BIAS_RATIO_THRESHOLD:
+        logger.warning(
+            "Window %d: LONG bias — SHORT/LONG ratio = %.2f",
+            diag["window"],
+            short_count / long_count,
+        )
+    else:
+        logger.info(
+            "Window %d: L/S balanced — ratio %.2f",
+            diag["window"],
+            ls_ratio if short_count > 0 else float("inf"),
         )
 
 
@@ -314,7 +380,8 @@ def _compute_regression_target(
         with ``is_regression=False``.
     """
     is_regression = config.model.objective == "regression"
-    if not is_regression:
+    gru_needs_regression = config.gru.objective == "regression"
+    if not is_regression and not gru_needs_regression:
         return df, False
 
     if "close" not in df.columns:
@@ -363,7 +430,7 @@ def _compute_regression_target(
         float(np.nanmean(reg_target)),
         float(np.nanstd(reg_target)),
     )
-    return df, True
+    return df, is_regression
 
 
 def _prepare_wf_data(
@@ -389,7 +456,8 @@ def _prepare_wf_data(
     if not labels_path.exists():
         raise FileNotFoundError(f"Labels not found: {labels_path}")
 
-    df = pl.read_parquet(labels_path)
+    with console.status(f"[cyan]Loading labels[/] {labels_path}"):
+        df = pl.read_parquet(labels_path)
     logger.info("Loaded labeled data: %d rows", len(df))
     df, is_regression = _compute_regression_target(df, config)
 
@@ -603,7 +671,11 @@ def _wf_build_predict_phase(
         predictions, probabilities, trained LGBM model, feature
         columns, accuracy, diagnostics, and class ordering.
     """
-    from thesis.stage_4_training._lgbm import _compute_class_weights, _train_fixed
+    from thesis.stage_4_training._lgbm import (
+        _compute_class_weights,
+        _compute_distribution_shift_weights,
+        _train_fixed,
+    )
 
     train_aligned = gru_state["train_aligned"]
     test_aligned = gru_state["test_aligned"]
@@ -644,14 +716,28 @@ def _wf_build_predict_phase(
     X_tr = X_train[:-val_split_idx]
     w_tr = train_weights[:-val_split_idx] if train_weights is not None else None
     X_val = X_train[-val_split_idx:]
+    shift_ratios: dict[str, float] | None = None
     if is_regression:
         y_tr = reg_y_train[:-val_split_idx]  # type: ignore[index]
         y_val = reg_y_train[-val_split_idx:]  # type: ignore[index]
         class_weights = None
+        combined_weights = w_tr
     else:
         y_tr = y_train[:-val_split_idx]
         y_val = y_train[-val_split_idx:]
         class_weights = _compute_class_weights(y_tr)
+        shift_weights, shift_ratios = _compute_distribution_shift_weights(y_tr, y_val)
+        # Combine with existing sample weights (average-uniqueness) if present
+        if w_tr is not None:
+            combined_weights = w_tr * shift_weights
+        else:
+            combined_weights = shift_weights
+
+    # ── Attach weight diagnostics to window diag ─────────────────────────
+    diag["class_weights"] = (
+        {str(k): v for k, v in class_weights.items()} if class_weights else None
+    )
+    diag["shift_weights_per_class"] = shift_ratios
 
     model = _train_fixed(
         X_tr,
@@ -661,7 +747,7 @@ def _wf_build_predict_phase(
         class_weights,
         config,
         all_feature_cols,
-        sample_weight=w_tr,
+        sample_weight=combined_weights,
     )
 
     # ── Predict ─────────────────────────────────────────────────────────
@@ -729,12 +815,14 @@ def _collect_oof_predictions(
     y_test: np.ndarray = result["y_test"]
     preds: np.ndarray = result["preds"]
     if is_regression:
+        preds_int = preds.astype(np.int32)
         return pl.DataFrame(
             {
                 "timestamp": test_aligned["timestamp"],
                 "true_label": y_test,
-                "pred_label": preds.astype(np.int32),
+                "pred_label": preds_int,
                 "pred_raw": result["raw_preds"].astype(np.float64),
+                **_one_hot_proba_columns(preds_int),
             }
         )
     return pl.DataFrame(
@@ -898,6 +986,9 @@ def _save_wf_artifacts(
             "Check step_bars vs test_window_bars."
         )
 
+    # ── Add confidence columns ──────────────────────────────────────────
+    oof_df = _add_confidence_columns(oof_df)
+
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
     oof_df.write_parquet(preds_path)
@@ -1012,6 +1103,10 @@ def _run_walk_forward_hybrid(config: Config) -> None:
     # 3. Process each walk-forward window
     for w_idx, window in enumerate(windows):
         window_start = time.perf_counter()
+        console.rule(
+            f"[bold cyan]Walk-forward window {w_idx + 1}/{len(windows)}[/]",
+            style="cyan",
+        )
         logger.info(
             "=== Window %d/%d: train=[%d:%d] test=[%d:%d] ===",
             w_idx + 1,
@@ -1087,7 +1182,8 @@ def _prepare_static_wf_data(
     if not labels_path.exists():
         raise FileNotFoundError(f"Labels not found: {labels_path}")
 
-    df = pl.read_parquet(labels_path)
+    with console.status(f"[cyan]Loading labels[/] {labels_path}"):
+        df = pl.read_parquet(labels_path)
     logger.info("Loaded labeled data for static baseline: %d rows", len(df))
     df, is_regression_static = _compute_regression_target(df, config)
 
@@ -1182,6 +1278,10 @@ def _train_and_predict_static_window(
     X_val, y_val = X_train[-val_split_idx:], y_train[-val_split_idx:]
     w_tr = sw[:-val_split_idx] if sw is not None else None
     class_weights = None if is_regression_static else _compute_class_weights(y_tr)
+    diag["class_weights"] = (
+        {str(k): v for k, v in class_weights.items()} if class_weights else None
+    )
+    diag["shift_weights_per_class"] = None  # static baseline: no shift weights
     model = _train_fixed(
         X_tr,
         y_tr,
@@ -1201,8 +1301,9 @@ def _train_and_predict_static_window(
             {
                 "timestamp": test_df["timestamp"],
                 "true_label": y_test_cls,
-                "pred_label": preds.astype(np.int32),
+                "pred_label": preds,
                 "pred_raw": raw_preds.astype(np.float64),
+                **_one_hot_proba_columns(preds),
             }
         )
     else:
@@ -1277,6 +1378,9 @@ def _save_static_wf_artifacts(
             f"OOF predictions contain {dup_count} duplicate timestamps — "
             "walk-forward test windows should be non-overlapping."
         )
+
+    # ── Add confidence columns ──────────────────────────────────────────
+    oof_df = _add_confidence_columns(oof_df)
 
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1400,6 +1504,10 @@ def _run_walk_forward_static(
     stage_start = time.perf_counter()
     for w_idx, window in enumerate(windows):
         window_start = time.perf_counter()
+        console.rule(
+            f"[bold cyan]Static window {w_idx + 1}/{len(windows)}[/]",
+            style="cyan",
+        )
         logger.info(
             "=== Static window %d/%d: train=[%d:%d] test=[%d:%d] ===",
             w_idx + 1,
@@ -1463,6 +1571,31 @@ def _label_suffix(class_label: int) -> str:
     return f"minus{abs(class_label)}" if class_label < 0 else str(class_label)
 
 
+def _one_hot_proba_columns(
+    preds: np.ndarray,
+    *,
+    prefix: str = "pred_proba_class_",
+) -> dict[str, np.ndarray]:
+    """Build one-hot probability columns from predicted class labels.
+
+    Used for regression mode where the model outputs a scalar rather than
+    class probabilities.  Each class column is 1.0 where the prediction
+    matches, 0.0 otherwise.
+
+    Args:
+        preds: Array of predicted class labels (``-1``, ``0``, or ``1``).
+        prefix: Column name prefix (default ``"pred_proba_class_"``).
+
+    Returns:
+        Dictionary mapping canonical column names to 1-D one-hot arrays.
+    """
+    preds = np.asarray(preds, dtype=np.int32)
+    return {
+        f"{prefix}{_label_suffix(int(cls))}": (preds == cls).astype(np.float64)
+        for cls in _CLASS_ORDER
+    }
+
+
 def _align_probability_matrix(
     proba: np.ndarray,
     class_order: list[int] | np.ndarray,
@@ -1511,6 +1644,37 @@ def _probability_columns(
         f"{prefix}{_label_suffix(int(cls))}": aligned[:, idx]
         for idx, cls in enumerate(_CLASS_ORDER)
     }
+
+
+_PROBA_COLS = ("pred_proba_class_minus1", "pred_proba_class_0", "pred_proba_class_1")
+"""Canonical probability column names in ``[-1, 0, 1]`` order."""
+
+
+def _add_confidence_columns(df: pl.DataFrame) -> pl.DataFrame:
+    """Attach ``max_confidence`` and ``confidence_bin`` to an OOF DataFrame.
+
+    Requires the three canonical probability columns to exist.  If they
+    are absent (e.g. legacy outputs), returns the DataFrame unchanged.
+
+    Args:
+        df: OOF predictions DataFrame with ``pred_proba_class_*`` columns.
+
+    Returns:
+        DataFrame augmented with ``max_confidence`` (float64) and
+        ``confidence_bin`` (string: ``"high"`` / ``"medium"`` / ``"low"``).
+    """
+    if not all(c in df.columns for c in _PROBA_COLS):
+        return df
+    return df.with_columns(
+        pl.max_horizontal([pl.col(c) for c in _PROBA_COLS]).alias("max_confidence"),
+    ).with_columns(
+        pl.when(pl.col("max_confidence") >= 0.6)
+        .then(pl.lit("high"))
+        .when(pl.col("max_confidence") >= 0.4)
+        .then(pl.lit("medium"))
+        .otherwise(pl.lit("low"))
+        .alias("confidence_bin"),
+    )
 
 
 def _split_tail_frame(

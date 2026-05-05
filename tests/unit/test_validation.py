@@ -387,7 +387,7 @@ class TestWindowTestPeriodsNoOverlap:
         validation parameters and asserts that for every consecutive pair
         ``test_end_idx[i] <= test_start_idx[i+1]``.
         """
-        total_bars = 100_000  # generous — well above 2013-01→2026-03 1H range
+        total_bars = 100_000  # generous — well above 2018-01→2026-04 1H range
 
         windows = generate_windows(
             total_bars=total_bars,

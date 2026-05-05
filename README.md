@@ -8,8 +8,8 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.10-red.svg)](https://pytorch.org/)
 
 **Student-friendly machine-learning pipeline** for time-series classification using
-a compact hybrid GRU + LightGBM architecture (stacking variant available, but
-**experimental** — not the default workflow).
+a compact hybrid GRU + LightGBM architecture (temporal GRU features feeding a
+LightGBM classifier).
 XAU/USD is used as the case study, but the thesis focus is data processing,
 leakage-safe validation, model training, and reproducible evaluation rather than
 financial strategy design.
@@ -168,9 +168,9 @@ Xây dựng pipeline end-to-end cho bài toán phân loại chuỗi thời gian 
 
 ```mermaid
 flowchart LR
-    GRU["GRU<br/>(chuỗi 48 nến)"] -->|"64 hidden"| Stack
-    LGB["LightGBM<br/>(21 core features)"] -->|"xác suất"| Stack
-    Stack["Hybrid Model"] --> Pred["3 nhãn<br/>Mua / Trung tính / Bán"]
+    GRU["GRU<br/>(chuỗi 48 nến)"] -->|"64 hidden"| HybridMerge
+    LGB["LightGBM<br/>(21 core features)"] -->|"xác suất"| HybridMerge
+    HybridMerge["Hybrid Model"] --> Pred["3 nhãn<br/>Mua / Trung tính / Bán"]
 ```
 
 ## Mục tiêu chính
@@ -180,7 +180,7 @@ flowchart LR
 3. Chia tập bằng **Walk-Forward Sliding Window** (cửa sổ 3 năm train, 6 tháng test, bước nhảy 6 tháng) với Purging + Embargo chống rò rỉ
 4. Xây dựng đặc trưng kỹ thuật + định lượng bằng Feature Importance / SHAP
 5. Huấn luyện mô hình GRU nền + LightGBM nền
-6. Xây dựng kiến trúc **Hybrid** (mặc định) hoặc **Stacking** (_thử nghiệm, không dùng cho đồ án_)
+6. Chọn kiến trúc **Hybrid** (mặc định) hoặc **Static** (chỉ LightGBM, baseline so sánh)
 7. Giải thích mô hình + backtest minh họa ứng dụng trên OOS
 
 ## Đặc trưng kỹ thuật

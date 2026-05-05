@@ -76,7 +76,7 @@ Each file should be a **parquet file** containing tick data for one month. The c
 > ```bash
 > pixi run data
 > ```
-> This downloads XAU/USD data from 2013 onwards (configured via `start_date` in `config.toml`).
+> This downloads XAU/USD data from 2018 onwards (configured via `start_date` in `config.toml`).
 
 ---
 

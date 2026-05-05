@@ -190,6 +190,7 @@ def test_random_predictions_produce_zero_sharpe() -> None:
         atr_tp_multiplier=0,
         horizon_bars=5,
         initial_capital=10_000.0,
+        min_bars_between_trades=0,  # disable cooldown — test isolates signal quality
     )
 
     sharpe = metrics.get("sharpe_ratio", 0)

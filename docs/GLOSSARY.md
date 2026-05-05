@@ -48,7 +48,7 @@ A technique to handle imbalanced data. If you have 60% "Flat" labels and 20% "Lo
 A fee you pay to your broker for each trade. In this project, the commission is $10 per standard lot round-trip (open + close).
 
 **Confidence Threshold**
-The minimum predicted probability required before the model takes a trade. In this project, the threshold is 0.60 (60%) — the model only trades when it is at least 60% confident. Set to 0 to disable and trade on all signals.
+The minimum predicted probability required before the model takes a trade. In this project, the threshold is 0.50 (50%) — the model only trades when it is at least 50% confident. Set to 0 to disable and trade on all signals.
 
 **Confusion Matrix**
 A table that shows how many predictions were correct and how many were wrong. The rows are the actual values, the columns are the predicted values. A perfect model would only have numbers on the diagonal.
@@ -109,14 +109,14 @@ A method to fill missing data by using the last known value. If the RSI at 3:00 
 A machine learning method that builds many simple decision trees, one after another. Each new tree tries to fix the mistakes of the previous trees. LightGBM is a gradient boosting library.
 
 **GRU (Gated Recurrent Unit)**
-A type of neural network designed for sequential data (like time series). It has "gates" that decide what information to remember and what to forget. It is similar to LSTM but simpler and faster.
+A type of neural network designed for sequential data (like time series). It has "gates" that decide what information to remember and what to forget. It is similar to LSTM but simpler and faster. In this project, the GRU is trained with **regression** (MSE on forward returns) rather than classification — this produces richer hidden states for the downstream LightGBM classifier.
 
 ---
 
 ## H
 
 **Hidden States**
-The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 32 numbers (hidden states) that summarize the temporal pattern of the last 48 hours.
+The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 128 numbers (hidden states, reduced to 16 via PCA) that summarize the temporal pattern of the last 48 hours.
 
 **Horizon**
 The maximum time window for a trade. In triple barrier labeling, if the price does not hit TP or SL within the horizon (e.g., 24 bars), the trade is closed and labeled as "Flat".
@@ -129,7 +129,7 @@ A setting you choose before training (like learning rate or number of trees). Th
 ## K
 
 **Killer Feature**
-Not a real technical term, but in this project, the "killer feature" is the hybrid architecture — combining GRU temporal features with LightGBM's decision-making power.
+Not a real technical term, but in this project, the "killer feature" is the decoupled hybrid architecture — GRU trained on regression (MSE returns) produces rich temporal embeddings, and LightGBM trained on classification handles the discrete decision boundary. This decoupled design prevents the GRU from overfitting to label noise.
 
 ---
 
@@ -139,7 +139,7 @@ Not a real technical term, but in this project, the "killer feature" is the hybr
 The correct answer for each data point. In this project, labels are: +1 (Long/buy), 0 (Flat/hold), -1 (Short/sell). Labels are generated using the Triple Barrier method.
 
 **Leverage**
-Borrowed money from your broker. Leverage of 30:1 means with $10,000 in your account, you can trade as if you had $300,000. This project uses 30:1 leverage. Leverage amplifies both profits and losses.
+Borrowed money from your broker. Leverage of 10:1 means with $10,000 in your account, you can trade as if you had $100,000. This project uses 10:1 leverage. Leverage amplifies both profits and losses.
 
 **LightGBM**
 A fast, efficient gradient boosting library developed by Microsoft. It builds decision trees and combines their predictions. It handles large datasets well and is widely used in competitions and industry.

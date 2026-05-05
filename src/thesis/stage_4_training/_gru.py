@@ -33,7 +33,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate import Accelerator
-from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -53,9 +52,11 @@ from thesis._shared.constants import (
     COSINE_TMULT,
     ECE_N_BINS,
     GRAD_CLIP_NORM,
+    PLATEAU_PATIENCE,
     STD_EPS,
     WARMUP_EPOCHS,
 )
+from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.gru")
 
@@ -126,6 +127,7 @@ class GRUExtractor(nn.Module):
         num_layers: int = 2,
         dropout: float = 0.3,
         variational_dropout: float = 0.1,
+        bidirectional: bool = False,
     ) -> None:
         """Initialize the GRU extractor module.
 
@@ -137,6 +139,10 @@ class GRUExtractor(nn.Module):
                 ``num_layers > 1``.
             variational_dropout: Variational dropout probability applied to
                 the GRU input before the recurrent computation.
+            bidirectional: If True, use a bidirectional GRU so each timestep
+                sees both past and future context.  When enabled the GRU
+                output dimension doubles to ``hidden_size * 2`` and a linear
+                projection layer reduces it back to ``hidden_size``.
 
         Returns:
             None.
@@ -144,6 +150,7 @@ class GRUExtractor(nn.Module):
         super().__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.bidirectional = bidirectional
 
         self.input_norm = nn.LayerNorm(input_size)
         self.var_drop = VariationalDropout(p=variational_dropout)
@@ -153,9 +160,16 @@ class GRUExtractor(nn.Module):
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0.0,
+            bidirectional=bidirectional,
         )
+        # Bidirectional GRU concatenates forward + backward → hidden_size * 2
+        gru_output_dim = hidden_size * 2 if bidirectional else hidden_size
         # Learned attention scorer: maps each timestep's hidden state to a scalar score.
-        self.attn_scorer = nn.Linear(hidden_size, 1)
+        self.attn_scorer = nn.Linear(gru_output_dim, 1)
+        # Project bidirectional output back to hidden_size; Identity when unidirectional.
+        self.proj = (
+            nn.Linear(gru_output_dim, hidden_size) if bidirectional else nn.Identity()
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Encode a batched sequence into an attention-weighted context vector.
@@ -169,7 +183,7 @@ class GRUExtractor(nn.Module):
         """
         x = self.input_norm(x)
         x = self.var_drop(x)
-        gru_out, _ = self.gru(x)  # (batch, seq_len, hidden_size)
+        gru_out, _ = self.gru(x)  # (batch, seq_len, D) where D = hidden_size * ndir
 
         # Compute attention weights over the sequence dimension.
         # scores: (batch, seq_len, 1) → squeeze → softmax over seq_len
@@ -177,9 +191,10 @@ class GRUExtractor(nn.Module):
             self.attn_scorer(gru_out), dim=1
         )  # (batch, seq_len, 1)
 
-        # Weighted sum of hidden states: (batch, seq_len, hidden) → (batch, hidden)
+        # Weighted sum of hidden states: (batch, seq_len, D) → (batch, D)
         context = (gru_out * attn_weights).sum(dim=1)
-        return context
+        # Project to hidden_size when bidirectional (Identity when unidirectional)
+        return self.proj(context)
 
 
 # ---------------------------------------------------------------------------
@@ -588,27 +603,27 @@ def _build_model_and_classifier(
         3 logits for multiclass or 1 value for regression.
     """
     gru_cfg = config.gru
+    is_regression = gru_cfg.objective == "regression"
+
     model = GRUExtractor(
         input_size=input_size or gru_cfg.input_size,
         hidden_size=gru_cfg.hidden_size,
         num_layers=gru_cfg.num_layers,
         dropout=gru_cfg.dropout,
+        bidirectional=gru_cfg.bidirectional,
     )
 
-    if config.model.objective == "regression":
-        output_size = 1
-    else:
-        output_size = config.labels.num_classes
-
+    output_size = 1 if is_regression else config.labels.num_classes
     classifier = nn.Linear(gru_cfg.hidden_size, output_size)
 
     total_params = sum(p.numel() for p in model.parameters())
     logger.info(
-        "GRU: %d params, %d layers, hidden=%d, output=%d",
+        "GRU: %d params, %d layers, hidden=%d, output=%d, objective=%s",
         total_params,
         gru_cfg.num_layers,
         gru_cfg.hidden_size,
         output_size,
+        gru_cfg.objective,
     )
     return model, classifier
 
@@ -622,6 +637,7 @@ def _train_epoch(
     device: torch.device,
     accelerator: Any | None = None,
     is_regression: bool = False,
+    gradient_accumulation_steps: int = 1,
 ) -> tuple[float, float]:
     """Run one training epoch.
 
@@ -630,6 +646,10 @@ def _train_epoch(
     ``accelerator.backward()`` / ``accelerator.clip_grad_norm_()`` are
     used.  Otherwise, falls back to manual ``.to(device)`` and standard
     PyTorch calls.
+
+    Gradient accumulation is used when ``gradient_accumulation_steps > 1``:
+    gradients are accumulated over multiple micro-batches before the optimizer
+    steps, simulating a larger effective batch size without extra memory.
 
     Args:
         model: GRU feature extractor.
@@ -640,6 +660,8 @@ def _train_epoch(
         device: Target device (unused when accelerator handles placement).
         accelerator: Optional Accelerate accelerator instance.
         is_regression: If True, treats target as continuous, reports loss only.
+        gradient_accumulation_steps: Number of micro-batches to accumulate
+            before stepping the optimizer (default 1 = no accumulation).
 
     Returns:
         Tuple of (average_loss, accuracy_or_mae). For regression, second value is
@@ -651,7 +673,7 @@ def _train_epoch(
     train_metric_sum = 0.0  # classification accuracy or regression MAE
     train_total = 0
 
-    for batch in train_loader:
+    for batch_idx, batch in enumerate(train_loader):
         if len(batch) == 3:
             batch_x, batch_y, batch_w = batch
         else:
@@ -675,22 +697,28 @@ def _train_epoch(
             loss = criterion(output, batch_y, batch_w)
             train_metric_sum += (output.argmax(dim=1) == batch_y).sum().item()
 
-        optimizer.zero_grad()
+        # Scale loss for gradient accumulation so effective LR stays constant
+        loss = loss / gradient_accumulation_steps
 
         if accelerator is not None:
             accelerator.backward(loss)
         else:
             loss.backward()
 
-        params = list(model.parameters()) + list(classifier.parameters())
-        if accelerator is not None:
-            accelerator.clip_grad_norm_(params, max_norm=GRAD_CLIP_NORM)
-        else:
-            torch.nn.utils.clip_grad_norm_(params, max_norm=GRAD_CLIP_NORM)
+        # Step only after the accumulation window, or on the last batch
+        is_accumulation_step = (batch_idx + 1) % gradient_accumulation_steps == 0
+        is_last_batch = batch_idx + 1 == len(train_loader)
+        if is_accumulation_step or is_last_batch:
+            params = list(model.parameters()) + list(classifier.parameters())
+            if accelerator is not None:
+                accelerator.clip_grad_norm_(params, max_norm=GRAD_CLIP_NORM)
+            else:
+                torch.nn.utils.clip_grad_norm_(params, max_norm=GRAD_CLIP_NORM)
+            optimizer.step()
+            optimizer.zero_grad()
 
-        optimizer.step()
-
-        train_loss += loss.item() * len(batch_x)
+        # Report loss at original (unscaled) scale for interpretable logging
+        train_loss += loss.item() * gradient_accumulation_steps * len(batch_x)
         train_total += len(batch_y)
 
     return (
@@ -1031,8 +1059,13 @@ def train_gru(
     gru_cfg = config.gru
     gru_cols = list(config.gru.feature_cols)
     seed = config.workflow.random_seed
-    is_regression = config.model.objective == "regression"
+    is_regression = gru_cfg.objective == "regression"
     label_col = "regression_target" if is_regression else "label"
+    logger.info(
+        "GRU objective: %s (model.objective=%s)",
+        gru_cfg.objective,
+        config.model.objective,
+    )
 
     # Dynamically filter GRU columns to those surviving correlation filtering.
     # ``prepare_sequences`` adds ``log_returns`` on-the-fly via
@@ -1235,6 +1268,7 @@ def train_gru(
     best_epoch = 0
     best_state: dict[str, Any] | None = None
     patience_counter = 0
+    plateau_warned = False
     history: list[dict[str, float]] = []
     stage_start = time.perf_counter()
 
@@ -1253,8 +1287,8 @@ def train_gru(
         TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
         TextColumn("[green]{}={{task.fields[v_metric]:.4f}}".format(v_metric_label)),
         TimeElapsedColumn(),
-        transient=False,
-        console=Console(stderr=True),
+        transient=True,
+        console=console,
     )
 
     with progress:
@@ -1277,6 +1311,7 @@ def train_gru(
                 device,
                 accelerator=accelerator,
                 is_regression=is_regression,
+                gradient_accumulation_steps=gru_cfg.gradient_accumulation_steps,
             )
             val_loss, val_metric = _validate_epoch(
                 model,
@@ -1288,6 +1323,7 @@ def train_gru(
                 is_regression=is_regression,
             )
             scheduler.step()
+            current_lr = optimizer.param_groups[0]["lr"]
 
             history.append(
                 {
@@ -1296,8 +1332,10 @@ def train_gru(
                     f"train_{metric_label}": round(train_metric, 4),
                     "val_loss": round(val_loss, 4),
                     f"val_{metric_label}": round(val_metric, 4),
+                    "lr": round(current_lr, 6),
                 }
             )
+            logger.info("Epoch %d: lr=%.6f", epoch + 1, current_lr)
 
             progress.update(
                 task,
@@ -1321,8 +1359,20 @@ def train_gru(
                     ),
                 }
                 patience_counter = 0
+                plateau_warned = False
             else:
                 patience_counter += 1
+                # Plateau detection: warn once when val-loss stalls for
+                # PLATEAU_PATIENCE consecutive epochs without improvement.
+                if not plateau_warned and patience_counter >= PLATEAU_PATIENCE:
+                    plateau_warned = True
+                    logger.warning(
+                        "Plateau detected: val_loss=%.4f hasn't improved for "
+                        "%d epochs (LR=%.6f). Consider reducing learning rate.",
+                        val_loss,
+                        patience_counter,
+                        current_lr,
+                    )
                 if (
                     patience_counter >= gru_cfg.patience
                     and epoch + 1 >= gru_cfg.min_epochs
@@ -1551,7 +1601,7 @@ def save_gru_model(
         std: Per-feature standard deviation array from training
             standardization, or ``None`` when not available.
         classifier: Optional trained classification head to persist alongside
-            the GRU backbone for stacking inference.
+            the GRU backbone for end-to-end inference.
         temperature: Temperature scaling parameter from calibration.  When
             ``None`` and the model has a ``temperature`` attribute, that value
             is used automatically.
@@ -1579,6 +1629,7 @@ def save_gru_model(
         "num_layers": gru_cfg.num_layers,
         "dropout": gru_cfg.dropout,
         "sequence_length": gru_cfg.sequence_length,
+        "bidirectional": getattr(raw_model, "bidirectional", False),
     }
     if classifier is not None:
         raw_classifier = getattr(classifier, "_orig_mod", classifier)
@@ -1619,6 +1670,7 @@ def load_gru_model(path: str | Path) -> tuple[GRUExtractor, dict[str, Any]]:
         hidden_size=checkpoint["hidden_size"],
         num_layers=checkpoint["num_layers"],
         dropout=checkpoint["dropout"],
+        bidirectional=checkpoint.get("bidirectional", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()

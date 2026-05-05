@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document tracks the implementation of the Git workflow for the Hybrid Stacking Thesis project.
+This document tracks the implementation of the Git workflow for the Hybrid GRU + LightGBM thesis project.
 
 **Status**: ✅ **COMPLETE**  
 **Date Created**: 2026-03-29  
@@ -115,7 +115,7 @@ develop (integration, protected) ─────────────┘
 - `data`: Data pipeline modules
 - `features`: Feature engineering
 - `labels`: Triple-barrier labeling
-- `models`: LSTM, LightGBM, stacking
+- `models`: GRU, LightGBM, hybrid training
 - `backtest`: Backtesting engine
 - `reporting`: Report generation
 - `config`: Configuration loader

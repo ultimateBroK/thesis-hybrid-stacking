@@ -10,7 +10,9 @@ only the small OHLCV results (~56K rows for 8 years of 1H bars).
 
 from __future__ import annotations
 
+import json
 import logging
+from datetime import timedelta
 from pathlib import Path
 
 import polars as pl
@@ -23,6 +25,7 @@ from rich.progress import (
 )
 
 from thesis._shared.config import Config
+from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.prepare")
 
@@ -169,7 +172,8 @@ def _aggregate_monthly_files(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         MofNCompleteColumn(),
-        console=None,
+        console=console,
+        transient=True,
     ) as progress:
         task = progress.add_task(
             f"[cyan]Aggregating {len(parquet_files)} monthly files",
@@ -184,14 +188,15 @@ def _aggregate_monthly_files(
         return monthly_bars
 
 
-def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
+def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int, int]:
     """Concat, deduplicate, and filter OHLCV bars.
 
     Args:
         ohlcv: Concatenated OHLCV DataFrame.
 
     Returns:
-        Tuple of (filtered DataFrame, number of dropped bars).
+        Tuple of (filtered DataFrame, number of dropped bars,
+        number of duplicate timestamps removed).
     """
     duplicate_count = len(ohlcv) - ohlcv.get_column("timestamp").n_unique()
     if duplicate_count > 0:
@@ -210,7 +215,7 @@ def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
     dropped = n_before - n_after
     if dropped > 0:
         logger.warning("Dropped %d bars with corrupted timestamps", dropped)
-    return ohlcv, dropped
+    return ohlcv, dropped, duplicate_count
 
 
 def _filter_date_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -323,6 +328,138 @@ def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
     )
 
 
+def _spans_weekend(start_dt: object, end_dt: object) -> bool:
+    """Check if a time interval spans any weekend hours (Saturday or Sunday).
+
+    Only returns ``True`` for gaps of at least 6 hours; shorter gaps are
+    never weekend-related for financial intra-week data.
+
+    Args:
+        start_dt: Start datetime.
+        end_dt: End datetime.
+
+    Returns:
+        ``True`` if any Saturday or Sunday falls within the interval.
+    """
+    delta = (end_dt - start_dt).total_seconds()
+    if delta < 6 * 3600:  # shorter than 6 hours: cannot be a weekend gap
+        return False
+
+    current = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_day = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
+        days=1
+    )
+    while current < end_day:
+        if current.weekday() >= 5:  # Saturday (5) or Sunday (6)
+            return True
+        current += timedelta(days=1)
+    return False
+
+
+def _compute_data_quality_stats(
+    ohlcv: pl.DataFrame,
+    group_ms: int,
+    deduped_timestamps: int,
+) -> dict:
+    """Compute data quality statistics and return as a dictionary.
+
+    Analyses gap distribution (weekend vs real), duplicate removal counts,
+    estimated missing bars, and data coverage dates.
+
+    Args:
+        ohlcv: OHLCV DataFrame after deduplication and date-range filtering.
+        group_ms: Expected bar interval in milliseconds.
+        deduped_timestamps: Number of duplicate timestamps removed during
+            deduplication.
+
+    Returns:
+        Dictionary with keys ``total_bars``, ``deduped_timestamps``,
+        ``start_date``, ``end_date``, ``calendar_gaps``, ``weekend_gaps``,
+        ``real_gaps``, ``estimated_missing_bars``, ``largest_gap_bars``.
+    """
+    total_bars = len(ohlcv)
+    start_date = str(ohlcv["timestamp"].min())
+    end_date = str(ohlcv["timestamp"].max())
+
+    if total_bars < 2:
+        return {
+            "total_bars": total_bars,
+            "deduped_timestamps": deduped_timestamps,
+            "start_date": start_date,
+            "end_date": end_date,
+            "calendar_gaps": 0,
+            "weekend_gaps": 0,
+            "real_gaps": 0,
+            "estimated_missing_bars": 0,
+            "largest_gap_bars": 0,
+        }
+
+    diffs = ohlcv.select(
+        [
+            pl.col("timestamp").diff().dt.total_milliseconds().alias("delta_ms"),
+            pl.col("timestamp"),
+        ]
+    ).drop_nulls()
+
+    timestamps = diffs["timestamp"].to_list()
+    deltas = diffs["delta_ms"].to_list()
+
+    weekend_gaps = 0
+    real_gaps = 0
+    estimated_missing_bars = 0
+    largest_gap_bars = 0
+
+    prev_ts_list = ohlcv["timestamp"].to_list()
+    for i, (delta, ts) in enumerate(zip(deltas, timestamps)):
+        if delta <= 0:
+            continue
+        if delta == group_ms:
+            continue  # expected bar interval — no gap
+
+        gap_bars = int(delta / group_ms)
+        if gap_bars > largest_gap_bars:
+            largest_gap_bars = gap_bars
+
+        prev_ts = prev_ts_list[i]  # previous timestamp before this gap
+        if _spans_weekend(prev_ts, ts):
+            weekend_gaps += 1
+        else:
+            real_gaps += 1
+
+        missing = max(0, gap_bars - 1)
+        estimated_missing_bars += missing
+
+    calendar_gaps = weekend_gaps + real_gaps
+
+    return {
+        "total_bars": total_bars,
+        "deduped_timestamps": deduped_timestamps,
+        "start_date": start_date,
+        "end_date": end_date,
+        "calendar_gaps": calendar_gaps,
+        "weekend_gaps": weekend_gaps,
+        "real_gaps": real_gaps,
+        "estimated_missing_bars": estimated_missing_bars,
+        "largest_gap_bars": largest_gap_bars,
+    }
+
+
+def _save_data_quality_json(stats: dict, config: Config) -> None:
+    """Save data quality statistics as a JSON sidecar file.
+
+    Args:
+        stats: Data quality statistics dictionary.
+        config: Application configuration for resolving output path.
+    """
+    dq_path = Path(config.paths.data_quality_json)
+    dq_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(dq_path, "w") as f:
+        json.dump(stats, f, indent=2, default=str)
+    logger.info(
+        "Data quality JSON saved: %s (total_bars=%d)", dq_path, stats["total_bars"]
+    )
+
+
 def prepare_data(config: Config) -> None:
     """Pipeline Stage 1 (of 6): Prepare OHLCV bars from raw tick parquet files.
 
@@ -373,10 +510,14 @@ def prepare_data(config: Config) -> None:
     ohlcv = pl.concat(monthly_bars, how="vertical").sort("timestamp")
 
     # Remove duplicate bar timestamps and filter corrupted years
-    ohlcv, _ = _deduplicate_and_filter(ohlcv)
+    ohlcv, _, deduped_count = _deduplicate_and_filter(ohlcv)
     ohlcv = _filter_date_range(ohlcv, config)
     _log_gap_report(ohlcv, group_ms)
     _log_candle_quality_report(ohlcv)
+
+    # Compute and save data quality statistics
+    dq_stats = _compute_data_quality_stats(ohlcv, group_ms, deduped_count)
+    _save_data_quality_json(dq_stats, config)
 
     logger.info("OHLCV bars: %d (timeframe=%s)", len(ohlcv), config.data.timeframe)
     logger.info(

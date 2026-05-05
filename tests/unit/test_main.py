@@ -114,6 +114,7 @@ class TestPipelineEmptyWindowsGuard:
         cfg.validation.test_window_bars = 999999
         cfg.validation.min_train_bars = 999999
         cfg.paths.labels = "/nonexistent/labels.parquet"
+        cfg.gru.objective = "multiclass"  # guard test, no regression target needed
 
         # The function checks for labels file first, then windows.
         # We need to mock both: provide a small df and verify the RuntimeError.

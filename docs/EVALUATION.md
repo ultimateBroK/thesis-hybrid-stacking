@@ -31,7 +31,106 @@ The most important files are:
 |------|----------------|
 | `backtest/backtest_results.json` | All the numbers (metrics + trade list) |
 | `reports/thesis_report.md` | Written summary with charts |
-| `reports/walk_forward_history.json` | Walk-forward window boundaries and OOF row counts |
+| `reports/data_quality_report.md` | Data quality analysis — missing bars, volatility, seasonal patterns |
+| `reports/walk_forward_history.json` | Per-window diagnostics: class weights, shift weights, per-class metrics |
+| `predictions/prediction_details.csv` | Per-row predictions with confidence scores |
+
+---
+
+## Data Quality Analysis
+
+Before evaluating model performance, check the **data quality report** to ensure
+your results aren't artifacts of bad data.
+
+The report (`reports/data_quality_report.md`) answers: **"Is the model failing because
+of the data, or because of the architecture?"**
+
+### What the Data Quality Report Analyzes
+
+| Section | What It Checks | Why It Matters |
+|---------|---------------|----------------|
+| **Missing Bars Analysis** | Count of missing 1H candles by date | Missing data creates gaps that affect feature calculations. Large gaps (>5% of hours) are a red flag. |
+| **OHLC Consistency Validation** | High/Low are within candle range, no negative prices | Corrupted data produces invalid labels and features. |
+| **Volatility Distribution** | Distribution of hourly log returns with statistics | Extreme outliers (>5σ) may indicate data errors. Low volatility periods suggest stale data. |
+| **Seasonal Patterns** | Average volatility by hour-of-day, day-of-week | Trading during quiet periods (e.g., Asian session overlaps) produces fewer signals. |
+| **Label Distribution** | Class balance over time (monthly) | Label drift during volatile periods (e.g., COVID 2020) changes the learning problem. |
+| **Gap Analysis** | Distribution of inter-bar time gaps | Large gaps (>4h) mean missed trading opportunities that backtest cannot simulate. |
+| **Summary Verdict** | Overall quality rating (Good / Fair / Poor) | A "Poor" rating means fix the data before trusting model results. |
+
+### How to Interpret It
+
+- **Good data quality** → If the model underperforms, the issue is in the features or architecture.
+- **Poor data quality** → Fix data ingestion first. Gaps and outliers can dominate model training.
+- **High missing bars in test period** → The model was tested on incomplete data; lower confidence in backtest results.
+
+### Key Thresholds
+
+| Metric | Good | Fair | Poor (fix data first) |
+|--------|------|------|----------------------|
+| Missing bar % | < 2% | 2–5% | > 5% |
+| Outlier bars (>5σ) | 0 | < 0.1% | > 0.1% |
+| Max inter-bar gap | < 4h | 4–8h | > 8h |
+| Label class balance drift | < 5% per window | 5–15% | > 15% |
+
+---
+
+## OOF vs OOS Comparison
+
+The pipeline generates two types of predictions that serve different purposes:
+
+### What Are They?
+
+| Term | Definition | Where to Find |
+|------|-----------|---------------|
+| **OOF** (Out-of-Fold) | Predictions from walk-forward windows on their test slices. All windows combined cover the entire data range. | `predictions/final_predictions.parquet` — `oof_signal` column |
+| **OOS** (Out-of-Sample) | Predictions filtered to only the configured test date range (e.g., 2024-01-01 to 2026-03-31). Used for the backtest. | `predictions/final_predictions.parquet` — filtered by `oob_start_date`/`oob_end_date` |
+
+### Why the Distinction Matters
+
+- **OOF covers the full data range** — including portions of train windows. This gives you a complete picture of model behavior across all market regimes.
+- **OOS is your "real" test** — only the future data the model never saw during training. This is what matters for thesis claims.
+
+The report includes an **OOF vs OOS comparison table** showing:
+
+| Metric | OOF (all data) | OOS (test period only) |
+|--------|---------------|----------------------|
+| Accuracy | Coverage of full history | True out-of-sample performance |
+| Per-class F1 | Model behavior in known regimes | Behavior in unseen regimes |
+| Confidence distribution | All predictions | Only future predictions |
+
+> **Warning sign:** If OOS metrics are significantly worse than OOF metrics, the model
+> is overfitting to historical patterns and failing to generalize. This is common in
+> financial ML and indicates regime shift between train and test periods.
+
+---
+
+## Prediction Detail CSV
+
+The `predictions/prediction_details.csv` file contains per-row prediction data with
+confidence information:
+
+| Column | Description |
+|--------|-------------|
+| `timestamp` | Bar timestamp |
+| `true_label` | Actual label (1=Long, 0=Flat, -1=Short) |
+| `pred_label` | Model's predicted label |
+| `prob_long` | Probability of Long |
+| `prob_flat` | Probability of Flat |
+| `prob_short` | Probability of Short |
+| `confidence` | Max probability across classes (model's certainty) |
+| `is_correct` | Whether prediction matched true label |
+| `is_oos` | Whether this row is in the out-of-sample (test) period |
+
+### Using Confidence Scores
+
+- **High confidence (>0.70)**: Model is sure. If accuracy on high-confidence predictions
+  is significantly higher than overall accuracy, the model's probability estimates are
+  well-calibrated.
+- **Low confidence (<0.40)**: Model is uncertain. If low-confidence predictions are
+  frequent (>30% of rows), the problem may be too hard for the current feature set.
+- **Confidence decay over time**: If confidence drops in OOS relative to OOF, the model
+  is recognizing that the test period is different from training — a good sign of
+  honest probability estimation.
 
 ---
 
@@ -335,10 +434,18 @@ All OOF predictions concatenated → unbiased evaluation
 
 | File | What It Contains |
 |------|-----------------|
-| `reports/walk_forward_history.json` | Window boundaries, OOF row counts per window |
-| `predictions/final_predictions.csv` | Full prediction set including OOF signal column |
+| `reports/walk_forward_history.json` | Window boundaries, OOF row counts, per-class metrics, distribution-shift weights, class weight ratios |
+| `predictions/final_predictions.parquet` | Full prediction set including OOF signal column |
+| `predictions/prediction_details.csv` | Per-row predictions with confidence scores |
 
-> **Tip:** If the total OOF rows are much fewer than your test period length, the walk-forward windows may not cover the full test range. Check the window dates in `walk_forward_history.json` against your configured `test_start` and `test_end`.
+> **Tip:** `walk_forward_history.json` now includes per-window diagnostics:
+> - **per_class_metrics**: Accuracy, precision, recall, F1 for each class per window
+> - **class_weights**: Per-class sample weights used during LightGBM training
+> - **shift_weights**: Distribution-shift correction weights (clipped [0.5, 3.0])
+> - **label_distribution**: Class frequencies in train vs val per window
+>
+> These diagnostics help identify windows where label drift caused the model to
+> struggle, and whether distribution-shift weights successfully corrected it.
 
 ---
 
@@ -531,14 +638,17 @@ Look at `ablation_results.json` (hypothetical example — you would generate thi
 | Huge gap between train and test performance | Data leakage or overfitting |
 | All predictions are "Flat" | Model is too conservative — check class balance in training data |
 | Backtest return is negative but model accuracy is high | Costs (spread, commission) are eating all the profit |
-| 0 trades in backtest | Position size too large for available margin — reduce lots_per_trade or increase leverage |
+| 0 trades in backtest | Position size too large for available margin — reduce lots_per_trade or increase leverage. Also check `min_bars_between_trades` cooldown — too high a value can suppress all trades. |
 | Profit factor above 3.0 | Suspicious — hard to maintain in real markets |
 | Alpha negative (model loses vs buy & hold) | Model adds no value over passive holding |
 | Recovery factor below 1.0 | Never recovered from worst drawdown |
-| Trades per day < 0.1 | Model is too selective — may miss opportunities |
+| Trades per day < 0.1 | Model is too selective — may miss opportunities. Check `confidence_threshold` and `min_bars_between_trades`. |
+| Trades per day > 5 | Model is overtrading — increase `min_bars_between_trades` to add cooldown. |
 | SQN below 1.0 | Poor system quality according to Van Tharp's standards |
 | Beta > 1.2 | Strategy amplifies market moves — high market correlation |
 | Exposure time < 10% | Model barely participates in the market |
+| Exposure time > 80% | Model is almost always in a trade — no selectivity |
+| Consecutive losing trades > 10 | Strategy edge may not exist — check if confidence_filter is too permissive |
 
 ---
 
@@ -562,9 +672,11 @@ Look at `ablation_results.json` (hypothetical example — you would generate thi
 
 ## Metric Recommendation Zones
 
-Use this table to understand if your metrics are in a healthy range. These are **XAU/USD 1H-optimized targets** based on real-world benchmarks from professional gold trading strategies.
+Use this table to understand if your metrics are in a healthy range. These are **XAU/USD 1H-optimized targets** based on real-world benchmarks from professional gold trading strategies and analysis from [boringedge.com/backtest-metrics-explained](https://boringedge.com/backtest-metrics-explained).
 
 > **XAU/USD Specifics:** Gold is more volatile than forex pairs, trades almost 24/5, and has distinct regimes (trending vs ranging). This affects what "good" looks like. Real-world professional XAUUSD strategies achieve: Sharpe 0.5–2.0, Profit Factor 1.5–2.0, Win Rate 35–55%.
+>
+> **Metric zone gauges** in the dashboard and report visualize these zones as color-coded indicators (green/yellow/red) with specific actionable recommendations for each zone. Extreme values (e.g., Sharpe >10, Recovery Factor >20) are flagged with warnings to check for overfitting.
 
 ### Core Performance Metrics
 
@@ -631,8 +743,11 @@ Run through this list after every experiment:
 - [ ] Is the max drawdown below 35% (XAUUSD is volatile)?
 - [ ] Is the profit factor above 1.2 (1.5+ is better)?
 - [ ] Does the equity curve go up over time?
-- [ ] Does the ablation study confirm the hybrid is better?
+- [ ] Does OOS (test-period) performance match OOF (all-data) performance?
 - [ ] Is the win rate between 35–65% (outside this range = investigate)?
 - [ ] Is profit factor below 3.0 (above = suspicious for XAUUSD)?
+- [ ] Did you check the **data quality report** for missing bars or outliers?
+- [ ] Are confidence scores higher for correct predictions than incorrect ones?
+- [ ] Are distribution-shift weights showing actionable per-window corrections?
 
 If you can check all these boxes — nice work! You have a reasonable model for XAUUSD.

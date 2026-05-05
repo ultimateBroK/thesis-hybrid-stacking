@@ -1,6 +1,6 @@
 # 🚀 Git Pushing Plan - Executive Summary
 
-**Project**: Hybrid Stacking (LSTM + LightGBM) for XAU/USD H1 Trading Signals  
+**Project**: Hybrid GRU + LightGBM for XAU/USD H1 Trading Signals  
 **Thesis**: Bachelor's Thesis - Thuy Loi University  
 **Student**: Nguyen Duc Hieu (2151061192)  
 **Date**: 2026-03-29
@@ -374,6 +374,6 @@ git push -u origin main
 
 ---
 
-*Generated for Thesis Project - Hybrid Stacking (LSTM + LightGBM)*  
+*Generated for Thesis Project - Hybrid GRU + LightGBM*  
 *Nguyen Duc Hieu - Thuy Loi University*  
 *Advisor: Hoang Quoc Dung*

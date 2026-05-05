@@ -25,6 +25,7 @@ def test_purge_guard_raises_on_insufficient_gap() -> None:
     config.validation.purge_bars = 5
     config.validation.embargo_bars = 10  # gap = 15
     config.gru.sequence_length = 48  # gap < seq_len → should raise
+    config.gru.objective = "multiclass"  # guard test doesn't need regression target
 
     # The guard lives inside _run_walk_forward_hybrid which reads parquet.
     # We mock the file I/O and generate_windows to reach the guard.
@@ -118,6 +119,29 @@ class TestStageNumbering:
         from thesis._shared.ui import STAGE_LABELS
 
         assert sorted(STAGE_LABELS.keys()) == [1, 2, 3, 4, 5, 6]
+
+    @pytest.mark.unit
+    def test_stage_skip_outputs_correct_text(self, caplog) -> None:
+        """stage_skip logs skipped stage labels for file capture."""
+        from thesis._shared.ui import stage_skip
+
+        with caplog.at_level(logging.INFO, logger="thesis"):
+            stage_skip(2, "cached")
+
+        log_text = " ".join(record.message for record in caplog.records)
+        assert "SKIP Feature Engineering" in log_text
+        assert "cached" in log_text
+
+    @pytest.mark.unit
+    def test_ui_console_singleton(self) -> None:
+        """All UI imports should resolve to the shared Rich Console."""
+        import thesis._shared.ui as ui_a
+        import thesis.pipeline as pipeline
+        from thesis.stage_4_training import _lgbm, _walk_forward
+
+        assert pipeline.console is ui_a.console
+        assert _lgbm.console is ui_a.console
+        assert _walk_forward.console is ui_a.console
 
     @pytest.mark.unit
     def test_run_pipeline_docstring_stage_numbering(self) -> None:

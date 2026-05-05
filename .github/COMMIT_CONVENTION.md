@@ -30,7 +30,7 @@ This project follows the [Conventional Commits](https://www.conventionalcommits.
 - `data`: Data pipeline, OHLCV conversion
 - `features`: Feature engineering
 - `labels`: Triple-barrier labeling
-- `models`: LSTM, LightGBM, stacking models
+- `models`: GRU, LightGBM, hybrid training
 - `backtest`: Backtesting engine
 - `reporting`: Report generation
 - `config`: Configuration management

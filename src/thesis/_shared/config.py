@@ -119,6 +119,8 @@ class FeaturesConfig:
 
     rsi_period: int = 14
     atr_period: int = 14
+    adx_period: int = 14
+    ema_slope_period: int = 20
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
@@ -151,7 +153,7 @@ class LGBMConfig:
     """LightGBM parameters."""
 
     # LightGBM
-    architecture: str = "hybrid"  # "hybrid", "static", or "stacking"
+    architecture: str = "hybrid"  # "hybrid" or "static"
     objective: str = (
         "multiclass"  # "multiclass" (3-class) or "regression" (continuous returns)
     )
@@ -173,9 +175,17 @@ class LGBMConfig:
 
 @dataclass
 class GRUConfig:
-    """GRU feature extractor parameters."""
+    """GRU feature extractor parameters.
 
-    input_size: int = 13
+    Attributes:
+        objective: ``"multiclass"`` uses 3-class focal loss and is the stable
+            default for preserving Short/Hold/Long signal. ``"regression"``
+            trains with MSE loss on forward returns and is experimental. This
+            is independent of :attr:`LGBMConfig.objective`.
+    """
+
+    objective: str = "multiclass"  # "multiclass" or experimental "regression"
+    input_size: int = 19
     feature_cols: list[str] = field(
         default_factory=lambda: [
             "log_returns",
@@ -189,8 +199,14 @@ class GRUConfig:
             "macd_hist",
             "rsi_14",
             "atr_percentile",
-            "trend_strength",
+            "adx_14",
+            "ema_slope_20",
+            "regime_strength",
             "volume_zscore_20",
+            "open_norm",
+            "high_norm",
+            "low_norm",
+            "close_norm",
         ]
     )
     hidden_size: int = 64
@@ -202,6 +218,8 @@ class GRUConfig:
     epochs: int = 50
     patience: int = 15
     min_epochs: int = 5
+    bidirectional: bool = False
+    gradient_accumulation_steps: int = 1
     focal_loss_gamma: float = 2.0
     warmup_epochs: int = 3
     contrastive_pretrain_epochs: int = 10
@@ -227,11 +245,14 @@ class BacktestConfig:
     atr_tp_multiplier: float = (
         2.0  # Must match [labels] atr_tp_multiplier; 0 = disabled
     )
-    lots_per_trade: float = 0.1  # base lot size for position sizing
-    min_lots: float = 0.01  # minimum lot size (low-conviction floor)
-    max_lots: float = 0.5  # maximum lot size (high-conviction cap)
+    lots_per_trade: float = 0.01  # fixed lot size after confidence filtering
+    min_lots: float = 0.01  # minimum lot safety bound
+    max_lots: float = 0.5  # maximum lot safety bound
     confidence_threshold: float = (
         0.50  # min predicted probability to act (0 = disabled)
+    )
+    min_bars_between_trades: int = (
+        6  # minimum bars between position exit and next entry
     )
     max_drawdown_cutoff: float = (
         0.30  # circuit breaker: stop if equity < peak * (1 - cutoff)
@@ -277,6 +298,7 @@ class PathsConfig:
     predictions: str = "data/predictions/final_predictions.parquet"
     backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
+    data_quality_json: str = "data/processed/data_quality.json"
     session_dir: str = ""  # Set at runtime by pipeline
 
 

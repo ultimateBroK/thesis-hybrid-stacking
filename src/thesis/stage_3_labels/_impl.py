@@ -28,6 +28,7 @@ from thesis._shared.constants import (
     ROUNDTRIP_MULT,
     SAMPLE_WEIGHT_MIN,
 )
+from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.labels")
 
@@ -63,12 +64,14 @@ def generate_labels(config: Config) -> None:
     _validate_paths(features_path, ohlcv_path)
 
     logger.info("Loading features: %s", features_path)
-    df_feat = pl.read_parquet(features_path)
+    with console.status(f"[cyan]Loading features[/] {features_path}"):
+        df_feat = pl.read_parquet(features_path)
 
     logger.info("Loading OHLCV: %s", ohlcv_path)
-    df_ohlcv = pl.read_parquet(ohlcv_path).select(
-        ["timestamp", "open", "high", "low", "close"]
-    )
+    with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
+        df_ohlcv = pl.read_parquet(ohlcv_path).select(
+            ["timestamp", "open", "high", "low", "close"]
+        )
 
     _validate_unique_timestamps(df_feat, "features")
     _validate_unique_timestamps(df_ohlcv, "OHLCV")

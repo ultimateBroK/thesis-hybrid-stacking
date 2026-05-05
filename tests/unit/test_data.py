@@ -177,14 +177,130 @@ def test_log_distribution_no_crash() -> None:
 
     # Should not raise any exception
     _log_distribution(df)
-
-
-@pytest.mark.unit
-@pytest.mark.data
-def test_log_distribution_without_label() -> None:
-    """Test that _log_distribution handles missing label column."""
-    df = create_synthetic_labeled_data(n_rows=100)
     df = df.drop("label")
 
     # Should not raise any exception
     _log_distribution(df)
+
+
+# ---------------------------------------------------------------------------
+# Data quality statistics tests (task 10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_compute_data_quality_stats_no_gaps() -> None:
+    """Test _compute_data_quality_stats with perfectly regular data (no gaps)."""
+    from thesis.stage_1_data._impl import _compute_data_quality_stats
+
+    n_rows = 100
+    timestamps = pl.datetime_range(
+        start=pl.datetime(2024, 1, 1, 0, time_zone="UTC"),
+        end=pl.datetime(2024, 1, 1, 0, time_zone="UTC") + pl.duration(hours=n_rows - 1),
+        interval="1h",
+        eager=True,
+    )
+    ohlcv = pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": np.full(n_rows, 1800.0),
+            "high": np.full(n_rows, 1802.0),
+            "low": np.full(n_rows, 1798.0),
+            "close": np.full(n_rows, 1800.0),
+            "volume": np.full(n_rows, 5000.0),
+            "tick_count": np.full(n_rows, 50),
+            "avg_spread": np.full(n_rows, 0.02),
+        }
+    )
+
+    group_ms = 3_600_000  # 1 hour
+    stats = _compute_data_quality_stats(ohlcv, group_ms, deduped_timestamps=0)
+
+    assert stats["total_bars"] == n_rows
+    assert stats["deduped_timestamps"] == 0
+    assert stats["calendar_gaps"] == 0
+    assert stats["weekend_gaps"] == 0
+    assert stats["real_gaps"] == 0
+    assert stats["estimated_missing_bars"] == 0
+    assert stats["largest_gap_bars"] == 0
+    assert stats["start_date"] is not None
+    assert stats["end_date"] is not None
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_compute_data_quality_stats_with_gaps() -> None:
+    """Test _compute_data_quality_stats detects gaps in irregular data."""
+    from thesis.stage_1_data._impl import _compute_data_quality_stats
+
+    # Create data with a known gap: skip 5 hours
+    n_rows = 200
+    timestamps = pl.datetime_range(
+        start=pl.datetime(2024, 1, 2, 0, time_zone="UTC"),  # Thursday
+        end=pl.datetime(2024, 1, 2, 0, time_zone="UTC") + pl.duration(hours=n_rows - 1),
+        interval="1h",
+        eager=True,
+    )
+    # Insert a gap: remove 5 rows in the middle
+    gap_start = 80
+    gap_end = gap_start + 5
+    keep_mask = [True] * n_rows
+    for i in range(gap_start, gap_end):
+        keep_mask[i] = False
+    gapped_timestamps = [ts for i, ts in enumerate(timestamps) if keep_mask[i]]
+
+    ohlcv = pl.DataFrame(
+        {
+            "timestamp": pl.Series(gapped_timestamps),
+            "open": np.full(len(gapped_timestamps), 1800.0),
+            "high": np.full(len(gapped_timestamps), 1802.0),
+            "low": np.full(len(gapped_timestamps), 1798.0),
+            "close": np.full(len(gapped_timestamps), 1800.0),
+            "volume": np.full(len(gapped_timestamps), 5000.0),
+            "tick_count": np.full(len(gapped_timestamps), 50),
+            "avg_spread": np.full(len(gapped_timestamps), 0.02),
+        }
+    )
+
+    group_ms = 3_600_000  # 1 hour
+    stats = _compute_data_quality_stats(ohlcv, group_ms, deduped_timestamps=0)
+
+    assert stats["total_bars"] == len(gapped_timestamps)
+    # Should detect at least one gap
+    assert stats["calendar_gaps"] >= 1
+    # Gap of 5 bars → 4 missing
+    assert stats["estimated_missing_bars"] >= 4
+    # Largest gap should be >= 5 bars (the one we created)
+    assert stats["largest_gap_bars"] >= 5
+
+
+@pytest.mark.unit
+@pytest.mark.data
+def test_compute_data_quality_stats_single_bar() -> None:
+    """Test _compute_data_quality_stats with just 1 bar — should not crash."""
+    from thesis.stage_1_data._impl import _compute_data_quality_stats
+
+    ohlcv = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                start=pl.datetime(2024, 1, 1, 0),
+                end=pl.datetime(2024, 1, 1, 0),
+                interval="1h",
+                eager=True,
+            ),
+            "open": [1800.0],
+            "high": [1802.0],
+            "low": [1798.0],
+            "close": [1800.0],
+            "volume": [5000.0],
+            "tick_count": [50],
+            "avg_spread": [0.02],
+        }
+    )
+
+    stats = _compute_data_quality_stats(ohlcv, 3_600_000, deduped_timestamps=0)
+
+    assert stats["total_bars"] == 1
+    assert stats["calendar_gaps"] == 0
+    assert stats["estimated_missing_bars"] == 0

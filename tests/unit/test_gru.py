@@ -38,6 +38,7 @@ from thesis.stage_4_training._gru import (
 def gru_config() -> Config:
     """Minimal config for fast GRU tests."""
     config = Config()
+    config.gru.objective = "multiclass"  # tests use label column, not regression_target
     config.gru.input_size = 4
     config.gru.hidden_size = 16
     config.gru.num_layers = 1
@@ -446,4 +447,114 @@ def test_train_gru_seed_diversity(
     assert any_differ, (
         "Expected different parameters for window_index=0 vs window_index=1, "
         "but all parameters are identical — seed diversity is not working"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Regression objective tests (task 1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def regression_config() -> Config:
+    """Minimal config for GRU regression tests."""
+    config = Config()
+    config.gru.objective = "regression"
+    config.gru.input_size = 4
+    config.gru.hidden_size = 16
+    config.gru.num_layers = 1
+    config.gru.sequence_length = 5
+    config.gru.dropout = 0.0
+    config.gru.learning_rate = 0.01
+    config.gru.batch_size = 8
+    config.gru.epochs = 3
+    config.gru.patience = 2
+    config.workflow.random_seed = 42
+    config.labels.num_classes = 3
+    config.paths.model = "models/lightgbm_model.pkl"
+    config.paths.session_dir = ""
+    config.model.objective = "regression"
+    return config
+
+
+@pytest.fixture
+def regression_df() -> pl.DataFrame:
+    """Create a synthetic DataFrame with GRU input columns + regression target."""
+    from datetime import datetime, timedelta
+
+    n = 100
+    rng = np.random.RandomState(42)
+    timestamps = [datetime(2024, 1, 1) + timedelta(hours=i) for i in range(n)]
+    return pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "close": 2000.0 + rng.randn(n).cumsum(),
+            "log_returns": rng.randn(n) * 0.001,
+            "rsi_14": rng.uniform(20, 80, n),
+            "atr_14": rng.uniform(5, 30, n),
+            "macd_hist": rng.randn(n) * 0.5,
+            "regression_target": rng.randn(n) * 0.01,
+        }
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.models
+def test_train_gru_regression_objective(
+    regression_config: Config, regression_df: pl.DataFrame
+) -> None:
+    """train_gru with regression objective should return correct shapes and use MSE.
+
+    Regression mode:
+        - label_col becomes "regression_target"
+        - labels are float32 (not remapped to {0,1,2})
+        - criterion is MSELoss (not FocalLoss)
+        - metric_label is "mae" (not "acc")
+    """
+    n = len(regression_df)
+    split = int(n * 0.8)
+    train_df = regression_df.slice(0, split)
+    val_df = regression_df.slice(split)
+
+    model, _classifier, train_hidden, val_hidden, history, mean, std, _gru_cols = (
+        train_gru(regression_config, train_df, val_df)
+    )
+
+    seq_len = regression_config.gru.sequence_length
+    expected_train = len(train_df) - seq_len + 1
+    expected_val = len(val_df) - seq_len + 1
+
+    # Shapes should match
+    assert train_hidden.shape == (expected_train, regression_config.gru.hidden_size)
+    assert val_hidden.shape == (expected_val, regression_config.gru.hidden_size)
+
+    # Hidden states should be finite
+    assert np.isfinite(train_hidden).all()
+    assert np.isfinite(val_hidden).all()
+
+    # History should contain "mae" metrics, not "acc"
+    assert len(history) > 0
+    first_entry = history[0]
+    assert "train_mae" in first_entry, (
+        f"Regression history should have 'train_mae', got keys: {list(first_entry.keys())}"
+    )
+    assert "val_mae" in first_entry
+    assert "train_acc" not in first_entry, (
+        "Regression history should NOT have 'train_acc' (that is classification-only)"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.models
+def test_gru_classifier_regression_output_size(
+    regression_config: Config,
+) -> None:
+    """GRU classifier outputs 1 value for regression (vs 3 for multiclass)."""
+    from thesis.stage_4_training._gru import _build_model_and_classifier
+
+    model, classifier = _build_model_and_classifier(regression_config, input_size=4)
+
+    # Regression classifier should output 1 value
+    assert classifier.out_features == 1, (
+        f"Regression classifier should have 1 output, got {classifier.out_features}"
     )

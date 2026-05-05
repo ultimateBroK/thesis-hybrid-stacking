@@ -47,6 +47,7 @@ ENV/
 .factory/
 .opencode/
 .codex
+.understand-anything/
 *.swp
 *.swo
 *~

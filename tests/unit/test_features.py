@@ -27,7 +27,9 @@ from thesis.stage_2_features._impl import (
     _add_volume_zscore,
     _add_log_returns,
     _add_high_low_range,
-    _add_trend_strength,
+    _add_adx,
+    _add_ema_slope,
+    _add_regime,
 )
 
 
@@ -93,7 +95,9 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     df = _add_volume_zscore(df, config)
     df = _add_log_returns(df, config)
     df = _add_high_low_range(df, config)
-    df = _add_trend_strength(df)
+    df = _add_adx(df, config)
+    df = _add_ema_slope(df, config)
+    df = _add_regime(df)
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
     # NaN from numpy → Polars null before forward-fill (production pipeline does this too)
@@ -113,10 +117,12 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 # Expected compact production feature columns.
 # Keep in sync with CORE_STATIC_FEATURES in constants.py.
 EXPECTED_FEATURES: list[str] = [
+    "adx_14",
     "atr_14",
     "atr_percentile",
     "candle_body_ratio",
     "close_vs_ema_34",
+    "ema_slope_20",
     "ema34_vs_ema89",
     "high_low_range_20",
     "lower_wick_ratio",
@@ -124,15 +130,166 @@ EXPECTED_FEATURES: list[str] = [
     "pivot_position",
     "price_dist_ratio",
     "price_position_20",
+    "regime_strength",
     "return_1h",
     "return_4h",
     "rsi_14",
     "sess_london",
     "sess_overlap",
-    "trend_strength",
     "upper_wick_ratio",
     "volume_zscore_20",
 ]
+
+
+# ---------------------------------------------------------------------------
+# EMA slope tests (task 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.features
+def test_ema_slope_column(sample_config: Config) -> None:
+    """Test ema_slope_20 column is produced."""
+    df = create_synthetic_ohlcv(n_rows=200)
+    result = _add_ema_slope(df, sample_config)
+
+    assert "ema_slope_20" in result.columns
+    vals = result["ema_slope_20"].drop_nulls().to_numpy()
+    assert len(vals) > 0
+    assert np.all(np.isfinite(vals)), "EMA slope should be finite"
+
+
+@pytest.mark.unit
+@pytest.mark.features
+def test_ema_slope_direction(sample_config: Config) -> None:
+    """Test EMA slope sign follows price direction.
+
+    A monotonically increasing series should produce positive slope
+    values in the tail after warmup.
+    """
+    n = 200
+    np.random.seed(42)
+    timestamps = pl.datetime_range(
+        start=pl.datetime(2023, 1, 1, 0, time_zone="UTC"),
+        end=pl.datetime(2023, 1, 1, 0, time_zone="UTC") + pl.duration(hours=n - 1),
+        interval="1h",
+        eager=True,
+    )
+    closes = 1800.0 + np.arange(n) * 0.5
+    df = pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": closes * 0.9999,
+            "high": closes * 1.0005,
+            "low": closes * 0.9998,
+            "close": closes,
+            "volume": np.ones(n) * 5000,
+        }
+    )
+    result = _add_ema_slope(df, sample_config)
+    vals = result["ema_slope_20"].drop_nulls().to_numpy()
+    assert len(vals) > 0
+    tail_mean = vals[-50:].mean()
+    assert tail_mean > 0, (
+        f"Uptrend should produce positive EMA slope, got mean={tail_mean:.6f}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Regime strength tests (task 2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.features
+def test_regime_strength_column(sample_config: Config) -> None:
+    """Test regime_strength column is produced."""
+    df = create_synthetic_ohlcv(n_rows=300)
+    df = _add_adx(df, sample_config)
+    df = _add_ema_slope(df, sample_config)
+    result = _add_regime(df)
+
+    assert "regime_strength" in result.columns
+    vals = result["regime_strength"].drop_nulls().to_numpy()
+    assert len(vals) > 0
+    assert np.all(np.isfinite(vals)), "regime_strength should be finite"
+
+
+@pytest.mark.unit
+@pytest.mark.features
+def test_regime_strength_sign_follows_ema_slope(sample_config: Config) -> None:
+    """Test regime_strength sign matches EMA slope sign.
+
+    regime_strength = adx_signal * sign(ema_slope_20), so when ema_slope
+    is positive, regime_strength should be non-negative, and vice versa.
+    """
+    df = create_synthetic_ohlcv(n_rows=300)
+    df = _add_adx(df, sample_config)
+    df = _add_ema_slope(df, sample_config)
+    result = _add_regime(df)
+
+    slope = result["ema_slope_20"].drop_nulls()
+    regime = result["regime_strength"].drop_nulls()
+
+    # Where slope > 0, regime >= 0
+    pos_mask = slope.to_numpy() > 0
+    if pos_mask.sum() > 0:
+        regime_pos = regime.gather(pl.Series(pos_mask).arg_true()).to_numpy()
+        assert np.all(regime_pos >= 0), (
+            "regime_strength should be >= 0 when ema_slope > 0"
+        )
+
+    # Where slope < 0, regime <= 0
+    neg_mask = slope.to_numpy() < 0
+    if neg_mask.sum() > 0:
+        regime_neg = regime.gather(pl.Series(neg_mask).arg_true()).to_numpy()
+        assert np.all(regime_neg <= 0), (
+            "regime_strength should be <= 0 when ema_slope < 0"
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.features
+def test_regime_strength_ranging_flat(sample_config: Config) -> None:
+    """Test regime_strength is near zero when ADX is low (ranging market).
+
+    When ADX <= 20, the adx_signal clips to 0, so regime_strength should be 0.
+    """
+    n = 300
+    np.random.seed(42)
+    timestamps = pl.datetime_range(
+        start=pl.datetime(2023, 1, 1, 0, time_zone="UTC"),
+        end=pl.datetime(2023, 1, 1, 0, time_zone="UTC") + pl.duration(hours=n - 1),
+        interval="1h",
+        eager=True,
+    )
+    # Mean-reverting (ranging) series: low ADX
+    closes = 1800.0 + np.sin(np.arange(n) * 0.1) * 2.0 + np.random.randn(n) * 0.1
+    df = pl.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": closes,
+            "high": closes + 1.0,
+            "low": closes - 1.0,
+            "close": closes,
+            "volume": np.ones(n) * 5000,
+        }
+    )
+    df = _add_adx(df, sample_config)
+    df = _add_ema_slope(df, sample_config)
+    result = _add_regime(df)
+
+    adx = result["adx_14"].drop_nulls().to_numpy()
+    regime = result["regime_strength"].drop_nulls().to_numpy()
+
+    # Where ADX <= 20 (ranging), regime should be 0
+    low_adx_mask = adx <= 20
+    if low_adx_mask.sum() > 10:
+        low_adx_regime = regime[low_adx_mask]
+        assert np.allclose(low_adx_regime, 0.0), (
+            f"When ADX <= 20, regime_strength should be 0, "
+            f"got max={abs(low_adx_regime).max():.4f}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -643,17 +800,17 @@ def test_vol_regime_has_all_categories(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
-def test_trend_strength_adx_range() -> None:
-    """Test ADX (trend_strength) is non-negative and finite after warmup.
+def test_adx_range(sample_config: Config) -> None:
+    """Test ADX (adx_14) is non-negative and finite after warmup.
 
     ADX is theoretically bounded [0, 100] but Wilder smoothing can produce
     values slightly above 100 in edge cases. We check non-negative + finite.
     """
     df = create_synthetic_ohlcv(n_rows=300)
-    result = _add_trend_strength(df)
+    result = _add_adx(df, sample_config)
 
-    assert "trend_strength" in result.columns
-    vals = result["trend_strength"].drop_nulls().to_numpy()
+    assert "adx_14" in result.columns
+    vals = result["adx_14"].drop_nulls().to_numpy()
     assert len(vals) > 0
     assert np.all(vals >= 0), "ADX should be non-negative"
     assert np.all(np.isfinite(vals)), "ADX should be finite"
@@ -661,7 +818,7 @@ def test_trend_strength_adx_range() -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
-def test_trend_strength_adx_trending_detection() -> None:
+def test_adx_trending_detection(sample_config: Config) -> None:
     """Test that ADX produces reasonable values for a trending series.
 
     A monotonically increasing series should produce high ADX values
@@ -687,8 +844,8 @@ def test_trend_strength_adx_trending_detection() -> None:
             "volume": np.ones(n) * 5000,
         }
     )
-    result = _add_trend_strength(df)
-    vals = result["trend_strength"].drop_nulls().to_numpy()
+    result = _add_adx(df, sample_config)
+    vals = result["adx_14"].drop_nulls().to_numpy()
 
     # For a strong uptrend, ADX should be well above 20 (trending threshold)
     assert len(vals) > 0
@@ -797,12 +954,12 @@ def test_regime_features_no_leakage(sample_config: Config) -> None:
     df_full = create_synthetic_ohlcv(n_rows=300)
     df_prefix = df_full.slice(0, 250)
 
-    result_full = _add_trend_strength(df_full)
-    result_prefix = _add_trend_strength(df_prefix)
+    result_full = _add_adx(df_full, sample_config)
+    result_prefix = _add_adx(df_prefix, sample_config)
 
     # First 250 values should be identical
-    full_vals = result_full["trend_strength"].to_numpy()[:250]
-    prefix_vals = result_prefix["trend_strength"].to_numpy()
+    full_vals = result_full["adx_14"].to_numpy()[:250]
+    prefix_vals = result_prefix["adx_14"].to_numpy()
 
     # Allow NaN comparison
     mask = ~(np.isnan(full_vals) | np.isnan(prefix_vals))

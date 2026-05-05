@@ -503,7 +503,7 @@ def run_download(
         }
     else:
         _defaults = {
-            "start_year": 2013,
+            "start_year": 2018,
             "start_month": 1,
             "end_year": datetime.now(timezone.utc).year,
             "end_month": datetime.now(timezone.utc).month,
@@ -651,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
         _def_force = data_cfg.download_force
         _def_skip_current = data_cfg.download_skip_current_month
     else:
-        _def_start_year = 2013
+        _def_start_year = 2018
         _def_start_month = 1
         _def_end_year = datetime.now(timezone.utc).year
         _def_end_month = datetime.now(timezone.utc).month

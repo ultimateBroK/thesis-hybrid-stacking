@@ -34,16 +34,18 @@ These parameters have the most effect on your backtest results. Adjust these bef
 
 | What it does | Minimum predicted probability before taking a trade |
 |--------------|---------------------------------------------------|
-| **Default** | 0.55 |
+| **Default** | 0.50 |
 | **Range** | 0.0–0.9 |
 | **Effect** | Higher = fewer but more confident trades. Lower = more signals, more noise. |
 
 - **0.0**: Trade on ALL signals (ignore model confidence).
-- **0.50**: Moderate confidence required.
-- **0.55** (default): Balanced — only trade when model is at least 55% confident.
+- **0.40–0.50**: Moderate confidence required (current default).
+- **0.50** (default): Only trade when model is at least 50% confident.
 - **0.65–0.75**: Conservative — only high-confidence trades. Good for live trading.
 
-> If your backtest has **too few trades** (< 100), try lowering to 0.50. If you see **too many small losses**, try raising to 0.60–0.65.
+> If your backtest has **too few trades** (< 100), try lowering to 0.40. If you see **too many small losses**, try raising to 0.60–0.65.
+>
+> **Lot scaling:** Position size scales from `min_lots` (0.01) at threshold confidence up to `max_lots` (0.5) at 1.0 confidence. This means high-conviction trades get 50x the capital of low-conviction trades.
 
 ---
 
@@ -51,16 +53,18 @@ These parameters have the most effect on your backtest results. Adjust these bef
 
 | What it does | Stop-loss distance as a multiple of ATR |
 |--------------|---------------------------------------|
-| **Default** | 1.0 |
+| **Default** | 2.0 (must match `[labels] atr_sl_multiplier`) |
 | **Range** | 0.5–3.0 |
 | **Effect** | Lower = tighter stops, more stopped out, smaller losses per trade. Higher = wider stops, room for volatility, larger losses. |
 
-- **0.5–0.8**: Very tight. Good for calm markets, but gets stopped out often in volatile periods.
-- **1.0** (default): Balanced. Standard ATR-based stop.
-- **1.5–2.0**: Wider. Gives price room during volatile periods.
-- **2.5–3.0**: Very wide. For volatile markets or long-term swing trades.
+- **0.5–1.0**: Very tight. Good for calm markets, but gets stopped out often in volatile periods.
+- **1.5–2.0**: Wider. Gives price room during volatile periods. XAUUSD typical range.
+- **2.0** (default): Balanced for gold — matches the 2xATR barrier used in labeling.
+- **2.5–3.0**: Very wide. Fewer stop-outs but larger losses per stop.
 
-> XAU/USD is volatile. During gold's bull run (2024–2026), ATR multipliers of 1.0–2.0 work better than very tight stops.
+> **Barrier alignment constraint:** `atr_stop_multiplier` must equal `[labels] atr_sl_multiplier` (both 2.0 by default). Changing one without the other creates a mismatch between training targets and execution risk, degrading OOS performance.
+
+> XAU/USD is volatile. During gold's bull run (2024–2026), ATR multipliers of 2.0 work well — wider stops are needed to survive gold's intraday swings.
 
 ---
 
@@ -77,7 +81,7 @@ These parameters have the most effect on your backtest results. Adjust these bef
 - **2.0** (default): Balanced — TP is 2× the stop distance.
 - **2.5–3.0**: Let winners run. Higher risk-reward, fewer trades hit TP.
 
-> A common pattern is `atr_tp_multiplier = 2.0` with `atr_stop_multiplier = 1.0`, giving a 2:1 reward-to-risk ratio.
+> A common pattern is symmetric barriers: `atr_tp_multiplier = atr_stop_multiplier = 2.0`. With TP and SL both at 2xATR, the model learns from balanced labels where wins and losses are equally sized. The 2:1 reward-to-risk pattern is not applicable with current barrier-aligned design.
 
 ---
 
@@ -101,15 +105,17 @@ These parameters have the most effect on your backtest results. Adjust these bef
 
 | What it does | Size of the GRU's internal memory (hidden states) |
 |--------------|--------------------------------------------------|
-| **Default** | 32 |
-| **Range** | 16–64 |
+| **Default** | 128 (expanded from v1's 64) |
+| **Range** | 32–256 |
 | **Effect** | Larger = more capacity to learn complex patterns, but slower and more risk of overfitting. |
 
-- **16–24**: Small datasets (< 2 years) or fast experiments.
-- **32** (default): Balanced. Good for most datasets.
-- **48–64**: Large datasets (> 5 years) with diverse market regimes.
+- **32–64**: Small datasets (< 2 years) or fast experiments.
+- **64** (default): Stable capacity for 5+ years of data without over-amplifying noisy regimes.
+- **192–256**: Very large capacity. Needs strong regularization (dropout 0.3+) and early stopping.
 
-> With 5 years of data and 48-bar sequences, `hidden_size = 32` is a safe default. Increase to 48–64 only if you have very rich data and training still underfits.
+> With 5+ years of XAUUSD data and 19 input features, `hidden_size = 64` is the stable default. The latest 128-hidden regression run degraded OOS class signal, so larger sizes should be treated as experiments.
+>
+> **Objective default:** GRU trains with multiclass focal loss. Regression is available for experiments only.
 
 ---
 
@@ -133,9 +139,9 @@ Different timeframes require different parameter values.
 |-----------|-------|-----|
 | `horizon_bars` | 24 | ~1–2 trading days |
 | `sequence_length` | 48 | ~2 trading days of context |
-| `atr_stop_multiplier` | 1.0 | Balanced for gold volatility |
-| `atr_tp_multiplier` | 2.0 | 2:1 reward-to-risk |
-| `confidence_threshold` | 0.55 | Default, balanced |
+| `atr_stop_multiplier` | 2.0 | Must match label barriers for gold volatility |
+| `atr_tp_multiplier` | 2.0 | Symmetric TP/SL (2:1 not applicable with symmetric barriers) |
+| `confidence_threshold` | 0.50 | Default trade filter; sizing remains fixed |
 
 ### For 4H Timeframe
 
@@ -211,12 +217,13 @@ All backtest parameters with their defaults and guidance:
 | `spread_ticks` | 35 | Bid-ask spread in ticks |
 | `slippage_ticks` | 5 | Execution slippage in ticks |
 | `commission_per_lot` | 10.0 | Commission per standard lot |
-| `atr_stop_multiplier` | 1.0 | Stop-loss ATR multiplier |
-| `atr_tp_multiplier` | 2.0 | Take-profit ATR multiplier (0 = disabled) |
-| `lots_per_trade` | 0.1 | Base lot size |
-| `min_lots` | 0.05 | Minimum lot size (low-conviction floor) |
-| `max_lots` | 0.1 | Maximum lot size (high-conviction cap) |
-| `confidence_threshold` | 0.55 | Minimum probability to trade |
+| `atr_stop_multiplier` | 2.0 | Stop-loss ATR multiplier (must match `[labels] atr_sl_multiplier`) |
+| `atr_tp_multiplier` | 2.0 | Take-profit ATR multiplier (must match `[labels] atr_tp_multiplier`; 0 = disabled) |
+| `lots_per_trade` | 0.01 | Fixed conservative lot size after confidence filtering |
+| `min_lots` | 0.01 | Minimum lot safety bound |
+| `max_lots` | 0.5 | Maximum lot safety cap |
+| `confidence_threshold` | 0.50 | Minimum probability to trade (0 = disabled) |
+| `min_bars_between_trades` | 6 | **Trade cooldown**: minimum bars between position exit and next entry |
 | `max_drawdown_cutoff` | 0.30 | Circuit breaker: stop if equity drops 30% from peak |
 | `dd_cooldown_bars` | 12 | Bars to pause after drawdown cutoff breach |
 | `max_open_positions` | 1 | Maximum simultaneous open positions |
@@ -224,9 +231,19 @@ All backtest parameters with their defaults and guidance:
 
 ### Risk management parameters
 
+- **`min_bars_between_trades`**: Trade cooldown reduces overtrading and correlation between consecutive trades. Increase (12–24) for swing trading. Decrease (2–3) for higher frequency. At 6, a minimum 6-hour gap between trades on 1H data.
 - **`dd_cooldown_bars`**: After the drawdown circuit breaker triggers, the system pauses for this many bars. Increase (24–48) for more cautious recovery. Decrease (6) to resume faster.
 - **`max_open_positions`**: Keep at 1 for single-instrument backtesting. The pipeline supports higher values for multi-instrument setups.
 - **`daily_loss_limit`**: Set to 0.02 for conservative daily risk caps. Set to 0.05 for more tolerance. Set to 0.0 to disable.
+
+### Position Sizing
+
+Confidence filters entries only. Position size remains fixed at `lots_per_trade`
+and is clamped to `[min_lots, max_lots]`.
+
+Why: confidence-scaled lots amplified wrong high-confidence predictions in the latest
+OOS run. Do not re-enable lot amplification until fixed 0.01-lot backtests are
+profitable and statistically stable.
 
 ---
 
@@ -239,7 +256,7 @@ The amount of training data affects which parameters are safe to use.
 | Parameter | Adjustment | Why |
 |-----------|------------|-----|
 | `sequence_length` | Reduce to 24–32 | Less data to fill long sequences |
-| `hidden_size` | Reduce to 16–24 | Fewer parameters to prevent overfitting |
+| `hidden_size` | Reduce to 32–64 | Fewer parameters to prevent overfitting |
 | `correlation_threshold` | Increase to 0.85 | Keep more features |
 | `min_child_samples` | Increase to 300+ | More conservative splits |
 | `batch_size` | Reduce to 128 | Smaller batches for small datasets |
@@ -250,7 +267,7 @@ The amount of training data affects which parameters are safe to use.
 | Parameter | Adjustment | Why |
 |-----------|------------|-----|
 | `sequence_length` | 48 (default) | Good balance |
-| `hidden_size` | 32 (default) | Good balance |
+| `hidden_size` | 64–128 (default) | Good balance |
 | `correlation_threshold` | 0.75 (default) | Default filtering |
 | `batch_size` | 256 (default) | Standard |
 
@@ -259,7 +276,7 @@ The amount of training data affects which parameters are safe to use.
 | Parameter | Adjustment | Why |
 |-----------|------------|-----|
 | `sequence_length` | 48–64 | Can afford longer context |
-| `hidden_size` | 32–48 | More capacity for rich data |
+| `hidden_size` | 128–192 | More capacity for rich data |
 | `correlation_threshold` | 0.70–0.75 | Can afford aggressive filtering |
 | `batch_size` | 256–512 | Larger batches for stable gradients |
 
@@ -275,16 +292,19 @@ Choose a profile based on your goal and risk tolerance.
 
 ```toml
 [backtest]
-confidence_threshold = 0.70
+confidence_threshold = 0.65
 atr_stop_multiplier = 2.0
-atr_tp_multiplier = 3.0
-horizon_bars = 36
+atr_tp_multiplier = 2.0
+min_bars_between_trades = 12
 max_drawdown_cutoff = 0.20
 dd_cooldown_bars = 24
 daily_loss_limit = 0.02
+
+[labels]
+horizon_bars = 36
 ```
 
-**Expected behavior**: 30–50% fewer trades, lower max drawdown, smoother equity curve.
+**Expected behavior**: 30–50% fewer trades, lower max drawdown, smoother equity curve. Higher cooldown (12 bars) prevents overtrading.
 
 ---
 
@@ -294,9 +314,13 @@ daily_loss_limit = 0.02
 
 ```toml
 [backtest]
-confidence_threshold = 0.55
-atr_stop_multiplier = 1.0
-atr_tp_multiplier = 2.0
+confidence_threshold = 0.50        # Only trade with >50% conviction
+atr_stop_multiplier = 2.0          # Must match [labels] atr_sl_multiplier
+atr_tp_multiplier = 2.0            # Must match [labels] atr_tp_multiplier
+lots_per_trade = 0.01              # Fixed conservative size
+min_lots = 0.01                    # Safety floor
+max_lots = 0.5                     # Safety cap
+min_bars_between_trades = 6        # Trade cooldown
 max_drawdown_cutoff = 0.30
 dd_cooldown_bars = 12
 daily_loss_limit = 0.03
@@ -305,7 +329,7 @@ daily_loss_limit = 0.03
 horizon_bars = 24
 ```
 
-**Expected behavior**: Good balance of trades and quality. Default recommendation.
+**Expected behavior**: Conservative risk while measuring whether the model has real edge. Default recommendation.
 
 ---
 
@@ -315,9 +339,10 @@ horizon_bars = 24
 
 ```toml
 [backtest]
-confidence_threshold = 0.50
-atr_stop_multiplier = 0.8
-atr_tp_multiplier = 1.5
+confidence_threshold = 0.40
+atr_stop_multiplier = 2.0
+atr_tp_multiplier = 2.0
+min_bars_between_trades = 3
 max_drawdown_cutoff = 0.40
 dd_cooldown_bars = 6
 daily_loss_limit = 0.05
@@ -326,7 +351,7 @@ daily_loss_limit = 0.05
 horizon_bars = 16
 ```
 
-**Expected behavior**: 50–80% more trades, higher return potential but also higher drawdown. Monitor closely.
+**Expected behavior**: 50–80% more trades, higher return potential but also higher drawdown. Lower cooldown (3 bars) allows faster re-entry. Monitor closely.
 
 ---
 
@@ -356,7 +381,7 @@ Avoid these mistakes:
 | `atr_stop_multiplier` too tight (0.5) | Constantly stopped out by normal volatility | Minimum 0.8, prefer 1.0+ |
 | `sequence_length` too long (100+) | GRU overfits to training data | Maximum 64 for small data, 96 for large |
 | `correlation_threshold` too high (0.95) | Redundant features add noise, slow training | Keep at 0.75 or lower |
-| `hidden_size` too large on small data | GRU memorizes instead of generalizes | Use 16–24 for < 2 years data |
+| `hidden_size` too large | GRU memorizes or loses OOS class signal | Keep 64 default; test 128+ only with OOS validation |
 | `purge_bars` / `embargo_bars` too low | Label leakage from train into test | Keep purge ≥ 25, embargo ≥ 50 for 1H |
 | `max_drawdown_cutoff` too low (0.10) | Backtest stops too early, not enough trades | Minimum 0.20, prefer 0.30 |
 

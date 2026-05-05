@@ -19,6 +19,7 @@ import polars as pl
 
 from thesis._shared.config import Config
 from thesis._shared.constants import H1_BARS_PER_YEAR
+from thesis._shared.ui import console
 from thesis._shared.zones import _get_metric_zone
 
 logger = logging.getLogger("thesis.report")
@@ -891,6 +892,485 @@ def _parse_date(date_str: str) -> datetime | None:
     return None
 
 
+def _render_data_quality_section(L: list[str], config: Config) -> None:
+    """Render the Data Quality analysis section from the JSON sidecar.
+
+    Loads ``config.paths.data_quality_json`` and produces a markdown table
+    with duplicate detection, gap distribution (weekend vs real), estimated
+    missing bars, largest gap, and data coverage dates.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        config: Application configuration.
+    """
+    dq_path = Path(config.paths.data_quality_json)
+    if not dq_path.exists():
+        L.append("*Data quality JSON not found — stage 1 may not have run.*")
+        L.append("")
+        return
+
+    try:
+        with open(dq_path) as f:
+            dq = json.load(f)
+    except Exception:
+        logger.warning("Failed to load data quality JSON: %s", dq_path, exc_info=True)
+        L.append("*Data quality JSON could not be read.*")
+        L.append("")
+        return
+
+    L.append("## Data Quality")
+    L.append("")
+    L.append(
+        'This section addresses the thesis question: *"Is that because of data, '
+        'the result awful?"*'
+    )
+    L.append("")
+    L.append(_tbl_row("Metric", "Value"))
+    L.append(_tbl_row("------", "-----"))
+    L.append(_tbl_row("Total Bars", f"{dq.get('total_bars', 0):,}"))
+    L.append(_tbl_row("Deduped Timestamps", f"{dq.get('deduped_timestamps', 0):,}"))
+    L.append(_tbl_row("Calendar Gaps (all)", f"{dq.get('calendar_gaps', 0):,}"))
+    L.append(_tbl_row("  - Weekend / Holiday", f"{dq.get('weekend_gaps', 0):,}"))
+    L.append(_tbl_row("  - Real Gaps", f"{dq.get('real_gaps', 0):,}"))
+    L.append(
+        _tbl_row(
+            "Estimated Missing Bars",
+            f"{dq.get('estimated_missing_bars', 0):,}",
+        )
+    )
+    L.append(
+        _tbl_row(
+            "Largest Gap",
+            f"{dq.get('largest_gap_bars', 0)} bars",
+        )
+    )
+    L.append(_tbl_row("Data Start", str(dq.get("start_date", "N/A"))))
+    L.append(_tbl_row("Data End", str(dq.get("end_date", "N/A"))))
+    L.append("")
+
+
+def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
+    """Render OOF vs OOS comparison section with side-by-side metrics table.
+
+    OOF (Out-Of-Fold): Aggregated from walk-forward CV history across all
+    windows. OOS (Out-Of-Sample): Computed from the held-out test period
+    (2024-01 to 2026-03) by filtering prediction records to the OOS date
+    range.
+
+    Args:
+        L: Output markdown lines list (mutated in-place).
+        config: Application configuration.
+    """
+    # ── Load walk-forward history ───────────────────────────────────────
+    session_dir = config.paths.session_dir
+    if not session_dir:
+        L.append("## OOF vs OOS Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — no session directory configured.*")
+        L.append("")
+        return
+
+    wf_path = Path(session_dir) / "reports" / "walk_forward_history.json"
+    if not wf_path.exists():
+        L.append("## OOF vs OOS Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — walk-forward history not found.*")
+        L.append("")
+        return
+
+    try:
+        wf = json.loads(wf_path.read_text())
+    except Exception:
+        logger.warning(
+            "Failed to load walk-forward history: %s", wf_path, exc_info=True
+        )
+        L.append("## OOF vs OOS Comparison")
+        L.append("")
+        L.append("*Comparison unavailable — failed to load walk-forward history.*")
+        L.append("")
+        return
+
+    window_details = wf.get("window_details", [])
+    if not window_details:
+        L.append("## OOF vs OOS Comparison")
+        L.append("")
+        L.append(
+            "*Comparison unavailable — no window details in walk-forward history.*"
+        )
+        L.append("")
+        return
+
+    # ── Aggregate OOF metrics across windows (weighted by test_rows) ────
+    total_test_rows = 0
+    weighted_acc = 0.0
+    weighted_macro_f1 = 0.0
+    class_support: dict[str, int] = {"-1": 0, "0": 0, "1": 0}
+    weighted_class_f1: dict[str, float] = {"-1": 0.0, "0": 0.0, "1": 0.0}
+
+    for wd in window_details:
+        test_rows = wd.get("test_rows", 0)
+        if test_rows <= 0:
+            continue
+        total_test_rows += test_rows
+
+        acc = wd.get("accuracy")
+        if acc is not None:
+            weighted_acc += acc * test_rows
+
+        per_class = wd.get("per_class", {})
+        window_f1s: list[float] = []
+        for cls_key in ("-1", "0", "1"):
+            cls_f1 = per_class.get(cls_key, {}).get("f1", 0.0)
+            window_f1s.append(cls_f1)
+            support = per_class.get(cls_key, {}).get("support", 0)
+            class_support[cls_key] += support
+            weighted_class_f1[cls_key] += cls_f1 * support
+        window_macro_f1 = float(np.mean(window_f1s)) if window_f1s else 0.0
+        weighted_macro_f1 += window_macro_f1 * test_rows
+
+    if total_test_rows == 0:
+        oof_accuracy: float | None = None
+        oof_macro_f1: float | None = None
+        oof_class_f1: dict[str, float | None] = {"-1": None, "0": None, "1": None}
+    else:
+        oof_accuracy = weighted_acc / total_test_rows
+        oof_macro_f1 = weighted_macro_f1 / total_test_rows
+        oof_class_f1 = {}
+        for cls_key in ("-1", "0", "1"):
+            sup = class_support.get(cls_key, 0)
+            oof_class_f1[cls_key] = (
+                weighted_class_f1[cls_key] / sup if sup > 0 else None
+            )
+
+    # ── Compute OOS metrics from predictions filtered to test period ────
+    oos_accuracy: float | None = None
+    oos_macro_f1: float | None = None
+    oos_class_f1: dict[str, float | None] = {"-1": None, "0": None, "1": None}
+
+    preds_path = Path(config.paths.predictions)
+    if preds_path.exists():
+        oos_start = config.backtest.oob_start_date or config.splitting.test_start
+        oos_end = config.backtest.oob_end_date or config.splitting.test_end
+
+        if oos_start and oos_end:
+            try:
+                df = pl.read_parquet(preds_path)
+                if "true_label" not in df.columns or "pred_label" not in df.columns:
+                    logger.warning(
+                        "Predictions parquet missing true_label/pred_label columns"
+                    )
+                else:
+                    ts_col = df["timestamp"]
+                    if ts_col.dtype != pl.Datetime:
+                        try:
+                            ts_col = ts_col.str.strptime(pl.Datetime)
+                        except Exception:
+                            ts_col = ts_col.cast(pl.Datetime)
+                    start_dt = _parse_date(oos_start)
+                    end_dt = _parse_date(oos_end)
+                    if start_dt is not None and end_dt is not None:
+                        end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                        oos_df = df.filter((ts_col >= start_dt) & (ts_col <= end_dt))
+                        if len(oos_df) > 0:
+                            true = oos_df["true_label"].to_numpy()
+                            pred = oos_df["pred_label"].to_numpy()
+                            oos_accuracy = float((true == pred).mean())
+
+                            per_class_metrics: dict[str, dict] = {}
+                            for lv, cls_key in [(-1, "-1"), (0, "0"), (1, "1")]:
+                                true_mask = true == lv
+                                pred_mask = pred == lv
+                                recall = (
+                                    float((pred[true_mask] == lv).mean())
+                                    if true_mask.sum() > 0
+                                    else 0.0
+                                )
+                                precision = (
+                                    float((true[pred_mask] == lv).mean())
+                                    if pred_mask.sum() > 0
+                                    else 0.0
+                                )
+                                f1 = (
+                                    (2 * precision * recall / (precision + recall))
+                                    if (precision + recall) > 0
+                                    else 0.0
+                                )
+                                per_class_metrics[cls_key] = {
+                                    "f1": f1,
+                                    "support": int(true_mask.sum()),
+                                }
+                            oos_macro_f1 = float(
+                                np.mean(
+                                    [
+                                        per_class_metrics[k]["f1"]
+                                        for k in ("-1", "0", "1")
+                                    ]
+                                )
+                            )
+                            oos_class_f1 = {
+                                k: per_class_metrics[k]["f1"] for k in ("-1", "0", "1")
+                            }
+            except Exception:
+                logger.warning(
+                    "Failed to compute OOS prediction metrics", exc_info=True
+                )
+
+    # ── Render table ─────────────────────────────────────────────────────
+    L.append("## OOF vs OOS Comparison")
+    L.append("")
+    L.append(
+        "*OOF (Out-Of-Fold) metrics are aggregated across all walk-forward "
+        "cross-validation windows. OOS (Out-Of-Sample) metrics are computed "
+        "from the held-out test period (2024-01 to 2026-03). A meaningful gap "
+        "between OOF and OOS suggests overfitting; close alignment suggests "
+        "the model generalizes well.*"
+    )
+    L.append("")
+    L.append(_tbl_row("Metric", "OOF (Walk-Forward)", "OOS (2024-2026)", "Delta"))
+    L.append(_tbl_row("------", "-------------------", "----------------", "-----"))
+
+    def _metric_row(name: str, oof_val: float | None, oos_val: float | None) -> None:
+        oof_str = f"{oof_val * 100:.1f}%" if oof_val is not None else "N/A"
+        oos_str = f"{oos_val * 100:.1f}%" if oos_val is not None else "N/A"
+        if oof_val is not None and oos_val is not None:
+            delta = oos_val - oof_val
+            delta_str = f"{delta * 100:+.1f}pp"
+        else:
+            delta_str = "N/A"
+        L.append(_tbl_row(name, oof_str, oos_str, delta_str))
+
+    _metric_row("Accuracy", oof_accuracy, oos_accuracy)
+    _metric_row("Macro F1", oof_macro_f1, oos_macro_f1)
+
+    for cls_key, cls_name in [("-1", "Short"), ("0", "Flat"), ("1", "Long")]:
+        _metric_row(
+            f"F1 ({cls_name})", oof_class_f1.get(cls_key), oos_class_f1.get(cls_key)
+        )
+
+    L.append("")
+
+    # ── Interpretive note ────────────────────────────────────────────────
+    if oof_accuracy is not None and oos_accuracy is not None:
+        gap = abs(oos_accuracy - oof_accuracy)
+        if gap < 0.02:
+            note = (
+                "OOF-OOS alignment is tight (< 2pp) — model generalizes "
+                "well to unseen data."
+            )
+        elif gap < 0.05:
+            note = (
+                "Moderate OOF-OOS gap (2-5pp) — acceptable but monitor for overfitting."
+            )
+        else:
+            note = (
+                "Large OOF-OOS gap (≥5pp) — possible overfitting; review "
+                "feature stability and window design."
+            )
+        L.append(f"**Interpretation:** {note}")
+        L.append("")
+
+    logger.info(
+        "OOF vs OOS comparison: OOF acc=%.4f, OOS acc=%.4f",
+        oof_accuracy or 0.0,
+        oos_accuracy or 0.0,
+    )
+
+
+def _compute_avg_win_loss_ratio(trades: list[dict]) -> float | None:
+    """Compute average win / average loss ratio from trade records.
+
+    Args:
+        trades: List of trade dictionaries with ``pnl`` key.
+
+    Returns:
+        Ratio of avg win to abs(avg loss), or ``None`` if insufficient
+        winning or losing trades.
+    """
+    wins = [t["pnl"] for t in trades if t["pnl"] > 0]
+    losses = [t["pnl"] for t in trades if t["pnl"] < 0]
+    if not wins or not losses:
+        return None
+    avg_win = sum(wins) / len(wins)
+    avg_loss = abs(sum(losses) / len(losses))
+    if avg_loss == 0:
+        return None
+    return avg_win / avg_loss
+
+
+def _get_zone_info(metric_name: str, value: float | None) -> tuple[str, str, str]:
+    """Return (emoji, zone_label, recommended_range) for a backtest metric.
+
+    Uses the simplified 3-level zone scheme from the thesis requirements,
+    aligned with https://boringedge.com/backtest-metrics-explained.
+
+    Args:
+        metric_name: Internal metric key (e.g. ``sharpe_ratio``).
+        value: Metric value; ``None`` or ``NaN`` yields ⚪ N/A.
+
+    Returns:
+        Tuple of (emoji, zone_description, recommended_range).
+    """
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ("⚪", "N/A", "N/A")
+
+    zones: dict[str, list[tuple[float | None, float | None, str, str, str]]] = {
+        "return_pct": [
+            (None, 0, "🔴", "Below 0 — Loss", "> 0%"),
+            (0, 10, "🟡", "0–10% — Low", "> 10%"),
+            (10, None, "🟢", "> 10% — Good", "> 10%"),
+        ],
+        "sharpe_ratio": [
+            (None, 0, "🔴", "Below 0 — Negative", "> 1.0"),
+            (0, 1.0, "🟡", "0–1.0 — Acceptable", "> 1.0"),
+            (1.0, None, "🟢", "> 1.0 — Good", "> 1.0"),
+        ],
+        "max_drawdown_pct": [
+            (None, -30, "🔴", "> 30% — Dangerous", "< 15%"),
+            (-30, -15, "🟡", "15–30% — Moderate", "< 15%"),
+            (-15, None, "🟢", "< 15% — Excellent", "< 15%"),
+        ],
+        "win_rate_pct": [
+            (None, 40, "🔴", "< 40% — Low", "> 55%"),
+            (40, 55, "🟡", "40–55% — Acceptable", "> 55%"),
+            (55, None, "🟢", "> 55% — Good", "> 55%"),
+        ],
+        "profit_factor": [
+            (None, 1.0, "🔴", "< 1.0 — Losing", "> 1.5"),
+            (1.0, 1.5, "🟡", "1.0–1.5 — Marginal", "> 1.5"),
+            (1.5, None, "🟢", "> 1.5 — Good", "> 1.5"),
+        ],
+        "calmar_ratio": [
+            (None, 0, "🔴", "Below 0 — Negative", "> 1.0"),
+            (0, 1.0, "🟡", "0–1.0 — Acceptable", "> 1.0"),
+            (1.0, None, "🟢", "> 1.0 — Good", "> 1.0"),
+        ],
+        "sortino_ratio": [
+            (None, 0, "🔴", "Below 0 — Negative", "> 1.0"),
+            (0, 1.0, "🟡", "0–1.0 — Acceptable", "> 1.0"),
+            (1.0, None, "🟢", "> 1.0 — Good", "> 1.0"),
+        ],
+        "avg_win_loss_ratio": [
+            (None, 1.0, "🔴", "< 1.0 — Losing", "> 1.5"),
+            (1.0, 1.5, "🟡", "1.0–1.5 — Marginal", "> 1.5"),
+            (1.5, None, "🟢", "> 1.5 — Good", "> 1.5"),
+        ],
+        "expectancy_pct": [
+            (None, 0, "🔴", "< 0% — Negative", "> 0.5%"),
+            (0, 0.5, "🟡", "0–0.5% — Small Edge", "> 0.5%"),
+            (0.5, None, "🟢", "> 0.5% — Good", "> 0.5%"),
+        ],
+    }
+
+    zone_list = zones.get(metric_name)
+    if zone_list is None:
+        return ("⚪", "Unclassified", "N/A")
+
+    for lo, hi, emoji, label, rec in zone_list:
+        if lo is None:
+            if value <= (hi or 0):
+                return (emoji, label, rec)
+        elif hi is None:
+            if value > lo:
+                return (emoji, label, rec)
+        else:
+            if lo < value <= hi:
+                return (emoji, label, rec)
+
+    return ("⚪", "Unclassified", "N/A")
+
+
+def _render_metric_zones_section(
+    L: list[str],
+    metrics: dict,
+    trades: list[dict] | None = None,
+) -> None:
+    """Render backtest metric quality zones with emoji indicators and recommended ranges.
+
+    Each metric is annotated with:
+        - Value
+        - Zone emoji + description (e.g. ``🔴 Below 0 — Negative``)
+        - Recommended range (e.g. ``> 1.0``)
+
+    Zone definitions follow the 3-level scheme:
+        🔴 = poor/dangerous  │  🟡 = marginal/moderate  │  🟢 = good
+
+    Arguments:
+        L: Output markdown lines list (mutated in-place).
+        metrics: Backtest metrics dictionary.
+        trades: Optional trade records for computing win/loss ratio.
+    """
+    L.append("## Metric Quality Zones")
+    L.append("")
+    L.append(
+        "*Each metric is classified into three quality zones based on "
+        "industry-standard thresholds (see "
+        "[Boring Edge](https://boringedge.com/backtest-metrics-explained)). "
+        "🔴 = poor/dangerous, 🟡 = marginal, 🟢 = good.*"
+    )
+    L.append("")
+
+    L.append(_tbl_row("Metric", "Value", "Zone & Rating", "Recommended"))
+    L.append(_tbl_row("------", "-----", "------------", "-----------"))
+
+    # Compute win/loss ratio from trades if available
+    avg_wl: float | None = None
+    if trades:
+        avg_wl = _compute_avg_win_loss_ratio(trades)
+
+    # -- Metric definitions: (key, label, format_fn) --
+    metric_defs: list[tuple[str, str, Callable[[float], str], float | None]] = [
+        ("return_pct", "Total Return", _fmt_pct, metrics.get("return_pct")),
+        ("sharpe_ratio", "Sharpe Ratio", _fmt_f2, metrics.get("sharpe_ratio")),
+        (
+            "max_drawdown_pct",
+            "Max Drawdown",
+            lambda v: f"{abs(v):.1f}%",
+            metrics.get("max_drawdown_pct"),
+        ),
+        ("win_rate_pct", "Win Rate", _fmt_pct, metrics.get("win_rate_pct")),
+        (
+            "profit_factor",
+            "Profit Factor",
+            _fmt_f2,
+            metrics.get("profit_factor"),
+        ),
+        (
+            "calmar_ratio",
+            "Calmar Ratio",
+            _fmt_f2,
+            metrics.get("calmar_ratio"),
+        ),
+        (
+            "sortino_ratio",
+            "Sortino Ratio",
+            _fmt_f2,
+            metrics.get("sortino_ratio"),
+        ),
+        (
+            "avg_win_loss_ratio",
+            "Avg Win / Avg Loss",
+            _fmt_f2,
+            avg_wl,
+        ),
+        (
+            "expectancy_pct",
+            "Expectancy",
+            _fmt_pct,
+            metrics.get("expectancy_pct"),
+        ),
+    ]
+
+    for key, label, fmt, val in metric_defs:
+        if val is None:
+            L.append(_tbl_row(label, "N/A", "⚪ N/A", "N/A"))
+            continue
+        emoji, zone_desc, rec = _get_zone_info(key, val)
+        value_str = fmt(val)
+        zone_str = f"{emoji} {zone_desc}"
+        L.append(_tbl_row(label, value_str, zone_str, rec))
+    L.append("")
+
+
 def _build_markdown(
     config: Config,
     metrics: dict,
@@ -933,6 +1413,9 @@ def _build_markdown(
     _config_table(L, config)
     L.append("")
 
+    # -- Data Quality --
+    _render_data_quality_section(L, config)
+
     # -- Model Performance --
     L.append("## Model Performance")
     L.append("")
@@ -942,11 +1425,15 @@ def _build_markdown(
     _feature_importance_table(L, feature_importance)
     L.append("")
 
+    # -- OOF vs OOS Comparison --
+    _render_oof_vs_oos_section(L, config)
+
     # -- Backtest Results --
     L.append("## Backtest Results")
     L.append("")
     _backtest_params_table(L, config)
     _backtest_metrics_table(L, metrics, config)
+    _render_metric_zones_section(L, metrics, trades)
     L.append("")
 
     # -- Benchmark Comparison --
@@ -2068,23 +2555,26 @@ def generate_report(config: Config) -> None:
     metrics: dict = {}
     trades: list[dict] = []
     if bt_path.exists():
-        with open(bt_path) as f:
-            bt = json.load(f)
-        metrics = bt.get("metrics", {})
-        trades = bt.get("trades", [])
+        with console.status(f"[cyan]Loading backtest results[/] {bt_path}"):
+            with open(bt_path) as f:
+                bt = json.load(f)
+            metrics = bt.get("metrics", {})
+            trades = bt.get("trades", [])
 
-    _plot_equity_curve(trades, config, out_dir)
-    feature_importance = _load_feature_importance(config, out_dir)
-    _plot_feature_importance(feature_importance, out_dir)
+    with console.status("[cyan]Rendering report charts[/]"):
+        _plot_equity_curve(trades, config, out_dir)
+        feature_importance = _load_feature_importance(config, out_dir)
+        _plot_feature_importance(feature_importance, out_dir)
     # Markdown Report
-    pred_stats = _load_prediction_stats(Path(config.paths.predictions))
-    md = _build_markdown(
-        config,
-        metrics,
-        trades,
-        feature_importance,
-        pred_stats,
-    )
+    with console.status("[cyan]Building thesis markdown[/]"):
+        pred_stats = _load_prediction_stats(Path(config.paths.predictions))
+        md = _build_markdown(
+            config,
+            metrics,
+            trades,
+            feature_importance,
+            pred_stats,
+        )
     report_path = Path(config.paths.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w") as f:

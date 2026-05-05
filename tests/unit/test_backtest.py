@@ -127,13 +127,15 @@ def test_results_contain_expected_keys(sample_config: Config) -> None:
         "profit_factor",
         "return_pct",
         "equity_final",
+        "sortino_ratio",
+        "calmar_ratio",
+        "expectancy_pct",
+        "avg_trade_pct",
     ]
     for key in expected_keys:
         assert key in metrics, f"Missing key: {key}"
 
     noisy_keys = {
-        "sortino_ratio",
-        "calmar_ratio",
         "sqn",
         "recovery_factor",
         "kelly_criterion",
@@ -318,22 +320,23 @@ def test_calendar_day_strips_intraday_time() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Confidence-based position sizing
+# Fixed-risk position sizing
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 @pytest.mark.backtest
-def test_position_size_scales_with_confidence() -> None:
-    """Higher confidence should produce larger position sizes."""
+def test_position_size_ignores_confidence_after_gate() -> None:
+    """Confidence gates entries but must not amplify lot size.
 
-    # Can't instantiate Strategy without broker/data/params.
-    # Use a lightweight mock with only the attributes _compute_lots reads.
+    The latest OOS regression showed that confidence-scaled lots magnified
+    high-confidence wrong predictions. Sizing is fixed until the model is
+    profitable at the base risk level.
+    """
     strategy = type(
         "S",
         (),
         {
-            "confidence_threshold": 0.55,
             "lots_per_trade": 0.1,
             "min_lots": 0.05,
             "max_lots": 0.2,
@@ -341,71 +344,121 @@ def test_position_size_scales_with_confidence() -> None:
         },
     )()
 
-    # Low confidence (just above threshold)
-    lots_low = strategy._compute_lots(confidence=0.56)
-    # High confidence (near 1.0)
-    lots_high = strategy._compute_lots(confidence=0.95)
+    assert strategy._compute_lots(None) == pytest.approx(0.1)
+    assert strategy._compute_lots(0.56) == pytest.approx(0.1)
+    assert strategy._compute_lots(0.95) == pytest.approx(0.1)
 
-    assert lots_low > 0, "Lots should be positive above threshold"
-    assert lots_high > 0, "Lots should be positive at high confidence"
-    assert lots_high >= lots_low, (
-        f"Higher confidence ({lots_high}) should produce >= lots than "
-        f"lower confidence ({lots_low})"
+
+@pytest.mark.unit
+@pytest.mark.backtest
+def test_position_size_clamps_fixed_lots_to_bounds() -> None:
+    """Fixed sizing still respects configured min/max safety bounds."""
+    too_small = type(
+        "S",
+        (),
+        {
+            "lots_per_trade": 0.001,
+            "min_lots": 0.05,
+            "max_lots": 0.2,
+            "_compute_lots": HybridGRUStrategy._compute_lots,
+        },
+    )()
+    too_large = type(
+        "S",
+        (),
+        {
+            "lots_per_trade": 0.5,
+            "min_lots": 0.05,
+            "max_lots": 0.2,
+            "_compute_lots": HybridGRUStrategy._compute_lots,
+        },
+    )()
+
+    assert too_small._compute_lots(0.99) == pytest.approx(0.05)
+    assert too_large._compute_lots(0.99) == pytest.approx(0.2)
+
+
+# ---------------------------------------------------------------------------
+# Cooldown tests — min_bars_between_trades (task 9)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.backtest
+def test_cooldown_prevents_immediate_reentry(sample_config: Config) -> None:
+    """Verifies that min_bars_between_trades delays re-entry after an exit.
+
+    Creates synthetic data with a clear directional pattern so trades
+    exit naturally (via label reversals).  A long cooldown should
+    reduce trade count compared to no cooldown.
+    """
+    # Use a longer series so trades have room to complete and re-enter
+    test_df, preds_df = create_synthetic_backtest_data(200, "alternating")
+
+    # Without cooldown: alternating signals should produce many trades
+    metrics_no_cd, _trades_no_cd = run_backtest_manual(
+        test_df,
+        preds_df,
+        leverage=10,
+        lots_per_trade=0.1,
+        min_lots=0.01,
+        max_lots=0.5,
+        confidence_threshold=0.0,
+        atr_stop_multiplier=3.0,
+        atr_tp_multiplier=0,
+        horizon_bars=0,
+        min_bars_between_trades=0,
     )
 
-    # Clamped to [min_lots, max_lots]
-    assert lots_low >= strategy.min_lots
-    assert lots_high <= strategy.max_lots
+    # With cooldown: 20-bar cooldown should reduce trade count
+    metrics_cd, _trades_cd = run_backtest_manual(
+        test_df,
+        preds_df,
+        leverage=10,
+        lots_per_trade=0.1,
+        min_lots=0.01,
+        max_lots=0.5,
+        confidence_threshold=0.0,
+        atr_stop_multiplier=3.0,
+        atr_tp_multiplier=0,
+        horizon_bars=0,
+        min_bars_between_trades=20,
+    )
+
+    # Cooldown should reduce trade count (or at least not increase it)
+    assert metrics_cd["num_trades"] <= metrics_no_cd["num_trades"], (
+        f"Cooldown should reduce trades, got no_cd={metrics_no_cd['num_trades']}, "
+        f"cd={metrics_cd['num_trades']}"
+    )
 
 
 @pytest.mark.unit
 @pytest.mark.backtest
-def test_position_size_returns_fixed_when_no_confidence() -> None:
-    """Without confidence data, sizing falls back to fixed lots_per_trade."""
+def test_cooldown_disabled_by_zero(sample_config: Config) -> None:
+    """When min_bars_between_trades=0, cooldown is effectively disabled.
 
-    strategy = type(
-        "S",
-        (),
-        {
-            "confidence_threshold": 0.0,  # disabled
-            "lots_per_trade": 0.1,
-            "_compute_lots": HybridGRUStrategy._compute_lots,
-        },
-    )()
+    The gate in _is_trading_allowed skips cooldown when the threshold is 0.
+    """
+    test_df, preds_df = create_synthetic_backtest_data(100, "alternating")
 
-    lots = strategy._compute_lots(confidence=None)
-    assert lots == 0.1
+    metrics, _trades = run_backtest_manual(
+        test_df,
+        preds_df,
+        leverage=10,
+        lots_per_trade=0.1,
+        min_lots=0.01,
+        max_lots=0.5,
+        confidence_threshold=0.0,
+        atr_stop_multiplier=3.0,
+        atr_tp_multiplier=0,
+        horizon_bars=0,
+        min_bars_between_trades=0,
+    )
 
-    # Even with a confidence value, threshold=0 means fixed sizing
-    lots2 = strategy._compute_lots(confidence=0.99)
-    assert lots2 == 0.1
-
-
-@pytest.mark.unit
-@pytest.mark.backtest
-def test_position_size_below_threshold_returns_min() -> None:
-    """Confidence below threshold should not be reached (caller gates)."""
-
-    strategy = type(
-        "S",
-        (),
-        {
-            "confidence_threshold": 0.7,
-            "lots_per_trade": 0.1,
-            "min_lots": 0.05,
-            "max_lots": 0.2,
-            "_compute_lots": HybridGRUStrategy._compute_lots,
-        },
-    )()
-
-    # At threshold boundary: scale = 0 → clamped to min_lots
-    lots_at = strategy._compute_lots(confidence=0.70)
-    assert lots_at == strategy.min_lots
-
-    # Well above threshold: scale > 0 → lots > min_lots
-    lots_above = strategy._compute_lots(confidence=0.95)
-    # scale = (0.95-0.70)/0.30 = 0.833 → lots = 0.0833 > 0.05
-    assert lots_above > strategy.min_lots
+    # Cooldown disabled — should still get trades
+    assert metrics["num_trades"] > 0, (
+        "With cooldown disabled, alternating signals should produce trades"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -139,6 +139,10 @@ GRAD_CLIP_NORM: float = 1.0
 #: Number of linear warmup epochs before cosine annealing takes over.
 WARMUP_EPOCHS: int = 3
 
+#: Number of consecutive epochs without val-loss improvement before emitting
+#: a plateau warning (does not affect training — purely diagnostic).
+PLATEAU_PATIENCE: int = 5
+
 #: Cosine-annealing-with-warm-restarts base period (``T_0`` in PyTorch
 #: ``CosineAnnealingWarmRestarts`` semantics).
 COSINE_T0: int = 10
@@ -165,7 +169,9 @@ CORE_STATIC_FEATURES: tuple[str, ...] = (
     # Trend
     "ema34_vs_ema89",
     "close_vs_ema_34",
-    "trend_strength",
+    "adx_14",
+    "ema_slope_20",
+    "regime_strength",
     # Momentum
     "return_1h",
     "return_4h",

@@ -18,6 +18,7 @@ from thesis._shared.config import Config
 from thesis.stage_4_training._lgbm import (
     _build_interaction_constraints,
     _compute_class_weights,
+    _compute_distribution_shift_weights,
 )
 
 
@@ -261,3 +262,118 @@ class TestDeploymentModelMetadata:
             )
             assert info["window_oof_accuracy"] == acc
             assert info["last_window_accuracy"] == acc
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# _compute_distribution_shift_weights tests
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestDistributionShiftWeights:
+    """Tests for _compute_distribution_shift_weights time-safe weighting."""
+
+    def test_matched_distributions_return_uniformish_weights(self) -> None:
+        """When train and val have similar class distributions, weights ≈ 1.0."""
+        rng = np.random.default_rng(42)
+        # Matched distributions: both ~33% each class
+        y_train = rng.choice([-1, 0, 1], size=900, p=[0.33, 0.34, 0.33])
+        y_val = rng.choice([-1, 0, 1], size=100, p=[0.33, 0.34, 0.33])
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        assert len(weights) == len(y_train)
+        # All weights should be close to 1.0
+        assert 0.8 < float(np.min(weights)) < 1.2, (
+            f"Expected uniform-ish min weight, got {np.min(weights):.3f}"
+        )
+        assert 0.9 < float(np.mean(weights)) < 1.1, (
+            f"Expected mean ≈ 1.0, got {np.mean(weights):.3f}"
+        )
+
+    def test_shifted_distributions_return_non_uniform_weights(self) -> None:
+        """When val has a different class distribution, weights diverge from 1.0."""
+        rng = np.random.default_rng(42)
+        # Train: balanced. Val: heavily biased toward LONG (class 1)
+        y_train = rng.choice([-1, 0, 1], size=900, p=[0.33, 0.34, 0.33])
+        y_val = rng.choice([-1, 0, 1], size=100, p=[0.05, 0.05, 0.90])
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        assert len(weights) == len(y_train)
+        # LONG samples should be up-weighted (LONG more common in val)
+        long_mask = y_train == 1
+        short_mask = y_train == -1
+        mean_long = float(weights[long_mask].mean())
+        mean_short = float(weights[short_mask].mean())
+        assert mean_long > mean_short, (
+            f"LONG weights ({mean_long:.3f}) should exceed SHORT weights "
+            f"({mean_short:.3f}) when val is LONG-heavy"
+        )
+        # There should be variance in weights (not all uniform)
+        assert np.std(weights) > 0.01, (
+            f"Expected non-uniform weights, got std={np.std(weights):.5f}"
+        )
+
+    def test_weights_aligned_to_y_train_not_y_val(self) -> None:
+        """Weights array length matches y_train, not y_val."""
+        rng = np.random.default_rng(42)
+        y_train = rng.choice([-1, 0, 1], size=750)
+        y_val = rng.choice([-1, 0, 1], size=250)
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        assert len(weights) == len(y_train), (
+            f"Weights length {len(weights)} should match y_train length {len(y_train)}"
+        )
+
+    def test_all_weights_within_clip_bounds(self) -> None:
+        """No individual weight exceeds the default clip range [0.5, 3.0]."""
+        rng = np.random.default_rng(42)
+        # Extreme shift: val is entirely one class
+        y_train = rng.choice([-1, 0, 1], size=900, p=[0.50, 0.25, 0.25])
+        y_val = np.full(100, 1, dtype=np.int32)  # All LONG
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        assert float(np.min(weights)) >= 0.5, (
+            f"Min weight {np.min(weights):.3f} below clip floor 0.5"
+        )
+        assert float(np.max(weights)) <= 3.0, (
+            f"Max weight {np.max(weights):.3f} above clip ceiling 3.0"
+        )
+
+    def test_uniform_val_distribution_yields_uniform_weights(self) -> None:
+        """A perfectly uniform val distribution produces uniform weights."""
+        rng = np.random.default_rng(42)
+        y_train = rng.choice([-1, 0, 1], size=900, p=[0.33, 0.34, 0.33])
+        y_val = np.array([-1, 0, 1] * 34, dtype=np.int32)[:100]
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        # All classes have the same weights
+        unique_weights = set(round(w, 6) for w in weights)
+        assert len(unique_weights) <= 3, (
+            f"Expected at most 3 distinct weight values, got {len(unique_weights)}"
+        )
+
+    def test_zero_train_class_handled_gracefully(self) -> None:
+        """Absent train classes should not crash — handled by denominator guard."""
+        y_train = np.array([1] * 800 + [0] * 200, dtype=np.int32)  # No SHORT
+        y_val = np.array([-1] * 30 + [1] * 50 + [0] * 20, dtype=np.int32)
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        assert len(weights) == len(y_train)
+        assert np.all(np.isfinite(weights)), "All weights must be finite"
+
+    def test_single_class_train(self) -> None:
+        """Degenerate case: single-class train should still return valid weights."""
+        y_train = np.full(500, 1, dtype=np.int32)
+        y_val = np.array([-1, 0, 1] * 33 + [1], dtype=np.int32)[:100]
+
+        weights, _ = _compute_distribution_shift_weights(y_train, y_val)
+
+        assert len(weights) == len(y_train)
+        assert np.all(np.isfinite(weights)), "All weights must be finite"

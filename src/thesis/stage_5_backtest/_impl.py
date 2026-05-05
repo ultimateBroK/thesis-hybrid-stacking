@@ -32,6 +32,7 @@ from backtesting import Strategy
 from backtesting.lib import FractionalBacktest
 
 from thesis._shared.config import Config
+from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.backtest")
 
@@ -85,6 +86,10 @@ CORE_BACKTEST_METRIC_KEYS = {
     "equity_final",
     "start",
     "end",
+    "sortino_ratio",
+    "calmar_ratio",
+    "expectancy_pct",
+    "avg_trade_pct",
 }
 
 
@@ -140,10 +145,9 @@ class HybridGRUStrategy(Strategy):
     (anchored at ``close[i]``) would be executed at ``open[i+1]`` — a
     one-bar gap that breaks the anchor-entry correspondence.
 
-    Position sizing: confidence-weighted — scales from min_lots to max_lots
-    based on how far the predicted probability exceeds the confidence
-    threshold.  When confidence data is unavailable (or threshold is 0),
-    falls back to fixed ``lots_per_trade``.
+    Position sizing: fixed-risk after confidence filtering. Confidence decides
+    whether a trade is allowed; lot size stays at ``lots_per_trade`` clamped to
+    ``[min_lots, max_lots]``.
 
     Confidence filtering: when confidence_threshold > 0, only trade
     when the predicted class probability exceeds the threshold.
@@ -172,9 +176,9 @@ class HybridGRUStrategy(Strategy):
     Attributes:
         atr_stop_mult: ATR multiplier for stop-loss distance.
         atr_tp_mult: ATR multiplier for take-profit distance (0 = disabled).
-        lots_per_trade: Base lot size used in confidence-weighted scaling.
-        min_lots: Minimum lot size (low-conviction floor).
-        max_lots: Maximum lot size (high-conviction cap).
+        lots_per_trade: Fixed lot size after confidence filtering.
+        min_lots: Minimum lot safety bound.
+        max_lots: Maximum lot safety bound.
         confidence_threshold: Minimum class probability to trade (0 = disabled).
         min_atr: Floor to prevent microscopic stops in low-vol regimes.
         contract_size: Units per lot.
@@ -183,6 +187,7 @@ class HybridGRUStrategy(Strategy):
         dd_cooldown_bars: Bars to pause trading after drawdown breach.
         max_open_positions: Max simultaneous open positions.
         daily_loss_limit: Max fraction of daily equity loss before pause.
+        min_bars_between_trades: Minimum bars after position exit before re-entry.
     """
 
     # ── STRATEGY FALLBACK DEFAULTS ────────────────────────────────────────
@@ -239,6 +244,7 @@ class HybridGRUStrategy(Strategy):
     )
     max_open_positions = 1  # max simultaneous positions; matches BacktestConfig
     daily_loss_limit = 0.03  # daily loss fraction limit; matches BacktestConfig
+    min_bars_between_trades = 0  # 0 = disabled; min bars after exit before re-entry
 
     def init(self) -> None:
         """Register indicators and initialise risk-management state.
@@ -273,6 +279,10 @@ class HybridGRUStrategy(Strategy):
             )
 
         self._entry_bar: dict[str, int] = {}
+
+        # Cooldown state — prevent overtrading after position closure
+        self._last_exit_bar: int = 0  # bar index of last position exit (0 = none yet)
+        self._position_was_open: bool = False  # was a position open at prior bar?
 
         # Risk-management state
         self._peak_equity: float = self.equity
@@ -357,14 +367,22 @@ class HybridGRUStrategy(Strategy):
         if self.position and self.max_open_positions <= 1:
             return False
 
-        # Gate 2: drawdown circuit breaker
+        # Gate 2: trade cooldown — enforce minimum bars between exits and re-entries
+        if (
+            self.min_bars_between_trades > 0
+            and self._last_exit_bar > 0
+            and (len(self.data) - self._last_exit_bar) < self.min_bars_between_trades
+        ):
+            return False
+
+        # Gate 3: drawdown circuit breaker
         if self._dd_cutoff_breached:
             return False
 
         if self._dd_cooldown_left > 0:
             return False
 
-        # Gate 3: daily loss limit
+        # Gate 4: daily loss limit
         if self.daily_loss_limit > 0 and self._daily_start_equity > 0:
             daily_pnl = (
                 self.equity - self._daily_start_equity
@@ -375,40 +393,40 @@ class HybridGRUStrategy(Strategy):
         return True
 
     def _compute_lots(self, confidence: float | None) -> float:
-        """Compute position size based on confidence-weighted scaling.
+        """Return fixed position size after confidence filtering.
 
-        When confidence data is available and threshold > 0, lots scale
-        linearly from 0 (at threshold) to ``lots_per_trade`` (at 1.0),
-        then clamped to ``[min_lots, max_lots]``.  Without confidence
-        data, returns the fixed ``lots_per_trade``.
+        Confidence already gates whether a trade is allowed. Scaling lots by
+        confidence amplified wrong high-confidence predictions in the latest
+        OOS run, causing drawdown to grow far faster than signal quality. Keep
+        sizing fixed until the model is profitable at the base risk level.
 
         Args:
-            confidence: Predicted class probability, or None if unavailable.
+            confidence: Predicted class probability, accepted for API stability.
 
         Returns:
-            Lot size to use for the trade.
+            Fixed lot size clamped to configured safety bounds.
         """
-        if confidence is not None and self.confidence_threshold > 0:
-            scale = (confidence - self.confidence_threshold) / (
-                1.0 - self.confidence_threshold
-            )
-            lots = self.lots_per_trade * scale
-            return max(self.min_lots, min(lots, self.max_lots))
-        return self.lots_per_trade
+        return max(self.min_lots, min(self.lots_per_trade, self.max_lots))
 
     def next(self) -> None:
         """Evaluate the latest model signal and place orders if appropriate.
 
         Processing order:
+            0. Cooldown tracking — detect position closure from SL/TP.
             1. Risk state update — peak equity, cooldown, daily tracking.
             2. Time-based exit — close positions exceeding horizon_bars.
             3. Risk gate check — skip new trades if any gate blocks.
             4. Confidence gate — skip low-confidence signals.
-            5. Compute confidence-weighted position size.
+            5. Compute fixed-risk position size.
             6. Submit market orders with native ATR-based stop-loss. The
                backtesting engine fills these orders on the next bar, so
                signal bar ``i`` cannot trade at the same bar's close.
         """
+        # Step 0: cooldown tracking — detect auto-closure from framework SL/TP
+        if self._position_was_open and not self.position:
+            self._last_exit_bar = len(self.data)
+            self._position_was_open = False
+
         # Step 1: update risk state every bar
         self._update_risk_state()
 
@@ -441,6 +459,8 @@ class HybridGRUStrategy(Strategy):
                     self.position.close()
                     direction = "long" if self.position.is_long else "short"
                     self._entry_bar.pop(direction, None)
+                    self._last_exit_bar = len(self.data)
+                    self._position_was_open = False
 
         # Step 3: risk gate — no new trades if blocked
         if not self._is_trading_allowed():
@@ -480,6 +500,7 @@ class HybridGRUStrategy(Strategy):
                 else None
             )
             self.buy(size=size, sl=sl_price, tp=tp_price)
+            self._position_was_open = True
 
         elif signal == -1 and not self.position:
             self._entry_bar["short"] = len(self.data)
@@ -490,6 +511,7 @@ class HybridGRUStrategy(Strategy):
                 else None
             )
             self.sell(size=size, sl=sl_price, tp=tp_price)
+            self._position_was_open = True
 
 
 # ---------------------------------------------------------------------------
@@ -880,6 +902,7 @@ def _run_bt(pdf: pd.DataFrame, config: Config) -> tuple[pd.Series, FractionalBac
         dd_cooldown_bars=bc.dd_cooldown_bars,
         max_open_positions=bc.max_open_positions,
         daily_loss_limit=bc.daily_loss_limit,
+        min_bars_between_trades=bc.min_bars_between_trades,
     )
     return stats, bt
 
@@ -908,7 +931,8 @@ def run_backtest(config: Config) -> None:
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
         raise FileNotFoundError(f"Predictions not found: {preds_path}")
-    preds_df = pl.read_parquet(preds_path)
+    with console.status(f"[cyan]Loading predictions[/] {preds_path}"):
+        preds_df = pl.read_parquet(preds_path)
 
     # Walk-forward: predictions are OOF across all windows — need OHLCV from labels
     # Static: predictions are for the test split — need OHLCV from test split
@@ -916,7 +940,8 @@ def run_backtest(config: Config) -> None:
     is_static = config.validation.method == "static"
 
     if test_path.exists() and is_static:
-        test_df = pl.read_parquet(test_path)
+        with console.status(f"[cyan]Loading static test data[/] {test_path}"):
+            test_df = pl.read_parquet(test_path)
     elif test_path.exists() and not is_static:
         logger.warning(
             "Static test file found (%s) but workflow is walk-forward "
@@ -929,7 +954,8 @@ def run_backtest(config: Config) -> None:
             raise FileNotFoundError(
                 f"Labels file not found ({labels_path}) — needed for walk-forward backtest"
             )
-        test_df = pl.read_parquet(labels_path)
+        with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
+            test_df = pl.read_parquet(labels_path)
     else:
         labels_path = Path(config.paths.labels)
         if not labels_path.exists():
@@ -937,7 +963,8 @@ def run_backtest(config: Config) -> None:
                 f"Neither test data ({test_path}) nor labels ({labels_path}) found"
             )
         logger.info("Walk-forward mode: joining OOF predictions with labeled data")
-        test_df = pl.read_parquet(labels_path)
+        with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
+            test_df = pl.read_parquet(labels_path)
 
     pdf = _prepare_df(test_df, preds_df)
 
@@ -960,7 +987,8 @@ def run_backtest(config: Config) -> None:
         )
 
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
-    stats, bt = _run_bt(pdf, config)
+    with console.status("[cyan]Running CFD backtest[/]"):
+        stats, bt = _run_bt(pdf, config)
 
     metrics = _normalize_stats(stats)
     trades = _trades_to_list(
@@ -1030,6 +1058,7 @@ def run_backtest_manual(
     dd_cooldown_bars: int = 12,
     max_open_positions: int = 1,
     daily_loss_limit: float = 0.03,
+    min_bars_between_trades: int = 6,
 ) -> tuple[dict, list[dict]]:
     """Run a backtest with manually specified parameters (no Config required).
 
@@ -1041,9 +1070,9 @@ def run_backtest_manual(
         preds_df: Predictions with timestamp and pred_label (optionally
             pred_proba_* columns).
         leverage: CFD leverage ratio (default 100).
-        lots_per_trade: Base lot size for confidence-weighted sizing.
-        min_lots: Minimum lot size (low-conviction floor).
-        max_lots: Maximum lot size (high-conviction cap).
+        lots_per_trade: Fixed lot size after confidence filtering.
+        min_lots: Minimum lot safety bound.
+        max_lots: Maximum lot safety bound.
         confidence_threshold: Minimum prediction probability to trade (0 = disabled).
         spread_ticks: Spread in ticks.
         slippage_ticks: Slippage in ticks.
@@ -1058,6 +1087,7 @@ def run_backtest_manual(
         dd_cooldown_bars: Bars to pause after drawdown breach.
         max_open_positions: Max simultaneous open positions.
         daily_loss_limit: Daily equity loss fraction before pause.
+        min_bars_between_trades: Minimum bars between position exit and next entry (0 = disabled, default 6).
 
     Returns:
         Tuple of (metrics dict, trades list). Metrics contains normalized
@@ -1099,6 +1129,7 @@ def run_backtest_manual(
         dd_cooldown_bars=dd_cooldown_bars,
         max_open_positions=max_open_positions,
         daily_loss_limit=daily_loss_limit,
+        min_bars_between_trades=min_bars_between_trades,
     )
 
     metrics = _normalize_stats(stats)

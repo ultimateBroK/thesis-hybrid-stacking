@@ -1,8 +1,8 @@
-# Git Workflow Plan - Hybrid Stacking Thesis Project
+# Git Workflow Plan - Hybrid GRU + LightGBM Thesis Project
 
 ## Overview
 
-This document defines the Git branching strategy, commit conventions, and automated workflows for the Bachelor's Thesis project: **Hybrid Stacking (LSTM + LightGBM) for XAU/USD H1 Trading Signals**.
+This document defines the Git branching strategy, commit conventions, and automated workflows for the Bachelor's Thesis project: **Hybrid GRU + LightGBM for XAU/USD H1 Trading Signals**.
 
 ---
 
@@ -75,7 +75,7 @@ We follow the **Conventional Commits** specification (https://www.conventionalco
 - `data` - Data pipeline, OHLCV conversion
 - `features` - Feature engineering
 - `labels` - Triple-barrier labeling
-- `models` - LSTM, LightGBM, stacking models
+- `models` - GRU, LightGBM, hybrid pipeline
 - `backtest` - Backtesting engine
 - `reporting` - Report generation
 - `config` - Configuration management

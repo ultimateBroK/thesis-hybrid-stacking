@@ -93,21 +93,27 @@ def _compute_distribution_shift_weights(
     y_train: np.ndarray,
     y_val: np.ndarray,
     clip_range: tuple[float, float] = (DIST_SHIFT_CLIP_MIN, DIST_SHIFT_CLIP_MAX),
-) -> np.ndarray:
-    """Compute per-sample weights for validation to correct distribution shift.
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Compute per-sample training weights to reduce stale-regime bias.
 
-    Compares class frequencies between training and validation sets.
-    Classes under-represented in validation relative to training are
-    up-weighted so the validation metric better reflects the training
-    distribution's priorities.
+    Compares class frequencies between the training head and its internal
+    validation tail.  Classes that have become *more* common in the recent
+    tail relative to the full training window are up-weighted so the model
+    pays more attention to emerging regimes.  Classes that are fading
+    receive lower weight, reducing the influence of stale patterns.
+
+    Time-safe: only training-window labels are used — no future/test labels
+    are ever consulted.
 
     Args:
-        y_train: Training labels in ``{-1, 0, 1}``.
-        y_val: Validation labels in ``{-1, 0, 1}``.
+        y_train: Training-head labels in ``{-1, 0, 1}``.
+        y_val: Training-tail (internal validation) labels in ``{-1, 0, 1}``.
         clip_range: Min/max bounds for per-class weight ratios.
 
     Returns:
-        Per-sample weight array aligned to ``y_val``.
+        ``(sample_weights, ratio_dict)`` — Per-sample weight array aligned
+        to ``y_train`` (mean ≈ 1.0) and per-class shift-weight ratio dict
+        with string keys ``{"-1", "0", "1"}`` for JSON serialization.
     """
     classes = np.array([-1, 0, 1])
     train_counts = np.array([np.sum(y_train == c) for c in classes], dtype=np.float64)
@@ -116,18 +122,27 @@ def _compute_distribution_shift_weights(
     train_freq = train_counts / train_counts.sum()
     val_freq = val_counts / val_counts.sum()
 
-    # Avoid division by zero — classes absent from val get max weight
-    val_freq_safe = np.where(val_freq > 0, val_freq, 1e-8)
-    ratios = train_freq / val_freq_safe
+    # Ratio = val_freq / train_freq:
+    #   > 1.0 → class is MORE common in recent data → up-weight
+    #   < 1.0 → class is LESS common in recent data → down-weight
+    # Avoid division by zero — classes absent from train get clip min.
+    train_freq_safe = np.where(train_freq > 0, train_freq, 1e-8)
+    ratios = val_freq / train_freq_safe
     ratios = np.clip(ratios, clip_range[0], clip_range[1])
 
-    # Map per-class weight to per-sample
+    # Map per-class weight to per-sample (training head)
     weight_map = {int(c): float(r) for c, r in zip(classes, ratios)}
-    _sample_weights = np.array([weight_map[int(y)] for y in y_val], dtype=np.float64)
+    sample_weights = np.array([weight_map[int(y)] for y in y_train], dtype=np.float64)
+
+    # Build ratio dict with string keys for JSON-friendly diagnostics
+    ratio_dict: dict[str, float] = {
+        str(int(c)): float(r) for c, r in zip(classes, ratios)
+    }
 
     logger.info(
         "Distribution-shift weights: SHORT=%d→%.2f HOLD=%d→%.2f LONG=%d→%.2f "
-        "(train freq: [%.1f%%, %.1f%%, %.1f%%] val freq: [%.1f%%, %.1f%%, %.1f%%])",
+        "(train freq: [%.1f%%, %.1f%%, %.1f%%] val freq: [%.1f%%, %.1f%%, %.1f%%]) "
+        "min=%.3f median=%.3f max=%.3f mean=%.3f",
         int(train_counts[0]),
         ratios[0],
         int(train_counts[1]),
@@ -140,14 +155,13 @@ def _compute_distribution_shift_weights(
         val_freq[0] * 100,
         val_freq[1] * 100,
         val_freq[2] * 100,
+        float(np.min(sample_weights)),
+        float(np.median(sample_weights)),
+        float(np.max(sample_weights)),
+        float(np.mean(sample_weights)),
     )
 
-    # Disabled: distribution shift weights caused regression.
-    # Keep logging above for future diagnostics; return uniform weights.
-    logger.info(
-        "Distribution-shift weights DISABLED — returning uniform weights (all 1.0)"
-    )
-    return np.ones(len(y_val))
+    return sample_weights, ratio_dict
 
 
 def _filter_validation_to_seen_classes(
@@ -161,7 +175,7 @@ def _filter_validation_to_seen_classes(
 
     LightGBM's sklearn wrapper label-encodes classes from ``y_train`` and
     cannot transform an ``eval_set`` containing unseen labels. Small
-    walk-forward/stacking folds can miss the rare Hold class, so validation is
+    walk-forward folds can miss the rare Hold class, so validation is
     filtered to classes actually learnable in that fold.
 
     Returns ``None`` when the validation set has **no** overlapping classes
@@ -287,7 +301,8 @@ def _train_fixed(
         TextColumn("•"),
         TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
         TimeElapsedColumn(),
-        transient=False,
+        transient=True,
+        console=console,
     )
 
     with progress:
@@ -536,9 +551,10 @@ def train_model(config: Config) -> None:
             )
 
     # Load splits
-    train_df = pl.read_parquet(train_path)
-    val_df = pl.read_parquet(val_path)
-    test_df = pl.read_parquet(test_path)
+    with console.status("[cyan]Loading train/val/test splits[/]"):
+        train_df = pl.read_parquet(train_path)
+        val_df = pl.read_parquet(val_path)
+        test_df = pl.read_parquet(test_path)
 
     logger.info(
         "Splits: train=%d val=%d test=%d", len(train_df), len(val_df), len(test_df)

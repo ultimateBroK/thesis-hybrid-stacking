@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 
+import polars as pl
 import pytest
 
 from thesis._shared.config import Config
@@ -15,6 +18,9 @@ from thesis.stage_6_reporting._impl import (
     _exec_verdict,
     _identify_primary_issue,
     _model_label,
+    _render_data_quality_section,
+    _render_metric_zones_section,
+    _render_oof_vs_oos_section,
 )
 
 
@@ -327,3 +333,384 @@ class TestExecVerdict:
         _exec_verdict(L, {"return_pct": 5, "num_trades": 10}, None)
         rendered = "\n".join(L)
         assert "unavailable" in rendered.lower()
+
+
+# ---------------------------------------------------------------------------
+# OOF vs OOS comparison tests
+# ---------------------------------------------------------------------------
+
+
+def _make_wf_history_json(path: Path, window_details: list[dict]) -> None:
+    """Write a synthetic walk-forward history JSON file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "num_windows": len(window_details),
+                "total_oof_predictions": sum(
+                    w.get("test_rows", 0) for w in window_details
+                ),
+                "window_details": window_details,
+            },
+            indent=2,
+        )
+    )
+
+
+def _make_predictions_parquet(path: Path, rows: list[dict]) -> None:
+    """Write a synthetic predictions parquet file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(rows).write_parquet(path)
+
+
+@pytest.mark.unit
+class TestOofVsOosSection:
+    """Tests for _render_oof_vs_oos_section."""
+
+    def test_missing_session_dir_shows_unavailable(self) -> None:
+        """Graceful message when session_dir is empty."""
+        cfg = Config()
+        cfg.paths.session_dir = ""
+        L: list[str] = []
+        _render_oof_vs_oos_section(L, cfg)
+        rendered = "\n".join(L)
+        assert "unavailable" in rendered.lower()
+        assert "session directory" in rendered.lower()
+
+    def test_missing_wf_history_shows_unavailable(self, tmp_path: Path) -> None:
+        """Graceful message when walk_forward_history.json is missing."""
+        cfg = Config()
+        cfg.paths.session_dir = str(tmp_path)
+        L: list[str] = []
+        _render_oof_vs_oos_section(L, cfg)
+        rendered = "\n".join(L)
+        assert "unavailable" in rendered.lower()
+        assert "walk-forward history" in rendered.lower()
+
+    def test_empty_window_details_shows_unavailable(self, tmp_path: Path) -> None:
+        """Graceful message when window_details is empty."""
+        cfg = Config()
+        cfg.paths.session_dir = str(tmp_path)
+        wf_path = tmp_path / "reports" / "walk_forward_history.json"
+        _make_wf_history_json(wf_path, [])
+        L: list[str] = []
+        _render_oof_vs_oos_section(L, cfg)
+        rendered = "\n".join(L)
+        assert "unavailable" in rendered.lower()
+        assert "no window details" in rendered.lower()
+
+    def test_oof_only_with_no_oos_predictions(self, tmp_path: Path) -> None:
+        """Renders OOF metrics with N/A for OOS when predictions missing."""
+        cfg = Config()
+        cfg.paths.session_dir = str(tmp_path)
+        # Point predictions to non-existent file
+        cfg.paths.predictions = str(tmp_path / "nonexistent.parquet")
+
+        wf_path = tmp_path / "reports" / "walk_forward_history.json"
+        _make_wf_history_json(
+            wf_path,
+            [
+                {
+                    "window": 1,
+                    "test_rows": 100,
+                    "accuracy": 0.55,
+                    "per_class": {
+                        "-1": {"f1": 0.45, "support": 30},
+                        "0": {"f1": 0.60, "support": 40},
+                        "1": {"f1": 0.50, "support": 30},
+                    },
+                },
+                {
+                    "window": 2,
+                    "test_rows": 100,
+                    "accuracy": 0.57,
+                    "per_class": {
+                        "-1": {"f1": 0.47, "support": 25},
+                        "0": {"f1": 0.62, "support": 45},
+                        "1": {"f1": 0.52, "support": 30},
+                    },
+                },
+            ],
+        )
+
+        L: list[str] = []
+        _render_oof_vs_oos_section(L, cfg)
+        rendered = "\n".join(L)
+
+        assert "OOF vs OOS Comparison" in rendered
+        assert "OOF (Walk-Forward)" in rendered
+        assert "OOS (2024-2026)" in rendered
+        # OOF accuracy: (0.55*100 + 0.57*100) / 200 = 0.56 = 56.0%
+        assert "56.0%" in rendered
+        # OOS should be N/A
+        assert "N/A" in rendered
+
+    def test_oof_and_oos_full_comparison(self, tmp_path: Path) -> None:
+        """Renders full side-by-side table when both OOF and OOS available."""
+        cfg = Config()
+        cfg.paths.session_dir = str(tmp_path)
+        # Set OOS date range
+        cfg.backtest.oob_start_date = "2024-01-01"
+        cfg.backtest.oob_end_date = "2026-03-31"
+
+        # Create walk-forward history
+        wf_path = tmp_path / "reports" / "walk_forward_history.json"
+        _make_wf_history_json(
+            wf_path,
+            [
+                {
+                    "window": 1,
+                    "test_rows": 50,
+                    "accuracy": 0.55,
+                    "per_class": {
+                        "-1": {"f1": 0.45, "support": 15},
+                        "0": {"f1": 0.60, "support": 20},
+                        "1": {"f1": 0.50, "support": 15},
+                    },
+                },
+            ],
+        )
+
+        # Create predictions parquet with OOS date range rows
+        preds_path = tmp_path / "predictions" / "final_predictions.parquet"
+        cfg.paths.predictions = str(preds_path)
+        _make_predictions_parquet(
+            preds_path,
+            [
+                {
+                    "timestamp": "2024-06-15T10:00:00",
+                    "true_label": -1,
+                    "pred_label": -1,
+                },
+                {
+                    "timestamp": "2024-06-15T11:00:00",
+                    "true_label": 0,
+                    "pred_label": -1,
+                },
+                {
+                    "timestamp": "2024-06-15T12:00:00",
+                    "true_label": 1,
+                    "pred_label": 1,
+                },
+                {
+                    "timestamp": "2024-06-15T13:00:00",
+                    "true_label": 0,
+                    "pred_label": 0,
+                },
+                {
+                    "timestamp": "2025-12-31T23:00:00",
+                    "true_label": 0,
+                    "pred_label": 0,
+                },
+                # An out-of-range row that should be excluded
+                {
+                    "timestamp": "2023-06-15T10:00:00",
+                    "true_label": -1,
+                    "pred_label": -1,
+                },
+            ],
+        )
+
+        L: list[str] = []
+        _render_oof_vs_oos_section(L, cfg)
+        rendered = "\n".join(L)
+
+        assert "OOF vs OOS Comparison" in rendered
+        assert "OOF (Walk-Forward)" in rendered
+        assert "OOS (2024-2026)" in rendered
+        assert "Delta" in rendered
+        # OOF accuracy: 55.0%
+        assert "55.0%" in rendered
+        # OOS: 5 rows in range, 4 correct (first 5 rows, last 4 correct)
+        # true vs pred: row0 (-1==-1)✓, row1 (0!=-1)✗, row2 (1==1)✓, row3 (0==0)✓, row4 (0==0)✓
+        # accuracy = 4/5 = 0.80 = 80.0%
+        assert "80.0%" in rendered
+        assert "Short" in rendered
+        assert "Flat" in rendered
+        assert "Long" in rendered
+        # Macro F1 row present
+        assert "Macro F1" in rendered
+
+    def test_no_windows_with_positive_test_rows_returns_none(self, tmp_path: Path) -> None:
+        """All windows have test_rows=0, returns N/A for OOF."""
+        cfg = Config()
+        cfg.paths.session_dir = str(tmp_path)
+
+        wf_path = tmp_path / "reports" / "walk_forward_history.json"
+        _make_wf_history_json(
+            wf_path,
+            [{"window": 1, "test_rows": 0, "accuracy": None, "per_class": {}}],
+        )
+
+        L: list[str] = []
+        _render_oof_vs_oos_section(L, cfg)
+        rendered = "\n".join(L)
+
+        assert "OOF vs OOS Comparison" in rendered
+        # All metric values should be N/A since total_test_rows == 0
+        assert rendered.count("N/A") >= 5  # Accuracy + Macro F1 + 3 class F1s
+
+
+# ---------------------------------------------------------------------------
+# Data quality section tests (task 10)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRenderDataQualitySection:
+    """Tests for _render_data_quality_section."""
+
+    def test_missing_json_shows_unavailable_message(self) -> None:
+        """Graceful message when data quality JSON is missing."""
+        cfg = Config()
+        cfg.paths.session_dir = "/nonexistent"
+        cfg.paths.data_quality_json = "/nonexistent/data_quality.json"
+        L: list[str] = []
+        _render_data_quality_section(L, cfg)
+        rendered = "\n".join(L)
+        assert "not found" in rendered.lower()
+
+    def test_valid_json_renders_table(self, tmp_path: Path) -> None:
+        """Valid JSON renders a complete data quality table."""
+        import json
+
+        cfg = Config()
+        dq_path = tmp_path / "data_quality.json"
+        dq_data = {
+            "total_bars": 50000,
+            "deduped_timestamps": 3,
+            "calendar_gaps": 150,
+            "weekend_gaps": 140,
+            "real_gaps": 10,
+            "estimated_missing_bars": 42,
+            "largest_gap_bars": 24,
+            "start_date": "2013-01-01 00:00:00",
+            "end_date": "2026-03-31 23:00:00",
+        }
+        dq_path.write_text(json.dumps(dq_data))
+        cfg.paths.data_quality_json = str(dq_path)
+
+        L: list[str] = []
+        _render_data_quality_section(L, cfg)
+        rendered = "\n".join(L)
+
+        assert "## Data Quality" in rendered
+        assert "50,000" in rendered  # total bars
+        assert "42" in rendered  # estimated missing
+        assert "24 bars" in rendered  # largest gap
+        assert "2013-01-01" in rendered
+        assert "2026-03-31" in rendered
+
+    def test_corrupt_json_shows_error_message(self, tmp_path: Path) -> None:
+        """Corrupt JSON shows an error message instead of crashing."""
+        cfg = Config()
+        dq_path = tmp_path / "data_quality.json"
+        dq_path.write_text("{invalid json")
+        cfg.paths.data_quality_json = str(dq_path)
+
+        L: list[str] = []
+        _render_data_quality_section(L, cfg)
+        rendered = "\n".join(L)
+
+        assert "could not be read" in rendered.lower()
+
+
+# ---------------------------------------------------------------------------
+# Metric zones section tests (task 12)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRenderMetricZonesSection:
+    """Tests for _render_metric_zones_section."""
+
+    def test_renders_all_expected_metrics(self) -> None:
+        """All configured metrics appear in the output."""
+        metrics = {
+            "return_pct": 15.0,
+            "sharpe_ratio": 1.5,
+            "max_drawdown_pct": -10.0,
+            "win_rate_pct": 55.0,
+            "profit_factor": 2.0,
+            "calmar_ratio": 1.2,
+            "sortino_ratio": 1.8,
+            "expectancy_pct": 0.5,
+        }
+        L: list[str] = []
+        _render_metric_zones_section(L, metrics)
+        rendered = "\n".join(L)
+
+        assert "## Metric Quality Zones" in rendered
+        for label in (
+            "Total Return",
+            "Sharpe Ratio",
+            "Max Drawdown",
+            "Win Rate",
+            "Profit Factor",
+            "Calmar Ratio",
+            "Sortino Ratio",
+            "Expectancy",
+        ):
+            assert label in rendered, f"Missing metric: {label}"
+
+    def test_good_metrics_show_green_zone(self) -> None:
+        """Good metric values should show green emoji indicators."""
+        metrics = {
+            "return_pct": 20.0,
+            "sharpe_ratio": 2.0,
+            "max_drawdown_pct": -5.0,
+            "win_rate_pct": 60.0,
+            "profit_factor": 2.0,
+        }
+        L: list[str] = []
+        _render_metric_zones_section(L, metrics)
+        rendered = "\n".join(L)
+
+        # Green indicators should appear for good metrics
+        assert "🟢" in rendered
+
+    def test_poor_metrics_show_red_zone(self) -> None:
+        """Poor metric values should show red emoji indicators."""
+        metrics = {
+            "return_pct": -5.0,
+            "sharpe_ratio": -0.5,
+            "max_drawdown_pct": -40.0,
+            "win_rate_pct": 30.0,
+            "profit_factor": 0.8,
+        }
+        L: list[str] = []
+        _render_metric_zones_section(L, metrics)
+        rendered = "\n".join(L)
+
+        # Red indicators should appear for poor metrics
+        assert "🔴" in rendered
+
+    def test_none_metrics_show_na(self) -> None:
+        """None values should render as N/A."""
+        metrics = {
+            "return_pct": None,
+            "sharpe_ratio": None,
+        }
+        L: list[str] = []
+        _render_metric_zones_section(L, metrics)
+        rendered = "\n".join(L)
+
+        # Each None metric has 2 "N/A" occurrences (value column + zone column)
+        assert rendered.count("N/A") >= 2
+
+    def test_with_trades_computes_win_loss_ratio(self) -> None:
+        """When trades are provided, Avg Win/Avg Loss row is rendered."""
+        trades = [
+            {"pnl": 100.0},
+            {"pnl": 50.0},
+            {"pnl": -30.0},
+            {"pnl": -20.0},
+        ]
+        metrics = {"return_pct": 5.0}
+        L: list[str] = []
+        _render_metric_zones_section(L, metrics, trades=trades)
+        rendered = "\n".join(L)
+
+        assert "Avg Win / Avg Loss" in rendered
+        # win/loss = (75) / (25) = 3.0
+        assert "3.0" in rendered or "3.00" in rendered
