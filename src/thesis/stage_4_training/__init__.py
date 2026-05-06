@@ -7,11 +7,16 @@ from thesis.stage_4_training._baselines import (
     random_baseline,
     run_all_baselines,
 )
-from thesis.stage_4_training._gru import (
+from thesis.stage_4_training._gru import train_gru
+from thesis.stage_4_training._gru_data import prepare_sequences
+from thesis.stage_4_training._gru_inference import (
     extract_hidden_states,
-    prepare_sequences,
+    predict_gru_proba,
+)
+from thesis.stage_4_training._gru_persistence import (
+    load_gru_classifier,
+    load_gru_model,
     save_gru_model,
-    train_gru,
 )
 from thesis.stage_4_training._lgbm import train_model
 from thesis.stage_4_training._validation import (
@@ -24,8 +29,11 @@ __all__ = [
     "compute_baseline_metrics",
     "extract_hidden_states",
     "generate_windows",
+    "load_gru_classifier",
+    "load_gru_model",
     "majority_class_baseline",
     "naive_direction",
+    "predict_gru_proba",
     "prepare_sequences",
     "random_baseline",
     "run_all_baselines",

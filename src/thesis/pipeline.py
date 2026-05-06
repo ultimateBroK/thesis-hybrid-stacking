@@ -18,7 +18,8 @@ from thesis._shared.ui import console, stage_header, stage_skip
 from thesis.stage_1_data import prepare_data
 from thesis.stage_2_features import generate_features
 from thesis.stage_3_labels import generate_labels
-from thesis.stage_4_training._walk_forward import _run_static_train, _run_walk_forward
+from thesis.stage_4_training._walk_forward import _run_walk_forward
+from thesis.stage_4_training._wf_static import _run_static_train
 from thesis.stage_5_backtest import run_backtest
 from thesis.stage_6_reporting import generate_report
 

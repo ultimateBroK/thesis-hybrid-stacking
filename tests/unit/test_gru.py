@@ -4,8 +4,8 @@ Tests cover: model architecture, sequence preparation, hidden state extraction,
 training loop (synthetic data), save/load round-trip.
 """
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl
@@ -15,19 +15,22 @@ import torch
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis._shared.config import Config
-from thesis.stage_4_training._gru import (
-    GRUExtractor,
+from thesis.stage_4_training._gru import train_gru
+from thesis.stage_4_training._gru_arch import GRUExtractor
+from thesis.stage_4_training._gru_data import (
     SequenceDataset,
     _sliding_windows,
+    prepare_sequences,
+)
+from thesis.stage_4_training._gru_inference import (
     extract_hidden_states,
+    predict_gru_proba,
+)
+from thesis.stage_4_training._gru_persistence import (
     load_gru_classifier,
     load_gru_model,
-    predict_gru_proba,
-    prepare_sequences,
     save_gru_model,
-    train_gru,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -21,7 +21,7 @@ from thesis.stage_3_labels._impl import (
     _filter_censored,
     _merge_label_columns,
 )
-from thesis.stage_4_training._walk_forward import _compute_regression_target
+from thesis.stage_4_training._wf_hybrid import _compute_regression_target
 from thesis._shared.config import Config, GRUConfig, LGBMConfig, LabelsConfig
 from thesis._shared.constants import CENSORED_LABEL
 

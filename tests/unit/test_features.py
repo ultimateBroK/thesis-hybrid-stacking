@@ -15,13 +15,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis._shared.config import Config
 from thesis._shared.constants import EXCLUDE_COLS
-from thesis.stage_2_features._impl import (
+from thesis.stage_2_features._indicators_core import (
     _add_rsi,
     _add_atr,
     _add_macd,
     _add_context_features,
     _add_pivot_position,
     _add_ny_session_dummies,
+)
+from thesis.stage_2_features._indicators_trend import (
     _add_ema_crossover,
     _add_price_action_features,
     _add_volume_zscore,

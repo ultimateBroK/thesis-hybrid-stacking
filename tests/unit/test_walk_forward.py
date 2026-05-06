@@ -11,7 +11,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from thesis.stage_4_training._walk_forward import (
+from thesis.stage_4_training._wf_utils import (
     _add_confidence_columns,
     _validate_predictions,
     _write_prediction_manifest,

@@ -15,7 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis._shared.config import Config
-from thesis.stage_4_training._lgbm import (
+from thesis.stage_4_training._lgbm_utils import (
     _build_interaction_constraints,
     _compute_class_weights,
     _compute_distribution_shift_weights,
@@ -155,7 +155,7 @@ class TestDeploymentModelMetadata:
 
     def test_window_provenance_keys_present_with_kwargs(self) -> None:
         """When window_index is provided, provenance keys are in the dict."""
-        from thesis.stage_4_training._walk_forward import _build_lgbm_info
+        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
         train_dates = {"start": "2023-01-01", "end": "2023-06-01"}
@@ -179,7 +179,7 @@ class TestDeploymentModelMetadata:
 
     def test_backward_compatible_no_window_provenance_keys(self) -> None:
         """Missing kwargs → no crash and no window-provenance keys in result."""
-        from thesis.stage_4_training._walk_forward import _build_lgbm_info
+        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
         info = _build_lgbm_info(model, ["f1", "f2"], last_window_accuracy=0.85)
@@ -207,7 +207,7 @@ class TestDeploymentModelMetadata:
 
     def test_metadata_includes_per_window_provenance(self) -> None:
         """Result includes per-window provenance when kwargs are supplied."""
-        from thesis.stage_4_training._walk_forward import _build_lgbm_info
+        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
 
         model = self._make_mock_model(best_iteration=75, classes=(0, 1, 2))
         train_dates = {"start": "2024-01-01", "end": "2024-06-01"}
@@ -238,7 +238,7 @@ class TestDeploymentModelMetadata:
 
     def test_backward_compatible_with_none_accuracy(self) -> None:
         """None accuracy is handled without crash — key present with None."""
-        from thesis.stage_4_training._walk_forward import _build_lgbm_info
+        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
         info = _build_lgbm_info(model, ["f1"], last_window_accuracy=None)
@@ -248,7 +248,7 @@ class TestDeploymentModelMetadata:
 
     def test_window_oof_accuracy_equals_last_window_accuracy(self) -> None:
         """window_oof_accuracy mirrors last_window_accuracy when set."""
-        from thesis.stage_4_training._walk_forward import _build_lgbm_info
+        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
 

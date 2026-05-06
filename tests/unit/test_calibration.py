@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 
 from thesis.stage_6_reporting._calibration import (
+    _to_onehot,
     brier_score,
     calibration_reliability_data,
     compute_all_calibration_metrics,
     confidence_bins_accuracy,
     expected_calibration_error,
-    high_confidence_accuracy,
     log_loss,
-    _to_onehot,
 )
+from thesis.stage_6_reporting._model_metrics import high_confidence_accuracy
 
 
 # ---------------------------------------------------------------------------

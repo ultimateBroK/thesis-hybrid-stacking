@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from thesis.stage_6_reporting._model_metrics import high_confidence_accuracy
+
 
 def _to_onehot(y_true: np.ndarray, classes: list[int]) -> np.ndarray:
     """Convert integer labels to one-hot encoding."""
@@ -94,20 +96,6 @@ def confidence_bins_accuracy(
         )
         lo = hi
     return results
-
-
-def high_confidence_accuracy(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    y_proba: np.ndarray,
-    threshold: float = 0.6,
-) -> dict:
-    """Accuracy when model confidence exceeds threshold."""
-    confidences = np.max(y_proba, axis=1)
-    mask = confidences > threshold
-    count = int(mask.sum())
-    acc = float((y_true[mask] == y_pred[mask]).mean()) if count > 0 else 0.0
-    return {"threshold": threshold, "count": count, "accuracy": round(acc, 4)}
 
 
 def calibration_reliability_data(

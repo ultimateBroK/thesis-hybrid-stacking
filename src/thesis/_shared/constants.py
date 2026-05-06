@@ -78,6 +78,43 @@ CHART_COLORS: dict[str, str] = {
 #: Alias for interactive chart modules (`charts/`) — same set as ``EXCLUDE_COLS``.
 EXCLUDED_FEATURE_COLS = EXCLUDE_COLS
 
+
+def timeframe_to_ms(timeframe: str) -> int:
+    """Parse a config timeframe string into milliseconds.
+
+    Supports ``H`` (hours), ``MIN`` / ``M`` (minutes), and ``D`` (day) suffixes.
+
+    Args:
+        timeframe: Timeframe string like ``"1H"``, ``"4H"``, ``"5MIN"``, ``"1D"``.
+
+    Returns:
+        Timeframe duration in milliseconds.
+
+    Raises:
+        ValueError: If the timeframe format is unsupported or the numeric
+            component is not positive.
+    """
+    tf = timeframe.upper()
+    if tf.endswith("H"):
+        hours = int(tf[:-1])
+        if hours <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': hours must be > 0")
+        return hours * 3_600_000
+    if tf.endswith("MIN"):
+        minutes = int(tf[:-3])
+        if minutes <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': minutes must be > 0")
+        return minutes * 60_000
+    if tf.endswith("M"):
+        minutes = int(tf[:-1])
+        if minutes <= 0:
+            raise ValueError(f"Invalid timeframe '{tf}': minutes must be > 0")
+        return minutes * 60_000
+    if tf in ("D", "1D"):
+        return 86_400_000
+    raise ValueError(f"Unsupported timeframe: {timeframe}")
+
+
 # Labeling constants
 
 #: Sample weight minimum floor for average-uniqueness computation.

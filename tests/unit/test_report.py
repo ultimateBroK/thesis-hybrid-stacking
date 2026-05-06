@@ -9,15 +9,17 @@ import polars as pl
 import pytest
 
 from thesis._shared.config import Config
+from thesis.stage_6_reporting._benchmarks import _model_label
 from thesis.stage_6_reporting._impl import (
-    _assess_model_quality,
-    _assess_trading_edge,
     _benchmark_comparison_table,
     _config_table,
-    _derive_recommendation,
     _exec_verdict,
+)
+from thesis.stage_6_reporting._sections import (
+    _assess_model_quality,
+    _assess_trading_edge,
+    _derive_recommendation,
     _identify_primary_issue,
-    _model_label,
     _render_data_quality_section,
     _render_metric_zones_section,
     _render_oof_vs_oos_section,
@@ -89,7 +91,7 @@ def test_benchmark_table_discloses_not_cost_equivalent(
         ]
 
     monkeypatch.setattr(
-        "thesis.stage_6_reporting._impl.compute_benchmark_comparison", fake_benchmarks
+        "thesis.stage_6_reporting._tables.compute_benchmark_comparison", fake_benchmarks
     )
     lines: list[str] = []
 

@@ -21,10 +21,10 @@ from thesis.stage_5_backtest import (
     run_backtest_manual,
 )
 from thesis.stage_5_backtest._impl import (
-    _calendar_day,
     _prepare_df,
     _run_bt,
 )
+from thesis.stage_5_backtest._strategy import _calendar_day
 
 _log = logging.getLogger(__name__)
 

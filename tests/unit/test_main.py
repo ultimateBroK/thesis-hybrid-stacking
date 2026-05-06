@@ -107,7 +107,7 @@ class TestPipelineEmptyWindowsGuard:
     @pytest.mark.unit
     def test_empty_windows_raises_runtime_error(self) -> None:
         """_run_walk_forward_hybrid must raise RuntimeError for empty windows."""
-        from thesis.stage_4_training._walk_forward import _run_walk_forward_hybrid
+        from thesis.stage_4_training._wf_hybrid import _run_walk_forward_hybrid
 
         cfg = Config()
         # Use tiny data that can't produce any windows
@@ -134,9 +134,9 @@ class TestPipelineEmptyWindowsGuard:
         )
 
         with (
-            patch("thesis.stage_4_training._walk_forward.Path") as mock_path_cls,
+            patch("thesis.stage_4_training._wf_hybrid.Path") as mock_path_cls,
             patch(
-                "thesis.stage_4_training._walk_forward.generate_windows",
+                "thesis.stage_4_training._wf_hybrid.generate_windows",
                 return_value=[],
             ),
         ):
@@ -146,7 +146,7 @@ class TestPipelineEmptyWindowsGuard:
 
             # Make pl.read_parquet return our tiny df
             with patch(
-                "thesis.stage_4_training._walk_forward.pl.read_parquet",
+                "thesis.stage_4_training._wf_hybrid.pl.read_parquet",
                 return_value=tiny_df,
             ):
                 with pytest.raises(RuntimeError, match="No valid walk-forward windows"):
@@ -159,7 +159,7 @@ class TestPipelineEmptyWindowsGuard:
         # ``_save_wf_artifacts`` (delegated from ``_run_walk_forward_hybrid``).
         # Verify the error message exists as a contract somewhere in the module.
         import inspect as _inspect
-        import thesis.stage_4_training._walk_forward as wf_mod
+        import thesis.stage_4_training._wf_hybrid as wf_mod
 
         source = _inspect.getsource(wf_mod._save_wf_artifacts)
         assert "No OOF predictions generated" in source

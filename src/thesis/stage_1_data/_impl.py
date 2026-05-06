@@ -25,6 +25,7 @@ from rich.progress import (
 )
 
 from thesis._shared.config import Config
+from thesis._shared.constants import timeframe_to_ms as _timeframe_to_ms
 from thesis._shared.ui import console
 
 logger = logging.getLogger("thesis.prepare")
@@ -123,35 +124,6 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
     )
 
     return ohlcv
-
-
-def _parse_timeframe_to_ms(timeframe: str) -> int:
-    """Parse config timeframe string to milliseconds.
-
-    Args:
-        timeframe: Timeframe string like "1H", "4H", "5MIN", "1D".
-
-    Returns:
-        Timeframe in milliseconds.
-
-    Raises:
-        ValueError: If timeframe format is unsupported or invalid.
-    """
-    tf = timeframe.upper()
-    if tf.endswith("H"):
-        hours = int(tf[:-1])
-        if hours <= 0:
-            raise ValueError(f"Invalid timeframe '{tf}': hours must be > 0")
-        return hours * 3_600_000
-    elif tf.endswith("MIN") or tf.endswith("M"):
-        minutes = int(tf.replace("MIN", "").replace("M", ""))
-        if minutes <= 0:
-            raise ValueError(f"Invalid timeframe '{tf}': minutes must be > 0")
-        return minutes * 60_000
-    elif tf in ("D", "1D"):
-        return 86_400_000
-    else:
-        raise ValueError(f"Unsupported timeframe: {tf}")
 
 
 def _aggregate_monthly_files(
@@ -501,7 +473,7 @@ def prepare_data(config: Config) -> None:
 
     logger.info("Found %d tick files in %s", len(parquet_files), raw_dir)
 
-    group_ms = _parse_timeframe_to_ms(config.data.timeframe)
+    group_ms = _timeframe_to_ms(config.data.timeframe)
 
     # Aggregate each monthly file separately — memory-efficient
     monthly_bars = _aggregate_monthly_files(parquet_files, group_ms)
