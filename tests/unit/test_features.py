@@ -109,7 +109,16 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
             *config.gru.feature_cols,
         }
     )
-    keep_cols = ["timestamp", "open", "high", "low", "close", "volume", *keep_features]
+    keep_cols = [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        f"atr_{config.features.atr_period}",
+        *keep_features,
+    ]
     df = df.select([c for c in keep_cols if c in df.columns])
     return df
 
@@ -118,15 +127,16 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 # Keep in sync with CORE_STATIC_FEATURES in constants.py.
 EXPECTED_FEATURES: list[str] = [
     "adx_14",
-    "atr_14",
+    "atr_pct_close",
     "atr_percentile",
+    "atr_ratio",
     "candle_body_ratio",
     "close_vs_ema_34",
     "ema_slope_20",
     "ema34_vs_ema89",
     "high_low_range_20",
     "lower_wick_ratio",
-    "macd_hist",
+    "macd_hist_atr",
     "pivot_position",
     "price_dist_ratio",
     "price_position_20",
@@ -320,20 +330,27 @@ def test_atr_positive(sample_config: Config) -> None:
     result = _add_atr(df, sample_config)
 
     assert "atr_14" in result.columns
+    assert "atr_pct_close" in result.columns
 
     atr_values = result["atr_14"].drop_nulls().to_numpy()
     assert len(atr_values) > 0
     assert np.all(atr_values > 0)
 
+    atr_pct_values = result["atr_pct_close"].drop_nulls().to_numpy()
+    assert len(atr_pct_values) > 0
+    assert np.all(atr_pct_values > 0)
+
 
 @pytest.mark.unit
 @pytest.mark.features
 def test_macd_histogram_only(sample_config: Config) -> None:
-    """Test MACD produces only histogram (no macd_line column)."""
+    """Test MACD produces raw and ATR-normalized histograms."""
     df = create_synthetic_ohlcv(n_rows=200)
+    df = _add_atr(df, sample_config)
     result = _add_macd(df, sample_config)
 
     assert "macd_hist" in result.columns
+    assert "macd_hist_atr" in result.columns
     # macd_line should NOT be produced anymore
     assert "macd_line" not in result.columns
 
@@ -488,7 +505,9 @@ def test_all_features_together(sample_config: Config) -> None:
     expected_features = [
         "rsi_14",
         "atr_14",
+        "atr_pct_close",
         "macd_hist",
+        "macd_hist_atr",
         "atr_ratio",
         "price_dist_ratio",
         "pivot_position",

@@ -105,7 +105,7 @@ These parameters have the most effect on your backtest results. Adjust these bef
 
 | What it does | Size of the GRU's internal memory (hidden states) |
 |--------------|--------------------------------------------------|
-| **Default** | 128 (expanded from v1's 64) |
+| **Default** | 64 |
 | **Range** | 32–256 |
 | **Effect** | Larger = more capacity to learn complex patterns, but slower and more risk of overfitting. |
 
@@ -113,7 +113,7 @@ These parameters have the most effect on your backtest results. Adjust these bef
 - **64** (default): Stable capacity for 5+ years of data without over-amplifying noisy regimes.
 - **192–256**: Very large capacity. Needs strong regularization (dropout 0.3+) and early stopping.
 
-> With 5+ years of XAUUSD data and 19 input features, `hidden_size = 64` is the stable default. The latest 128-hidden regression run degraded OOS class signal, so larger sizes should be treated as experiments.
+> With 5+ years of XAU/USD data and 20 input features, `hidden_size = 64` is the stable default. The latest 128-hidden regression run degraded OOS class signal, so larger sizes should be treated as experiments.
 >
 > **Objective default:** GRU trains with multiclass focal loss. Regression is available for experiments only.
 
@@ -171,21 +171,21 @@ Walk-forward validation is critical for time-series models. These parameters con
 
 | Parameter | Default | What it does |
 |-----------|---------|-------------|
-| `method` | `"sliding"` | `"sliding"` (expanding window) or `"static"` (fixed split) |
-| `train_window_bars` | 26280 (~3yr) | Training data per window |
+| `method` | `"sliding"` | `"sliding"` walk-forward or `"static"` fixed split |
+| `train_window_bars` | 17520 (~2yr) | Training data per window |
 | `test_window_bars` | 4380 (~6mo) | Out-of-sample period per window |
 | `step_bars` | 4380 | Step between consecutive windows |
-| `purge_bars` | 25 | Bars removed at train/test boundary |
+| `purge_bars` | 48 | Bars removed at train/test boundary |
 | `embargo_bars` | 50 | Additional gap after purge |
 | `min_train_bars` | 10000 | Minimum training bars to produce a window |
 | `oof_ensemble` | `true` | Aggregate OOF predictions across windows |
 
 ### How to adjust
 
-- **`train_window_bars`**: Increase for more training data (e.g., 35040 for ~4yr). Decrease for shorter datasets. Ensure it's at least `min_train_bars` (10000).
+- **`train_window_bars`**: Default is 17520 (~2 years). Increase for more stable long-regime training; decrease only if you lack data. Ensure it stays at least `min_train_bars` (10000).
 - **`test_window_bars`**: Shorter (2190 ≈ 3mo) = more windows, more robust evaluation. Longer (4380 ≈ 6mo) = more stable per-window estimates.
 - **`step_bars`**: Set equal to `test_window_bars` for non-overlapping windows. Set lower (e.g., 2190) for overlapping windows — gives more test periods but slower.
-- **`purge_bars` / `embargo_bars`**: Anti-leakage gaps. Keep `purge_bars ≥ 25` and `embargo_bars ≥ 50` for 1H data. Increase for longer `horizon_bars`.
+- **`purge_bars` / `embargo_bars`**: Anti-leakage gaps. Keep `purge_bars ≥ 48` and `embargo_bars ≥ 50` for 1H data. Increase purge if average trade holding time exceeds 48 bars.
 
 ### Common patterns
 
@@ -197,10 +197,10 @@ method = "static"
 # Thorough walk-forward validation
 [validation]
 method = "sliding"
-train_window_bars = 26280
+train_window_bars = 17520
 test_window_bars = 4380
 step_bars = 4380
-purge_bars = 25
+purge_bars = 48
 embargo_bars = 50
 ```
 
@@ -382,7 +382,7 @@ Avoid these mistakes:
 | `sequence_length` too long (100+) | GRU overfits to training data | Maximum 64 for small data, 96 for large |
 | `correlation_threshold` too high (0.95) | Redundant features add noise, slow training | Keep at 0.75 or lower |
 | `hidden_size` too large | GRU memorizes or loses OOS class signal | Keep 64 default; test 128+ only with OOS validation |
-| `purge_bars` / `embargo_bars` too low | Label leakage from train into test | Keep purge ≥ 25, embargo ≥ 50 for 1H |
+| `purge_bars` / `embargo_bars` too low | Label leakage from train into test | Keep purge ≥ 48, embargo ≥ 50 for 1H; increase purge if trades hold longer |
 | `max_drawdown_cutoff` too low (0.10) | Backtest stops too early, not enough trades | Minimum 0.20, prefer 0.30 |
 
 ---
@@ -462,7 +462,7 @@ flowchart TD
 | `hidden_size` | 32 | 16–64 | GRU capacity |
 | `batch_size` | 256 | 64–512 | GRU training |
 | `correlation_threshold` | 0.75 | 0.5–0.95 | Feature selection |
-| `train_window_bars` | 26280 | 10000–35040 | Walk-forward train size |
+| `train_window_bars` | 17520 | 10000–35040 | Walk-forward train size |
 | `test_window_bars` | 4380 | 2190–8760 | Walk-forward test size |
 | `max_drawdown_cutoff` | 0.30 | 0.10–0.50 | Circuit breaker |
 | `dd_cooldown_bars` | 12 | 6–48 | Post-drawdown pause |

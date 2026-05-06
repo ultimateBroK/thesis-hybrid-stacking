@@ -48,6 +48,7 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "volume",
         "avg_spread",
         "tick_count",
+        "atr_14",  # Label-barrier helper; normalized ATR is model-facing
         "log_returns",  # GRU sequence input — not a static feature for LightGBM
     ]
 )
@@ -146,10 +147,7 @@ CALIB_LR: float = 0.01
 #: Maximum LBFGS iterations for temperature-scaling calibration.
 CALIB_MAX_ITER: int = 100
 
-# Core static feature list
-
-# Core tabular features — price-action focused with minimal indicators.
-# Keep in sync with config.toml [features].static_feature_cols.
+# Default LightGBM tabular features. Keep user config minimal; override only in code.
 CORE_STATIC_FEATURES: tuple[str, ...] = (
     # Trend
     "ema34_vs_ema89",
@@ -160,10 +158,11 @@ CORE_STATIC_FEATURES: tuple[str, ...] = (
     # Momentum
     "return_1h",
     "return_4h",
-    "macd_hist",
+    "macd_hist_atr",
     "rsi_14",
     # Volatility / Regime
-    "atr_14",
+    "atr_pct_close",
+    "atr_ratio",
     "atr_percentile",
     "high_low_range_20",
     # Position / Location

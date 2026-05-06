@@ -17,7 +17,7 @@
 
 ### Models
 
-- [x] **GRU feature extractor** — 2-layer GRU, 64 hidden units, 48-bar sequences, 19 input features including raw OHLCV z-scores (`src/thesis/stage_4_training/_gru.py`)
+- [x] **GRU feature extractor** — 2-layer GRU, 64 hidden units, 48-bar sequences, 20 input features including raw OHLCV z-scores and relative volatility features (`src/thesis/stage_4_training/_gru.py`)
 - [x] **GRU multiclass objective** — GRU trains on Short/Hold/Long class labels; regression remains experimental
 - [x] **Cosine-annealing LR schedule** — Warm restarts (T_0=10, T_mult=2) with warmup for better convergence
 - [x] **LightGBM classifier** — Multiclass with distribution-shift weight correction (`src/thesis/stage_4_training/_lgbm.py`)

@@ -1,192 +1,165 @@
-"""Tests for configuration consistency between sections.
-
-Verifies that labels and backtest barrier multipliers stay aligned,
-since the backtest SL/TP must match the label barriers used to
-generate the signals being traded.
-"""
+"""Config contract tests."""
 
 from pathlib import Path
 
 import pytest
 
-from thesis._shared.config import Config
+from thesis._shared.config import Config, load_config
+from thesis._shared.constants import CORE_STATIC_FEATURES
 from thesis.pipeline import _cache_hash, _resolve_cache_path
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Barrier consistency
-# ──────────────────────────────────────────────────────────────────────
+@pytest.mark.unit
+def test_label_backtest_barriers_match() -> None:
+    """Signals and trades must use the same ATR barriers."""
+    cfg = Config()
+
+    assert cfg.labels.atr_tp_multiplier == cfg.backtest.atr_tp_multiplier
+    assert cfg.labels.atr_sl_multiplier == cfg.backtest.atr_stop_multiplier
 
 
 @pytest.mark.unit
-def test_label_backtest_barrier_consistency() -> None:
-    """Default config must have matching label and backtest multipliers."""
-    cfg = Config()
+def test_minimal_public_config_uses_hidden_defaults(tmp_path: Path) -> None:
+    """A short TOML file should still produce a complete config."""
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[data]
+symbol = "XAUUSD"
+timeframe = "1H"
 
-    assert cfg.labels.atr_tp_multiplier == cfg.backtest.atr_tp_multiplier, (
-        f"labels.atr_tp_multiplier ({cfg.labels.atr_tp_multiplier}) "
-        f"!= backtest.atr_tp_multiplier ({cfg.backtest.atr_tp_multiplier})"
+[model]
+architecture = "hybrid"
+""".strip(),
+        encoding="utf-8",
     )
 
-    assert cfg.labels.atr_sl_multiplier == cfg.backtest.atr_stop_multiplier, (
-        f"labels.atr_sl_multiplier ({cfg.labels.atr_sl_multiplier}) "
-        f"!= backtest.atr_stop_multiplier ({cfg.backtest.atr_stop_multiplier})"
+    cfg = load_config(config_path)
+
+    assert cfg.data.start_date == "2018-01-01"
+    assert cfg.splitting.test_end == "2026-04-30 23:59:59"
+    assert cfg.features.static_feature_cols == list(CORE_STATIC_FEATURES)
+    assert cfg.gru.input_size == len(cfg.gru.feature_cols)
+    assert cfg.paths.model == "models/lightgbm_model.pkl"
+
+
+@pytest.mark.unit
+def test_unknown_config_keys_fail_fast(tmp_path: Path) -> None:
+    """Typos in public config should not be ignored."""
+    config_path = tmp_path / "bad_config.toml"
+    config_path.write_text(
+        """
+[data]
+symbol = "XAUUSD"
+timeframe_typo = "1H"
+""".strip(),
+        encoding="utf-8",
     )
 
-
-# ──────────────────────────────────────────────────────────────────────
-# _cache_hash
-# ──────────────────────────────────────────────────────────────────────
+    with pytest.raises(ValueError, match=r"Unknown config key\(s\) in \[data\]"):
+        load_config(config_path)
 
 
 @pytest.mark.unit
 class TestCacheHash:
-    """Tests for the cache-fingerprinting function ``_cache_hash``."""
+    """Stage cache fingerprints."""
 
-    def test_different_configs_different_hashes(self) -> None:
-        """Changing a relevant field should change the stage hash."""
+    def test_relevant_change_changes_hash(self) -> None:
+        """Relevant edits should change a stage hash."""
         cfg_a = Config()
         cfg_b = Config()
-        cfg_b.features.atr_period = 21  # different from default 14
+        cfg_b.features.atr_period = 21
 
-        h_a = _cache_hash(cfg_a, stage_num=2)  # stage 2 depends on "features"
+        h_a = _cache_hash(cfg_a, stage_num=2)
         h_b = _cache_hash(cfg_b, stage_num=2)
 
-        assert h_a, "hash must not be empty"
-        assert h_b, "hash must not be empty"
-        assert h_a != h_b, (
-            f"Hashes should differ for different atr_period:\n  a={h_a}\n  b={h_b}"
-        )
+        assert h_a
+        assert h_b
+        assert h_a != h_b
 
-    def test_identical_configs_identical_hashes(self) -> None:
-        """Two configs with the same values must produce the same hash."""
+    def test_identical_configs_match(self) -> None:
+        """Same values should produce same hashes."""
         cfg_a = Config()
         cfg_b = Config()
 
         for stage in [1, 2, 3, 4, 5]:
-            h_a = _cache_hash(cfg_a, stage)
-            h_b = _cache_hash(cfg_b, stage)
-            assert h_a == h_b, (
-                f"Identical configs must produce identical hashes "
-                f"for stage {stage}: {h_a} vs {h_b}"
-            )
+            assert _cache_hash(cfg_a, stage) == _cache_hash(cfg_b, stage)
 
-    def test_hash_ignores_irrelevant_sections(self) -> None:
-        """Hash for stage N only depends on sections listed in
-        ``_STAGE_CONFIG_SECTIONS[N]``."""
-        stage = 2  # depends on ["features"]
+    def test_stage_hash_ignores_unmapped_sections(self) -> None:
+        """A stage hash should ignore unrelated sections."""
+        stage = 2
+        cfg = Config()
+        h_base = _cache_hash(cfg, stage)
 
-        cfg_base = Config()
-        h_base = _cache_hash(cfg_base, stage)
-
-        # Change labels — should NOT affect stage 2 hash
         cfg_label_alt = Config()
         cfg_label_alt.labels.atr_tp_multiplier = 999.0
-        h_label_alt = _cache_hash(cfg_label_alt, stage)
-        assert h_base == h_label_alt, "Stage 2 hash must ignore labels changes"
+        assert h_base == _cache_hash(cfg_label_alt, stage)
 
-        # Change model — should NOT affect stage 2 hash
         cfg_model_alt = Config()
         cfg_model_alt.model.learning_rate = 0.999
-        h_model_alt = _cache_hash(cfg_model_alt, stage)
-        assert h_base == h_model_alt, "Stage 2 hash must ignore model changes"
+        assert h_base == _cache_hash(cfg_model_alt, stage)
 
-    def test_empty_sections_returns_empty_string(self) -> None:
-        """Stage 6 has no mapped sections, so hash must be empty."""
-        cfg = Config()
-        h = _cache_hash(cfg, stage_num=6)
-        assert h == "", f"Stage 6 hash must be empty, got {h!r}"
+    def test_unmapped_stage_has_empty_hash(self) -> None:
+        """Stages without mapped sections should not hash."""
+        assert _cache_hash(Config(), stage_num=6) == ""
 
-    def test_stage_4_depends_on_model_gru_validation(self) -> None:
-        """Stage 4 depends on model, gru, and validation sections."""
+    def test_stage_4_tracks_training_sections(self) -> None:
+        """Training hash should track model and GRU edits."""
         cfg_a = Config()
+
         cfg_b = Config()
-
-        # Change model param
         cfg_b.model.num_leaves = 999
-        h_a = _cache_hash(cfg_a, stage_num=4)
-        h_b = _cache_hash(cfg_b, stage_num=4)
-        assert h_a != h_b, "Stage 4 hash must react to model changes"
+        assert _cache_hash(cfg_a, 4) != _cache_hash(cfg_b, 4)
 
-        # Change gru param
         cfg_c = Config()
         cfg_c.gru.hidden_size = 256
-        h_c = _cache_hash(cfg_c, stage_num=4)
-        assert h_a != h_c, "Stage 4 hash must react to gru changes"
-
-
-# ──────────────────────────────────────────────────────────────────────
-# _resolve_cache_path and cache_invalidation
-# ──────────────────────────────────────────────────────────────────────
+        assert _cache_hash(cfg_a, 4) != _cache_hash(cfg_c, 4)
 
 
 @pytest.mark.unit
 class TestCacheInvalidation:
-    """Tests for ``_resolve_cache_path`` with different invalidation
-    strategies: ``"path"``, ``"hash"``, and ``"none"``."""
+    """Cache path strategies."""
 
-    BASE = "data/processed/features.parquet"
-    STAGE = 2
-    CONFIG = Config()
+    base = "data/processed/features.parquet"
+    stage = 2
+    cfg = Config()
 
-    def test_invalidation_none_returns_none(self) -> None:
-        """``cache_invalidation="none"`` disables caching entirely."""
-        result = _resolve_cache_path(self.BASE, "none", self.CONFIG, self.STAGE)
-        assert result is None, "cache_invalidation='none' must return None"
+    def test_none_disables_cache(self) -> None:
+        """Strategy none should skip cache reads."""
+        assert _resolve_cache_path(self.base, "none", self.cfg, self.stage) is None
 
-    def test_invalidation_path_returns_unmodified(self) -> None:
-        """``cache_invalidation="path"`` returns the path as-is."""
-        result = _resolve_cache_path(self.BASE, "path", self.CONFIG, self.STAGE)
-        assert result == Path(self.BASE), (
-            f"cache_invalidation='path' must return unmodified path, got {result}"
+    def test_path_keeps_base_path(self) -> None:
+        """Strategy path should reuse the base path."""
+        assert _resolve_cache_path(self.base, "path", self.cfg, self.stage) == Path(
+            self.base
         )
 
-    def test_invalidation_hash_embeds_fingerprint(self) -> None:
-        """``cache_invalidation="hash"`` appends a hash to the filename
-        stem for stages with mapped config sections."""
-        result = _resolve_cache_path(self.BASE, "hash", self.CONFIG, self.STAGE)
-        assert result is not None, "hash invalidation must return a path"
-        assert result != self.BASE, "hash invalidation must alter the path"
-        # The stem should be "features_XXXXXXXX" where XXXXXXXX is 8-hex
-        stem = result.stem
-        assert stem.startswith("features_"), (
-            f"Expected stem to start with 'features_', got {stem!r}"
-        )
-        suffix = stem[len("features_") :]
-        assert len(suffix) == 8, (
-            f"Expected 8-char hex suffix, got {len(suffix)} chars: {suffix!r}"
-        )
-        # Verify it's hex
-        int(suffix, 16)
+    def test_hash_adds_fingerprint(self) -> None:
+        """Strategy hash should append an 8-char hex suffix."""
+        result = _resolve_cache_path(self.base, "hash", self.cfg, self.stage)
 
-    def test_invalidation_hash_stage_6_no_append(self) -> None:
-        """Stage 6 has no mapped sections, so hash invalidation falls
-        back to the unmodified path."""
-        result = _resolve_cache_path(self.BASE, "hash", self.CONFIG, stage_num=6)
-        assert result == Path(self.BASE), (
-            "Stage 6 (no sections) should return unmodified path with hash invalidation"
-        )
+        assert result is not None
+        assert result != self.base
+        assert result.stem.startswith("features_")
+        assert len(result.stem.removeprefix("features_")) == 8
+        int(result.stem.removeprefix("features_"), 16)
 
-    def test_base_none_returns_none(self) -> None:
-        """When ``base`` is ``None``, return ``None`` regardless of
-        invalidation strategy."""
+    def test_hash_without_stage_sections_keeps_base_path(self) -> None:
+        """Strategy hash should no-op for unmapped stages."""
+        assert _resolve_cache_path(self.base, "hash", self.cfg, 6) == Path(self.base)
+
+    def test_missing_base_returns_none(self) -> None:
+        """A missing base path should stay missing."""
         for strategy in ("path", "hash", "none"):
-            result = _resolve_cache_path(None, strategy, self.CONFIG, self.STAGE)
-            assert result is None, (
-                f"base=None with invalidation={strategy!r} must return None"
-            )
+            assert _resolve_cache_path(None, strategy, self.cfg, self.stage) is None
 
-    def test_hash_invalidation_reacts_to_config_change(self) -> None:
-        """With 'hash' invalidation, a config change should produce a
-        different path."""
+    def test_hash_path_changes_with_config(self) -> None:
+        """Hashed paths should change when config changes."""
         cfg_base = Config()
         cfg_mod = Config()
         cfg_mod.features.atr_period = 21
 
-        p_base = _resolve_cache_path(self.BASE, "hash", cfg_base, self.STAGE)
-        p_mod = _resolve_cache_path(self.BASE, "hash", cfg_mod, self.STAGE)
+        p_base = _resolve_cache_path(self.base, "hash", cfg_base, self.stage)
+        p_mod = _resolve_cache_path(self.base, "hash", cfg_mod, self.stage)
 
-        assert p_base != p_mod, (
-            f"Hash-invalidated paths must differ for different configs:\n"
-            f"  base={p_base}\n  mod={p_mod}"
-        )
+        assert p_base != p_mod

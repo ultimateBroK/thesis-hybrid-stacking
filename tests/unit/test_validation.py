@@ -373,10 +373,10 @@ class TestWindowTestPeriodsNoOverlap:
     """
 
     # ── current config defaults (config.toml section [validation]) ──────
-    TRAIN_WINDOW_BARS = 26280  # ~3 years of H1 bars
+    TRAIN_WINDOW_BARS = 17520  # ~2 years of H1 bars
     TEST_WINDOW_BARS = 4380  # ~6 months of H1 bars
     STEP_BARS = 4380  # must be >= test_window_bars to prevent overlap
-    PURGE_BARS = 25
+    PURGE_BARS = 48
     EMBARGO_BARS = 50
     MIN_TRAIN_BARS = 10000
 

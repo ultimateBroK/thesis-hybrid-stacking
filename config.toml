@@ -1,5 +1,5 @@
-# Minimal thesis configuration.
-# Goal: reproducible ML experiment first; trading simulation second.
+# Public experiment configuration.
+# Hidden defaults live in src/thesis/_shared/config.py.
 
 [data]
 symbol = "XAUUSD"
@@ -10,89 +10,42 @@ end_date = "2026-04-30"
 tick_size = 0.01
 contract_size = 100
 
-# ── Split manifest / static mode ranges ───────────────────────────────
-# Sliding walk-forward still uses bar windows below. These ranges document the
-# thesis evaluation period and drive static split mode/session metadata.
-# train: 2018-2022 (5 years), val: 2023 (1 year), test: 2024-2026 (~2.3 years)
 [splitting]
 train_start = "2018-01-01"
-train_end = "2022-12-31 23:59:59"
-val_start = "2023-01-01"
-val_end = "2023-12-31 23:59:59"
-test_start = "2024-01-01"
+train_end = "2023-09-30 23:59:59"
+val_start = "2023-10-01"
+val_end = "2025-01-31 23:59:59"
+test_start = "2025-02-01"
 test_end = "2026-04-30 23:59:59"
 
 [validation]
+# Sliding walk-forward retrains GRU and LightGBM at every window.
 method = "sliding"
-train_window_bars = 26280   # ~3 years of H1 bars
-test_window_bars = 4380     # ~6 months of H1 bars
-step_bars = 4380
-purge_bars = 25
+train_window_bars = 17520  # ~2 years on 1H bars
+test_window_bars = 4380    # ~6 months on 1H bars
+step_bars = 4380           # non-overlapping test windows
+purge_bars = 48            # 2x 24h horizon; above typical trade hold time
 embargo_bars = 50
 min_train_bars = 10000
 
 [features]
 rsi_period = 14
 atr_period = 14
-adx_period = 14               # Average Directional Index — trend strength (non-directional)
-ema_slope_period = 20         # EMA span for 5-bar slope (acceleration / deceleration)
+adx_period = 14
+ema_slope_period = 20
 macd_fast = 12
 macd_slow = 26
 macd_signal = 9
 correlation_threshold = 0.75
-# 22 static features for LightGBM in 7 groups.
-# regime_strength = ADX x EMA_slope — composite trend quality indicator.
-# adx_14, ema_slope_20, regime_strength are new regime-detection features.
-static_feature_cols = [
-  # --- Trend ---
-  "ema34_vs_ema89",
-  "close_vs_ema_34",
-  "adx_14",
-  "ema_slope_20",
-  "regime_strength",
-  # --- Momentum ---
-  "return_1h",
-  "return_4h",
-  "macd_hist",
-  "rsi_14",
-  # --- Volatility / Regime ---
-  "atr_14",
-  "atr_percentile",
-  "high_low_range_20",
-  # --- Position / Location ---
-  "price_dist_ratio",
-  "price_position_20",
-  "pivot_position",
-  # --- Candle Structure ---
-  "candle_body_ratio",
-  "upper_wick_ratio",
-  "lower_wick_ratio",
-  # --- Session ---
-  "sess_london",
-  "sess_overlap",
-  # --- Volume / Activity ---
-  "volume_zscore_20",
-]
 
 [labels]
-# 2xATR barriers (~$40-50 move) provide margin above round-trip costs ($~2.40)
-atr_tp_multiplier = 2.0  # widened for better signal-to-noise vs trading costs
-atr_sl_multiplier = 2.0  # symmetric for balanced labels
+atr_tp_multiplier = 2.0
+atr_sl_multiplier = 2.0
 horizon_bars = 24
 
 [model]
-# Architecture options:
-#   "static"  = LightGBM on technical/static features only. Fast baseline.
-#   "hybrid"  = GRU sequence features + static features -> LightGBM. Main model.
-# Rule: run "static" first; keep "hybrid" only if it clearly beats static.
-architecture = "hybrid"
-# Objective: LightGBM output format. Independent of [gru].objective.
-#   "multiclass" = 3-class classification (Short/Hold/Long) — default thesis output.
-#   "regression" = continuous forward-returns prediction.
-# Current stable design: GRU trains on the same 3-class objective used by LightGBM.
-# Regression embeddings are experimental and disabled after OOS degradation.
+architecture = "hybrid"  # "static" or "hybrid"
 objective = "multiclass"
-# static_expanded: use ALL features (not just static_feature_cols whitelist) for static baseline.
 static_expanded = false
 num_leaves = 31
 max_depth = 6
@@ -100,95 +53,49 @@ learning_rate = 0.02
 n_estimators = 500
 min_child_samples = 50
 subsample = 0.80
-# subsample_freq: resample training data every N iterations (0 = once per tree).
 subsample_freq = 5
 feature_fraction = 0.70
-reg_alpha = 0.05     # L1 regularization
+reg_alpha = 0.05
 reg_lambda = 5.0
 early_stopping_rounds = 40
 
 [gru]
-# GRU objective independent of model.objective:
-#   "multiclass"  — 3-class focal loss (Short/Hold/Long). Stable thesis default.
-#   "regression"  — experimental MSE on forward returns; degraded OOS class signal.
 objective = "multiclass"
-# 19 sequence features: traditional indicators + regime features + raw OHLCV z-scores.
-# open_norm/high_norm/low_norm/close_norm = rolling 20-bar z-scores of OHLCV bars.
-feature_cols = ["log_returns", "return_1h", "return_4h", "atr_14", "close_vs_ema_34", "ema34_vs_ema89", "price_position_20", "candle_body_ratio", "macd_hist", "rsi_14", "atr_percentile", "adx_14", "ema_slope_20", "regime_strength", "volume_zscore_20", "open_norm", "high_norm", "low_norm", "close_norm"]
-input_size = 19            # Must match length of feature_cols
-hidden_size = 64           # Stable size; 128 caused weaker OOS class signal in latest run
+hidden_size = 64
 num_layers = 2
 sequence_length = 48
-dropout = 0.3              # Variational dropout (same mask across timesteps)
+dropout = 0.3
 learning_rate = 0.0005
 batch_size = 256
-epochs = 100               # Extended for cosine annealing with warm restarts
-patience = 20              # Early stopping on validation loss
-min_epochs = 10            # Minimum epochs before early stopping can trigger
-# Bidirectional GRU — reads both forward and backward in time.
-# Disabled by default to prevent look-ahead bias.
+epochs = 100
+patience = 20
+min_epochs = 10
 bidirectional = false
-# gradient_accumulation_steps: simulate larger batch sizes (effective_batch = batch_size × steps).
-# Set to 1 for no accumulation.
 gradient_accumulation_steps = 1
-# Cosine-annealing LR schedule:
-#   warmup_epochs = 3  — linear warmup from 0 → peak LR
-#   COSINE_T0 = 10     — first restart period (constant in code)
-#   COSINE_TMULT = 2   — period multiplier per restart (constant in code)
 warmup_epochs = 3
-# Contrastive pre-training: triplet loss to learn structured embeddings before
-# switching to regression on forward returns. Set to 0 to disable.
 contrastive_pretrain_epochs = 10
-# Temperature scaling: calibrate GRU output probabilities using LBFGS optimization.
 temperature_scaling = false
-# PCA dimension reduction for GRU hidden states before LightGBM.
-# 128-dim hidden states → 16 PCA components. 0 = disabled (pass full 128).
 pca_components = 16
 
-# Must match [labels] atr multipliers for barrier alignment.
-# SL/TP distances in backtest = label barrier distances to avoid training mismatch.
 [backtest]
 initial_capital = 10000.0
 leverage = 10
 spread_ticks = 35
 slippage_ticks = 5
 commission_per_lot = 10.0
-atr_stop_multiplier = 2.0      # Must match [labels] atr_sl_multiplier
-atr_tp_multiplier = 2.0        # Must match [labels] atr_tp_multiplier; 0 = disabled
-lots_per_trade = 0.01          # Conservative fixed lot size until model is profitable
-min_lots = 0.01                # Floor lot size at lowest confidence (just above threshold)
-max_lots = 0.5                 # Ceiling lot size at highest confidence (1.0)
-# Confidence is a trade filter only; lot amplification is disabled in code.
-confidence_threshold = 0.50    # Min predicted probability to act (0 = disabled)
-# Trade cooldown: minimum bars between position exit and next entry.
-# Reduces overtrading and correlation between consecutive trades.
-# 6 bars = 6 hours on 1H data (~one full session window).
+atr_stop_multiplier = 2.0
+atr_tp_multiplier = 2.0
+lots_per_trade = 0.01
+min_lots = 0.01
+max_lots = 0.5
+confidence_threshold = 0.50
 min_bars_between_trades = 6
-max_drawdown_cutoff = 0.30     # Circuit breaker: stop if equity < peak x (1 - cutoff)
-dd_cooldown_bars = 12          # Bars to pause after a drawdown cutoff breach
-max_open_positions = 1         # Max simultaneous open positions
-daily_loss_limit = 0.03        # Stop trading for day after -N equity drawdown (3%)
-# OOS date-range filter for backtest (empty = whole dataset, no filter)
-# oob_start_date = "2024-01-01"
-# oob_end_date = "2026-04-30"
+max_drawdown_cutoff = 0.30
+dd_cooldown_bars = 12
+max_open_positions = 1
+daily_loss_limit = 0.03
 
 [workflow]
 force_rerun = false
 random_seed = 2024
 n_jobs = -1
-
-[paths]
-data_raw = "data/raw/XAUUSD"
-data_processed = "data/processed"
-ohlcv = "data/processed/ohlcv.parquet"
-features = "data/processed/features.parquet"
-labels = "data/processed/labels.parquet"
-# static split paths — only used when validation.method = "static"
-train_data = "data/processed/train.parquet"
-val_data = "data/processed/val.parquet"
-test_data = "data/processed/test.parquet"
-model = "models/lightgbm_model.pkl"
-gru_model = "models/gru_model.pt"
-predictions = "data/predictions/final_predictions.parquet"
-backtest_results = "results/backtest_results.json"
-report = "results/thesis_report.md"

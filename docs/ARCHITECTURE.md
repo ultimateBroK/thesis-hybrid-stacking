@@ -178,10 +178,10 @@ Default window parameters (configurable in `config.toml`):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `train_window_bars` | 26 280 | ~3 years of H1 bars |
+| `train_window_bars` | 17 520 | ~2 years of H1 bars |
 | `test_window_bars` | 4 380 | ~6 months of H1 bars |
 | `step_bars` | 4 380 | Non-overlapping test windows |
-| `purge_bars` | 25 | Bars removed at train/test boundary |
+| `purge_bars` | 48 | Bars removed at train/test boundary |
 | `embargo_bars` | 50 | Additional gap after purge (~2 days) |
 | `min_train_bars` | 10 000 | Minimum training bars per window |
 
@@ -213,10 +213,10 @@ flowchart LR
     style HS fill:#7C3AED,color:#fff
 ```
 
-- **Input:** A sliding window of 48 hours using **19 normalized sequence features**
+- **Input:** A sliding window of 48 hours using **20 normalized sequence features**
   including raw OHLCV z-scores (`open_norm`, `high_norm`, `low_norm`, `close_norm`),
-  regime indicators (`adx_14`, `ema_slope_20`, `regime_strength`), and
-  traditional indicators (returns, ATR, MACD, RSI, etc.).
+  regime indicators (`adx_14`, `ema_slope_20`, `regime_strength`), relative
+  volatility (`atr_pct_close`, `atr_ratio`), and ATR-normalized momentum (`macd_hist_atr`).
 - **Training:** Cosine-annealing LR schedule with warm restarts (T_0=10, T_mult=2),
   3 warmup epochs, gradient clipping (max norm 1.0), and plateau detection.
 - **Objective:** 3-class focal loss. Regression embeddings remain available as an
@@ -380,7 +380,7 @@ Here is what happens to the data at each step:
 
 ```mermaid
 flowchart TD
-    T0["Raw Ticks<br/><i>millions of rows</i>"] -->|"Stage 1"| T1["OHLCV<br/><i>~55,000 rows</i>"]
+    T0["Raw Ticks<br/><i>millions of rows</i>"] -->|"Stage 1"| T1["OHLCV<br/><i>~70,000 rows</i>"]
     T1 -->|"Stage 2"| T2["Features<br/><i>+ ~28 technical indicators</i>"]
     T2 -->|"Stage 3"| T3["Labels<br/><i>+ buy/sell/hold + TP/SL prices</i>"]
     T3 -->|"Stage 4<br/>walk-forward<br/>sliding windows"| T4["Per Window:<br/>Train slice → GRU (multiclass)<br/>→ hidden states → PCA<br/>→ LightGBM (multiclass)<br/>→ OOF predictions + confidence"]
@@ -403,7 +403,7 @@ This project uses **three layers** of protection, applied **dynamically at each 
 
 ```mermaid
 flowchart LR
-    TR["Train Window<br/>bars [a..b]"] -->|"purge<br/>25 bars"| P1[" "]
+    TR["Train Window<br/>bars [a..b]"] -->|"purge<br/>48 bars"| P1[" "]
     P1 -->|"embargo<br/>50 bars"| TE["Test Window<br/>bars [c..d]"]
     TE -->|"next window<br/>shifts forward"| TR2["Train Window<br/>bars [a+s..b+s]"]
 
@@ -413,8 +413,8 @@ flowchart LR
     style TR2 fill:#2563EB,color:#fff
 ```
 
-1. **Purge** — Removes 25 bars at each train/test boundary to prevent overlap
-   from the label look-ahead window.
+1. **Purge** — Removes 48 bars at each train/test boundary to prevent overlap
+   from the label look-ahead window and exceed typical 24-bar holding horizons.
 2. **Embargo** — Adds 50 extra bars of gap after each boundary (~2 days,
    covers the 48-bar label horizon).
 3. **Correlation filtering on train only** — Feature selection uses only training data.

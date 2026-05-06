@@ -15,10 +15,9 @@ from pathlib import Path
 import re
 import sys
 
-import numpy as np
 import polars as pl
 from pyecharts import options as opts
-from pyecharts.charts import Bar, Line, Pie
+from pyecharts.charts import Line
 import streamlit as st
 
 from thesis._shared.session_paths import load_config_for_session
@@ -40,10 +39,12 @@ from thesis.charts import (
     build_correlation_heatmap,
     build_duration_pnl_scatter,
     build_equity_drawdown_chart,
+    build_feature_distribution_chart,
     build_feature_importance_chart,
     build_label_distribution_chart,
     build_monthly_returns_heatmap,
     build_pnl_histogram_chart,
+    build_prediction_distribution_chart,
     build_rolling_sharpe_chart,
     load_session_data,
 )
@@ -282,6 +283,91 @@ def _render_chart(chart: object, height: str = "500px") -> None:
         st.warning(f"Chart render failed: {e}")
 
 
+def _date_only(value: str) -> str:
+    """Return the date part of a config timestamp string."""
+    return str(value).split()[0]
+
+
+def _trim_generated_visual_sections(content: str) -> str:
+    """Hide report sections duplicated by dashboard-native charts."""
+    marker_pattern = re.compile(r"^##\s+\d*\.?\s*Visual Evidence", re.MULTILINE)
+    marker = marker_pattern.search(content)
+    return content[: marker.start()].rstrip() if marker else content
+
+
+def _render_config_summary(config: object) -> None:
+    """Render compact current experiment settings in the sidebar."""
+    train_span = (
+        f"{_date_only(config.splitting.train_start)}→"
+        f"{_date_only(config.splitting.train_end)}"
+    )
+    val_span = (
+        f"{_date_only(config.splitting.val_start)}→"
+        f"{_date_only(config.splitting.val_end)}"
+    )
+    test_span = (
+        f"{_date_only(config.splitting.test_start)}→"
+        f"{_date_only(config.splitting.test_end)}"
+    )
+    st.markdown(
+        f"**Data**: {config.data.symbol} {config.data.timeframe}  "
+        f"{_date_only(config.data.start_date)}→{_date_only(config.data.end_date)}"
+    )
+    st.markdown(f"**Split**: train {train_span}  \nval {val_span}  \ntest {test_span}")
+    st.markdown(
+        f"**Walk-forward**: {config.validation.method}, "
+        f"train={config.validation.train_window_bars:,}, "
+        f"test={config.validation.test_window_bars:,}, "
+        f"purge={config.validation.purge_bars} bars"
+    )
+    st.markdown(
+        f"**GRU**: multiclass, inputs={config.gru.input_size}, "
+        f"hidden={config.gru.hidden_size}, seq={config.gru.sequence_length}, "
+        f"epochs={config.gru.epochs}"
+    )
+    st.markdown(
+        f"**LightGBM**: {config.model.architecture}, "
+        f"objective={config.model.objective}, leaves={config.model.num_leaves}, "
+        f"lr={config.model.learning_rate}"
+    )
+    st.markdown(
+        f"**Labels**: horizon={config.labels.horizon_bars}, "
+        f"TP={config.labels.atr_tp_multiplier}×ATR, "
+        f"SL={config.labels.atr_sl_multiplier}×ATR"
+    )
+    st.markdown(
+        f"**Backtest**: capital=${config.backtest.initial_capital:,.0f}, "
+        f"spread={config.backtest.spread_ticks:g} ticks, "
+        f"conf≥{config.backtest.confidence_threshold:.2f}"
+    )
+
+
+def _render_trade_direction_summary(trades: list[dict]) -> None:
+    """Render compact direction counts and PnL without low-value charts."""
+    if not trades:
+        return
+
+    long_trades = [t for t in trades if t.get("direction") == "long"]
+    short_trades = [t for t in trades if t.get("direction") == "short"]
+    long_pnl = sum(float(t.get("pnl", 0)) for t in long_trades)
+    short_pnl = sum(float(t.get("pnl", 0)) for t in short_trades)
+
+    with st.expander("Direction summary", expanded=False):
+        cols = st.columns(4, gap="small")
+        _render_metric_card(
+            cols[0], "Long Trades", f"{len(long_trades):,}", None, COLORS["long"]
+        )
+        _render_metric_card(
+            cols[1], "Short Trades", f"{len(short_trades):,}", None, COLORS["short"]
+        )
+        _render_metric_card(
+            cols[2], "Long PnL", f"${long_pnl:,.0f}", None, COLORS["long"]
+        )
+        _render_metric_card(
+            cols[3], "Short PnL", f"${short_pnl:,.0f}", None, COLORS["short"]
+        )
+
+
 # Section: Data Exploration
 
 
@@ -381,40 +467,15 @@ def _render_data_section(data: dict, config: object) -> None:
 
         st.subheader("Feature Distributions")
         feature_cols = [c for c in features.columns if c not in EXCLUDED_FEATURE_COLS]
+        st.caption(
+            f"{len(feature_cols)} model-facing columns; raw ATR is label-helper only."
+        )
         if feature_cols:
-            tabs = st.tabs(feature_cols)
-            for col, tab in zip(feature_cols, tabs):
-                with tab:
-                    vals = features[col].drop_nulls().to_numpy()
-                    if len(vals) > 0:
-                        counts, bin_edges = np.histogram(vals, bins=50)
-                        bin_centers = [
-                            (bin_edges[i] + bin_edges[i + 1]) / 2
-                            for i in range(len(counts))
-                        ]
-                        x_labels = [f"{v:.2f}" for v in bin_centers]
-                        bar = (
-                            Bar(init_opts=opts.InitOpts(height="400px"))
-                            .add_xaxis(x_labels)
-                            .add_yaxis(
-                                series_name=col,
-                                y_axis=counts.tolist(),
-                                label_opts=opts.LabelOpts(is_show=False),
-                                itemstyle_opts=opts.ItemStyleOpts(
-                                    color=COLORS["primary"]
-                                ),
-                            )
-                            .set_global_opts(
-                                title_opts=opts.TitleOpts(title=f"Distribution: {col}"),
-                                xaxis_opts=opts.AxisOpts(name=col),
-                                yaxis_opts=opts.AxisOpts(name="Count"),
-                                tooltip_opts=opts.TooltipOpts(trigger="axis"),
-                                datazoom_opts=[opts.DataZoomOpts(type_="inside")],
-                            )
-                        )
-                        _render_chart(bar, height="400px")
-                    else:
-                        st.info(f"No data for {col}")
+            selected_feature = st.selectbox(
+                "Feature", feature_cols, key="_feature_distribution_select"
+            )
+            chart = build_feature_distribution_chart(features, selected_feature)
+            _render_chart(chart, height="450px")
     else:
         st.info("No features data available.")
 
@@ -542,50 +603,13 @@ def _render_model_section(data: dict, session_dir: str = "") -> None:
             _render_chart(chart, height="500px")
 
         st.subheader("Prediction Distribution")
-        pred_counts = {
-            "Short": int((y_pred == -1).sum()),
-            "Hold": int((y_pred == 0).sum()),
-            "Long": int((y_pred == 1).sum()),
-        }
-        true_counts = {
-            "Short": int((y_true == -1).sum()),
-            "Hold": int((y_true == 0).sum()),
-            "Long": int((y_true == 1).sum()),
-        }
-        labels_list = list(true_counts.keys())
-        actual_vals = [true_counts[k] for k in labels_list]
-        predicted_vals = [pred_counts[k] for k in labels_list]
-        dist_chart = (
-            Bar(init_opts=opts.InitOpts(height="400px"))
-            .add_xaxis(labels_list)
-            .add_yaxis(
-                series_name="Actual",
-                y_axis=actual_vals,
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["primary"]),
-                label_opts=opts.LabelOpts(is_show=True, position="top"),
-            )
-            .add_yaxis(
-                series_name="Predicted",
-                y_axis=predicted_vals,
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["secondary"]),
-                label_opts=opts.LabelOpts(is_show=True, position="top"),
-            )
-            .set_global_opts(
-                title_opts=opts.TitleOpts(
-                    title="Actual vs Predicted Label Distribution"
-                ),
-                xaxis_opts=opts.AxisOpts(name="Label"),
-                yaxis_opts=opts.AxisOpts(name="Count"),
-                tooltip_opts=opts.TooltipOpts(trigger="axis"),
-                legend_opts=opts.LegendOpts(),
-            )
-        )
-        _render_chart(dist_chart, height="400px")
+        chart = build_prediction_distribution_chart(y_true, y_pred)
+        _render_chart(chart, height="400px")
     else:
         st.info("No predictions data available.")
 
     if fi:
-        st.subheader("LightGBM Feature Importance")
+        st.subheader("Feature Importance (Hybrid)")
         chart = build_feature_importance_chart(fi)
         _render_chart(chart, height="600px")
     else:
@@ -873,121 +897,41 @@ def _render_backtest_section(data: dict, config: object) -> None:
     st.divider()
 
     st.subheader("Equity Curve & Drawdown")
-    chart = build_equity_drawdown_chart(trades, metrics)
+    chart = build_equity_drawdown_chart(
+        trades, metrics, initial_capital=config.backtest.initial_capital
+    )
     _render_chart(chart, height="600px")
 
     st.divider()
 
-    st.subheader("Trade PnL Distribution")
-    chart = build_pnl_histogram_chart(trades, metrics)
-    _render_chart(chart, height="500px")
-
-    st.subheader("Trade Duration vs PnL")
-    chart = build_duration_pnl_scatter(trades)
-    _render_chart(chart, height="500px")
-
-    st.divider()
-
-    st.subheader("Monthly Returns")
-    chart = build_monthly_returns_heatmap(trades)
-    _render_chart(chart, height="400px")
+    pnl_col, duration_col = st.columns(2)
+    with pnl_col:
+        st.subheader("Trade PnL Distribution")
+        chart = build_pnl_histogram_chart(trades, metrics)
+        _render_chart(chart, height="500px")
+    with duration_col:
+        st.subheader("Trade Duration vs PnL")
+        chart = build_duration_pnl_scatter(trades)
+        _render_chart(chart, height="500px")
 
     st.divider()
 
-    if trades:
-        st.subheader("Individual Trade Returns")
-        trade_pnls = [t["pnl"] for t in trades]
-        x_labels = [str(i) for i in range(len(trade_pnls))]
-        win_pnls = [p if p > 0 else 0 for p in trade_pnls]
-        loss_pnls = [p if p <= 0 else 0 for p in trade_pnls]
-
-        returns_chart = (
-            Bar(init_opts=opts.InitOpts(height="400px"))
-            .add_xaxis(x_labels)
-            .add_yaxis(
-                series_name="Win",
-                y_axis=[round(v, 2) for v in win_pnls],
-                stack="pnl",
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["success"]),
-                label_opts=opts.LabelOpts(is_show=False),
-            )
-            .add_yaxis(
-                series_name="Loss",
-                y_axis=[round(v, 2) for v in loss_pnls],
-                stack="pnl",
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["danger"]),
-                label_opts=opts.LabelOpts(is_show=False),
-            )
-            .set_global_opts(
-                title_opts=opts.TitleOpts(title="Individual Trade Returns"),
-                xaxis_opts=opts.AxisOpts(name="Trade #"),
-                yaxis_opts=opts.AxisOpts(name="PnL (USD)"),
-                tooltip_opts=opts.TooltipOpts(trigger="axis"),
-                legend_opts=opts.LegendOpts(is_show=False),
-                datazoom_opts=[
-                    opts.DataZoomOpts(
-                        is_show=False, type_="slider", range_start=0, range_end=100
-                    ),
-                    opts.DataZoomOpts(type_="inside", range_start=0, range_end=100),
-                ],
-            )
+    monthly_col, rolling_col = st.columns(2)
+    with monthly_col:
+        st.subheader("Monthly Returns")
+        chart = build_monthly_returns_heatmap(
+            trades, initial_capital=config.backtest.initial_capital
         )
-        _render_chart(returns_chart, height="400px")
-
-        st.divider()
-
-        st.subheader("Direction Analysis")
-        col_left, col_right = st.columns(2)
-        with col_left:
-            directions = [t.get("direction", "unknown") for t in trades]
-            long_count = directions.count("long")
-            short_count = directions.count("short")
-            dir_chart = (
-                Pie(init_opts=opts.InitOpts(height="400px"))
-                .add(
-                    series_name="Direction",
-                    data_pair=[("Long", long_count), ("Short", short_count)],
-                    label_opts=opts.LabelOpts(formatter="{b}: {c} ({d}%)"),
-                )
-                .set_colors([COLORS["long"], COLORS["short"]])
-                .set_global_opts(
-                    title_opts=opts.TitleOpts(title="Trade Direction Distribution"),
-                    tooltip_opts=opts.TooltipOpts(trigger="item"),
-                )
-            )
-            _render_chart(dir_chart, height="400px")
-
-        with col_right:
-            long_pnl = sum(t["pnl"] for t in trades if t.get("direction") == "long")
-            short_pnl = sum(t["pnl"] for t in trades if t.get("direction") == "short")
-            pnl_dir_chart = (
-                Bar(init_opts=opts.InitOpts(height="400px"))
-                .add_xaxis(["Long", "Short"])
-                .add_yaxis("PnL", [round(long_pnl, 2), round(short_pnl, 2)])
-                .set_colors([COLORS["long"], COLORS["short"]])
-                .set_global_opts(
-                    title_opts=opts.TitleOpts(title="PnL by Direction"),
-                    tooltip_opts=opts.TooltipOpts(
-                        trigger="axis", formatter="{b}: ${c}"
-                    ),
-                    xaxis_opts=opts.AxisOpts(type_="category"),
-                    yaxis_opts=opts.AxisOpts(
-                        axisline_opts=opts.AxisLineOpts(
-                            linestyle_opts=opts.LineStyleOpts(is_show=True, opacity=0.5)
-                        ),
-                    ),
-                )
-                .set_series_opts(
-                    label_opts=opts.LabelOpts(formatter="{b}: ${c}", is_show=True)
-                )
-            )
-            _render_chart(pnl_dir_chart, height="400px")
-
-    if len(trades) > 30:
-        st.divider()
-        st.subheader("Rolling Metrics")
-        chart = build_rolling_sharpe_chart(trades)
         _render_chart(chart, height="400px")
+    with rolling_col:
+        if len(trades) > 30:
+            st.subheader("Rolling Metrics")
+            chart = build_rolling_sharpe_chart(trades)
+            _render_chart(chart, height="400px")
+        else:
+            st.info("Need more than 30 trades for rolling metrics.")
+
+    _render_trade_direction_summary(trades)
 
     st.divider()
     st.subheader("Download Data")
@@ -1043,10 +987,7 @@ def _render_reports_section(session_dir: str) -> None:
     # --- Thesis Report ---
     report_md_path = reports_dir / "thesis_report.md"
     if report_md_path.exists():
-        content = report_md_path.read_text()
-        section_10_marker = "## 10. Visual Evidence & Analytics"
-        if section_10_marker in content:
-            content = content.split(section_10_marker)[0]
+        content = _trim_generated_visual_sections(report_md_path.read_text())
         st.markdown(content)
     else:
         st.info("No thesis report available.")
@@ -1117,7 +1058,7 @@ def _render_reports_section(session_dir: str) -> None:
             fi_data = json.load(f)
         if fi_data:
             st.divider()
-            st.subheader("LightGBM Feature Importance")
+            st.subheader("Feature Importance (Hybrid)")
             chart = build_feature_importance_chart(fi_data)
             _render_chart(chart, height="600px")
 
@@ -1231,25 +1172,7 @@ def main() -> None:
 
     # ── Configuration sidebar ──
     with st.sidebar.expander("⚙️ Configuration", expanded=False):
-        st.markdown(
-            f"**GRU**: hidden={config.gru.hidden_size},"
-            f" layers={config.gru.num_layers},"
-            f" seq={config.gru.sequence_length},"
-            f" epochs={config.gru.epochs}"
-        )
-        st.markdown(
-            f"**LightGBM**: leaves={config.model.num_leaves}, "
-            f"depth={config.model.max_depth}, lr={config.model.learning_rate}"
-        )
-        st.markdown(
-            f"**Backtest**: leverage={config.backtest.leverage}:1, "
-            f"lots={config.backtest.lots_per_trade}, "
-            f"conf≥{config.backtest.confidence_threshold}"
-        )
-        st.markdown(
-            f"**Split**: train={config.splitting.train_start[:10]}→"
-            f"{config.splitting.train_end[:10]}"
-        )
+        _render_config_summary(config)
 
     # ── Quick Stats sidebar ──
     if metrics:

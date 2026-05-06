@@ -92,7 +92,7 @@ The pipeline generates two types of predictions that serve different purposes:
 | Term | Definition | Where to Find |
 |------|-----------|---------------|
 | **OOF** (Out-of-Fold) | Predictions from walk-forward windows on their test slices. All windows combined cover the entire data range. | `predictions/final_predictions.parquet` — `oof_signal` column |
-| **OOS** (Out-of-Sample) | Predictions filtered to only the configured test date range (e.g., 2024-01-01 to 2026-03-31). Used for the backtest. | `predictions/final_predictions.parquet` — filtered by `oob_start_date`/`oob_end_date` |
+| **OOS** (Out-of-Sample) | Predictions filtered to only the configured test date range (e.g., 2025-02-01 to 2026-04-30). Used for the backtest. | `predictions/final_predictions.parquet` — filtered by `oob_start_date`/`oob_end_date` |
 
 ### Why the Distinction Matters
 

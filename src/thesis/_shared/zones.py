@@ -171,6 +171,16 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
             return ("excellent", "Strong", "200-500% — strong performance")
         return ("dangerous", "Extreme", ">500% — verify for data issues")
 
+    # Trade count / sample size
+    if metric_name == "num_trades":
+        if value < 30:
+            return ("poor", "Small Sample", "<30 trades — statistically weak")
+        if value < 100:
+            return ("moderate", "Limited", "30-100 trades — use caution")
+        if value < 500:
+            return ("good", "Useful", "100-500 trades — useful sample size")
+        return ("excellent", "Robust", "≥500 trades — robust backtest sample")
+
     # ========== Calmar Ratio ==========
     if metric_name == "calmar_ratio":
         if value < 0:

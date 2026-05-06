@@ -85,14 +85,24 @@ def generate_features(config: Config) -> None:
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
 
-    # Keep only compact model-facing features to avoid redundant columns.
+    # Keep compact model-facing features plus raw ATR needed by label barriers.
     keep_features = sorted(
         {
             *config.features.static_feature_cols,
             *config.gru.feature_cols,
         }
     )
-    keep_cols = ["timestamp", "open", "high", "low", "close", "volume", *keep_features]
+    label_helper_cols = [f"atr_{config.features.atr_period}"]
+    keep_cols = [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        *label_helper_cols,
+        *keep_features,
+    ]
     existing_keep_cols = [c for c in keep_cols if c in df.columns]
     df = df.select(existing_keep_cols)
     df = _drop_warmup_rows(df, keep_features)
@@ -265,22 +275,27 @@ def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add ATR column to the DataFrame.
+    """Add ATR and close-normalized ATR.
 
     Args:
         df: Input OHLCV DataFrame.
         config: Configuration with ``features.atr_period``.
 
     Returns:
-        DataFrame with a new column ``atr_{p}``.
+        DataFrame with ``atr_{p}`` and ``atr_pct_close``.
     """
     p = config.features.atr_period
     atr = _compute_atr_expr(p)
-    return df.with_columns(atr.alias(f"atr_{p}"))
+    return df.with_columns(
+        [
+            atr.alias(f"atr_{p}"),
+            (atr / (pl.col("close").abs() + FEATURE_EPS)).alias("atr_pct_close"),
+        ]
+    )
 
 
 def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add a ``macd_hist`` column using configured MACD spans.
+    """Add raw and ATR-normalized MACD histogram.
 
     Args:
         df: Input OHLCV DataFrame.
@@ -288,17 +303,20 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
             ``features.macd_slow``, ``features.macd_signal``.
 
     Returns:
-        DataFrame with an added ``macd_hist`` column.
+        DataFrame with ``macd_hist`` and ``macd_hist_atr`` columns.
     """
     fast = config.features.macd_fast
     slow = config.features.macd_slow
     sig = config.features.macd_signal
+    atr = pl.col(f"atr_{config.features.atr_period}")
     ema_fast = pl.col("close").ewm_mean(span=fast, adjust=False)
     ema_slow = pl.col("close").ewm_mean(span=slow, adjust=False)
     macd_line = ema_fast - ema_slow
     signal_line = macd_line.ewm_mean(span=sig, adjust=False)
+    hist = macd_line - signal_line
     return df.with_columns(
-        (macd_line - signal_line).alias("macd_hist"),
+        hist.alias("macd_hist"),
+        (hist / (atr + FEATURE_EPS)).alias("macd_hist_atr"),
     )
 
 

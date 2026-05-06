@@ -109,14 +109,14 @@ A method to fill missing data by using the last known value. If the RSI at 3:00 
 A machine learning method that builds many simple decision trees, one after another. Each new tree tries to fix the mistakes of the previous trees. LightGBM is a gradient boosting library.
 
 **GRU (Gated Recurrent Unit)**
-A type of neural network designed for sequential data (like time series). It has "gates" that decide what information to remember and what to forget. It is similar to LSTM but simpler and faster. In this project, the GRU is trained with **regression** (MSE on forward returns) rather than classification — this produces richer hidden states for the downstream LightGBM classifier.
+A type of neural network designed for sequential data (like time series). It has "gates" that decide what information to remember and what to forget. It is similar to LSTM but simpler and faster. In this project, the GRU is trained with **multiclass focal loss** on Short/Hold/Long labels by default. Regression remains available only as an experiment.
 
 ---
 
 ## H
 
 **Hidden States**
-The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 128 numbers (hidden states, reduced to 16 via PCA) that summarize the temporal pattern of the last 48 hours.
+The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 64 numbers (hidden states, reduced to 16 via PCA) that summarize the temporal pattern of the last 48 hours.
 
 **Horizon**
 The maximum time window for a trade. In triple barrier labeling, if the price does not hit TP or SL within the horizon (e.g., 24 bars), the trade is closed and labeled as "Flat".
@@ -129,7 +129,7 @@ A setting you choose before training (like learning rate or number of trees). Th
 ## K
 
 **Killer Feature**
-Not a real technical term, but in this project, the "killer feature" is the decoupled hybrid architecture — GRU trained on regression (MSE returns) produces rich temporal embeddings, and LightGBM trained on classification handles the discrete decision boundary. This decoupled design prevents the GRU from overfitting to label noise.
+Not a real technical term, but in this project, the "killer feature" is the hybrid architecture — GRU trained with multiclass focal loss produces temporal embeddings, and LightGBM uses those embeddings with static features to classify Short/Hold/Long decisions.
 
 ---
 
@@ -261,9 +261,9 @@ A labeling method that places three "barriers" around the entry price: a take-pr
 
 **Train / Validation / Test Split**
 Dividing your data into three parts:
-- **Train** — Used to teach the model (2018-2022). Raw data starts from January 2013; walk-forward effective training start depends on `min_train_bars` and window parameters — the first window begins after sufficient historical bars accumulate.
-- **Validation** — Used to check the model during training (2023)
-- **Test** — Used for the final evaluation (2024-2026), never seen during training
+- **Train** — Static split training period: 2018-01-01 to 2023-09-30. Walk-forward training uses 2-year rolling windows after enough bars accumulate.
+- **Validation** — Static split validation period: 2023-10-01 to 2025-01-31.
+- **Test** — Static split test period: 2025-02-01 to 2026-04-30, never seen during training in static mode.
 
 ---
 

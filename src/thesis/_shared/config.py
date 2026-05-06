@@ -1,11 +1,6 @@
-"""Centralized configuration for the thesis ML pipeline.
+"""Load and validate pipeline configuration."""
 
-This module is the single entry point for loading and sharing runtime
-configuration. TOML files may stay minimal: omitted fields fall back to the
-dataclass defaults below.
-"""
-
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import lru_cache
 import logging
 from pathlib import Path
@@ -18,53 +13,36 @@ from thesis._shared.constants import CORE_STATIC_FEATURES
 logger = logging.getLogger("thesis.config")
 
 
-# Dataclasses — one per TOML section
-
-
 @dataclass
 class DataConfig:
-    """Data loading and OHLCV parameters.
-
-    Attributes:
-        symbol: Display symbol used in session names and reports.
-        timeframe: Bar timeframe such as ``1H`` or ``4H``.
-        market_tz: Time zone used for session-aware feature engineering.
-        start_date: Inclusive data start date.
-        end_date: Inclusive data end date.
-        tick_size: Minimum price movement.
-        contract_size: Units per trading lot for the application demo.
-    """
+    """Market data settings."""
 
     symbol: str = "XAUUSD"
     timeframe: str = "1H"
     market_tz: str = "America/New_York"
-    start_date: str = "2013-01-01"
-    end_date: str = "2026-03-31"
+    start_date: str = "2018-01-01"
+    end_date: str = "2026-04-30"
     tick_size: float = 0.01
     contract_size: int = 100
     symbol_download: str = "XAUUSD"
     asset_class: str = "fx"
     download_concurrency: int = 20
     download_max_retries: int = 7
-    download_force: bool = False  # Force re-download even if file exists
-    download_skip_current_month: bool = True  # Skip current month (incomplete data)
+    download_force: bool = False
+    download_skip_current_month: bool = True
 
 
 @dataclass
 class SplittingConfig:
-    """Train / val / test date ranges for static splits.
-
-    Only used when ``validation.method = "static"``. The default workflow
-    uses walk-forward (sliding-window) validation — see :class:`ValidationConfig`.
-    """
+    """Static train, validation, and test date ranges."""
 
     train_start: str = "2018-01-01"
-    train_end: str = "2022-12-31 23:59:59"
-    val_start: str = "2023-01-01"
-    val_end: str = "2023-12-31 23:59:59"
-    test_start: str = "2024-01-01"
-    test_end: str = "2026-03-31 23:59:59"
-    purge_bars: int = 25
+    train_end: str = "2023-09-30 23:59:59"
+    val_start: str = "2023-10-01"
+    val_end: str = "2025-01-31 23:59:59"
+    test_start: str = "2025-02-01"
+    test_end: str = "2026-04-30 23:59:59"
+    purge_bars: int = 48
     embargo_bars: int = 50
     embargo_scale_by_timeframe: bool = True
     embargo_reference_timeframe: str = "1H"
@@ -72,21 +50,21 @@ class SplittingConfig:
 
 @dataclass
 class ValidationConfig:
-    """Walk-forward validation parameters — sliding window with purge & embargo."""
+    """Walk-forward validation window sizes."""
 
-    method: str = "sliding"  # "sliding" or "static"
-    train_window_bars: int = 26280  # ~3 years of H1 bars
-    test_window_bars: int = 4380  # ~6 months of H1 bars
-    step_bars: int = 4380  # step between windows (= test_window for non-overlapping)
-    purge_bars: int = 25  # bars removed at train/test boundary
-    embargo_bars: int = 50  # additional gap after purge
-    min_train_bars: int = 10000  # minimum training bars to produce a window
-    oof_ensemble: bool = True  # aggregate OOF predictions across windows
+    method: str = "sliding"
+    train_window_bars: int = 17520
+    test_window_bars: int = 4380
+    step_bars: int = 4380
+    purge_bars: int = 48
+    embargo_bars: int = 50
+    min_train_bars: int = 10000
+    oof_ensemble: bool = True
 
 
 @dataclass
 class MultiTimeframeConfig:
-    """Multi-timeframe and extended feature parameters."""
+    """Hidden defaults for derived multi-timeframe features."""
 
     sma_periods: list[int] = field(default_factory=lambda: [50])
     ema_long: int = 200
@@ -99,20 +77,7 @@ class MultiTimeframeConfig:
 
 @dataclass
 class FeaturesConfig:
-    """Feature engineering parameters.
-
-    Attributes:
-        rsi_period: RSI lookback.
-        atr_period: ATR lookback.
-        macd_fast: MACD fast EMA span.
-        macd_slow: MACD slow EMA span.
-        macd_signal: MACD signal EMA span.
-        correlation_threshold: Threshold used by compatibility tests and
-            optional filtering code.
-        static_feature_cols: Compact tabular feature whitelist consumed by
-            LightGBM in the simplified hybrid architecture.
-        multi_timeframe: Derived-feature settings.
-    """
+    """Indicator and tabular feature settings."""
 
     rsi_period: int = 14
     atr_period: int = 14
@@ -130,13 +95,7 @@ class FeaturesConfig:
 
 @dataclass
 class LabelsConfig:
-    """Triple-barrier label parameters (symmetric TP/SL by default).
-
-    2xATR barriers (~$40-50 move on XAUUSD 1H) widen the target window
-    relative to the default 1xATR, reducing label noise from minor
-    fluctuations that are smaller than round-trip trading costs (~$2.40).
-    This improves the signal-to-noise ratio of the learning target.
-    """
+    """Triple-barrier label settings."""
 
     atr_tp_multiplier: float = 2.0
     atr_sl_multiplier: float = 2.0
@@ -147,16 +106,11 @@ class LabelsConfig:
 
 @dataclass
 class LGBMConfig:
-    """LightGBM parameters."""
+    """LightGBM model settings."""
 
-    # LightGBM
-    architecture: str = "hybrid"  # "hybrid" or "static"
-    objective: str = (
-        "multiclass"  # "multiclass" (3-class) or "regression" (continuous returns)
-    )
-    static_expanded: bool = (
-        False  # use ALL features (not whitelist) for static baseline
-    )
+    architecture: str = "hybrid"
+    objective: str = "multiclass"
+    static_expanded: bool = False
     num_leaves: int = 31
     max_depth: int = 6
     learning_rate: float = 0.02
@@ -172,28 +126,22 @@ class LGBMConfig:
 
 @dataclass
 class GRUConfig:
-    """GRU feature extractor parameters.
+    """GRU sequence encoder settings."""
 
-    Attributes:
-        objective: ``"multiclass"`` uses 3-class focal loss and is the stable
-            default for preserving Short/Hold/Long signal. ``"regression"``
-            trains with MSE loss on forward returns and is experimental. This
-            is independent of :attr:`LGBMConfig.objective`.
-    """
-
-    objective: str = "multiclass"  # "multiclass" or experimental "regression"
-    input_size: int = 19
+    objective: str = "multiclass"
+    input_size: int = 20
     feature_cols: list[str] = field(
         default_factory=lambda: [
             "log_returns",
-            "atr_14",
-            "close_vs_ema_34",
-            "ema34_vs_ema89",
-            "candle_body_ratio",
             "return_1h",
             "return_4h",
+            "atr_pct_close",
+            "atr_ratio",
+            "close_vs_ema_34",
+            "ema34_vs_ema89",
             "price_position_20",
-            "macd_hist",
+            "candle_body_ratio",
+            "macd_hist_atr",
             "rsi_14",
             "atr_percentile",
             "adx_14",
@@ -212,58 +160,45 @@ class GRUConfig:
     dropout: float = 0.3
     learning_rate: float = 0.0005
     batch_size: int = 256
-    epochs: int = 50
-    patience: int = 15
-    min_epochs: int = 5
+    epochs: int = 100
+    patience: int = 20
+    min_epochs: int = 10
     bidirectional: bool = False
     gradient_accumulation_steps: int = 1
     focal_loss_gamma: float = 2.0
     warmup_epochs: int = 3
     contrastive_pretrain_epochs: int = 10
     temperature_scaling: bool = False
-    pca_components: int = 16  # 0 = disabled
+    pca_components: int = 16
 
 
 @dataclass
 class BacktestConfig:
-    """CFD backtest parameters — thin wrapper for backtesting.py.
-
-    The SL/TP ATR multipliers must match [labels] multipliers so that
-    backtest stop-loss and take-profit distances are identical to the
-    label barrier distances used to generate the signals being traded.
-    """
+    """Trading simulation settings."""
 
     initial_capital: float = 10_000.0
-    leverage: int = 10  # margin = 1/leverage
-    spread_ticks: float = 35.0  # → spread param (relative)
+    leverage: int = 10
+    spread_ticks: float = 35.0
     slippage_ticks: float = 5.0
-    commission_per_lot: float = 10.0  # → callable commission
-    atr_stop_multiplier: float = 2.0  # Must match [labels] atr_sl_multiplier
-    atr_tp_multiplier: float = (
-        2.0  # Must match [labels] atr_tp_multiplier; 0 = disabled
-    )
-    lots_per_trade: float = 0.01  # fixed lot size after confidence filtering
-    min_lots: float = 0.01  # minimum lot safety bound
-    max_lots: float = 0.5  # maximum lot safety bound
-    confidence_threshold: float = (
-        0.50  # min predicted probability to act (0 = disabled)
-    )
-    min_bars_between_trades: int = (
-        6  # minimum bars between position exit and next entry
-    )
-    max_drawdown_cutoff: float = (
-        0.30  # circuit breaker: stop if equity < peak * (1 - cutoff)
-    )
-    dd_cooldown_bars: int = 12  # bars to pause after drawdown cutoff breach
-    max_open_positions: int = 1  # max simultaneous open positions
-    daily_loss_limit: float = 0.03  # stop trading for day after -N equity drawdown
-    oob_start_date: str = ""  # OOS date range start (empty = whole dataset)
-    oob_end_date: str = ""  # OOS date range end (empty = whole dataset)
+    commission_per_lot: float = 10.0
+    atr_stop_multiplier: float = 2.0
+    atr_tp_multiplier: float = 2.0
+    lots_per_trade: float = 0.01
+    min_lots: float = 0.01
+    max_lots: float = 0.5
+    confidence_threshold: float = 0.50
+    min_bars_between_trades: int = 6
+    max_drawdown_cutoff: float = 0.30
+    dd_cooldown_bars: int = 12
+    max_open_positions: int = 1
+    daily_loss_limit: float = 0.03
+    oob_start_date: str = ""
+    oob_end_date: str = ""
 
 
 @dataclass
 class WorkflowConfig:
-    """Pipeline execution toggles and seeds."""
+    """Stage toggles, caching, and reproducibility settings."""
 
     run_data_pipeline: bool = True
     run_feature_engineering: bool = True
@@ -271,40 +206,37 @@ class WorkflowConfig:
     run_model_training: bool = True
     run_backtest: bool = True
     run_reporting: bool = True
-    cache_invalidation: str = "path"  # "path", "hash", or "none"
+    cache_invalidation: str = "path"
     force_rerun: bool = False
     random_seed: int = 2024
     n_jobs: int = -1
-    session_timestamp: str = ""  # Set at runtime
+    session_timestamp: str = ""
 
 
 @dataclass
 class PathsConfig:
-    """Artifact paths with session-based output support."""
+    """Default artifact paths."""
 
     data_raw: str = "data/raw/XAUUSD"
     data_processed: str = "data/processed"
     ohlcv: str = "data/processed/ohlcv.parquet"
     features: str = "data/processed/features.parquet"
     labels: str = "data/processed/labels.parquet"
-    train_data: str = "data/processed/train.parquet"  # static split only
-    val_data: str = "data/processed/val.parquet"  # static split only
-    test_data: str = "data/processed/test.parquet"  # static split only
+    train_data: str = "data/processed/train.parquet"
+    val_data: str = "data/processed/val.parquet"
+    test_data: str = "data/processed/test.parquet"
     model: str = "models/lightgbm_model.pkl"
     gru_model: str = "models/gru_model.pt"
     predictions: str = "data/predictions/final_predictions.parquet"
     backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
     data_quality_json: str = "data/processed/data_quality.json"
-    session_dir: str = ""  # Set at runtime by pipeline
-
-
-# Top-level Config
+    session_dir: str = ""
 
 
 @dataclass
 class Config:
-    """Main configuration — one attribute per TOML section."""
+    """Runtime configuration grouped by TOML section."""
 
     data: DataConfig = field(default_factory=DataConfig)
     splitting: SplittingConfig = field(default_factory=SplittingConfig)
@@ -317,8 +249,6 @@ class Config:
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
-
-# Loader
 
 _SECTION_MAP: dict[str, type] = {
     "data": DataConfig,
@@ -335,17 +265,7 @@ _SECTION_MAP: dict[str, type] = {
 
 
 def _timeframe_to_minutes(timeframe: str) -> int:
-    """Convert a timeframe string to minutes.
-
-    Args:
-        timeframe: String such as ``15M``, ``1H``, ``4H``, ``1D``, or ``1W``.
-
-    Returns:
-        Number of minutes represented by one bar.
-
-    Raises:
-        ValueError: If the timeframe format is unsupported.
-    """
+    """Return minutes per bar for strings like 15M, 1H, 1D, or 1W."""
     match = re.fullmatch(r"\s*(\d+)\s*([mhdwMHDW])\s*", timeframe)
     if not match:
         raise ValueError(
@@ -355,13 +275,7 @@ def _timeframe_to_minutes(timeframe: str) -> int:
 
     qty = int(match.group(1))
     unit = match.group(2).upper()
-    unit_minutes = {
-        "M": 1,
-        "H": 60,
-        "D": 24 * 60,
-        "W": 7 * 24 * 60,
-    }
-    return qty * unit_minutes[unit]
+    return qty * {"M": 1, "H": 60, "D": 1440, "W": 10080}[unit]
 
 
 def _scale_bars_by_timeframe(
@@ -369,34 +283,43 @@ def _scale_bars_by_timeframe(
     base_timeframe: str,
     target_timeframe: str,
 ) -> int:
-    """Scale a bar count to preserve elapsed time across timeframes.
-
-    Args:
-        base_bars: Number of bars on the reference timeframe.
-        base_timeframe: Reference timeframe.
-        target_timeframe: Target timeframe.
-
-    Returns:
-        Equivalent number of target-timeframe bars, floored at 1.
-    """
+    """Scale a bar count while preserving elapsed time."""
     base_minutes = _timeframe_to_minutes(base_timeframe)
     target_minutes = _timeframe_to_minutes(target_timeframe)
-    scaled = int(round(base_bars * (base_minutes / target_minutes)))
-    return max(1, scaled)
+    return max(1, int(round(base_bars * (base_minutes / target_minutes))))
+
+
+def _section_kwargs(section: str, cls: type, data: dict[str, Any]) -> dict[str, Any]:
+    """Keep known keys and fail fast on misspelled config keys."""
+    known = {item.name for item in fields(cls)}
+    unknown = sorted(set(data) - known)
+    if unknown:
+        keys = ", ".join(unknown)
+        raise ValueError(f"Unknown config key(s) in [{section}]: {keys}")
+    return data
+
+
+def _apply_section(
+    cfg: Config, section: str, cls: type, values: dict[str, Any]
+) -> None:
+    """Apply one validated TOML section to a Config object."""
+    section_data = dict(values)
+    if section == "features":
+        mt_data = section_data.pop("multi_timeframe", None)
+        cfg.features = FeaturesConfig(**_section_kwargs(section, cls, section_data))
+        if mt_data is not None:
+            cfg.features.multi_timeframe = MultiTimeframeConfig(
+                **_section_kwargs(
+                    "features.multi_timeframe", MultiTimeframeConfig, mt_data
+                )
+            )
+        return
+
+    setattr(cfg, section, cls(**_section_kwargs(section, cls, section_data)))
 
 
 def load_config(config_path: str | Path = "config.toml") -> Config:
-    """Load configuration from a flat TOML file.
-
-    Args:
-        config_path: Path to TOML configuration file.
-
-    Returns:
-        Fully populated ``Config`` object.
-
-    Raises:
-        FileNotFoundError: If *config_path* does not exist.
-    """
+    """Load a TOML config and fill omitted values from dataclass defaults."""
     config_path = Path(config_path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -404,67 +327,44 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     with open(config_path, "rb") as f:
         raw: dict[str, Any] = tomllib.load(f)
 
+    unknown_sections = sorted(set(raw) - set(_SECTION_MAP))
+    if unknown_sections:
+        logger.warning(
+            "Ignoring unknown config section(s): %s", ", ".join(unknown_sections)
+        )
+
     cfg = Config()
     for section, cls in _SECTION_MAP.items():
         if section in raw:
-            section_data = raw[section]
-            # Handle nested subsections — pop them out before **kwargs
-            if section == "features" and "multi_timeframe" in section_data:
-                mt_data = section_data.pop("multi_timeframe")
-                setattr(cfg, section, cls(**section_data))
-                cfg.features.multi_timeframe = MultiTimeframeConfig(**mt_data)
-            else:
-                setattr(cfg, section, cls(**section_data))
+            _apply_section(cfg, section, cls, raw[section])
 
     if cfg.splitting.embargo_scale_by_timeframe:
         base_bars = cfg.splitting.embargo_bars
-        reference_tf = cfg.splitting.embargo_reference_timeframe
-        target_tf = cfg.data.timeframe
         cfg.splitting.embargo_bars = _scale_bars_by_timeframe(
             base_bars,
-            reference_tf,
-            target_tf,
+            cfg.splitting.embargo_reference_timeframe,
+            cfg.data.timeframe,
         )
         logger.info(
             "Scaled embargo bars from %d @ %s to %d @ %s",
             base_bars,
-            reference_tf,
+            cfg.splitting.embargo_reference_timeframe,
             cfg.splitting.embargo_bars,
-            target_tf,
+            cfg.data.timeframe,
         )
 
-    # Ensure base directories exist
     Path(cfg.paths.data_processed).mkdir(parents=True, exist_ok=True)
     Path(cfg.paths.data_raw).mkdir(parents=True, exist_ok=True)
-
     return cfg
 
 
 @lru_cache(maxsize=8)
 def get_config(config_path: str | Path = "config.toml") -> Config:
-    """Load and cache a configuration for reuse across modules.
-
-    Prefer dependency injection for pipeline code. This helper is intended for
-    UI/reporting modules or scripts that need a shared config without manually
-    passing it through every call.
-
-    Args:
-        config_path: Path to a TOML configuration file.
-
-    Returns:
-        Cached :class:`Config` instance for the given path.
-    """
+    """Return a cached config for scripts, dashboards, and reports."""
     return load_config(Path(config_path))
 
 
 def reload_config(config_path: str | Path = "config.toml") -> Config:
-    """Clear the config cache and reload a TOML file.
-
-    Args:
-        config_path: Path to a TOML configuration file.
-
-    Returns:
-        Fresh :class:`Config` instance.
-    """
+    """Clear the config cache, then load a fresh config."""
     get_config.cache_clear()
     return get_config(config_path)
