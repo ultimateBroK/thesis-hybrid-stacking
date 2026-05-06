@@ -23,7 +23,7 @@ format = "ruff format src/"
 pre-commit = "ruff check src/ && ruff format src/ && pytest tests/ -v -m 'not slow'"
 
 # Testing
-test = "pytest tests/ -v --cov=src/thesis --cov-fail-under=60"
+test = "pytest tests/ -v --cov=src/thesis --cov-fail-under=80"
 test-unit = "pytest tests/unit/ -v -m unit"
 test-integration = "pytest tests/integration/ -v -m integration"
 test-fast = "pytest tests/ -v -m 'not slow'"

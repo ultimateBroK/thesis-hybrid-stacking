@@ -15,7 +15,7 @@ import torch.nn.functional as F  # noqa: N812 – standard PyTorch abbreviation
 from torch.utils.data import DataLoader
 
 from thesis._shared.constants import CALIB_LR, CALIB_MAX_ITER, ECE_N_BINS
-from thesis.stage_4_training._gru_arch import GRUExtractor
+from thesis.stage_4_training.gru.arch import GRUExtractor
 
 logger = logging.getLogger("thesis.gru")
 

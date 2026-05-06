@@ -20,7 +20,7 @@ from thesis.stage_6_reporting import _data_quality
 logger = logging.getLogger("thesis.report")
 
 # ---------------------------------------------------------------------------
-# Tiny formatting helpers (shared with other _sections_* modules)
+# Tiny formatting helpers (shared with other sections modules)
 # ---------------------------------------------------------------------------
 
 

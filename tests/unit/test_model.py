@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -155,7 +156,7 @@ class TestDeploymentModelMetadata:
 
     def test_window_provenance_keys_present_with_kwargs(self) -> None:
         """When window_index is provided, provenance keys are in the dict."""
-        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
+        from thesis.stage_4_training.walk_forward.artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
         train_dates = {"start": "2023-01-01", "end": "2023-06-01"}
@@ -179,7 +180,7 @@ class TestDeploymentModelMetadata:
 
     def test_backward_compatible_no_window_provenance_keys(self) -> None:
         """Missing kwargs → no crash and no window-provenance keys in result."""
-        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
+        from thesis.stage_4_training.walk_forward.artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
         info = _build_lgbm_info(model, ["f1", "f2"], last_window_accuracy=0.85)
@@ -207,7 +208,7 @@ class TestDeploymentModelMetadata:
 
     def test_metadata_includes_per_window_provenance(self) -> None:
         """Result includes per-window provenance when kwargs are supplied."""
-        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
+        from thesis.stage_4_training.walk_forward.artifacts import _build_lgbm_info
 
         model = self._make_mock_model(best_iteration=75, classes=(0, 1, 2))
         train_dates = {"start": "2024-01-01", "end": "2024-06-01"}
@@ -238,7 +239,7 @@ class TestDeploymentModelMetadata:
 
     def test_backward_compatible_with_none_accuracy(self) -> None:
         """None accuracy is handled without crash — key present with None."""
-        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
+        from thesis.stage_4_training.walk_forward.artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
         info = _build_lgbm_info(model, ["f1"], last_window_accuracy=None)
@@ -248,7 +249,7 @@ class TestDeploymentModelMetadata:
 
     def test_window_oof_accuracy_equals_last_window_accuracy(self) -> None:
         """window_oof_accuracy mirrors last_window_accuracy when set."""
-        from thesis.stage_4_training._wf_hybrid_artifacts import _build_lgbm_info
+        from thesis.stage_4_training.walk_forward.artifacts import _build_lgbm_info
 
         model = self._make_mock_model()
 
@@ -377,3 +378,243 @@ class TestDistributionShiftWeights:
 
         assert len(weights) == len(y_train)
         assert np.all(np.isfinite(weights)), "All weights must be finite"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# _lgbm: _normalize_label and _save_predictions
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestNormalizeLabel:
+    def test_positive(self) -> None:
+        from thesis.stage_4_training._lgbm import _normalize_label
+
+        assert _normalize_label(0) == "0"
+        assert _normalize_label(1) == "1"
+
+    def test_negative(self) -> None:
+        from thesis.stage_4_training._lgbm import _normalize_label
+
+        assert _normalize_label(-1) == "minus1"
+        assert _normalize_label(-2) == "minus2"
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestSavePredictions:
+    def test_saves_parquet_and_csv(self, tmp_path) -> None:
+        from thesis.stage_4_training._lgbm import _save_predictions
+
+        n = 10
+        timestamps = pl.datetime_range(
+            start=pl.datetime(2024, 1, 1),
+            end=pl.datetime(2024, 1, 1) + pl.duration(hours=n - 1),
+            interval="1h",
+            eager=True,
+        )
+        test_aligned = pl.DataFrame({"timestamp": timestamps})
+        y_test = np.array([1, -1, 0, 1, -1, 0, 1, -1, 0, 1])
+        preds = np.array([1, -1, 0, 0, -1, 0, 1, 0, 0, 1])
+        proba = np.random.RandomState(42).rand(n, 3)
+        proba = proba / proba.sum(axis=1, keepdims=True)
+        class_order = [-1, 0, 1]
+
+        preds_path = tmp_path / "predictions.parquet"
+        _save_predictions(test_aligned, y_test, preds, proba, class_order, preds_path)
+
+        assert preds_path.exists()
+        csv_path = preds_path.with_suffix(".csv")
+        assert csv_path.exists()
+
+        df = pl.read_parquet(preds_path)
+        assert "timestamp" in df.columns
+        assert "true_label" in df.columns
+        assert "pred_label" in df.columns
+        assert "pred_proba_class_minus1" in df.columns
+        assert "pred_proba_class_0" in df.columns
+        assert "pred_proba_class_1" in df.columns
+        assert len(df) == n
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# _lgbm_utils: _wrap_np, _align_splits_with_sequences, _build_hybrid_matrix,
+#              _filter_validation_to_seen_classes, _save_feature_importance
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestWrapNp:
+    def test_wraps_as_dataframe(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import _wrap_np
+        import pandas as pd
+
+        X = np.array([[1, 2], [3, 4]])
+        result = _wrap_np(X, ["a", "b"])
+        assert isinstance(result, pd.DataFrame)
+        assert list(result.columns) == ["a", "b"]
+        assert result.shape == (2, 2)
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestAlignSplitsWithSequences:
+    def test_slices_correctly(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import _align_splits_with_sequences
+
+        df = pl.DataFrame({"a": range(20), "b": range(20, 40)})
+        seq_len = 5
+        hidden = np.zeros((16, 3))  # 20 - seq_len + 1 = 16
+
+        train_a, val_a, test_a = _align_splits_with_sequences(
+            df, df, df, hidden, hidden, hidden, seq_len
+        )
+        assert len(train_a) == 16
+        assert len(val_a) == 16
+        assert len(test_a) == 16
+
+    def test_alignment_values(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import _align_splits_with_sequences
+
+        df = pl.DataFrame({"val": np.arange(10.0)})
+        seq_len = 3
+        hidden = np.zeros((8, 2))
+
+        aligned, _, _ = _align_splits_with_sequences(
+            df, df, df, hidden, hidden, hidden, seq_len
+        )
+        # Should start from index seq_len-1 = 2
+        assert aligned["val"][0] == 2.0
+        assert len(aligned) == 8
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestBuildHybridMatrix:
+    def test_concatenates_hidden_and_static(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import _build_hybrid_matrix
+
+        n = 10
+        hidden_size = 4
+        hidden = np.ones((n, hidden_size))
+        static_cols = ["s1", "s2"]
+
+        df = pl.DataFrame(
+            {"s1": np.arange(n, dtype=float), "s2": np.arange(n, 10 + n, dtype=float)}
+        )
+
+        X_train, X_val, X_test, feat_cols = _build_hybrid_matrix(
+            hidden, hidden, hidden, df, df, df, static_cols, hidden_size
+        )
+
+        assert X_train.shape == (n, hidden_size + len(static_cols))
+        assert len(feat_cols) == hidden_size + len(static_cols)
+        assert feat_cols[0] == "gru_h0"
+        assert feat_cols[-1] == "s2"
+        # First 4 cols are ones (hidden), next 2 are arange
+        np.testing.assert_array_equal(X_train[:, 0], np.ones(n))
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestFilterValidationToSeenClasses:
+    def test_all_seen(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import (
+            _filter_validation_to_seen_classes,
+        )
+
+        X_train = np.random.randn(20, 5)
+        X_val = np.random.randn(10, 5)
+        y_val = np.array([-1, 0, 1, -1, 0, 1, -1, 0, 1, 0])
+        y_train = np.array([-1, 0, 1] * 6 + [-1, 0])
+
+        result = _filter_validation_to_seen_classes(
+            X_train, X_val, y_val, y_train, ["f" + str(i) for i in range(5)]
+        )
+        assert result is not None
+        X_filt, y_filt = result
+        assert len(y_filt) == len(y_val)
+
+    def test_unseen_class_dropped(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import (
+            _filter_validation_to_seen_classes,
+        )
+
+        X_train = np.random.randn(10, 3)
+        X_val = np.random.randn(5, 3)
+        y_train = np.array([-1, 0] * 5)  # No class 1
+        y_val = np.array([-1, 0, 1, 1, 0])
+
+        result = _filter_validation_to_seen_classes(
+            X_train, X_val, y_val, y_train, ["a", "b", "c"]
+        )
+        assert result is not None
+        _, y_filt = result
+        assert 1 not in y_filt
+        assert len(y_filt) == 3
+
+    def test_no_overlap_returns_none(self) -> None:
+        from thesis.stage_4_training._lgbm_utils import (
+            _filter_validation_to_seen_classes,
+        )
+
+        X_train = np.random.randn(10, 3)
+        X_val = np.random.randn(5, 3)
+        y_train = np.array([-1] * 10)
+        y_val = np.array([1] * 5)
+
+        result = _filter_validation_to_seen_classes(
+            X_train, X_val, y_val, y_train, ["a", "b", "c"]
+        )
+        assert result is None
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestSaveFeatureImportance:
+    def test_saves_json(self, tmp_path) -> None:
+        from thesis.stage_4_training._lgbm_utils import _save_feature_importance
+
+        model = MagicMock()
+        model.feature_importances_ = np.array([10, 30, 20])
+        feat_cols = ["a", "b", "c"]
+
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+
+        _save_feature_importance(model, feat_cols, config)
+
+        json_path = tmp_path / "reports" / "feature_importance.json"
+        assert json_path.exists()
+        import json
+
+        with open(json_path) as f:
+            data = json.load(f)
+        # Sorted descending
+        assert list(data.keys())[0] == "b"
+        assert data["b"] == 30.0
+
+    def test_handles_missing_session_dir(self, tmp_path) -> None:
+        from thesis.stage_4_training._lgbm_utils import _save_feature_importance
+
+        model = MagicMock()
+        model.feature_importances_ = np.array([5, 10])
+        feat_cols = ["x", "y"]
+
+        config = Config()
+        config.paths.session_dir = ""
+
+        _save_feature_importance(model, feat_cols, config)
+
+        # Falls back to results/feature_importance.json
+        import json
+
+        fallback = Path("results/feature_importance.json")
+        assert fallback.exists()
+        with open(fallback) as f:
+            data = json.load(f)
+        assert "x" in data
+        # Cleanup
+        fallback.unlink()

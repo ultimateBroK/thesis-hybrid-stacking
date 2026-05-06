@@ -2,7 +2,7 @@
 
 Contains metric quality zone classification, baseline strategy comparison,
 and the synthesized verdict / issue renderers.  Assessment helpers and
-constants live in ``_sections_assess.py``.
+constants live in ``assess.py``.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import polars as pl
 
 from thesis._shared.config import Config
 from thesis.stage_4_training import _baselines
-from thesis.stage_6_reporting._sections_assess import (
+from thesis.stage_6_reporting.sections.assess import (
     _PRIORITY_ICON,
     _PRIORITY_ORDER,
     _QUALITY_ACC_DELTA,
@@ -31,7 +31,7 @@ from thesis.stage_6_reporting._sections_assess import (
     _get_zone_info,
     _identify_primary_issue,
 )
-from thesis.stage_6_reporting._sections_data import _fmt_f2, _fmt_pct, _tbl_row
+from thesis.stage_6_reporting.sections.data import _fmt_f2, _fmt_pct, _tbl_row
 
 logger = logging.getLogger("thesis.report")
 

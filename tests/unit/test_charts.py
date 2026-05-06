@@ -332,3 +332,111 @@ def test_build_equity_drawdown_empty() -> None:
     """Empty trades should return empty Grid."""
     chart = build_equity_drawdown_chart([], {})
     assert isinstance(chart, Grid)
+
+
+# ---------------------------------------------------------------------------
+# load_session_data from charts._loading
+# ---------------------------------------------------------------------------
+
+from thesis.charts._loading import load_session_data
+
+
+@pytest.mark.unit
+class TestLoadSessionData:
+    def test_returns_dict_with_missing_files(self, tmp_path) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = str(tmp_path / "ohlcv.parquet")
+        config.paths.features = str(tmp_path / "features.parquet")
+        config.paths.test_data = str(tmp_path / "test.parquet")
+        config.paths.labels = str(tmp_path / "labels.parquet")
+        config.paths.predictions = str(tmp_path / "preds.parquet")
+        config.paths.backtest_results = str(tmp_path / "bt.json")
+
+        result = load_session_data(config)
+        assert isinstance(result, dict)
+        assert result["ohlcv"] is None
+        assert result["predictions"] is None
+        assert result["backtest_results"] is None
+        assert result["trades"] == []
+        assert result["metrics"] == {}
+
+    def test_loads_existing_files(self, tmp_path) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = str(tmp_path / "ohlcv.parquet")
+        config.paths.features = str(tmp_path / "features.parquet")
+        config.paths.test_data = str(tmp_path / "test.parquet")
+        config.paths.labels = str(tmp_path / "labels.parquet")
+        config.paths.predictions = str(tmp_path / "preds.parquet")
+        config.paths.backtest_results = str(tmp_path / "bt.json")
+
+        # Create test parquet files
+        df = pl.DataFrame({"a": [1, 2, 3]})
+        df.write_parquet(tmp_path / "ohlcv.parquet")
+        df.write_parquet(tmp_path / "features.parquet")
+        df.write_parquet(tmp_path / "test.parquet")
+        df.write_parquet(tmp_path / "labels.parquet")
+
+        result = load_session_data(config)
+        assert result["ohlcv"] is not None
+        assert result["features"] is not None
+        assert result["test"] is not None
+        assert result["labels"] is not None
+
+    def test_loads_backtest_results_json(self, tmp_path) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = str(tmp_path / "nonexistent.parquet")
+        config.paths.features = str(tmp_path / "nonexistent.parquet")
+        config.paths.test_data = str(tmp_path / "nonexistent.parquet")
+        config.paths.labels = str(tmp_path / "nonexistent.parquet")
+        config.paths.predictions = str(tmp_path / "preds.parquet")
+        config.paths.backtest_results = str(tmp_path / "bt.json")
+
+        bt_dir = tmp_path / "backtest"
+        bt_dir.mkdir()
+        bt_data = {"metrics": {"total_return_pct": 10.0}, "trades": [{"pnl": 100}]}
+        import json
+
+        (bt_dir / "backtest_results.json").write_text(json.dumps(bt_data))
+
+        result = load_session_data(config)
+        assert result["metrics"]["total_return_pct"] == 10.0
+        assert len(result["trades"]) == 1
+
+    def test_session_dir_predictions(self, tmp_path) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = str(tmp_path / "nonexistent.parquet")
+        config.paths.features = str(tmp_path / "nonexistent.parquet")
+        config.paths.test_data = str(tmp_path / "nonexistent.parquet")
+        config.paths.labels = str(tmp_path / "nonexistent.parquet")
+        config.paths.backtest_results = str(tmp_path / "nonexistent.json")
+
+        preds_dir = tmp_path / "predictions"
+        preds_dir.mkdir()
+        preds_path = preds_dir / "final_predictions.parquet"
+        pl.DataFrame({"a": [1]}).write_parquet(preds_path)
+
+        result = load_session_data(config)
+        assert result["predictions"] is not None
+
+    def test_feature_importance_json(self, tmp_path) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = str(tmp_path / "nonexistent.parquet")
+        config.paths.features = str(tmp_path / "nonexistent.parquet")
+        config.paths.test_data = str(tmp_path / "nonexistent.parquet")
+        config.paths.labels = str(tmp_path / "nonexistent.parquet")
+        config.paths.predictions = str(tmp_path / "nonexistent.parquet")
+        config.paths.backtest_results = str(tmp_path / "nonexistent.json")
+
+        reports_dir = tmp_path / "reports"
+        reports_dir.mkdir()
+        import json
+
+        (reports_dir / "feature_importance.json").write_text(json.dumps({"rsi": 10}))
+
+        result = load_session_data(config)
+        assert result["feature_importance"]["rsi"] == 10

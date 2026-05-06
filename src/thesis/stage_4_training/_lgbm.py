@@ -16,10 +16,6 @@ from rich.table import Table
 from thesis._shared.config import Config
 from thesis._shared.constants import EXCLUDE_COLS
 from thesis._shared.ui import console
-from thesis.stage_4_training._gru import train_gru
-from thesis.stage_4_training._gru_data import prepare_sequences
-from thesis.stage_4_training._gru_inference import extract_hidden_states
-from thesis.stage_4_training._gru_persistence import save_gru_model
 from thesis.stage_4_training._lgbm_utils import (
     _align_splits_with_sequences,
     _build_hybrid_matrix,
@@ -27,6 +23,12 @@ from thesis.stage_4_training._lgbm_utils import (
     _save_feature_importance,
     _train_fixed,
     _wrap_np,
+)
+from thesis.stage_4_training.gru import (
+    extract_hidden_states,
+    prepare_sequences,
+    save_gru_model,
+    train_gru,
 )
 
 logger = logging.getLogger("thesis.model")

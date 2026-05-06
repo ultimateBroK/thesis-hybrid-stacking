@@ -21,7 +21,7 @@ from thesis.stage_3_labels._impl import (
     _filter_censored,
     _merge_label_columns,
 )
-from thesis.stage_4_training._wf_hybrid import _compute_regression_target
+from thesis.stage_4_training.walk_forward.hybrid import _compute_regression_target
 from thesis._shared.config import Config, GRUConfig, LGBMConfig, LabelsConfig
 from thesis._shared.constants import CENSORED_LABEL
 
@@ -687,7 +687,7 @@ class TestRegressionTailCensoring:
         cfg = Config()
         cfg.labels = LabelsConfig(horizon_bars=5)
         cfg.model = LGBMConfig(objective="multiclass")  # LGBM not regression
-        cfg.gru = GRUConfig(objective="multiclass")     # GRU not regression
+        cfg.gru = GRUConfig(objective="multiclass")  # GRU not regression
 
         result_df, is_regression = _compute_regression_target(df_in, cfg)
 

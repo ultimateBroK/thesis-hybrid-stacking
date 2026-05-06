@@ -6,7 +6,7 @@ Re-exports from focused sub-modules so that existing consumers
 
 from __future__ import annotations
 
-from thesis.stage_6_reporting._sections_assess import (
+from thesis.stage_6_reporting.sections.assess import (
     _EDGE_PF_NEGATIVE,
     _ISSUE_DD_CATASTROPHIC,
     _MIN_TRADES_DEPLOYABLE,
@@ -18,7 +18,7 @@ from thesis.stage_6_reporting._sections_assess import (
     _get_zone_info,
     _identify_primary_issue,
 )
-from thesis.stage_6_reporting._sections_backtest import (
+from thesis.stage_6_reporting.sections.backtest import (
     _compute_avg_win_loss_ratio,
     _render_baseline_comparison_section,
     _render_issues,
@@ -27,7 +27,7 @@ from thesis.stage_6_reporting._sections_backtest import (
     _render_primary_issue,
     _render_synthesized_verdict,
 )
-from thesis.stage_6_reporting._sections_data import (
+from thesis.stage_6_reporting.sections.data import (
     _fmt_f2,
     _fmt_pct,
     _load_label_distribution,
@@ -37,7 +37,7 @@ from thesis.stage_6_reporting._sections_data import (
     _render_validation_methodology_section,
     _tbl_row,
 )
-from thesis.stage_6_reporting._sections_oof import (
+from thesis.stage_6_reporting.sections.oof import (
     _render_oof_vs_oos_section,
 )
 

@@ -37,17 +37,17 @@ from thesis._shared.constants import (
     WARMUP_EPOCHS,
 )
 from thesis._shared.ui import console
-from thesis.stage_4_training._gru_arch import GRUExtractor
-from thesis.stage_4_training._gru_calibration import _calibrate_model
-from thesis.stage_4_training._gru_data import (
+from thesis.stage_4_training.gru.arch import GRUExtractor
+from thesis.stage_4_training.gru.calibration import _calibrate_model
+from thesis.stage_4_training.gru.data import (
     SequenceDataset,
     _extract_sample_weights,
     prepare_sequences,
 )
-from thesis.stage_4_training._gru_inference import (
+from thesis.stage_4_training.gru.inference import (
     extract_hidden_states,
 )
-from thesis.stage_4_training._gru_losses import FocalLoss, _nt_xent_loss
+from thesis.stage_4_training.gru.losses import FocalLoss, _nt_xent_loss
 
 logger = logging.getLogger("thesis.gru")
 

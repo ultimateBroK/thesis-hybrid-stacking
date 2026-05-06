@@ -15,7 +15,7 @@ from thesis.stage_6_reporting._impl import (
     _config_table,
     _exec_verdict,
 )
-from thesis.stage_6_reporting._sections import (
+from thesis.stage_6_reporting.sections import (
     _assess_model_quality,
     _assess_trading_edge,
     _derive_recommendation,
@@ -533,7 +533,9 @@ class TestOofVsOosSection:
         # Macro F1 row present
         assert "Macro F1" in rendered
 
-    def test_no_windows_with_positive_test_rows_returns_none(self, tmp_path: Path) -> None:
+    def test_no_windows_with_positive_test_rows_returns_none(
+        self, tmp_path: Path
+    ) -> None:
         """All windows have test_rows=0, returns N/A for OOF."""
         cfg = Config()
         cfg.paths.session_dir = str(tmp_path)

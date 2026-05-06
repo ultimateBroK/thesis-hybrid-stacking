@@ -13,7 +13,7 @@ import math
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Module-level constants (re-exported by _sections.py for _tables.py)
+# Module-level constants (re-exported by __init__.py for _tables.py)
 # ---------------------------------------------------------------------------
 
 # Model quality assessment

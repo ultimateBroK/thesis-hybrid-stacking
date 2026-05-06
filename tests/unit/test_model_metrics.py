@@ -331,3 +331,90 @@ class TestComputeAll:
         result = compute_all_classification_metrics(_PERFECT_TRUE, _PERFECT_PRED)
         assert result["accuracy"] == 1.0
         assert result["macro_f1"] == 1.0
+
+    def test_with_regression_auxiliary(self) -> None:
+        """When y_true_returns and y_proba are provided, regression aux is computed."""
+        from thesis.stage_6_reporting._model_metrics import compute_proxy_return
+
+        y_proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.2, 0.7], [0.1, 0.8, 0.1]] * 3)
+        y_true_returns = np.random.randn(9)
+        result = compute_all_classification_metrics(
+            _PERFECT_TRUE, _PERFECT_PRED, y_proba, y_true_returns=y_true_returns
+        )
+        assert "regression_auxiliary" in result
+        assert "mae" in result["regression_auxiliary"]
+        assert "rmse" in result["regression_auxiliary"]
+        assert "r_squared" in result["regression_auxiliary"]
+
+    def test_with_pred_returns(self) -> None:
+        """When y_true_returns and y_pred_returns are provided."""
+        y_true_returns = np.array(
+            [0.1, -0.2, 0.05, -0.1, 0.15, -0.05, 0.08, -0.03, 0.12]
+        )
+        y_pred_returns = np.array(
+            [0.08, -0.15, 0.06, -0.08, 0.12, -0.04, 0.07, -0.02, 0.10]
+        )
+        result = compute_all_classification_metrics(
+            _PERFECT_TRUE,
+            _PERFECT_PRED,
+            y_true_returns=y_true_returns,
+            y_pred_returns=y_pred_returns,
+        )
+        assert "regression_auxiliary" in result
+        assert result["regression_auxiliary"]["mae"] > 0
+
+    def test_no_returns_no_regression(self) -> None:
+        """When no returns are provided, regression_auxiliary is absent."""
+        result = compute_all_classification_metrics(_PERFECT_TRUE, _PERFECT_PRED)
+        assert "regression_auxiliary" not in result
+
+
+# ---------------------------------------------------------------------------
+# Regression helpers
+# ---------------------------------------------------------------------------
+
+from thesis.stage_6_reporting._model_metrics import (
+    compute_proxy_return,
+    compute_regression_auxiliary,
+    mae,
+    rmse,
+    r_squared,
+)
+
+
+@pytest.mark.unit
+class TestRegressionMetrics:
+    def test_mae(self) -> None:
+        y_true = np.array([1.0, 2.0, 3.0])
+        y_pred = np.array([1.1, 1.9, 3.2])
+        assert abs(mae(y_true, y_pred) - 0.133) < 0.01
+
+    def test_rmse(self) -> None:
+        y_true = np.array([1.0, 2.0, 3.0])
+        y_pred = np.array([1.0, 2.0, 3.0])
+        assert rmse(y_true, y_pred) == 0.0
+
+    def test_r_squared_perfect(self) -> None:
+        y_true = np.array([1.0, 2.0, 3.0])
+        y_pred = np.array([1.0, 2.0, 3.0])
+        assert r_squared(y_true, y_pred) == 1.0
+
+    def test_r_squared_zero_variance(self) -> None:
+        y_true = np.array([5.0, 5.0, 5.0])
+        y_pred = np.array([4.0, 5.0, 6.0])
+        assert r_squared(y_true, y_pred) == 0.0
+
+    def test_compute_proxy_return(self) -> None:
+        proba = np.array([[0.1, 0.3, 0.6], [0.7, 0.2, 0.1]])
+        result = compute_proxy_return(proba)
+        # P(Long) - P(Short) for each row
+        assert result[0] == pytest.approx(0.5)  # 0.6 - 0.1
+        assert result[1] == pytest.approx(-0.6)  # 0.1 - 0.7
+
+    def test_compute_regression_auxiliary(self) -> None:
+        y_true = np.array([0.1, -0.2, 0.05])
+        y_pred = np.array([0.08, -0.15, 0.06])
+        result = compute_regression_auxiliary(y_true, y_pred)
+        assert "mae" in result
+        assert "rmse" in result
+        assert "r_squared" in result

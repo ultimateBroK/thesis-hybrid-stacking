@@ -2,6 +2,7 @@
 source = src/thesis
 omit =
     src/thesis/dashboard.py
+    src/thesis/dashboard/*
     src/thesis/charts.py
     src/thesis/zones.py
     src/thesis/report.py

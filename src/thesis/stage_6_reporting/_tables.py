@@ -20,7 +20,7 @@ from thesis.stage_6_reporting._benchmarks import (
     _model_label,
     compute_benchmark_comparison,
 )
-from thesis.stage_6_reporting._sections import (
+from thesis.stage_6_reporting.sections import (
     _EDGE_PF_NEGATIVE,
     _ISSUE_DD_CATASTROPHIC,
     _QUALITY_DIR_ACC_FAIR,

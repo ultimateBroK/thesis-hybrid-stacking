@@ -14,8 +14,8 @@ from thesis._shared.config import Config
 from thesis._shared.constants import CENSORED_LABEL, EXCLUDE_COLS
 from thesis._shared.ui import console
 from thesis.stage_4_training._validation import generate_windows, log_windows
-from thesis.stage_4_training._wf_hybrid_artifacts import _save_wf_artifacts
-from thesis.stage_4_training._wf_utils import (
+from thesis.stage_4_training.walk_forward.artifacts import _save_wf_artifacts
+from thesis.stage_4_training.walk_forward.utils import (
     _CLASS_ORDER,
     _add_prediction_diagnostics,
     _align_probability_matrix,
@@ -205,9 +205,11 @@ def _wf_gru_phase(
     """
     import torch
 
-    from thesis.stage_4_training._gru import train_gru
-    from thesis.stage_4_training._gru_data import prepare_sequences
-    from thesis.stage_4_training._gru_inference import extract_hidden_states
+    from thesis.stage_4_training.gru import (
+        extract_hidden_states,
+        prepare_sequences,
+        train_gru,
+    )
 
     # Slice
     train_df = df.slice(
@@ -533,9 +535,6 @@ def _collect_oof_predictions(
             **_probability_columns(result["proba"], result["classes"]),
         }
     )
-
-
-
 
 
 def _run_walk_forward_hybrid(config: Config) -> None:

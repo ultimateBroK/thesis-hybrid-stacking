@@ -26,15 +26,6 @@ from thesis.stage_6_reporting._comparison import (
     _static_vs_hybrid_comparison,
     _write_model_comparison_artifacts,
 )
-from thesis.stage_6_reporting._sections import (
-    _render_auxiliary_regression_section,
-    _render_baseline_comparison_section,
-    _render_data_quality_section,
-    _render_label_design_section,
-    _render_metric_zones_section,
-    _render_oof_vs_oos_section,
-    _render_validation_methodology_section,
-)
 from thesis.stage_6_reporting._tables import (
     _accuracy_table,
     _backtest_metrics_table,
@@ -46,6 +37,15 @@ from thesis.stage_6_reporting._tables import (
     _feature_importance_table,
     _gru_summary,
     _issues_list,
+)
+from thesis.stage_6_reporting.sections import (
+    _render_auxiliary_regression_section,
+    _render_baseline_comparison_section,
+    _render_data_quality_section,
+    _render_label_design_section,
+    _render_metric_zones_section,
+    _render_oof_vs_oos_section,
+    _render_validation_methodology_section,
 )
 
 logger = logging.getLogger("thesis.report")

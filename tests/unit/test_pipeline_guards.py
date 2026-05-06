@@ -67,21 +67,21 @@ def test_purge_guard_raises_on_insufficient_gap() -> None:
 
     with (
         patch(
-            "thesis.stage_4_training._wf_hybrid.Path",
+            "thesis.stage_4_training.walk_forward.hybrid.Path",
             return_value=MagicMock(),
         ),
         patch(
-            "thesis.stage_4_training._wf_hybrid.pl.read_parquet",
+            "thesis.stage_4_training.walk_forward.hybrid.pl.read_parquet",
             return_value=mock_df,
         ),
         patch(
-            "thesis.stage_4_training._wf_hybrid.generate_windows",
+            "thesis.stage_4_training.walk_forward.hybrid.generate_windows",
             return_value=mock_windows,
         ),
-        patch("thesis.stage_4_training._wf_hybrid.log_windows"),
+        patch("thesis.stage_4_training.walk_forward.hybrid.log_windows"),
         pytest.raises(ValueError, match="Leakage risk"),
     ):
-        from thesis.stage_4_training._wf_hybrid import _run_walk_forward_hybrid
+        from thesis.stage_4_training.walk_forward.hybrid import _run_walk_forward_hybrid
 
         _run_walk_forward_hybrid(config)
 
@@ -102,16 +102,16 @@ def test_purge_guard_passes_with_sufficient_gap() -> None:
 
     with (
         patch(
-            "thesis.stage_4_training._wf_hybrid.pl.read_parquet",
+            "thesis.stage_4_training.walk_forward.hybrid.pl.read_parquet",
             return_value=mock_df,
         ),
         patch(
-            "thesis.stage_4_training._wf_hybrid.generate_windows",
+            "thesis.stage_4_training.walk_forward.hybrid.generate_windows",
             return_value=mock_windows,
         ),
-        patch("thesis.stage_4_training._wf_hybrid.log_windows"),
+        patch("thesis.stage_4_training.walk_forward.hybrid.log_windows"),
     ):
-        from thesis.stage_4_training._wf_hybrid import _run_walk_forward_hybrid
+        from thesis.stage_4_training.walk_forward.hybrid import _run_walk_forward_hybrid
 
         # Should NOT raise the purge guard ValueError.
         # It will fail later (no real data), but the guard is what we test.
@@ -169,7 +169,11 @@ class TestStageNumbering:
         """All UI imports should resolve to the shared Rich Console."""
         import thesis._shared.ui as ui_a
         import thesis.pipeline as pipeline
-        from thesis.stage_4_training import _lgbm, _wf_hybrid, _wf_static
+        from thesis.stage_4_training import _lgbm
+        from thesis.stage_4_training.walk_forward import (
+            hybrid as _wf_hybrid,
+            static as _wf_static,
+        )
 
         assert pipeline.console is ui_a.console
         assert _lgbm.console is ui_a.console

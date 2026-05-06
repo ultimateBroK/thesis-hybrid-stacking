@@ -304,3 +304,229 @@ def test_compute_data_quality_stats_single_bar() -> None:
     assert stats["total_bars"] == 1
     assert stats["calendar_gaps"] == 0
     assert stats["estimated_missing_bars"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Additional _impl tests for coverage
+# ---------------------------------------------------------------------------
+
+from thesis.stage_1_data._impl import (
+    _parse_datetime_bound,
+    _deduplicate_and_filter,
+    _filter_date_range,
+    _log_gap_report,
+    _log_candle_quality_report,
+    _spans_weekend,
+    _save_data_quality_json,
+)
+
+
+@pytest.mark.unit
+class TestParseDatetimeBound:
+    def test_valid_date(self) -> None:
+        result = _parse_datetime_bound("2024-01-01", "start_date", pl.Datetime("ms"))
+        assert result is not None
+
+    def test_empty_raises(self) -> None:
+        with pytest.raises(ValueError, match="must not be empty"):
+            _parse_datetime_bound("", "start_date", pl.Datetime("ms"))
+
+
+@pytest.mark.unit
+class TestDeduplicateAndFilter:
+    def test_deduplicates_timestamps(self) -> None:
+        ts = pl.Series("timestamp", [946684800000, 946684800000, 946771200000]).cast(
+            pl.Datetime("ms")
+        )
+        df = pl.DataFrame(
+            {
+                "timestamp": ts,
+                "open": [1.0, 1.1, 2.0],
+                "high": [1.5, 1.6, 2.5],
+                "low": [0.8, 0.9, 1.8],
+                "close": [1.2, 1.3, 2.2],
+                "volume": [100.0, 200.0, 300.0],
+                "tick_count": [10, 20, 30],
+                "avg_spread": [0.01, 0.02, 0.03],
+            }
+        )
+        result, dropped, dupes = _deduplicate_and_filter(df)
+        assert len(result) == 2
+        assert dupes == 1
+
+    def test_no_duplicates(self) -> None:
+        ts = pl.Series("timestamp", [946684800000, 946771200000]).cast(
+            pl.Datetime("ms")
+        )
+        df = pl.DataFrame(
+            {
+                "timestamp": ts,
+                "open": [1.0, 2.0],
+                "high": [1.5, 2.5],
+                "low": [0.8, 1.8],
+                "close": [1.2, 2.2],
+                "volume": [100.0, 200.0],
+                "tick_count": [10, 20],
+                "avg_spread": [0.01, 0.02],
+            }
+        )
+        result, dropped, dupes = _deduplicate_and_filter(df)
+        assert len(result) == 2
+        assert dupes == 0
+
+
+@pytest.mark.unit
+class TestFilterDateRange:
+    def test_filters_to_range(self) -> None:
+        ts = pl.Series(
+            "timestamp",
+            [
+                1704067200000,
+                1704153600000,
+                1704240000000,
+                1704326400000,
+                1704412800000,
+                1704499200000,
+                1704585600000,
+                1704672000000,
+                1704758400000,
+                1704844800000,
+            ],
+        ).cast(pl.Datetime("ms"))
+        df = pl.DataFrame(
+            {
+                "timestamp": ts,
+                "open": [1.0] * 10,
+                "high": [1.5] * 10,
+                "low": [0.8] * 10,
+                "close": [1.2] * 10,
+                "volume": [100.0] * 10,
+            }
+        )
+        config = Config()
+        config.data.start_date = "2024-01-03"
+        config.data.end_date = "2024-01-07"
+        result = _filter_date_range(df, config)
+        assert len(result) == 5
+
+    def test_empty_result_raises(self) -> None:
+        ts = pl.Series("timestamp", [1577836800000]).cast(pl.Datetime("ms"))
+        df = pl.DataFrame(
+            {
+                "timestamp": ts,
+                "open": [1.0],
+                "high": [1.0],
+                "low": [1.0],
+                "close": [1.0],
+                "volume": [1.0],
+            }
+        )
+        config = Config()
+        config.data.start_date = "2030-01-01"
+        config.data.end_date = "2030-12-31"
+        with pytest.raises(ValueError, match="No OHLCV bars remain"):
+            _filter_date_range(df, config)
+
+
+@pytest.mark.unit
+class TestSpansWeekend:
+    def test_weekday_gap(self) -> None:
+        from datetime import datetime
+
+        start = datetime(2024, 1, 15, 0, 0)  # Monday
+        end = datetime(2024, 1, 16, 0, 0)  # Tuesday
+        assert _spans_weekend(start, end) is False
+
+    def test_weekend_gap(self) -> None:
+        from datetime import datetime
+
+        start = datetime(2024, 1, 12, 22, 0)  # Friday evening
+        end = datetime(2024, 1, 15, 6, 0)  # Monday morning
+        assert _spans_weekend(start, end) is True
+
+    def test_short_gap_not_weekend(self) -> None:
+        from datetime import datetime
+
+        start = datetime(2024, 1, 12, 23, 0)  # Friday night
+        end = datetime(2024, 1, 13, 4, 0)  # Saturday morning — but < 6 hours
+        assert _spans_weekend(start, end) is False
+
+
+@pytest.mark.unit
+class TestLogGapReport:
+    def test_single_bar(self) -> None:
+        df = pl.DataFrame({"timestamp": [pl.datetime(2024, 1, 1)]})
+        # Should not crash with < 2 bars
+        _log_gap_report(df, 3_600_000)
+
+    def test_multi_bar(self) -> None:
+        df = pl.DataFrame(
+            {
+                "timestamp": pl.datetime_range(
+                    pl.datetime(2024, 1, 1),
+                    pl.datetime(2024, 1, 1, 5),
+                    interval="1h",
+                    eager=True,
+                ),
+            }
+        )
+        _log_gap_report(df, 3_600_000)
+
+
+@pytest.mark.unit
+class TestLogCandleQualityReport:
+    def test_empty(self) -> None:
+        df = pl.DataFrame(
+            {
+                "timestamp": [],
+                "open": [],
+                "high": [],
+                "low": [],
+                "close": [],
+                "volume": [],
+                "tick_count": [],
+                "avg_spread": [],
+            }
+        ).cast(
+            {
+                "timestamp": pl.Datetime,
+                "open": pl.Float64,
+                "high": pl.Float64,
+                "low": pl.Float64,
+                "close": pl.Float64,
+                "volume": pl.Float64,
+                "tick_count": pl.Int64,
+                "avg_spread": pl.Float64,
+            }
+        )
+        _log_candle_quality_report(df)  # Should not crash
+
+    def test_valid_candles(self) -> None:
+        df = pl.DataFrame(
+            {
+                "open": [1.0],
+                "high": [1.5],
+                "low": [0.8],
+                "close": [1.2],
+                "volume": [100.0],
+                "tick_count": [10],
+                "avg_spread": [0.01],
+            }
+        )
+        _log_candle_quality_report(df)
+
+
+@pytest.mark.unit
+class TestSaveDataQualityJson:
+    def test_saves_json(self, tmp_path) -> None:
+        config = Config()
+        config.paths.data_quality_json = str(tmp_path / "data_quality.json")
+        stats = {"total_bars": 100, "deduped_timestamps": 5}
+        _save_data_quality_json(stats, config)
+
+        import json
+
+        path = tmp_path / "data_quality.json"
+        assert path.exists()
+        data = json.loads(path.read_text())
+        assert data["total_bars"] == 100

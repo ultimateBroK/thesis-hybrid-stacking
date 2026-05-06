@@ -17,11 +17,11 @@
 
 ### Models
 
-- [x] **GRU feature extractor** — 2-layer GRU, 64 hidden units, 48-bar sequences, 20 input features including raw OHLCV z-scores and relative volatility features (`src/thesis/stage_4_training/_gru.py`)
+- [x] **GRU feature extractor** — 2-layer GRU, 64 hidden units, 48-bar sequences, 20 input features including raw OHLCV z-scores and relative volatility features (`src/thesis/stage_4_training/gru/`)
 - [x] **GRU multiclass objective** — GRU trains on Short/Hold/Long class labels; regression remains experimental
 - [x] **Cosine-annealing LR schedule** — Warm restarts (T_0=10, T_mult=2) with warmup for better convergence
 - [x] **LightGBM classifier** — Multiclass with distribution-shift weight correction (`src/thesis/stage_4_training/_lgbm.py`)
-- [x] **Hybrid training pipeline** — GRU hidden states (PCA 16-dim) + 22 static features → LightGBM (`src/thesis/pipeline.py`)
+- [x] **Hybrid training pipeline** — GRU hidden states (PCA 16-dim) + 22 static features → LightGBM (`src/thesis/pipeline.py`, orchestrated via `stage_4_training/walk_forward/`)
 
 
 ### Evaluation
@@ -46,12 +46,12 @@
 
 ### Visualization
 
-- [x] **Data charts** — Candlestick, label distribution, feature correlation, feature distributions (`src/thesis/charts.py`)
-- [x] **Model charts** — Confusion matrix, confidence distribution, feature importance, SHAP summary (`src/thesis/charts.py`)
-- [x] **Backtest charts** — Equity curve, drawdown, P&L histogram, monthly returns heatmap, rolling Sharpe, duration vs P&L scatter (`src/thesis/charts.py`)
+- [x] **Data charts** — Candlestick, label distribution, feature correlation, feature distributions (`src/thesis/charts/`)
+- [x] **Model charts** — Confusion matrix, confidence distribution, feature importance, SHAP summary (`src/thesis/charts/`)
+- [x] **Backtest charts** — Equity curve, drawdown, P&L histogram, monthly returns heatmap, rolling Sharpe, duration vs P&L scatter (`src/thesis/charts/`)
 - [x] **Metric zone gauges** — Color-coded metric evaluation (green/yellow/red) with boringedge recommendations and extreme value detection (`src/thesis/_shared/zones.py`)
 - [x] **Auto-generated report** — Markdown report with all metrics, tables, charts, data quality analysis, and verdict (`src/thesis/stage_6_reporting/`)
-- [x] **Streamlit dashboard** — Modular ECharts-based visualization on :8501 (`src/thesis/dashboard.py`)
+- [x] **Streamlit dashboard** — Modular ECharts-based visualization on :8501 (`src/thesis/dashboard/` — 10 modules + 5-line shim)
 
 ### Infrastructure
 
@@ -63,7 +63,7 @@
 - [x] **Code quality** — Ruff linting and formatting
 - [x] **CI/CD workflows** — GitHub Actions for testing and releases
 - [x] **Git conventions** — Conventional commits, branch strategy, PR templates
-- [x] **Stage-based subpackages** — Source organized as `stage_1_data/`, `stage_2_features/`, etc. with shared utilities in `_shared/`
+- [x] **Stage-based subpackages** — Source organized as `stage_1_data/`, `stage_2_features/`, etc. with sub-packages for GRU (`gru/`), walk-forward (`walk_forward/`), report sections (`sections/`), charts, and dashboard. Shared utilities in `_shared/`.
 
 ### Documentation
 

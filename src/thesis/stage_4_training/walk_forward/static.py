@@ -15,8 +15,8 @@ from thesis._shared.config import Config
 from thesis._shared.constants import EXCLUDE_COLS
 from thesis._shared.ui import console
 from thesis.stage_4_training._validation import generate_windows, log_windows
-from thesis.stage_4_training._wf_hybrid import _compute_regression_target
-from thesis.stage_4_training._wf_utils import (
+from thesis.stage_4_training.walk_forward.hybrid import _compute_regression_target
+from thesis.stage_4_training.walk_forward.utils import (
     _CLASS_ORDER,
     _add_confidence_columns,
     _add_prediction_diagnostics,

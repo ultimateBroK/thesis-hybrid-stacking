@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from thesis.stage_4_training._gru_arch import GRUExtractor
+from thesis.stage_4_training.gru.arch import GRUExtractor
 
 
 def extract_hidden_states(

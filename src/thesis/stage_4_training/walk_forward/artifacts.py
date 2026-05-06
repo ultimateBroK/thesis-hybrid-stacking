@@ -11,7 +11,7 @@ from typing import Any
 import polars as pl
 
 from thesis._shared.config import Config
-from thesis.stage_4_training._wf_utils import (
+from thesis.stage_4_training.walk_forward.utils import (
     _add_confidence_columns,
     _validate_predictions,
     _write_prediction_manifest,
@@ -147,8 +147,8 @@ def _save_wf_artifacts(
     """
     import joblib
 
-    from thesis.stage_4_training._gru_persistence import save_gru_model
     from thesis.stage_4_training._lgbm_utils import _save_feature_importance
+    from thesis.stage_4_training.gru import save_gru_model
 
     # ── Guard ──
     if not all_oof_preds or gru_model is None:

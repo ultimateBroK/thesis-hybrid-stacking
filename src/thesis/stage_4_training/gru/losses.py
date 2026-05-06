@@ -40,6 +40,7 @@ class FocalLoss(nn.Module):
         alpha: torch.Tensor | None = None,
         num_classes: int = 3,
     ) -> None:
+        """Initialise Focal Loss with *gamma*, optional *alpha* weights."""
         super().__init__()
         self.gamma = gamma
         self.num_classes = num_classes

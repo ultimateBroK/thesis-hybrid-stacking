@@ -303,22 +303,73 @@ thesis/
 │   ├── __init__.py
 │   ├── _shared/                 # Shared utilities
 │   │   ├── config.py            # TOML config loader + dataclasses
-│   │   ├── constants.py         # Shared constants, feature lists, exclude cols
+│   │   ├── constants.py         # Shared constants, feature lists, timeframe_to_ms()
 │   │   ├── session_paths.py     # Session directory path setup
 │   │   ├── ui.py                # Rich console utilities
 │   │   └── zones.py             # Metric zone classification
 │   ├── stage_1_data/            # Stage 1: Tick → OHLCV aggregation
 │   ├── stage_2_features/        # Stage 2: Feature engineering (~28 indicators)
+│   │   ├── _impl.py             # Orchestrator + regime/session features
+│   │   ├── _indicators_core.py  # RSI, ATR, MACD, Bollinger, stochastic, volume
+│   │   └── _indicators_trend.py # EMA crossovers, ADX, slopes, pivot points
 │   ├── stage_3_labels/          # Stage 3: Triple-barrier labeling
 │   ├── stage_4_training/        # Stage 4: Walk-forward + GRU + LightGBM
-│   │   ├── _gru.py              # GRU architecture, training, extraction
+│   │   ├── _baselines.py        # Naive, majority-class, random baselines
 │   │   ├── _lgbm.py             # LightGBM training, hybrid feature building
+│   │   ├── _lgbm_utils.py       # LightGBM helpers (split, weights, metrics)
 │   │   ├── _validation.py       # Walk-forward window generation + static split
-│   │   └── _walk_forward.py     # Walk-forward orchestration per window
+│   │   ├── gru/                 # GRU sub-package
+│   │   │   ├── arch.py          # GRU model definition + attention pooling
+│   │   │   ├── calibration.py   # Temperature scaling
+│   │   │   ├── data.py          # Sequence dataset + feature normalization
+│   │   │   ├── inference.py     # Hidden-state extraction + PCA
+│   │   │   ├── losses.py        # Focal loss + triplet loss
+│   │   │   ├── persistence.py   # Model save/load
+│   │   │   └── training.py      # Training loop + LR schedule + early stopping
+│   │   └── walk_forward/        # Walk-forward sub-package
+│   │       ├── artifacts.py     # Window artifact persistence
+│   │       ├── dispatcher.py    # Window orchestration dispatcher
+│   │       ├── hybrid.py        # Hybrid GRU+LGBM per-window training
+│   │       ├── static.py        # Static split single-pass training
+│   │       └── utils.py         # Window metrics + OOF assembly
 │   ├── stage_5_backtest/        # Stage 5: CFD trading simulation
+│   │   ├── _impl.py             # Backtest orchestrator
+│   │   ├── _strategy.py         # Strategy logic + ATR stops + circuit breakers
+│   │   ├── _persistence.py      # Results + trades CSV + equity CSV export
+│   │   └── _runners.py          # Backtesting.py runner + stats collection
 │   ├── stage_6_reporting/       # Stage 6: Report + chart generation
-│   ├── charts.py                # Interactive ECharts (Streamlit)
-│   ├── dashboard.py             # Streamlit dashboard
+│   │   ├── _impl.py             # Report orchestrator
+│   │   ├── _benchmarks.py       # Naive/majority/random/buy-hold baselines
+│   │   ├── _calibration.py      # ECE, Brier score, reliability diagrams
+│   │   ├── _charts.py           # Static chart generation (matplotlib)
+│   │   ├── _comparison.py       # 4-group model comparison tables
+│   │   ├── _data_quality.py     # Missing bars, OHLCV consistency, volatility
+│   │   ├── _model_metrics.py    # Classification + regression metric computation
+│   │   ├── _tables.py           # Markdown table formatting utilities
+│   │   └── sections/            # Report sections sub-package
+│   │       ├── assess.py        # Model assessment section
+│   │       ├── backtest.py      # Backtest results section
+│   │       ├── data.py          # Data quality section
+│   │       └── oof.py           # OOF/OOS comparison section
+│   ├── charts/                  # Interactive ECharts (Streamlit)
+│   │   ├── __init__.py
+│   │   ├── _loading.py          # Chart data loading
+│   │   ├── _shared.py           # Shared chart utilities
+│   │   ├── backtest.py          # Backtest charts
+│   │   ├── data.py              # Data exploration charts
+│   │   └── model.py             # Model analysis charts
+│   ├── dashboard/               # Streamlit dashboard sub-package
+│   │   ├── __init__.py
+│   │   ├── _main.py             # Dashboard entry point + layout
+│   │   ├── _backtest_section.py # Backtest performance tab
+│   │   ├── _cards.py            # Metric zone cards
+│   │   ├── _data_section.py     # Data exploration tab
+│   │   ├── _model_section.py    # Model analysis tab
+│   │   ├── _reports_section.py  # Reports browsing tab
+│   │   ├── _session.py          # Session selection + config loading
+│   │   ├── _shared.py           # Dashboard shared helpers
+│   │   └── _training_section.py # Training diagnostics tab
+│   ├── dashboard.py             # 5-line shim → dashboard._main
 │   └── pipeline.py              # Stage orchestration (top-level runner)
 │
 ├── scripts/
@@ -355,20 +406,24 @@ thesis/
 | `stage_2_features/` | Stage 2: ~28 technical indicators + regime features |
 | `stage_3_labels/` | Stage 3: Triple-barrier labeling |
 | `stage_4_training/_validation.py` | Walk-forward window generation |
-| `stage_4_training/_gru.py` | GRU feature extractor (multiclass default; regression experimental) |
+| `stage_4_training/gru/` | GRU feature extractor (arch, training, losses, calibration, inference, persistence) |
 | `stage_4_training/_lgbm.py` | LightGBM training (multiclass) |
-| `stage_4_training/_walk_forward.py` | Walk-forward orchestration |
+| `stage_4_training/_lgbm_utils.py` | LightGBM helpers (split, weights, metrics) |
+| `stage_4_training/walk_forward/` | Walk-forward orchestration (dispatcher, hybrid, static, artifacts, utils) |
+| `stage_4_training/_baselines.py` | Naive/majority/random/buy-hold baselines |
 | `stage_5_backtest/` | Stage 5: CFD simulation with cooldown *(optional application demo)* |
-| `stage_6_reporting/` | Stage 6: Report + charts + metric zones |
+| `stage_6_reporting/` | Stage 6: Report + charts + metric zones + sections sub-package |
 | `pipeline.py` | Stage orchestration |
 | `_shared/config.py` | TOML config → dataclasses |
+| `_shared/constants.py` | Shared constants, `timeframe_to_ms()` |
 
 **Optional modules** — not required for the batch pipeline:
 
 | Module | Role |
 |--------|------|
-| `charts.py` | Interactive ECharts visualizations (Streamlit) |
-| `dashboard.py` | Streamlit dashboard UI |
+| `charts/` | Interactive ECharts visualizations (Streamlit) |
+| `dashboard/` | Streamlit dashboard UI (10 modules) |
+| `dashboard.py` | 5-line shim → `dashboard._main` |
 | `_shared/zones.py` | Metric zone classification for dashboard + report |
 | `_shared/ui.py` | Rich console formatting utilities |
 

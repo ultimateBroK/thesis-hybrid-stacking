@@ -15,7 +15,7 @@ import polars as pl
 
 from thesis._shared.config import Config
 from thesis.stage_6_reporting._comparison import _parse_date
-from thesis.stage_6_reporting._sections_data import _tbl_row
+from thesis.stage_6_reporting.sections.data import _tbl_row
 
 logger = logging.getLogger("thesis.report")
 

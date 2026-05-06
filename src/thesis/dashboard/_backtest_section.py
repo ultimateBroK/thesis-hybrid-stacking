@@ -89,12 +89,8 @@ def render_backtest_section(data: dict, config: object) -> None:
             f"Period: {metrics.get('start', 'N/A')[:10]} → "
             f"{metrics.get('end', 'N/A')[:10]}"
         )
-        st.caption(
-            f"Initial balance: ${config.backtest.initial_capital:,.0f}"
-        )
-        st.caption(
-            f"Final equity: ${metrics.get('equity_final', 0):,.0f}"
-        )
+        st.caption(f"Initial balance: ${config.backtest.initial_capital:,.0f}")
+        st.caption(f"Final equity: ${metrics.get('equity_final', 0):,.0f}")
         st.caption(
             "🟢 Excellent  🟡 Good  🟠 Moderate"
             "  🔴 Poor/Dangerous  ⚪ N/A (context-dependent)"

@@ -15,22 +15,18 @@ import torch
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis._shared.config import Config
-from thesis.stage_4_training._gru import train_gru
-from thesis.stage_4_training._gru_arch import GRUExtractor
-from thesis.stage_4_training._gru_data import (
+from thesis.stage_4_training.gru import (
+    GRUExtractor,
     SequenceDataset,
-    _sliding_windows,
-    prepare_sequences,
-)
-from thesis.stage_4_training._gru_inference import (
     extract_hidden_states,
-    predict_gru_proba,
-)
-from thesis.stage_4_training._gru_persistence import (
     load_gru_classifier,
     load_gru_model,
+    predict_gru_proba,
+    prepare_sequences,
     save_gru_model,
+    train_gru,
 )
+from thesis.stage_4_training.gru.data import _sliding_windows
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -553,7 +549,7 @@ def test_gru_classifier_regression_output_size(
     regression_config: Config,
 ) -> None:
     """GRU classifier outputs 1 value for regression (vs 3 for multiclass)."""
-    from thesis.stage_4_training._gru import _build_model_and_classifier
+    from thesis.stage_4_training.gru.training import _build_model_and_classifier
 
     model, classifier = _build_model_and_classifier(regression_config, input_size=4)
 

@@ -23,6 +23,7 @@ class VariationalDropout(nn.Module):
     """
 
     def __init__(self, p: float = 0.1) -> None:
+        """Initialise variational dropout with probability *p*."""
         super().__init__()
         self.p = p
 
