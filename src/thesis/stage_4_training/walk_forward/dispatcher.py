@@ -1,10 +1,11 @@
-"""Walk-forward training dispatcher — routes to hybrid or static."""
+"""Walk-forward training dispatcher — routes model architecture variants."""
 
 from __future__ import annotations
 
 import logging
 
 from thesis.shared.config import Config
+from thesis.stage_4_training.walk_forward.gru_only import _run_walk_forward_gru_only
 from thesis.stage_4_training.walk_forward.hybrid import _run_walk_forward_hybrid
 from thesis.stage_4_training.walk_forward.static import _run_walk_forward_static
 
@@ -16,8 +17,7 @@ def _run_walk_forward(config: Config) -> None:
 
     Args:
         config: Application configuration. Reads ``model.architecture``
-            to route to ``_run_walk_forward_static`` or
-            ``_run_walk_forward_hybrid``.
+            to route to static, GRU-only, or hybrid workflows.
 
     Raises:
         ValueError: If ``model.architecture`` is unsupported.
@@ -27,6 +27,11 @@ def _run_walk_forward(config: Config) -> None:
     if architecture == "static":
         logger.info("Using static-feature-only walk-forward baseline")
         _run_walk_forward_static(config, expanded_features=config.model.static_expanded)
+        return
+
+    if architecture == "gru":
+        logger.info("Using GRU-only walk-forward pipeline")
+        _run_walk_forward_gru_only(config)
         return
 
     if architecture != "hybrid":

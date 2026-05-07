@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.stage_4_training import baselines as baselines_mod
@@ -489,14 +490,14 @@ def _build_model_comparison_rows(
                         "source": "derived_baseline",
                     }
                 )
-        except (pl.ColumnNotFoundError, ValueError):
+        except (ColumnNotFoundError, ValueError):
             logger.warning(
                 "Failed to build baseline rows for model comparison", exc_info=True
             )
 
     # Keep planned model slots visible even when not yet available.
     existing = {str(r["model"]).lower() for r in rows}
-    for model_name in ("LightGBM Static", "GRU-only", "Hybrid GRU+LightGBM"):
+    for model_name in ("Static LightGBM", "GRU-only", "Hybrid GRU + LightGBM"):
         if model_name.lower() in existing:
             continue
         rows.append(

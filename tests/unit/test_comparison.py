@@ -287,6 +287,19 @@ class TestBuildModelComparisonRows:
         assert rows[0]["accuracy"] == 0.65
         assert rows[0]["directional_accuracy"] == 0.7
 
+    def test_gru_pred_stats_use_gru_only_label(self) -> None:
+        config = Config()
+        config.model.architecture = "gru"
+        pred_stats = {
+            "directional_accuracy": 0.7,
+            "accuracy": 0.65,
+            "macro_f1": 0.6,
+            "per_class": {"Long": {"f1": 0.7}, "Short": {"f1": 0.5}},
+        }
+        rows = _build_model_comparison_rows(config, pred_stats)
+        assert rows[0]["model"] == "GRU-only"
+        assert rows[0]["source"] == "current_session"
+
     def test_without_pred_stats(self) -> None:
         config = Config()
         rows = _build_model_comparison_rows(config, None)
@@ -294,6 +307,7 @@ class TestBuildModelComparisonRows:
         assert len(rows) >= 1
         models = [r["model"] for r in rows]
         assert any("LightGBM" in m for m in models)
+        assert "GRU-only" in models
 
     def test_with_predictions_file(self, tmp_path) -> None:
         config = Config()

@@ -38,6 +38,11 @@ class TestModelLabel:
         config.model.architecture = "hybrid"
         assert _model_label(config) == "Hybrid GRU + LightGBM"
 
+    def test_gru_only(self) -> None:
+        config = Config()
+        config.model.architecture = "gru"
+        assert _model_label(config) == "GRU-only"
+
     def test_unknown(self) -> None:
         config = Config()
         config.model.architecture = "gru_only"

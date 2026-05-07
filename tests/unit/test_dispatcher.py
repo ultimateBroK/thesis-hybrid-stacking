@@ -26,6 +26,13 @@ class TestDispatcher:
         _run_walk_forward(config)
         mock_hybrid.assert_called_once()
 
+    @patch("thesis.stage_4_training.walk_forward.dispatcher._run_walk_forward_gru_only")
+    def test_gru_architecture_routes_correctly(self, mock_gru) -> None:
+        config = Config()
+        config.model.architecture = "gru"
+        _run_walk_forward(config)
+        mock_gru.assert_called_once()
+
     def test_unsupported_architecture_raises(self) -> None:
         config = Config()
         config.model.architecture = "unknown_arch"

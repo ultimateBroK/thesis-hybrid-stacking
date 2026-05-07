@@ -82,7 +82,7 @@ The hybrid model works in two steps:
 
 1. **GRU** reads 48 hours of normalized history and outputs a **64-number temporal embedding**.
 2. **LightGBM** combines that embedding with **21 stable tabular indicators** and predicts: **Short**, **Hold**, or **Long**.
-3. **Evaluation** (primary output) compares the hybrid model against majority-class and directional baselines using Directional Accuracy, Macro F1, per-class Precision/Recall, and Confusion Matrix.
+3. **Evaluation** (primary output) compares **4 model groups** — Naive Direction, LightGBM Static, GRU-only, and Hybrid GRU+LightGBM — using Directional Accuracy, Macro F1, per-class Precision/Recall, and Confusion Matrix.
 4. **Backtest** (application demo, optional appendix) translates predicted signals into hypothetical trades with fixed costs — shown only to illustrate signal usage, not as evidence of profitability.
 
 ---
@@ -108,8 +108,8 @@ The hybrid model works in two steps:
 |--------|-------|
 | Asset | XAU/USD (Gold / US Dollar) |
 | Timeframe | 1 hour (H1) |
-| Data range | January 2013 – March 2026 |
-| Validation | Walk-forward sliding window (3-year train, 6-month test) |
+| Data range | January 2018 – April 2026 |
+| Validation | Walk-forward sliding window (2-year train, 6-month test) |
 | Model | GRU (64-dim) -> LightGBM (85 features) |
 | Features | 21 technical indicators + 64 GRU hidden states |
 | Labels | Triple Barrier (Long / Flat / Short) |
@@ -135,7 +135,7 @@ thesis/
 │   ├── stage_4_training/    # Stage 4: Model training (GRU + LGBM + walk-forward)
 │   ├── stage_5_backtest/    # Stage 5: CFD backtest (application demo)
 │   ├── stage_6_reporting/   # Stage 6: Report generation (metrics + charts)
-│   ├── _shared/             # Shared: config, constants, UI, zones, session_paths
+│   ├── shared/              # Shared: config, constants, UI, zones, session_paths
 │   ├── pipeline.py          # Thin orchestrator — runs stages 1–6
 │   ├── charts.py            # Interactive ECharts / pyecharts (supplementary)
 │   └── dashboard/           # Streamlit dashboard (supplementary)
@@ -170,7 +170,7 @@ pixi run workflow --stage 4  # Stage 4 only (training)
 | **Sinh viên** | Nguyễn Đức Hiếu — 63CNTT.VA — 2151061192 |
 | **Giáo viên hướng dẫn** | Hoàng Quốc Dũng |
 | **Khung thời gian** | H1 (1 giờ) |
-| **Dải dữ liệu** | 01/2013 – 03/2026 |
+| **Dải dữ liệu** | 01/2018 – 04/2026 |
 
 ---
 
@@ -192,9 +192,9 @@ flowchart LR
 
 ## Mục tiêu chính
 
-1. Thu thập và chuẩn hóa dữ liệu CFD Vàng H1 (01/2013 – 03/2026)
+1. Thu thập và chuẩn hóa dữ liệu CFD Vàng H1 (01/2018 – 04/2026)
 2. Làm sạch dữ liệu: lọc nến bất thường, bỏ cuối tuần, xử lý gap phiên
-3. Chia tập bằng **Walk-Forward Sliding Window** (cửa sổ 3 năm train, 6 tháng test, bước nhảy 6 tháng) với Purging + Embargo chống rò rỉ
+3. Chia tập bằng **Walk-Forward Sliding Window** (cửa sổ 2 năm train, 6 tháng test, bước nhảy 6 tháng) với Purging + Embargo chống rò rỉ
 4. Xây dựng đặc trưng kỹ thuật + định lượng bằng Feature Importance / SHAP
 5. Huấn luyện mô hình GRU nền + LightGBM nền
 6. Chọn kiến trúc **Hybrid** (mặc định) hoặc **Static** (chỉ LightGBM, baseline so sánh)

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from polars.exceptions import ComputeError
 
 from thesis.shared.config import Config
 from thesis.shared.constants import H1_BARS_PER_YEAR
@@ -35,6 +36,8 @@ def _model_label(config: Config) -> str:
     architecture = config.model.architecture
     if architecture == "static":
         return "Static LightGBM"
+    if architecture == "gru":
+        return "GRU-only"
     if architecture == "hybrid":
         return "Hybrid GRU + LightGBM"
     return f"{architecture.title()} Model"
@@ -167,7 +170,7 @@ def _load_close_prices_for_benchmark(
         try:
             df = pl.read_parquet(test_data_path, columns=["close"])
             return df["close"].to_numpy()
-        except (pl.ComputeError, OSError):
+        except (ComputeError, OSError):
             logger.warning(
                 "Failed to load static test data for benchmarks: %s",
                 test_data_path,
@@ -189,7 +192,7 @@ def _load_close_prices_for_benchmark(
 
     try:
         df = pl.read_parquet(ohlcv_path)
-    except (pl.ComputeError, OSError):
+    except (ComputeError, OSError):
         logger.warning(
             "Failed to load OHLCV for benchmarks: %s", ohlcv_path, exc_info=True
         )

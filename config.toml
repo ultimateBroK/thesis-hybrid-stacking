@@ -1,5 +1,5 @@
 # Public experiment configuration.
-# Hidden defaults live in src/thesis/_shared/config.py.
+# Hidden defaults live in src/thesis/shared/config.py.
 
 [data]
 symbol = "XAUUSD"
