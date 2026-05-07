@@ -17,8 +17,13 @@ from pathlib import Path
 import polars as pl
 
 from thesis.shared.config import Config
-from thesis.shared.constants import EXCLUDE_COLS as _EXCLUDE_COLS
 from thesis.shared.constants import timeframe_to_ms as _timeframe_to_ms
+from thesis.shared.feature_registry import (
+    build_feature_output_cols,
+    get_gru_feature_cols,
+    get_static_feature_cols,
+)
+from thesis.shared.schemas import FeaturesSchema, OhlcvSchema
 from thesis.shared.ui import console
 from thesis.stage_2_features.indicators.core import (
     _add_atr,
@@ -68,6 +73,7 @@ def generate_features(config: Config) -> None:
     with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
         df = pl.read_parquet(ohlcv_path)
     logger.info("Input bars: %d", len(df))
+    OhlcvSchema.validate(df)
     _validate_ohlcv_input(df, config)
 
     # --- Core price-volatility anchor ---
@@ -103,33 +109,26 @@ def generate_features(config: Config) -> None:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
 
     # Keep compact model-facing features plus raw ATR needed by label barriers.
+    desired_cols = build_feature_output_cols(config)
+    existing_cols = [c for c in desired_cols if c in df.columns]
+    df = df.select(existing_cols)
     keep_features = sorted(
-        {
-            *config.features.static_feature_cols,
-            *config.gru.feature_cols,
-        }
+        set(get_static_feature_cols(config)) | set(get_gru_feature_cols(config))
     )
-    label_helper_cols = [f"atr_{config.features.atr_period}"]
-    keep_cols = [
-        "timestamp",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        *label_helper_cols,
-        *keep_features,
-    ]
-    existing_keep_cols = [c for c in keep_cols if c in df.columns]
-    df = df.select(existing_keep_cols)
     df = _drop_warmup_rows(df, keep_features)
 
     # Persist
+    FeaturesSchema.validate(df, config)
     out_path = Path(config.paths.features)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
 
-    feature_cols = sorted(c for c in df.columns if c not in _EXCLUDE_COLS)
+    feature_cols = sorted(
+        c
+        for c in df.columns
+        if c
+        in (set(get_static_feature_cols(config)) | set(get_gru_feature_cols(config)))
+    )
     _save_feature_list(out_path, feature_cols)
 
     logger.info(
@@ -149,13 +148,9 @@ def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
         config: Application configuration.
 
     Raises:
-        ValueError: If required columns are missing, DataFrame is empty,
-            timestamps are unsorted, or timestamps are not unique.
+        ValueError: If DataFrame is empty, timestamps are unsorted,
+            or timestamps are not unique.
     """
-    required = {"timestamp", "open", "high", "low", "close", "volume"}
-    missing = sorted(required - set(df.columns))
-    if missing:
-        raise ValueError(f"OHLCV missing required columns: {missing}")
     if df.is_empty():
         raise ValueError("OHLCV is empty; cannot generate features")
 

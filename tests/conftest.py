@@ -6,8 +6,10 @@ from pathlib import Path
 
 import pandas as pd
 
-# Ensure src is importable
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+# Ensure project root and src are importable
+_project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(_project_root / "src"))
+sys.path.insert(0, str(_project_root))
 
 
 def _patch_pandas_axis_positional() -> None:

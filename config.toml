@@ -11,23 +11,24 @@ tick_size = 0.01
 contract_size = 100
 
 [splitting]
-train_start = "2018-01-01"
-train_end = "2023-09-30 23:59:59"
-val_start = "2023-10-01"
-val_end = "2025-01-31 23:59:59"
-test_start = "2025-02-01"
+train_start = "2021-01-01"
+train_end = "2024-12-31 23:59:59"
+val_start = "2025-01-01"
+val_end = "2025-12-31 23:59:59"
+test_start = "2026-01-01"
 test_end = "2026-04-30 23:59:59"
 
 [validation]
-# Sliding walk-forward retrains GRU and LightGBM at every window.
+# Sliding walk-forward: 1-year train, 1-month test windows.
 method = "sliding"
-train_window_bars = 17520  # ~2 years on 1H bars
-test_window_bars = 4380    # ~6 months on 1H bars
-step_bars = 4380           # non-overlapping test windows
+train_window_bars = 8760   # ~1 year on 1H bars
+test_window_bars = 720     # ~1 month on 1H bars
+step_bars = 720            # non-overlapping test windows
 purge_bars = 48            # 2x 24h horizon; above typical trade hold time
 embargo_bars = 50
-min_train_bars = 10000
+min_train_bars = 6000
 
+# static_feature_cols are the default LightGBM features. See thesis.shared.feature_registry for the canonical column lists.
 [features]
 rsi_period = 14
 atr_period = 14

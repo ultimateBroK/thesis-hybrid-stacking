@@ -12,7 +12,9 @@ import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from helpers import create_synthetic_ohlcv
 from thesis.shared.config import Config
 from thesis.shared.constants import EXCLUDE_COLS
 from thesis.stage_2_features.indicators.core import (
@@ -33,43 +35,6 @@ from thesis.stage_2_features.indicators.trend import (
     _add_ema_slope,
     _add_regime,
 )
-
-
-def create_synthetic_ohlcv(n_rows: int = 300, seed: int = 42) -> pl.DataFrame:
-    """Create synthetic OHLCV data for testing.
-
-    Default 300 rows provides enough warmup for regime features (Hurst/FD
-    need 100-bar windows) and multi-timeframe resampling.
-    """
-    np.random.seed(seed)
-    base_price = 1800.0
-    timestamps = pl.datetime_range(
-        start=pl.datetime(2023, 1, 1, 0, time_zone="UTC"),
-        end=pl.datetime(2023, 1, 1, 0, time_zone="UTC") + pl.duration(hours=n_rows - 1),
-        interval="1h",
-        eager=True,
-    )
-
-    # Generate random walk prices
-    returns = np.random.normal(0, 0.001, n_rows)
-    closes = base_price * np.exp(np.cumsum(returns))
-
-    # Generate OHLC from close
-    opens = closes * (1 + np.random.normal(0, 0.0005, n_rows))
-    highs = np.maximum(opens, closes) * (1 + np.abs(np.random.normal(0, 0.001, n_rows)))
-    lows = np.minimum(opens, closes) * (1 - np.abs(np.random.normal(0, 0.001, n_rows)))
-    volumes = np.random.randint(1000, 10000, n_rows).astype(float)
-
-    return pl.DataFrame(
-        {
-            "timestamp": timestamps,
-            "open": opens,
-            "high": highs,
-            "low": lows,
-            "close": closes,
-            "volume": volumes,
-        }
-    )
 
 
 @pytest.fixture

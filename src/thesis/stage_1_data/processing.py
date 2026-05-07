@@ -26,6 +26,7 @@ from rich.progress import (
 
 from thesis.shared.config import Config
 from thesis.shared.constants import timeframe_to_ms as _timeframe_to_ms
+from thesis.shared.data_quality import check_candle_quality, check_gap_report
 from thesis.shared.ui import console
 
 logger = logging.getLogger("thesis.prepare")
@@ -225,7 +226,7 @@ def _filter_date_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _log_gap_report(ohlcv: pl.DataFrame, group_ms: int) -> None:
-    """Log timestamp continuity diagnostics without filling missing bars.
+    """Log timestamp continuity diagnostics via ``shared.data_quality``.
 
     Args:
         ohlcv: OHLCV DataFrame with a ``timestamp`` column.
@@ -235,6 +236,9 @@ def _log_gap_report(ohlcv: pl.DataFrame, group_ms: int) -> None:
         logger.warning("OHLCV gap report skipped: fewer than 2 bars")
         return
 
+    result = check_gap_report(ohlcv, group_ms)
+
+    # Compute non-increasing deltas for the log message
     diffs = (
         ohlcv.select(
             (pl.col("timestamp").diff().dt.total_milliseconds()).alias("delta_ms")
@@ -242,24 +246,24 @@ def _log_gap_report(ohlcv: pl.DataFrame, group_ms: int) -> None:
         .drop_nulls()
         .get_column("delta_ms")
     )
-    missing_gaps = diffs.filter(diffs > group_ms)
-    duplicate_or_reversed = diffs.filter(diffs <= 0)
-    missing_bars = int(((missing_gaps / group_ms).floor() - 1).sum() or 0)
-    largest_gap_ms = int(diffs.max() or 0)
+    non_increasing = int((diffs <= 0).sum())
 
     logger.info(
         "OHLCV calendar gap report: expected_delta=%d ms, calendar_gap_count=%d, "
         "estimated_missing_bars=%d, largest_gap=%.2f bars, non_increasing_deltas=%d",
         group_ms,
-        len(missing_gaps),
-        missing_bars,
-        largest_gap_ms / group_ms if group_ms else 0.0,
-        len(duplicate_or_reversed),
+        result["gap_count"],
+        result["estimated_missing_bars"],
+        result["largest_gap_bars"],
+        non_increasing,
     )
 
 
 def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
     """Log OHLCV candle integrity and likely outlier diagnostics.
+
+    Delegates validity checking to ``shared.data_quality.check_candle_quality``
+    then computes reporting statistics locally.
 
     Args:
         ohlcv: OHLCV DataFrame.
@@ -267,18 +271,12 @@ def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
     if ohlcv.is_empty():
         return
 
-    invalid = ohlcv.filter(
-        (pl.col("high") < pl.col("low"))
-        | (pl.col("open") < pl.col("low"))
-        | (pl.col("open") > pl.col("high"))
-        | (pl.col("close") < pl.col("low"))
-        | (pl.col("close") > pl.col("high"))
-        | (pl.col("volume") < 0)
-        | (pl.col("tick_count") <= 0)
-        | (pl.col("avg_spread") < 0)
-    )
-    if len(invalid) > 0:
-        logger.warning("OHLCV quality: %d invalid candles detected", len(invalid))
+    result = check_candle_quality(ohlcv)
+    if result["invalid_count"] > 0:
+        logger.warning(
+            "OHLCV quality: %d invalid candles detected",
+            result["invalid_count"],
+        )
 
     stats = ohlcv.select(
         [

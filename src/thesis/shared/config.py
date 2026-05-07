@@ -36,11 +36,11 @@ class DataConfig:
 class SplittingConfig:
     """Static train, validation, and test date ranges."""
 
-    train_start: str = "2018-01-01"
-    train_end: str = "2023-09-30 23:59:59"
-    val_start: str = "2023-10-01"
-    val_end: str = "2025-01-31 23:59:59"
-    test_start: str = "2025-02-01"
+    train_start: str = "2021-01-01"
+    train_end: str = "2024-12-31 23:59:59"
+    val_start: str = "2025-01-01"
+    val_end: str = "2025-12-31 23:59:59"
+    test_start: str = "2026-01-01"
     test_end: str = "2026-04-30 23:59:59"
     purge_bars: int = 48
     embargo_bars: int = 50
@@ -53,12 +53,12 @@ class ValidationConfig:
     """Walk-forward validation window sizes."""
 
     method: str = "sliding"
-    train_window_bars: int = 17520
-    test_window_bars: int = 4380
-    step_bars: int = 4380
+    train_window_bars: int = 8760
+    test_window_bars: int = 720
+    step_bars: int = 720
     purge_bars: int = 48
     embargo_bars: int = 50
-    min_train_bars: int = 10000
+    min_train_bars: int = 6000
     oof_ensemble: bool = True
 
 

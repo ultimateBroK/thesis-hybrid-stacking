@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import polars as pl
 import pytest
 
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from helpers import create_synthetic_ohlcv
 from thesis.stage_6_reporting.data_quality import (
     compute_data_quality_report,
     compute_label_distribution,
@@ -18,35 +24,6 @@ from thesis.stage_6_reporting.data_quality import (
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_ohlcv_df(
-    n: int = 100,
-    start: datetime = datetime(2023, 1, 1),
-    interval_hours: int = 1,
-) -> pl.DataFrame:
-    """Generate a simple OHLCV DataFrame with valid relationships."""
-    timestamps = [start + timedelta(hours=interval_hours * i) for i in range(n)]
-    close = np.cumsum(np.random.randn(n) * 0.5) + 100.0
-    open_ = close + np.random.randn(n) * 0.1
-    high = np.maximum(open_, close) + abs(np.random.randn(n)) * 0.2
-    low = np.minimum(open_, close) - abs(np.random.randn(n)) * 0.2
-    volume = np.abs(np.random.randn(n)) * 1000 + 100
-    return pl.DataFrame(
-        {
-            "timestamp": timestamps,
-            "open": open_,
-            "high": high,
-            "low": low,
-            "close": close,
-            "volume": volume,
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
 # compute_ohlcv_consistency
 # ---------------------------------------------------------------------------
 
@@ -54,14 +31,14 @@ def _make_ohlcv_df(
 @pytest.mark.unit
 class TestOhlcvConsistency:
     def test_valid_data_consistent(self) -> None:
-        df = _make_ohlcv_df(50)
+        df = create_synthetic_ohlcv(n_rows=50)
         result = compute_ohlcv_consistency(df)
         assert result["is_consistent"] is True
         assert result["ohlc_violations"] == 0
         assert result["price_negative_count"] == 0
 
     def test_violation_detected(self) -> None:
-        df = _make_ohlcv_df(10)
+        df = create_synthetic_ohlcv(n_rows=10)
         # Force a violation: set low > high on first row
         df = (
             df.with_row_index()
@@ -78,7 +55,7 @@ class TestOhlcvConsistency:
         assert result["is_consistent"] is False
 
     def test_negative_price_detected(self) -> None:
-        df = _make_ohlcv_df(10)
+        df = create_synthetic_ohlcv(n_rows=10)
         df = (
             df.with_row_index()
             .with_columns(
@@ -132,13 +109,13 @@ class TestLabelDistribution:
 class TestOutlierReturns:
     def test_no_outliers_in_normal_data(self) -> None:
         np.random.seed(42)
-        df = _make_ohlcv_df(200)
+        df = create_synthetic_ohlcv(n_rows=200)
         result = compute_outlier_returns(df, z_threshold=5.0)
         assert result["outlier_count"] == 0
         assert result["outlier_ratio"] == 0.0
 
     def test_outlier_detected(self) -> None:
-        df = _make_ohlcv_df(100)
+        df = create_synthetic_ohlcv(n_rows=100)
         # Inject a massive price jump at row 50
         close = df["close"].to_list()
         close[50] = close[49] * 1.5  # 50% jump
@@ -160,7 +137,7 @@ class TestOutlierReturns:
 @pytest.mark.unit
 class TestMissingBarStats:
     def test_no_gaps_regular_data(self) -> None:
-        df = _make_ohlcv_df(50, interval_hours=1)
+        df = create_synthetic_ohlcv(n_rows=50)
         result = compute_missing_bar_stats(df, "1h")
         assert result["total_bars"] == 50
         assert result["gaps_found"] == 0
@@ -214,7 +191,7 @@ class TestMissingBarStats:
 @pytest.mark.unit
 class TestComputeDataQualityReport:
     def test_returns_all_keys(self) -> None:
-        df = _make_ohlcv_df(50)
+        df = create_synthetic_ohlcv(n_rows=50)
         labels = np.array([-1, 0, 1] * 16 + [0, 1])
         result = compute_data_quality_report(df, labels)
         assert "ohlcv_consistency" in result
@@ -224,13 +201,13 @@ class TestComputeDataQualityReport:
         assert "markdown" in result
 
     def test_without_labels(self) -> None:
-        df = _make_ohlcv_df(20)
+        df = create_synthetic_ohlcv(n_rows=20)
         result = compute_data_quality_report(df)
         assert "ohlcv_consistency" in result
         assert "label_distribution" not in result
 
     def test_markdown_rendered(self) -> None:
-        df = _make_ohlcv_df(10)
+        df = create_synthetic_ohlcv(n_rows=10)
         result = compute_data_quality_report(df)
         md = result["markdown"]
         assert "## Data Quality Report" in md

@@ -3,62 +3,39 @@
 Provides functions to compute OHLCV consistency, missing-bar gaps,
 label distribution, outlier-return detection, and a combined report
 rendered as markdown.
+
+Core checks delegate to ``thesis.shared.data_quality``; this module
+adds reporting-specific fields and markdown rendering.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 import polars as pl
 
-# OHLCV consistency
+from thesis.shared.constants import timeframe_to_ms
+from thesis.shared.data_quality import (
+    check_gap_report,
+    check_ohlcv_consistency,
+    check_outlier_returns,
+)
+
+# ---------------------------------------------------------------------------
+# OHLCV consistency — delegates to shared module
+# ---------------------------------------------------------------------------
 
 
 def compute_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
-    """Check that OHLCV relationships hold for every row.
-
-    * high >= open, close, low
-    * low  <= open, close, high
-    * all prices > 0
-    """
-    total = len(df)
-    ohlc_violations = 0
-    price_negative = 0
-
-    for col in ("open", "high", "low", "close"):
-        if col in df.columns:
-            price_negative += int((df[col] <= 0).sum())
-
-    if all(c in df.columns for c in ("open", "high", "low", "close")):
-        ohlc_violations += int((df["high"] < df["open"]).sum())
-        ohlc_violations += int((df["high"] < df["close"]).sum())
-        ohlc_violations += int((df["high"] < df["low"]).sum())
-        ohlc_violations += int((df["low"] > df["open"]).sum())
-        ohlc_violations += int((df["low"] > df["close"]).sum())
-        ohlc_violations += int((df["low"] > df["high"]).sum())
-
-    return {
-        "total_rows": total,
-        "ohlc_violations": ohlc_violations,
-        "price_negative_count": price_negative,
-        "is_consistent": ohlc_violations == 0 and price_negative == 0,
-    }
+    """Check OHLCV relationships via ``shared.data_quality``."""
+    return check_ohlcv_consistency(df)
 
 
-# Missing-bar statistics
-
-_INTERVAL_TD: dict[str, timedelta] = {
-    "1m": timedelta(minutes=1),
-    "5m": timedelta(minutes=5),
-    "15m": timedelta(minutes=15),
-    "30m": timedelta(minutes=30),
-    "1h": timedelta(hours=1),
-    "4h": timedelta(hours=4),
-    "1d": timedelta(days=1),
-}
+# ---------------------------------------------------------------------------
+# Missing-bar statistics — delegates to shared gap check + weekend heuristic
+# ---------------------------------------------------------------------------
 
 
 def compute_missing_bar_stats(
@@ -66,8 +43,8 @@ def compute_missing_bar_stats(
 ) -> dict[str, Any]:
     """Analyse gaps between consecutive bars.
 
-    Weekend gaps (Sat–Sun) are expected for crypto-forex hybrids and are
-    reported separately rather than counted as missing.
+    Delegates core gap detection to ``check_gap_report`` then adds a
+    weekend-gap heuristic and missing-ratio calculation.
     """
     total_bars = len(df)
 
@@ -79,35 +56,31 @@ def compute_missing_bar_stats(
             "missing_ratio": 0.0,
         }
 
+    timeframe_ms = timeframe_to_ms(expected_interval)
+    result = check_gap_report(df, timeframe_ms)
+
+    # Weekend heuristic: count gaps whose timestamp pair spans Sat/Sun.
     ts = df["timestamp"].sort()
-    diffs = ts.diff().slice(1)  # drop first null
+    diffs_ms = (
+        df.select(
+            (pl.col("timestamp").diff().dt.total_milliseconds()).alias("delta_ms")
+        )
+        .drop_nulls()
+        .get_column("delta_ms")
+    )
 
-    expected_td = _INTERVAL_TD.get(expected_interval, timedelta(hours=1))
-    expected_ms = expected_td.total_seconds() * 1000
-
-    # Convert diffs to milliseconds for comparison
-    diff_ms = diffs.dt.total_milliseconds()
-
-    gaps_found = 0
     weekend_gaps = 0
-
-    for i in range(len(diff_ms)):
-        gap_ms = diff_ms[i]
-        if gap_ms is None or gap_ms <= expected_ms * 1.5:
+    ts_list = ts.to_list()
+    for i, gap_ms in enumerate(diffs_ms.to_list()):
+        if gap_ms is None or gap_ms <= timeframe_ms * 1.5:
             continue
-
-        gaps_found += 1
-
-        # Check if gap spans a weekend (Sat=5, Sun=6)
-        t_start = ts[i]
-        t_end = ts[i + 1]
-        # Simple heuristic: if gap >= 48h and spans weekend days
-        if gap_ms >= 48 * 3600 * 1000:
-            dow_start = t_start.weekday()
-            dow_end = t_end.weekday()
+        if gap_ms >= 48 * 3600 * 1000 and i + 1 < len(ts_list):
+            dow_start = ts_list[i].weekday()
+            dow_end = ts_list[i + 1].weekday()
             if dow_start >= 5 or dow_end >= 5 or dow_end < dow_start:
                 weekend_gaps += 1
 
+    gaps_found = result["gap_count"]
     missing_ratio = (gaps_found - weekend_gaps) / total_bars if total_bars > 0 else 0.0
 
     return {
@@ -118,7 +91,9 @@ def compute_missing_bar_stats(
     }
 
 
-# Label distribution
+# ---------------------------------------------------------------------------
+# Label distribution (kept local — not in shared module)
+# ---------------------------------------------------------------------------
 
 
 def compute_label_distribution(
@@ -152,56 +127,52 @@ def compute_label_distribution(
     }
 
 
-# Outlier returns
+# ---------------------------------------------------------------------------
+# Outlier returns — delegates to shared module + adds reporting fields
+# ---------------------------------------------------------------------------
 
 
 def compute_outlier_returns(
     df: pl.DataFrame, z_threshold: float = 5.0
 ) -> dict[str, Any]:
-    """Flag returns that exceed *z_threshold* standard deviations."""
-    if "close" not in df.columns or len(df) < 2:
-        return {
-            "outlier_count": 0,
-            "outlier_ratio": 0.0,
-            "max_return": 0.0,
-            "min_return": 0.0,
-            "outlier_dates": [],
-        }
+    """Flag returns that exceed *z_threshold* standard deviations.
 
-    close = df["close"].cast(pl.Float64).to_numpy()
-    log_returns = np.diff(np.log(close))
-    mean_r = np.mean(log_returns)
-    std_r = np.std(log_returns)
+    Delegates z-score computation to ``check_outlier_returns`` then
+    enriches the result with outlier-ratio, max/min return, and dates.
+    """
+    result = check_outlier_returns(df, z_threshold)
+    outlier_count = result["outlier_count"]
 
-    if std_r == 0:
-        return {
-            "outlier_count": 0,
-            "outlier_ratio": 0.0,
-            "max_return": float(np.max(log_returns)),
-            "min_return": float(np.min(log_returns)),
-            "outlier_dates": [],
-        }
+    # Compute reporting-specific fields from close prices
+    close = df["close"].cast(pl.Float64).to_numpy() if "close" in df.columns else None
+    log_returns = (
+        np.diff(np.log(close)) if close is not None and len(close) >= 2 else None
+    )
 
-    z_scores = np.abs((log_returns - mean_r) / std_r)
-    outlier_mask = z_scores > z_threshold
-    outlier_count = int(outlier_mask.sum())
+    n_returns = len(log_returns) if log_returns is not None else 0
+    outlier_ratio = round(outlier_count / n_returns, 6) if n_returns > 0 else 0.0
+    max_return = float(np.max(log_returns)) if n_returns > 0 else 0.0
+    min_return = float(np.min(log_returns)) if n_returns > 0 else 0.0
 
     outlier_dates: list[str] = []
     if "timestamp" in df.columns:
         ts = df["timestamp"].to_list()
-        for idx in np.where(outlier_mask)[0]:
-            outlier_dates.append(str(ts[idx + 1]))
+        for idx in result["outlier_indices"]:
+            if idx < len(ts):
+                outlier_dates.append(str(ts[idx]))
 
     return {
         "outlier_count": outlier_count,
-        "outlier_ratio": round(outlier_count / len(log_returns), 6),
-        "max_return": float(np.max(log_returns)),
-        "min_return": float(np.min(log_returns)),
+        "outlier_ratio": outlier_ratio,
+        "max_return": max_return,
+        "min_return": min_return,
         "outlier_dates": outlier_dates,
     }
 
 
+# ---------------------------------------------------------------------------
 # Markdown rendering
+# ---------------------------------------------------------------------------
 
 _CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
 
@@ -252,7 +223,9 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
 # Main entry point
+# ---------------------------------------------------------------------------
 
 
 def compute_data_quality_report(

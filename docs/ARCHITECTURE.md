@@ -105,14 +105,15 @@ flowchart TD
 |---|-------|--------|-------------|-------|--------|
 | 1 | **Prepare** | `stage_1_data/` | Convert raw tick data into 1-hour candle (OHLCV) bars | Raw parquet ticks | `ohlcv.parquet` |
 | 2 | **Features** | `stage_2_features/` | Calculate ~28 technical indicators + regime features | `ohlcv.parquet` | `features.parquet` |
-| 3 | **Labels** | `stage_3_labels/` | Generate buy/sell/hold labels using the Triple Barrier method | `features.parquet` | `labels.parquet` |
+| 3 | **Labels** | `stage_3_labels/` | Generate buy/sell/hold labels using the Triple Barrier method. Conditionally loads OHLCV columns (skips if features already contain them). Includes ATR fail-fast validation to reject degenerate inputs. | `features.parquet` | `labels.parquet` |
 | 4 | **Walk-Forward Training** | `stage_4_training/` | Per window: train GRU (multiclass) → extract hidden states → train LightGBM (multiclass) → predict test slice → collect OOF predictions | `labels.parquet` | `final_predictions.parquet` + model files |
 | 5 | **Backtest** *(optional demo)* | `stage_5_backtest/` | Simulate CFD trading on concatenated OOF predictions with cooldown, confidence filtering, and fixed lot size. **Application demo, not primary proof.** | OOF predictions | `backtest_results.json` + `trades_detail.csv` |
 | 6 | **Report** *(primary output)* | `stage_6_reporting/` | ML evaluation metrics, 4-group model comparison, data quality analysis, OOF/OOS comparison, metric zone gauges, charts, and thesis report. **This is the thesis claim.** | All outputs | Charts + `thesis_report.md` |
 
 > When `validation.method = "static"` in `config.toml`, stage 4 performs a
 > traditional train/val/test split and single-pass LightGBM training instead of
-> walk-forward. This mode is **not used** by default.
+> walk-forward. This mode is **not used** by default. Current static split
+> boundaries: train 2021–2024, val 2025, test 2026-01 to 2026-04.
 
 ---
 
@@ -178,12 +179,12 @@ Default window parameters (configurable in `config.toml`):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `train_window_bars` | 17 520 | ~2 years of H1 bars |
-| `test_window_bars` | 4 380 | ~6 months of H1 bars |
-| `step_bars` | 4 380 | Non-overlapping test windows |
+| `train_window_bars` | 8 760 | ~1 year of H1 bars |
+| `test_window_bars` | 720 | ~1 month of H1 bars |
+| `step_bars` | 720 | Non-overlapping test windows |
 | `purge_bars` | 48 | Bars removed at train/test boundary |
 | `embargo_bars` | 50 | Additional gap after purge (~2 days) |
-| `min_train_bars` | 10 000 | Minimum training bars per window |
+| `min_train_bars` | 6 000 | Minimum training bars per window |
 
 ---
 
@@ -304,6 +305,9 @@ thesis/
 │   ├── shared/                 # Shared utilities
 │   │   ├── config.py            # TOML config loader + dataclasses
 │   │   ├── constants.py         # Shared constants, feature lists, timeframe_to_ms()
+│   │   ├── data_quality.py      # Consolidated DQ functions (OHLCV consistency, gaps)
+│   │   ├── feature_registry.py  # Single source of truth for feature column lists
+│   │   ├── schemas.py           # Column contract validation (OhlcvSchema, FeaturesSchema, LabelsSchema)
 │   │   ├── session_paths.py     # Session directory path setup
 │   │   ├── ui.py                # Rich console utilities
 │   │   └── zones.py             # Metric zone classification
@@ -379,6 +383,7 @@ thesis/
 │
 ├── tests/                       # Test suite
 │   ├── conftest.py
+│   ├── helpers.py               # Shared test fixtures + synthetic data generators
 │   ├── unit/                    # Unit tests per module
 │   └── integration/             # End-to-end tests
 │
@@ -417,6 +422,9 @@ thesis/
 | `pipeline.py` | Stage orchestration |
 | `shared/config.py` | TOML config → dataclasses |
 | `shared/constants.py` | Shared constants, `timeframe_to_ms()` |
+| `shared/schemas.py` | Column contract validation (OhlcvSchema, FeaturesSchema, LabelsSchema) |
+| `shared/feature_registry.py` | Single source of truth for feature column lists |
+| `shared/data_quality.py` | Consolidated DQ functions (OHLCV consistency, gap detection) |
 
 **Optional modules** — not required for the batch pipeline:
 
@@ -437,7 +445,7 @@ Here is what happens to the data at each step:
 flowchart TD
     T0["Raw Ticks<br/><i>millions of rows</i>"] -->|"Stage 1"| T1["OHLCV<br/><i>~70,000 rows</i>"]
     T1 -->|"Stage 2"| T2["Features<br/><i>+ ~28 technical indicators</i>"]
-    T2 -->|"Stage 3"| T3["Labels<br/><i>+ buy/sell/hold + TP/SL prices</i>"]
+    T2 -->|"Stage 3"| T3["Labels<br/><i>+ buy/sell/hold + barrier metadata</i>"]
     T3 -->|"Stage 4<br/>walk-forward<br/>sliding windows"| T4["Per Window:<br/>Train slice → GRU (multiclass)<br/>→ hidden states → PCA<br/>→ LightGBM (multiclass)<br/>→ OOF predictions + confidence"]
     T4 -->|"concatenate<br/>OOF chunks"| T5["Final OOF Predictions<br/><i>timestamp + true_label + pred_label + probabilities + confidence</i>"]
     T5 -->|"Stage 5<br/>(Optional Demo)"| T6["Backtest<br/><i>trades, PnL, metrics, cooldown</i>"]

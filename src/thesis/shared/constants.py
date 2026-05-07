@@ -14,11 +14,10 @@ constants. Import from here to keep stages in sync.
 #:  - label              → target variable (look-ahead)
 #:  - upper_barrier/lower_barrier/touched_bar/event_end/sample_weight →
 #:    label-derived metadata; not predictive features
-#:  - tp_price/sl_price → label price metadata, not predictive features
-#:  - open_right/high_right/low_right/close_right → label-derived look-ahead
 #:  - open/high/low/close/volume → raw OHLCV, excluded to avoid raw price leakage
 #:  - avg_spread/tick_count → microstructure columns kept for backtest
 #:    but not useful as ML features in their raw form
+#:  - atr_14 → label-barrier helper; normalized ATR is the model-facing feature
 #:  - log_returns → GRU sequence input; excluded from the *static* LightGBM features
 #:    to avoid double-counting the information already encoded in GRU hidden states
 #:
@@ -26,6 +25,9 @@ constants. Import from here to keep stages in sync.
 #: distances, Bollinger bands, volume z-score, log returns, range, and regime
 #: features) are intentionally NOT in this set — they are available as GRU
 #: sequence inputs and/or static LightGBM features.
+#:
+#: NOTE: For feature column lists, use thesis.shared.feature_registry as the
+#: source of truth.
 EXCLUDE_COLS: frozenset[str] = frozenset(
     [
         "timestamp",
@@ -35,12 +37,6 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "touched_bar",
         "event_end",
         "sample_weight",
-        "tp_price",
-        "sl_price",
-        "open_right",  # Label-derived — pure look-ahead
-        "high_right",  # Label-derived — pure look-ahead
-        "low_right",  # Label-derived — pure look-ahead
-        "close_right",  # Label-derived — pure look-ahead
         "open",
         "high",
         "low",

@@ -25,6 +25,7 @@ from thesis.shared.constants import (
     ROUNDTRIP_MULT,
     SAMPLE_WEIGHT_MIN,
 )
+from thesis.shared.schemas import FeaturesSchema, LabelsSchema
 from thesis.shared.ui import console
 
 logger = logging.getLogger("thesis.labels")
@@ -56,18 +57,35 @@ def generate_labels(config: Config) -> None:
     with console.status(f"[cyan]Loading features[/] {features_path}"):
         df_feat = pl.read_parquet(features_path)
 
-    logger.info("Loading OHLCV: %s", ohlcv_path)
-    with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
-        df_ohlcv = pl.read_parquet(ohlcv_path).select(
-            ["timestamp", "open", "high", "low", "close"]
-        )
-
     _validate_unique_timestamps(df_feat, "features")
-    _validate_unique_timestamps(df_ohlcv, "OHLCV")
+    FeaturesSchema.validate(df_feat, config=config)
 
-    df = df_feat.join(df_ohlcv, on="timestamp", how="inner")
-    _validate_unique_timestamps(df, "joined feature/OHLCV")
-    logger.info("Joined rows: %d", len(df))
+    ohlcv_cols = {"open", "high", "low", "close"}
+    has_ohlcv = ohlcv_cols.issubset(set(df_feat.columns))
+
+    if has_ohlcv:
+        logger.info("Features already contain OHLC columns — skipping OHLCV join")
+        df = df_feat
+    else:
+        logger.info("Loading OHLCV for missing OHLC columns: %s", ohlcv_path)
+        with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
+            df_ohlcv = pl.read_parquet(ohlcv_path).select(
+                ["timestamp", "open", "high", "low", "close"]
+            )
+        _validate_unique_timestamps(df_ohlcv, "OHLCV")
+        df = df_feat.join(df_ohlcv, on="timestamp", how="inner")
+        # Drop any join artifacts (*_right columns from duplicate column names)
+        right_cols = [c for c in df.columns if c.endswith("_right")]
+        if right_cols:
+            logger.warning(
+                "Dropping %d join-artifact columns: %s",
+                len(right_cols),
+                right_cols,
+            )
+            df = df.drop(right_cols)
+        _validate_unique_timestamps(df, "joined feature/OHLCV")
+
+    logger.info("Rows for labeling: %d", len(df))
 
     atr_col = f"atr_{config.features.atr_period}"
     if atr_col not in df.columns:
@@ -120,6 +138,12 @@ def generate_labels(config: Config) -> None:
 
     out_path = Path(config.paths.labels)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Guard: no join artifacts in output
+    right_cols = [c for c in df.columns if c.endswith("_right")]
+    assert not right_cols, f"labels.parquet contains join artifacts: {right_cols}"
+
+    LabelsSchema.validate(df, config=config)
     df.write_parquet(out_path)
     logger.info("Labels saved: %s (%d rows)", out_path, len(df))
 

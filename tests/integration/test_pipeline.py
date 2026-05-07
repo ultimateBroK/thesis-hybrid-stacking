@@ -13,44 +13,13 @@ import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from helpers import create_synthetic_ohlcv
 from thesis.shared.config import Config
 from thesis.pipeline import run_pipeline
 from thesis.stage_2_features import generate_features
 from thesis.stage_3_labels import generate_labels
-
-
-def create_synthetic_ohlcv(
-    n_rows: int = 500, start_date: str = "2020-01-01"
-) -> pl.DataFrame:
-    """Create synthetic OHLCV data for testing."""
-    np.random.seed(42)
-    base_price = 1800.0
-
-    timestamps = pl.datetime_range(
-        start=pl.datetime(2020, 1, 1, 0),
-        end=pl.datetime(2020, 1, 1, 0) + pl.duration(hours=n_rows - 1),
-        interval="1h",
-        eager=True,
-    )
-
-    returns = np.random.normal(0, 0.001, n_rows)
-    closes = base_price * np.exp(np.cumsum(returns))
-    opens = closes * (1 + np.random.normal(0, 0.0005, n_rows))
-    highs = np.maximum(opens, closes) * (1 + np.abs(np.random.normal(0, 0.001, n_rows)))
-    lows = np.minimum(opens, closes) * (1 - np.abs(np.random.normal(0, 0.001, n_rows)))
-    volumes = np.random.randint(1000, 10000, n_rows).astype(float)
-
-    return pl.DataFrame(
-        {
-            "timestamp": timestamps,
-            "open": opens,
-            "high": highs,
-            "low": lows,
-            "close": closes,
-            "volume": volumes,
-        }
-    )
 
 
 @pytest.fixture
