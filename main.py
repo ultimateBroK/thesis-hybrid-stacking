@@ -38,6 +38,8 @@ import shutil
 import sys
 import time
 
+import structlog
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 if (PROJECT_ROOT / "src").exists():
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -205,11 +207,6 @@ def main() -> None:
     # snapshots otherwise reset workflow flags loaded from the CLI config.
     config = _apply_stage_flags(config, args.stage)
 
-    # Logging setup — Rich for console, plain for file
-    from rich.logging import RichHandler
-
-    from thesis.shared.ui import console as _console
-
     _log_fmt = "%(asctime)s | %(name)s | %(levelname)s | %(message)s"
     plain_file_handler = logging.FileHandler(
         session_dir / "logs" / "pipeline.log", mode=log_mode
@@ -218,30 +215,32 @@ def main() -> None:
 
     logging.basicConfig(
         level=logging.INFO,
-        format="%(message)s",
+        format=_log_fmt,
         datefmt="[%X]",
-        handlers=[
-            RichHandler(
-                console=_console,
-                rich_tracebacks=True,
-                show_path=False,
-                show_time=True,
-                omit_repeated_times=False,
-                log_time_format="[%H:%M:%S]",
-                markup=True,
-            ),
-            plain_file_handler,
-        ],
+        handlers=[plain_file_handler, logging.StreamHandler(sys.stdout)],
     )
-    logger = logging.getLogger("thesis")
+    structlog.configure(
+        processors=[
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.KeyValueRenderer(
+                key_order=["timestamp", "level", "logger", "event"]
+            ),
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+    logger = structlog.get_logger("thesis")
 
-    logger.info("Config loaded: %s", args.config)
-    logger.info("Symbol: %s, Timeframe: %s", config.data.symbol, config.data.timeframe)
-    logger.info("Session directory: %s", session_dir)
+    logger.info("config_loaded", config=args.config)
+    logger.info("market", symbol=config.data.symbol, timeframe=config.data.timeframe)
+    logger.info("session_directory", path=str(session_dir))
     if args.session:
-        logger.info("Resuming session: %s", args.session)
+        logger.info("resume_session", session=args.session)
         if args.stage is not None:
-            logger.info("Starting from stage: %d", args.stage)
+            logger.info("start_stage", stage=args.stage)
 
     # Track pipeline timing
     t_start = time.monotonic()
@@ -252,7 +251,7 @@ def main() -> None:
         run_pipeline(config)
         pipeline_ok = True
     except Exception as e:
-        logger.exception("Pipeline failed: %s", e)
+        logger.exception("pipeline_failed", error=str(e))
         pipeline_ok = False
     finally:
         elapsed = round(time.monotonic() - t_start, 2)
@@ -297,15 +296,15 @@ def main() -> None:
         session_info_path = session_dir / "config" / "session_info.json"
         with open(session_info_path, "w") as f:
             json.dump(session_info, f, indent=2)
-        logger.info("Session info saved: %s", session_info_path)
+        logger.info("session_info_saved", path=str(session_info_path))
 
     logger.info(
-        "Done. Results: %s (%.1fs) [%s]",
-        session_dir,
-        elapsed,
-        "OK" if pipeline_ok else "FAILED",
+        "pipeline_done",
+        results=str(session_dir),
+        elapsed_seconds=elapsed,
+        status="OK" if pipeline_ok else "FAILED",
     )
-    logger.info("Log: %s", plain_file_handler.baseFilename)
+    logger.info("log_file", path=str(plain_file_handler.baseFilename))
     sys.exit(0 if pipeline_ok else 1)
 
 

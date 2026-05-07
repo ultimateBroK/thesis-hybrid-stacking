@@ -10,24 +10,19 @@ only the small OHLCV results (~56K rows for 8 years of 1H bars).
 
 from __future__ import annotations
 
-from datetime import timedelta
 import json
 import logging
 from pathlib import Path
 
 import polars as pl
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-)
 
 from thesis.shared.config import Config
 from thesis.shared.constants import timeframe_to_ms as _timeframe_to_ms
-from thesis.shared.data_quality import check_candle_quality, check_gap_report
-from thesis.shared.ui import console
+from thesis.shared.data_quality import (
+    check_candle_quality,
+    check_gap_report,
+    classify_calendar_gaps,
+)
 
 logger = logging.getLogger("thesis.prepare")
 
@@ -39,13 +34,13 @@ def _parse_datetime_bound(value: str, name: str, dtype: pl.DataType) -> pl.Expr:
     return pl.lit(value).str.to_datetime().cast(dtype)
 
 
-def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
+def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
     """Aggregate one monthly tick parquet file into OHLCV bars.
 
     Args:
         file_path: Path to a monthly tick parquet file with `timestamp`, `bid`,
             `ask`, `ask_volume`, and `bid_volume` columns.
-        group_ms: Bar size in milliseconds used to align ticks to bar boundaries.
+        group_every: Dynamic grouping interval (for example ``"1h"``).
 
     Returns:
         A Polars DataFrame with `timestamp`, `open`, `high`, `low`, `close`,
@@ -93,23 +88,21 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
         & (pl.col("timestamp").dt.year() <= 2100)
     )
 
-    # Floor timestamps to bar boundaries
-    ts_ms = ticks["timestamp"].dt.timestamp("ms")
-    bar_group = (ts_ms // group_ms) * group_ms
-
-    ticks = ticks.with_columns(
-        [
-            bar_group.cast(pl.Datetime("ms")).alias("bar_time"),
-        ]
-    )
-
-    # Sort ticks by bar_time then timestamp before aggregation
+    # Sort ticks by timestamp before dynamic aggregation so first()/last() are
+    # deterministic open/close values.
     # so first()/last() within each bar give deterministic open/close
-    ticks = ticks.sort(["bar_time", "timestamp"])
+    ticks = ticks.sort("timestamp")
 
-    # Aggregate to OHLCV
+    # Aggregate to OHLCV using dynamic windows.
     ohlcv = (
-        ticks.group_by("bar_time", maintain_order=True)
+        ticks.group_by_dynamic(
+            "timestamp",
+            every=group_every,
+            period=group_every,
+            closed="left",
+            label="left",
+            start_by="window",
+        )
         .agg(
             [
                 pl.col("microprice").first().alias("open"),
@@ -121,7 +114,6 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
                 ((pl.col("ask") - pl.col("bid")).mean()).alias("avg_spread"),
             ]
         )
-        .rename({"bar_time": "timestamp"})
     )
 
     return ohlcv
@@ -129,36 +121,24 @@ def _aggregate_file(file_path: Path, group_ms: int) -> pl.DataFrame:
 
 def _aggregate_monthly_files(
     parquet_files: list[Path],
-    group_ms: int,
+    group_every: str,
 ) -> list[pl.DataFrame]:
     """Aggregate monthly tick files into OHLCV bars.
 
     Args:
         parquet_files: List of monthly parquet file paths.
-        group_ms: Bar size in milliseconds for grouping.
+        group_every: Dynamic grouping interval for OHLCV bars.
 
     Returns:
         List of OHLCV DataFrames, one per input file.
     """
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(
-            f"[cyan]Aggregating {len(parquet_files)} monthly files",
-            total=len(parquet_files),
-        )
-        monthly_bars: list[pl.DataFrame] = []
-        for f in parquet_files:
-            progress.update(task, description=f"[cyan]{f.name}")
-            bars = _aggregate_file(f, group_ms)
-            monthly_bars.append(bars)
-            progress.advance(task)
-        return monthly_bars
+    monthly_bars: list[pl.DataFrame] = []
+    total = len(parquet_files)
+    for idx, f in enumerate(parquet_files, start=1):
+        logger.info("Aggregating monthly file %d/%d: %s", idx, total, f.name)
+        bars = _aggregate_file(f, group_every)
+        monthly_bars.append(bars)
+    return monthly_bars
 
 
 def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int, int]:
@@ -298,34 +278,6 @@ def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
     )
 
 
-def _spans_weekend(start_dt: object, end_dt: object) -> bool:
-    """Check if a time interval spans any weekend hours (Saturday or Sunday).
-
-    Only returns ``True`` for gaps of at least 6 hours; shorter gaps are
-    never weekend-related for financial intra-week data.
-
-    Args:
-        start_dt: Start datetime.
-        end_dt: End datetime.
-
-    Returns:
-        ``True`` if any Saturday or Sunday falls within the interval.
-    """
-    delta = (end_dt - start_dt).total_seconds()
-    if delta < 6 * 3600:  # shorter than 6 hours: cannot be a weekend gap
-        return False
-
-    current = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_day = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
-        days=1
-    )
-    while current < end_day:
-        if current.weekday() >= 5:  # Saturday (5) or Sunday (6)
-            return True
-        current += timedelta(days=1)
-    return False
-
-
 def _compute_data_quality_stats(
     ohlcv: pl.DataFrame,
     group_ms: int,
@@ -364,42 +316,8 @@ def _compute_data_quality_stats(
             "largest_gap_bars": 0,
         }
 
-    diffs = ohlcv.select(
-        [
-            pl.col("timestamp").diff().dt.total_milliseconds().alias("delta_ms"),
-            pl.col("timestamp"),
-        ]
-    ).drop_nulls()
-
-    timestamps = diffs["timestamp"].to_list()
-    deltas = diffs["delta_ms"].to_list()
-
-    weekend_gaps = 0
-    real_gaps = 0
-    estimated_missing_bars = 0
-    largest_gap_bars = 0
-
-    prev_ts_list = ohlcv["timestamp"].to_list()
-    for i, (delta, ts) in enumerate(zip(deltas, timestamps)):
-        if delta <= 0:
-            continue
-        if delta == group_ms:
-            continue  # expected bar interval — no gap
-
-        gap_bars = int(delta / group_ms)
-        if gap_bars > largest_gap_bars:
-            largest_gap_bars = gap_bars
-
-        prev_ts = prev_ts_list[i]  # previous timestamp before this gap
-        if _spans_weekend(prev_ts, ts):
-            weekend_gaps += 1
-        else:
-            real_gaps += 1
-
-        missing = max(0, gap_bars - 1)
-        estimated_missing_bars += missing
-
-    calendar_gaps = weekend_gaps + real_gaps
+    gap_summary = classify_calendar_gaps(ohlcv, group_ms)
+    calendar_gaps = gap_summary.calendar_gap_count + gap_summary.real_gap_count
 
     return {
         "total_bars": total_bars,
@@ -407,10 +325,11 @@ def _compute_data_quality_stats(
         "start_date": start_date,
         "end_date": end_date,
         "calendar_gaps": calendar_gaps,
-        "weekend_gaps": weekend_gaps,
-        "real_gaps": real_gaps,
-        "estimated_missing_bars": estimated_missing_bars,
-        "largest_gap_bars": largest_gap_bars,
+        "weekend_gaps": gap_summary.calendar_gap_count,
+        "real_gaps": gap_summary.real_gap_count,
+        "estimated_missing_bars": gap_summary.estimated_missing_bars,
+        "largest_gap_bars": gap_summary.largest_gap_bars,
+        "calendar_warnings": gap_summary.warnings,
     }
 
 
@@ -472,9 +391,10 @@ def prepare_data(config: Config) -> None:
     logger.info("Found %d tick files in %s", len(parquet_files), raw_dir)
 
     group_ms = _timeframe_to_ms(config.data.timeframe)
+    group_every = config.data.timeframe.lower()
 
     # Aggregate each monthly file separately — memory-efficient
-    monthly_bars = _aggregate_monthly_files(parquet_files, group_ms)
+    monthly_bars = _aggregate_monthly_files(parquet_files, group_every)
 
     # Concat small OHLCV DataFrames (tiny compared to ticks)
     ohlcv = pl.concat(monthly_bars, how="vertical").sort("timestamp")

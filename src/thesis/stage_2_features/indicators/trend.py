@@ -7,6 +7,7 @@ ADX, EMA slope, and composite regime strength.
 
 from __future__ import annotations
 
+import pandas_ta_classic as ta
 import polars as pl
 
 from thesis.shared.config import Config
@@ -90,17 +91,36 @@ def _add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     p = config.features.atr_period
     atr_col = pl.col(f"atr_{p}")
 
-    ema_34 = pl.col("close").ewm_mean(span=34, adjust=False)
-    ema_89 = pl.col("close").ewm_mean(span=89, adjust=False)
+    close = df["close"].to_pandas()
+    ema_34_pd = ta.ema(close, length=34)
+    ema_89_pd = ta.ema(close, length=89)
+    if ema_34_pd is None or ema_89_pd is None:
+        ema_34_expr = pl.col("close").ewm_mean(span=34, adjust=False)
+        ema_89_expr = pl.col("close").ewm_mean(span=89, adjust=False)
+        return df.with_columns(
+            [
+                ((pl.col("close") - ema_34_expr) / (atr_col + FEATURE_EPS)).alias(
+                    "close_vs_ema_34"
+                ),
+                ((ema_34_expr - ema_89_expr) / (atr_col + FEATURE_EPS)).alias(
+                    "ema34_vs_ema89"
+                ),
+            ]
+        )
+    ema_34 = pl.Series("ema_34_tmp", ema_34_pd.to_numpy()).fill_nan(None)
+    ema_89 = pl.Series("ema_89_tmp", ema_89_pd.to_numpy()).fill_nan(None)
+    df = df.with_columns([ema_34, ema_89])
 
     return df.with_columns(
         [
-            ((pl.col("close") - ema_34) / (atr_col + FEATURE_EPS)).alias(
+            ((pl.col("close") - pl.col("ema_34_tmp")) / (atr_col + FEATURE_EPS)).alias(
                 "close_vs_ema_34"
             ),
-            ((ema_34 - ema_89) / (atr_col + FEATURE_EPS)).alias("ema34_vs_ema89"),
+            (
+                (pl.col("ema_34_tmp") - pl.col("ema_89_tmp")) / (atr_col + FEATURE_EPS)
+            ).alias("ema34_vs_ema89"),
         ]
-    )
+    ).drop(["ema_34_tmp", "ema_89_tmp"])
 
 
 # ── Volume features ──────────────────────────────────────────────────
@@ -242,41 +262,44 @@ def _add_adx(df: pl.DataFrame, config: Config) -> pl.DataFrame:
         DataFrame with an added ``adx_{p}`` column.
     """
     period = config.features.adx_period
-    alpha = 1.0 / period
-
-    # True Range
-    tr = pl.max_horizontal(
-        [
-            (pl.col("high") - pl.col("low")),
-            (pl.col("high") - pl.col("close").shift(1)).abs(),
-            (pl.col("low") - pl.col("close").shift(1)).abs(),
-        ]
+    adx_df = ta.adx(
+        high=df["high"].to_pandas(),
+        low=df["low"].to_pandas(),
+        close=df["close"].to_pandas(),
+        length=period,
     )
-
-    # +DM / -DM
-    up_move = pl.col("high") - pl.col("high").shift(1)
-    down_move = pl.col("low").shift(1) - pl.col("low")
-    plus_dm = (
-        pl.when((up_move > down_move) & (up_move > 0)).then(up_move).otherwise(0.0)
+    col = f"ADX_{period}"
+    if adx_df is None or col not in adx_df.columns:
+        alpha = 1.0 / period
+        tr = pl.max_horizontal(
+            [
+                (pl.col("high") - pl.col("low")),
+                (pl.col("high") - pl.col("close").shift(1)).abs(),
+                (pl.col("low") - pl.col("close").shift(1)).abs(),
+            ]
+        )
+        up_move = pl.col("high") - pl.col("high").shift(1)
+        down_move = pl.col("low").shift(1) - pl.col("low")
+        plus_dm = (
+            pl.when((up_move > down_move) & (up_move > 0)).then(up_move).otherwise(0.0)
+        )
+        minus_dm = (
+            pl.when((down_move > up_move) & (down_move > 0))
+            .then(down_move)
+            .otherwise(0.0)
+        )
+        atr_smooth = tr.ewm_mean(alpha=alpha, adjust=False)
+        plus_dm_smooth = plus_dm.ewm_mean(alpha=alpha, adjust=False)
+        minus_dm_smooth = minus_dm.ewm_mean(alpha=alpha, adjust=False)
+        plus_di = 100.0 * plus_dm_smooth / (atr_smooth + FEATURE_EPS)
+        minus_di = 100.0 * minus_dm_smooth / (atr_smooth + FEATURE_EPS)
+        dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di + FEATURE_EPS)
+        return df.with_columns(
+            dx.ewm_mean(alpha=alpha, adjust=False).alias(f"adx_{period}")
+        )
+    return df.with_columns(
+        pl.Series(f"adx_{period}", adx_df[col].to_numpy()).fill_nan(None)
     )
-    minus_dm = (
-        pl.when((down_move > up_move) & (down_move > 0)).then(down_move).otherwise(0.0)
-    )
-
-    # Wilder smoothing
-    atr_smooth = tr.ewm_mean(alpha=alpha, adjust=False)
-    plus_dm_smooth = plus_dm.ewm_mean(alpha=alpha, adjust=False)
-    minus_dm_smooth = minus_dm.ewm_mean(alpha=alpha, adjust=False)
-
-    # +DI / -DI
-    plus_di = 100.0 * plus_dm_smooth / (atr_smooth + FEATURE_EPS)
-    minus_di = 100.0 * minus_dm_smooth / (atr_smooth + FEATURE_EPS)
-
-    # DX → ADX
-    dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di + FEATURE_EPS)
-    adx = dx.ewm_mean(alpha=alpha, adjust=False)
-
-    return df.with_columns(adx.alias(f"adx_{period}"))
 
 
 def _add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -294,9 +317,18 @@ def _add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
         DataFrame with an added ``ema_slope_{p}`` column.
     """
     p = config.features.ema_slope_period
-    ema = pl.col("close").ewm_mean(span=p, adjust=False)
-    slope = (ema - ema.shift(5)) / (ema.shift(5).abs() + FEATURE_EPS)
-    return df.with_columns(slope.alias(f"ema_slope_{p}"))
+    ema = ta.ema(df["close"].to_pandas(), length=p)
+    if ema is None:
+        ema_expr = pl.col("close").ewm_mean(span=p, adjust=False)
+        slope = (ema_expr - ema_expr.shift(5)) / (ema_expr.shift(5).abs() + FEATURE_EPS)
+        return df.with_columns(slope.alias(f"ema_slope_{p}"))
+    ema_series = pl.Series("ema_slope_base_tmp", ema.to_numpy()).fill_nan(None)
+    return df.with_columns(ema_series).with_columns(
+        (
+            (pl.col("ema_slope_base_tmp") - pl.col("ema_slope_base_tmp").shift(5))
+            / (pl.col("ema_slope_base_tmp").shift(5).abs() + FEATURE_EPS)
+        ).alias(f"ema_slope_{p}")
+    ).drop("ema_slope_base_tmp")
 
 
 def _add_regime(df: pl.DataFrame) -> pl.DataFrame:
@@ -318,10 +350,14 @@ def _add_regime(df: pl.DataFrame) -> pl.DataFrame:
     Returns:
         DataFrame with an added ``regime_strength`` column.
     """
-    adx = pl.col("adx_14")
+    adx_cols = [c for c in df.columns if c.startswith("adx_")]
+    slope_cols = [c for c in df.columns if c.startswith("ema_slope_")]
+    if not adx_cols or not slope_cols:
+        return df.with_columns(pl.lit(0.0).alias("regime_strength"))
+    adx = pl.col(adx_cols[0])
     # ADX > 20 → trending signal grows; ADX <= 20 → 0 (ranging)
     adx_signal = ((adx - 20) / 20).clip(0, 3)
     # Direction: +1 for rising EMA, -1 for falling
-    slope_sign = pl.col("ema_slope_20").sign()
+    slope_sign = pl.col(slope_cols[0]).sign()
     regime = adx_signal * slope_sign
     return df.with_columns(regime.alias("regime_strength"))

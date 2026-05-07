@@ -21,6 +21,7 @@ from thesis.shared.data_quality import (
     check_gap_report,
     check_ohlcv_consistency,
     check_outlier_returns,
+    classify_calendar_gaps,
 )
 
 # ---------------------------------------------------------------------------
@@ -59,35 +60,31 @@ def compute_missing_bar_stats(
     timeframe_ms = timeframe_to_ms(expected_interval)
     result = check_gap_report(df, timeframe_ms)
 
-    # Weekend heuristic: count gaps whose timestamp pair spans Sat/Sun.
-    ts = df["timestamp"].sort()
-    diffs_ms = (
-        df.select(
-            (pl.col("timestamp").diff().dt.total_milliseconds()).alias("delta_ms")
-        )
-        .drop_nulls()
-        .get_column("delta_ms")
-    )
-
-    weekend_gaps = 0
-    ts_list = ts.to_list()
-    for i, gap_ms in enumerate(diffs_ms.to_list()):
-        if gap_ms is None or gap_ms <= timeframe_ms * 1.5:
+    calendar = classify_calendar_gaps(df, timeframe_ms)
+    ts = df["timestamp"].sort().to_list()
+    weekend_heuristic = 0
+    for prev_ts, curr_ts in zip(ts[:-1], ts[1:]):
+        delta_ms = int((curr_ts - prev_ts).total_seconds() * 1000)
+        if delta_ms <= timeframe_ms:
             continue
-        if gap_ms >= 48 * 3600 * 1000 and i + 1 < len(ts_list):
-            dow_start = ts_list[i].weekday()
-            dow_end = ts_list[i + 1].weekday()
-            if dow_start >= 5 or dow_end >= 5 or dow_end < dow_start:
-                weekend_gaps += 1
+        if (
+            prev_ts.weekday() >= 5
+            or curr_ts.weekday() >= 5
+            or curr_ts.weekday() < prev_ts.weekday()
+        ):
+            weekend_heuristic += 1
 
     gaps_found = result["gap_count"]
+    weekend_gaps = max(calendar.calendar_gap_count, weekend_heuristic)
     missing_ratio = (gaps_found - weekend_gaps) / total_bars if total_bars > 0 else 0.0
 
     return {
         "total_bars": total_bars,
         "gaps_found": gaps_found,
         "weekend_gaps": weekend_gaps,
+        "real_gaps": calendar.real_gap_count,
         "missing_ratio": round(max(missing_ratio, 0.0), 6),
+        "calendar_warnings": calendar.warnings,
     }
 
 

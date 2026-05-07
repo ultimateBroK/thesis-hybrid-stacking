@@ -15,14 +15,6 @@ from typing import Any
 from accelerate import Accelerator
 import numpy as np
 import polars as pl
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
 from sklearn.utils.class_weight import compute_class_weight
 import torch
 import torch.nn as nn
@@ -36,7 +28,6 @@ from thesis.shared.constants import (
     PLATEAU_PATIENCE,
     WARMUP_EPOCHS,
 )
-from thesis.shared.ui import console
 from thesis.stage_4_training.gru.arch import GRUExtractor
 from thesis.stage_4_training.gru.calibration import _calibrate_model
 from thesis.stage_4_training.gru.data import (
@@ -604,116 +595,87 @@ def train_gru(
     metric_label = "mae" if is_regression else "acc"
     t_metric_label = "t_" + metric_label
     v_metric_label = "v_" + metric_label
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]GRU training"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TextColumn("•"),
-        TextColumn("[cyan]t_loss={task.fields[t_loss]:.4f}"),
-        TextColumn(f"[green]{t_metric_label}={{task.fields[t_metric]:.4f}}"),
-        TextColumn("•"),
-        TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
-        TextColumn(f"[green]{v_metric_label}={{task.fields[v_metric]:.4f}}"),
-        TimeElapsedColumn(),
-        transient=True,
-        console=console,
-    )
+    for epoch in range(gru_cfg.epochs):
+        train_loss, train_metric = _train_epoch(
+            model,
+            classifier,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            accelerator=accelerator,
+            is_regression=is_regression,
+            gradient_accumulation_steps=gru_cfg.gradient_accumulation_steps,
+        )
+        val_loss, val_metric = _validate_epoch(
+            model,
+            classifier,
+            val_loader,
+            criterion,
+            device,
+            accelerator=accelerator,
+            is_regression=is_regression,
+        )
+        scheduler.step()
+        current_lr = optimizer.param_groups[0]["lr"]
 
-    with progress:
-        task = progress.add_task(
-            "epochs",
-            total=gru_cfg.epochs,
-            t_loss=0.0,
-            t_metric=0.0,
-            v_loss=0.0,
-            v_metric=0.0,
+        history.append(
+            {
+                "epoch": epoch + 1,
+                "train_loss": round(train_loss, 4),
+                f"train_{metric_label}": round(train_metric, 4),
+                "val_loss": round(val_loss, 4),
+                f"val_{metric_label}": round(val_metric, 4),
+                "lr": round(current_lr, 6),
+            }
+        )
+        logger.info(
+            "GRU epoch %d/%d | t_loss=%.4f %s=%.4f v_loss=%.4f %s=%.4f lr=%.6f",
+            epoch + 1,
+            gru_cfg.epochs,
+            train_loss,
+            t_metric_label,
+            train_metric,
+            val_loss,
+            v_metric_label,
+            val_metric,
+            current_lr,
         )
 
-        for epoch in range(gru_cfg.epochs):
-            train_loss, train_metric = _train_epoch(
-                model,
-                classifier,
-                train_loader,
-                criterion,
-                optimizer,
-                device,
-                accelerator=accelerator,
-                is_regression=is_regression,
-                gradient_accumulation_steps=gru_cfg.gradient_accumulation_steps,
-            )
-            val_loss, val_metric = _validate_epoch(
-                model,
-                classifier,
-                val_loader,
-                criterion,
-                device,
-                accelerator=accelerator,
-                is_regression=is_regression,
-            )
-            scheduler.step()
-            current_lr = optimizer.param_groups[0]["lr"]
-
-            history.append(
-                {
-                    "epoch": epoch + 1,
-                    "train_loss": round(train_loss, 4),
-                    f"train_{metric_label}": round(train_metric, 4),
-                    "val_loss": round(val_loss, 4),
-                    f"val_{metric_label}": round(val_metric, 4),
-                    "lr": round(current_lr, 6),
-                }
-            )
-            logger.info("Epoch %d: lr=%.6f", epoch + 1, current_lr)
-
-            progress.update(
-                task,
-                advance=1,
-                t_loss=train_loss,
-                t_metric=train_metric,
-                v_loss=val_loss,
-                v_metric=val_metric,
-            )
-
-            # Early stopping — enforce min_epochs before allowing patience
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                best_epoch = epoch + 1
-                best_state = {
-                    "model": copy.deepcopy(
-                        accelerator.unwrap_model(model).state_dict()
-                    ),
-                    "classifier": copy.deepcopy(
-                        accelerator.unwrap_model(classifier).state_dict()
-                    ),
-                }
-                patience_counter = 0
-                plateau_warned = False
-            else:
-                patience_counter += 1
-                # Plateau detection: warn once when val-loss stalls for
-                # PLATEAU_PATIENCE consecutive epochs without improvement.
-                if not plateau_warned and patience_counter >= PLATEAU_PATIENCE:
-                    plateau_warned = True
-                    logger.warning(
-                        "Plateau detected: val_loss=%.4f hasn't improved for "
-                        "%d epochs (LR=%.6f). Consider reducing learning rate.",
-                        val_loss,
-                        patience_counter,
-                        current_lr,
+        # Early stopping — enforce min_epochs before allowing patience
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_epoch = epoch + 1
+            best_state = {
+                "model": copy.deepcopy(accelerator.unwrap_model(model).state_dict()),
+                "classifier": copy.deepcopy(
+                    accelerator.unwrap_model(classifier).state_dict()
+                ),
+            }
+            patience_counter = 0
+            plateau_warned = False
+        else:
+            patience_counter += 1
+            # Plateau detection: warn once when val-loss stalls for
+            # PLATEAU_PATIENCE consecutive epochs without improvement.
+            if not plateau_warned and patience_counter >= PLATEAU_PATIENCE:
+                plateau_warned = True
+                logger.warning(
+                    "Plateau detected: val_loss=%.4f hasn't improved for "
+                    "%d epochs (LR=%.6f). Consider reducing learning rate.",
+                    val_loss,
+                    patience_counter,
+                    current_lr,
+                )
+            if patience_counter >= gru_cfg.patience and epoch + 1 >= gru_cfg.min_epochs:
+                if epoch + 1 < gru_cfg.epochs:
+                    logger.info(
+                        "Early stop at epoch %d (patience=%d, min_epochs=%d)",
+                        epoch + 1,
+                        gru_cfg.patience,
+                        gru_cfg.min_epochs,
                     )
-                if (
-                    patience_counter >= gru_cfg.patience
-                    and epoch + 1 >= gru_cfg.min_epochs
-                ):
-                    if epoch + 1 < gru_cfg.epochs:
-                        logger.info(
-                            "\nEarly stop at epoch %d (patience=%d, min_epochs=%d)",
-                            epoch + 1,
-                            gru_cfg.patience,
-                            gru_cfg.min_epochs,
-                        )
-                    break
+                break
 
     # Summary
     total_time = time.perf_counter() - stage_start

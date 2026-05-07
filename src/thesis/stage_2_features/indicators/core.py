@@ -7,6 +7,7 @@ appends new columns, and returns the enriched DataFrame.
 
 from __future__ import annotations
 
+import pandas_ta_classic as ta
 import polars as pl
 
 from thesis.shared.config import Config
@@ -48,13 +49,17 @@ def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
         DataFrame with an added column ``rsi_{p}``.
     """
     p = config.features.rsi_period
-    delta = pl.col("close").diff()
-    gain = delta.clip(lower_bound=0.0)
-    loss = (-delta).clip(lower_bound=0.0)
-    avg_gain = gain.ewm_mean(alpha=1.0 / p, adjust=False)
-    avg_loss = loss.ewm_mean(alpha=1.0 / p, adjust=False)
-    rs = avg_gain / (avg_loss + FEATURE_EPS)
-    return df.with_columns((100.0 - 100.0 / (1.0 + rs)).alias(f"rsi_{p}"))
+    close = df["close"].to_pandas()
+    rsi = ta.rsi(close, length=p)
+    if rsi is None:
+        delta = pl.col("close").diff()
+        gain = delta.clip(lower_bound=0.0)
+        loss = (-delta).clip(lower_bound=0.0)
+        avg_gain = gain.ewm_mean(alpha=1.0 / p, adjust=False)
+        avg_loss = loss.ewm_mean(alpha=1.0 / p, adjust=False)
+        rs = avg_gain / (avg_loss + FEATURE_EPS)
+        return df.with_columns((100.0 - 100.0 / (1.0 + rs)).alias(f"rsi_{p}"))
+    return df.with_columns(pl.Series(f"rsi_{p}", rsi.to_numpy()).fill_nan(None))
 
 
 def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -68,12 +73,25 @@ def _add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
         DataFrame with ``atr_{p}`` and ``atr_pct_close``.
     """
     p = config.features.atr_period
-    atr = _compute_atr_expr(p)
-    return df.with_columns(
-        [
-            atr.alias(f"atr_{p}"),
-            (atr / (pl.col("close").abs() + FEATURE_EPS)).alias("atr_pct_close"),
-        ]
+    high = df["high"].to_pandas()
+    low = df["low"].to_pandas()
+    close = df["close"].to_pandas()
+    atr = ta.atr(high=high, low=low, close=close, length=p)
+    if atr is None:
+        atr_expr = _compute_atr_expr(p)
+        return df.with_columns(
+            [
+                atr_expr.alias(f"atr_{p}"),
+                (atr_expr / (pl.col("close").abs() + FEATURE_EPS)).alias(
+                    "atr_pct_close"
+                ),
+            ]
+        )
+    atr_series = pl.Series(f"atr_{p}", atr.to_numpy()).fill_nan(None)
+    return df.with_columns(atr_series).with_columns(
+        (pl.col(f"atr_{p}") / (pl.col("close").abs() + FEATURE_EPS)).alias(
+            "atr_pct_close"
+        )
     )
 
 
@@ -91,15 +109,27 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     fast = config.features.macd_fast
     slow = config.features.macd_slow
     sig = config.features.macd_signal
-    atr = pl.col(f"atr_{config.features.atr_period}")
-    ema_fast = pl.col("close").ewm_mean(span=fast, adjust=False)
-    ema_slow = pl.col("close").ewm_mean(span=slow, adjust=False)
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm_mean(span=sig, adjust=False)
-    hist = macd_line - signal_line
-    return df.with_columns(
-        hist.alias("macd_hist"),
-        (hist / (atr + FEATURE_EPS)).alias("macd_hist_atr"),
+    close = df["close"].to_pandas()
+    macd = ta.macd(close, fast=fast, slow=slow, signal=sig)
+    hist_col = f"MACDh_{fast}_{slow}_{sig}"
+    if macd is None or hist_col not in macd.columns:
+        ema_fast = pl.col("close").ewm_mean(span=fast, adjust=False)
+        ema_slow = pl.col("close").ewm_mean(span=slow, adjust=False)
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm_mean(span=sig, adjust=False)
+        hist = macd_line - signal_line
+        return df.with_columns(hist.alias("macd_hist")).with_columns(
+            (
+                pl.col("macd_hist")
+                / (pl.col(f"atr_{config.features.atr_period}") + FEATURE_EPS)
+            ).alias("macd_hist_atr")
+        )
+    hist = pl.Series("macd_hist", macd[hist_col].to_numpy()).fill_nan(None)
+    return df.with_columns(hist).with_columns(
+        (
+            pl.col("macd_hist")
+            / (pl.col(f"atr_{config.features.atr_period}") + FEATURE_EPS)
+        ).alias("macd_hist_atr"),
     )
 
 

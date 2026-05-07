@@ -10,21 +10,12 @@ from typing import Any
 
 import numpy as np
 import polars as pl
-from rich.progress import (
-    BarColumn,
-    MofNCompleteColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
 
 from thesis.shared.config import Config
 from thesis.shared.constants import (
     DIST_SHIFT_CLIP_MAX,
     DIST_SHIFT_CLIP_MIN,
 )
-from thesis.shared.ui import console
 
 logger = logging.getLogger("thesis.model")
 
@@ -276,65 +267,45 @@ def _train_fixed(
             zero_as_missing=False,
         )
 
-    # Rich progress bar over boosting iterations
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold magenta]LightGBM boosting"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TextColumn("•"),
-        TextColumn("[cyan]v_loss={task.fields[v_loss]:.4f}"),
-        TimeElapsedColumn(),
-        transient=True,
-        console=console,
-    )
+    if is_regression:
+        filtered = _wrap_np(X_val, feature_cols), y_val
+    else:
+        filtered = _filter_validation_to_seen_classes(
+            X_train, X_val, y_val, y_train, feature_cols
+        )
 
-    with progress:
-        task = progress.add_task("iter", total=m.n_estimators, v_loss=0.0)
-
-        if is_regression:
-            filtered = _wrap_np(X_val, feature_cols), y_val
-        else:
-            filtered = _filter_validation_to_seen_classes(
-                X_train, X_val, y_val, y_train, feature_cols
-            )
-
-        def _progress_cb(env: Any) -> None:
-            """Update progress bar from LightGBM callback state.
-
-            Args:
-                env: LightGBM callback environment.
-            """
-            progress.update(
-                task,
-                advance=1,
-                v_loss=env.evaluation_result_list[0][2]
+    def _progress_cb(env: Any) -> None:
+        """Emit sparse boosting progress logs."""
+        if env.iteration % 50 == 0 or env.iteration == env.end_iteration - 1:
+            v_loss = (
+                env.evaluation_result_list[0][2]
                 if env.evaluation_result_list
-                else 0.0,
+                else 0.0
             )
+            logger.info("LightGBM iter=%d val_loss=%.5f", env.iteration, v_loss)
 
-        if filtered is None:
-            logger.warning(
-                "Validation set has no overlapping classes with training "
-                "— skipping early stopping"
-            )
-            model.fit(
-                _wrap_np(X_train, feature_cols),
-                y_train,
-                sample_weight=sample_weight,
-            )
-        else:
-            X_val_df, y_val_eval = filtered
-            model.fit(
-                _wrap_np(X_train, feature_cols),
-                y_train,
-                sample_weight=sample_weight,
-                eval_set=[(X_val_df, y_val_eval)],
-                callbacks=[
-                    lgb.early_stopping(m.early_stopping_rounds, verbose=False),
-                    _progress_cb,
-                ],
-            )
+    if filtered is None:
+        logger.warning(
+            "Validation set has no overlapping classes with training "
+            "— skipping early stopping"
+        )
+        model.fit(
+            _wrap_np(X_train, feature_cols),
+            y_train,
+            sample_weight=sample_weight,
+        )
+    else:
+        X_val_df, y_val_eval = filtered
+        model.fit(
+            _wrap_np(X_train, feature_cols),
+            y_train,
+            sample_weight=sample_weight,
+            eval_set=[(X_val_df, y_val_eval)],
+            callbacks=[
+                lgb.early_stopping(m.early_stopping_rounds, verbose=False),
+                _progress_cb,
+            ],
+        )
 
     train_time = time.perf_counter() - start_time
     logger.info(

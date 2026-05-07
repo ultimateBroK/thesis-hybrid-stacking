@@ -10,8 +10,6 @@ import time
 import joblib
 import numpy as np
 import polars as pl
-from rich.panel import Panel
-from rich.table import Table
 
 from thesis.shared.config import Config
 from thesis.shared.constants import EXCLUDE_COLS
@@ -102,11 +100,7 @@ def train_model(config: Config) -> None:
     )
 
     # --- 1. Train GRU feature extractor ---
-    console.print(
-        Panel(
-            "Stage 4.1: [bold]GRU Feature Extractor[/]", style="magenta", padding=(0, 2)
-        )
-    )
+    logger.info("Stage 4.1: GRU Feature Extractor")
     (
         gru_model,
         _gru_classifier,
@@ -176,9 +170,7 @@ def train_model(config: Config) -> None:
     )
 
     # --- 4. Train LightGBM ---
-    console.print(
-        Panel("Stage 4.2: [bold]LightGBM[/] (Fixed)", style="magenta", padding=(0, 2))
-    )
+    logger.info("Stage 4.2: LightGBM (Fixed)")
     class_weights = _compute_class_weights(y_train)
 
     model = _train_fixed(
@@ -217,13 +209,7 @@ def train_model(config: Config) -> None:
         json.dump(training_history, f, indent=2)
 
     # --- 5. Generate test predictions ---
-    console.print(
-        Panel(
-            "Stage 4.3: [bold]Predictions & Evaluation[/]",
-            style="magenta",
-            padding=(0, 2),
-        )
-    )
+    logger.info("Stage 4.3: Predictions & Evaluation")
 
     if is_regression:
         raw_preds = model.predict(_wrap_np(X_test, all_feature_cols))
@@ -236,26 +222,19 @@ def train_model(config: Config) -> None:
 
     acc = (preds == y_test).mean()
 
-    # Rich table for per-class results
-    table = Table(title="Test Set Results", show_header=True, header_style="bold")
-    table.add_column("Class", style="cyan")
-    table.add_column("Samples", justify="right")
-    table.add_column("Accuracy", justify="right", style="green")
-    table.add_column("Predicted", justify="right")
-
     label_map = {-1: "SELL", 0: "HOLD", 1: "BUY"}
     for cls in [-1, 0, 1]:
         mask = y_test == cls
         if mask.sum() > 0:
             cls_acc = (preds[mask] == cls).mean()
-            table.add_row(
-                f"{label_map[cls]} ({cls})",
-                str(mask.sum()),
-                f"{cls_acc:.3f}",
-                str((preds == cls).sum()),
+            logger.info(
+                "Class %s (%d): samples=%d accuracy=%.3f predicted=%d",
+                label_map[cls],
+                cls,
+                int(mask.sum()),
+                float(cls_acc),
+                int((preds == cls).sum()),
             )
-
-    console.print(table)
     logger.info("Test accuracy: %.4f", acc)
 
     if is_regression:
@@ -281,17 +260,14 @@ def train_model(config: Config) -> None:
     # --- 6. Feature importance ---
     _save_feature_importance(model, all_feature_cols, config)
 
-    # Final summary panel
     stage_time = time.perf_counter() - stage_start
-    console.print(
-        Panel(
-            f"[bold green]Stage 4 complete[/]\n"
-            f"  Accuracy: [bold]{acc:.4f}[/]\n"
-            f"  GRU: {hidden_size} features ({config.gru.num_layers} layers)\n"
-            f"  LightGBM: {len(all_feature_cols)} features,"
-            f" best_iter={getattr(model, 'best_iteration_', 'N/A')}\n"
-            f"  Time: {stage_time:.1f}s",
-            style="green",
-            padding=(0, 2),
-        )
+    logger.info(
+        "Stage 4 complete | accuracy=%.4f gru_features=%d gru_layers=%d "
+        "lgbm_features=%d best_iter=%s time=%.1fs",
+        acc,
+        hidden_size,
+        config.gru.num_layers,
+        len(all_feature_cols),
+        getattr(model, "best_iteration_", "N/A"),
+        stage_time,
     )

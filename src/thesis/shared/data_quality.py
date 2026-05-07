@@ -6,9 +6,13 @@ stage_1 (data preparation) and stage_6 (reporting).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
+import warnings
 
 import numpy as np
+import pandas as pd
+import pandas_market_calendars as mcal
 import polars as pl
 
 
@@ -154,3 +158,127 @@ def check_candle_quality(df: pl.DataFrame) -> dict[str, Any]:
         "total_rows": len(df),
         "is_valid": invalid_count == 0,
     }
+
+
+_DEFAULT_GOLD_CALENDARS: tuple[str, ...] = (
+    "CME Globex Gold and Silver Futures",
+    "CME Globex Commodities",
+    "CME_FX",
+)
+
+
+@dataclass(frozen=True)
+class GapClassification:
+    """Classification summary for timestamp gaps."""
+
+    calendar_gap_count: int
+    real_gap_count: int
+    estimated_missing_bars: int
+    largest_gap_bars: int
+    warnings: list[str]
+
+
+def _resolve_market_calendar(name: str | None = None):
+    """Resolve configured market calendar, defaulting to a gold session."""
+    candidates = [name] if name else list(_DEFAULT_GOLD_CALENDARS)
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            return mcal.get_calendar(candidate)
+        except RuntimeError:
+            continue
+    raise RuntimeError(
+        "Could not resolve market calendar for gold bars. "
+        f"Tried: {candidates or list(_DEFAULT_GOLD_CALENDARS)}"
+    )
+
+
+def classify_calendar_gaps(
+    df: pl.DataFrame,
+    timeframe_ms: int,
+    *,
+    calendar_name: str | None = None,
+) -> GapClassification:
+    """Classify gaps into calendar-expected closures and real missing bars."""
+    if "timestamp" not in df.columns or len(df) < 2:
+        return GapClassification(0, 0, 0, 0, [])
+    try:
+        ts = df["timestamp"].sort().to_list()
+        actual_index = pd.DatetimeIndex(ts)
+        if actual_index.tz is None:
+            actual_index = actual_index.tz_localize("UTC")
+        else:
+            actual_index = actual_index.tz_convert("UTC")
+
+        cal = _resolve_market_calendar(calendar_name)
+        start = actual_index.min().date()
+        end = actual_index.max().date()
+        schedule = cal.schedule(start_date=start, end_date=end)
+
+        captured_warnings: list[str] = []
+        with warnings.catch_warnings(record=True) as warns:
+            warnings.simplefilter("always")
+            expected_index = mcal.date_range(schedule, frequency=f"{timeframe_ms}ms")
+            for warn in warns:
+                captured_warnings.append(str(warn.message))
+
+        expected_set = set(expected_index)
+        calendar_gap_count = 0
+        real_gap_count = 0
+        estimated_missing_bars = 0
+        largest_gap_bars = 0
+
+        for prev_ts, curr_ts in zip(actual_index[:-1], actual_index[1:]):
+            delta_ms = int((curr_ts - prev_ts).total_seconds() * 1000)
+            if delta_ms <= timeframe_ms:
+                continue
+            gap_bars = delta_ms // timeframe_ms
+            largest_gap_bars = max(largest_gap_bars, gap_bars)
+            interior = pd.date_range(
+                start=prev_ts + pd.Timedelta(milliseconds=timeframe_ms),
+                end=curr_ts - pd.Timedelta(milliseconds=timeframe_ms),
+                freq=pd.Timedelta(milliseconds=timeframe_ms),
+                tz="UTC",
+            )
+            expected_missing = sum(1 for t in interior if t in expected_set)
+            if expected_missing > 0:
+                real_gap_count += 1
+                estimated_missing_bars += expected_missing
+            else:
+                calendar_gap_count += 1
+
+        return GapClassification(
+            calendar_gap_count=calendar_gap_count,
+            real_gap_count=real_gap_count,
+            estimated_missing_bars=estimated_missing_bars,
+            largest_gap_bars=largest_gap_bars,
+            warnings=captured_warnings,
+        )
+    except Exception as exc:  # pragma: no cover - fallback for calendar edge cases
+        ts_col = df["timestamp"].sort()
+        deltas = ts_col.diff().drop_nulls().dt.total_milliseconds().to_list()
+        calendar_gap_count = 0
+        real_gap_count = 0
+        missing = 0
+        largest = 0
+        ts_values = ts_col.to_list()
+        for i, delta in enumerate(deltas):
+            if delta <= timeframe_ms:
+                continue
+            gap_bars = int(delta // timeframe_ms)
+            largest = max(largest, gap_bars)
+            start = ts_values[i]
+            end = ts_values[i + 1]
+            if start.weekday() >= 5 or end.weekday() >= 5:
+                calendar_gap_count += 1
+            else:
+                real_gap_count += 1
+                missing += max(0, gap_bars - 1)
+        return GapClassification(
+            calendar_gap_count=calendar_gap_count,
+            real_gap_count=real_gap_count,
+            estimated_missing_bars=missing,
+            largest_gap_bars=largest,
+            warnings=[f"calendar_fallback:{type(exc).__name__}:{exc}"],
+        )

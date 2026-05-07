@@ -14,6 +14,7 @@ import json
 import logging
 from pathlib import Path
 
+import pandera.polars as pa
 import polars as pl
 
 from thesis.shared.config import Config
@@ -116,6 +117,7 @@ def generate_features(config: Config) -> None:
         set(get_static_feature_cols(config)) | set(get_gru_feature_cols(config))
     )
     df = _drop_warmup_rows(df, keep_features)
+    _validate_feature_quality(df, config)
 
     # Persist
     FeaturesSchema.validate(df, config)
@@ -218,6 +220,34 @@ def _drop_warmup_rows(df: pl.DataFrame, feature_cols: list[str]) -> pl.DataFrame
     if df.is_empty():
         raise ValueError("No feature rows remain after dropping warm-up rows")
     return df
+
+
+def _validate_feature_quality(df: pl.DataFrame, config: Config) -> None:
+    """Pandera quality checks for leakage-sensitive feature dataset."""
+    p = config.features.rsi_period
+    checks: dict[str, pa.Column] = {
+        "timestamp": pa.Column(nullable=False),
+    }
+    if f"rsi_{p}" in df.columns:
+        checks[f"rsi_{p}"] = pa.Column(
+            pl.Float64,
+            checks=[pa.Check.ge(0), pa.Check.le(100)],
+            nullable=True,
+            coerce=True,
+        )
+    schema = pa.DataFrameSchema(checks, strict=False)
+    schema.validate(df, lazy=True)
+
+    ts = df.get_column("timestamp")
+    if ts.n_unique() != len(ts):
+        raise ValueError("Features validation failed: timestamp must be unique")
+    deltas = ts.diff().drop_nulls().dt.total_milliseconds()
+    if int((deltas <= 0).sum()) > 0:
+        raise ValueError(
+            "Features validation failed: timestamp must be strictly increasing"
+        )
+    if int(df.null_count().sum_horizontal().sum()) > 0:
+        raise ValueError("Features validation failed: null values remain after warm-up")
 
 
 def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:

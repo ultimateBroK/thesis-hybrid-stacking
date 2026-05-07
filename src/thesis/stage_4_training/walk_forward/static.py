@@ -27,6 +27,7 @@ from thesis.stage_4_training.walk_forward.utils import (
     _validate_predictions,
     _window_diagnostics,
     _write_prediction_manifest,
+    fit_static_feature_pipeline,
 )
 
 logger = logging.getLogger("thesis.pipeline")
@@ -129,8 +130,6 @@ def _train_and_predict_static_window(
     logger.info(
         "Static baseline using %d features (%s mode)", len(static_cols), mode_tag
     )
-    X_train = train_df.select(static_cols).to_numpy()
-    X_test = test_df.select(static_cols).to_numpy()
     if is_regression_static:
         y_train = train_df["regression_target"].to_numpy().astype(np.float64)
         y_test = test_df["regression_target"].to_numpy().astype(np.float64)
@@ -146,7 +145,17 @@ def _train_and_predict_static_window(
         else None
     )
     diag = _window_diagnostics(w_idx + 1, train_df, test_df, y_train_cls, y_test_cls)
-    val_split_idx = max(1, int(len(X_train) * _VALIDATION_SPLIT_FRACTION))
+    val_split_idx = max(1, int(len(train_df) * _VALIDATION_SPLIT_FRACTION))
+    pipeline_fit_df = train_df.slice(0, len(train_df) - val_split_idx)
+    pipeline_fit_y = y_train_cls[:-val_split_idx]
+    static_pipeline, selected_static_cols = fit_static_feature_pipeline(
+        config,
+        pipeline_fit_df,
+        static_cols,
+        pipeline_fit_y,
+    )
+    X_train = static_pipeline.transform(train_df.select(static_cols).to_pandas())
+    X_test = static_pipeline.transform(test_df.select(static_cols).to_pandas())
     X_tr, y_tr = X_train[:-val_split_idx], y_train[:-val_split_idx]
     X_val, y_val = X_train[-val_split_idx:], y_train[-val_split_idx:]
     w_tr = sw[:-val_split_idx] if sw is not None else None
@@ -162,11 +171,11 @@ def _train_and_predict_static_window(
         y_val,
         class_weights,
         config,
-        static_cols,
+        selected_static_cols,
         sample_weight=w_tr,
     )
     if is_regression_static:
-        raw_preds = model.predict(_wrap_np(X_test, static_cols))
+        raw_preds = model.predict(_wrap_np(X_test, selected_static_cols))
         preds = np.sign(raw_preds).astype(np.int32)  # threshold=0
         aligned_proba = np.zeros((len(raw_preds), 3), dtype=np.float64)
         aligned_proba[np.arange(len(preds)), preds + 1] = 1.0
@@ -180,7 +189,7 @@ def _train_and_predict_static_window(
             }
         )
     else:
-        proba = model.predict_proba(_wrap_np(X_test, static_cols))
+        proba = model.predict_proba(_wrap_np(X_test, selected_static_cols))
         aligned_proba = _align_probability_matrix(proba, model.classes_)
         preds = _CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
         oof_chunk = pl.DataFrame(
@@ -202,7 +211,7 @@ def _train_and_predict_static_window(
     return {
         "oof_chunk": oof_chunk,
         "model": model,
-        "static_cols": static_cols,
+        "static_cols": selected_static_cols,
         "accuracy": acc,
         "diag": diag,
     }

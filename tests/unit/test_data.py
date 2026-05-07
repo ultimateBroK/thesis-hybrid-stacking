@@ -316,7 +316,6 @@ from thesis.stage_1_data.processing import (
     _filter_date_range,
     _log_gap_report,
     _log_candle_quality_report,
-    _spans_weekend,
     _save_data_quality_json,
 )
 
@@ -426,30 +425,6 @@ class TestFilterDateRange:
         config.data.end_date = "2030-12-31"
         with pytest.raises(ValueError, match="No OHLCV bars remain"):
             _filter_date_range(df, config)
-
-
-@pytest.mark.unit
-class TestSpansWeekend:
-    def test_weekday_gap(self) -> None:
-        from datetime import datetime
-
-        start = datetime(2024, 1, 15, 0, 0)  # Monday
-        end = datetime(2024, 1, 16, 0, 0)  # Tuesday
-        assert _spans_weekend(start, end) is False
-
-    def test_weekend_gap(self) -> None:
-        from datetime import datetime
-
-        start = datetime(2024, 1, 12, 22, 0)  # Friday evening
-        end = datetime(2024, 1, 15, 6, 0)  # Monday morning
-        assert _spans_weekend(start, end) is True
-
-    def test_short_gap_not_weekend(self) -> None:
-        from datetime import datetime
-
-        start = datetime(2024, 1, 12, 23, 0)  # Friday night
-        end = datetime(2024, 1, 13, 4, 0)  # Saturday morning — but < 6 hours
-        assert _spans_weekend(start, end) is False
 
 
 @pytest.mark.unit

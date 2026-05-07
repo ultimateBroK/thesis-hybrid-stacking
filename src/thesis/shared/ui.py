@@ -1,16 +1,40 @@
-"""Shared Rich UI primitives for the thesis pipeline.
+"""Shared lightweight CLI UI helpers without Rich dependency."""
 
-Provides a single Console instance, styled Progress factories,
-and helper functions for consistent terminal output across all stages.
-"""
-
+from contextlib import contextmanager
 import logging
+import re
 
-from rich.console import Console
-from rich.text import Text
+logger = logging.getLogger("thesis.ui")
+_RICH_TAG_RE = re.compile(r"\[/?[^\]]+\]")
 
-# Singleton console — every module imports this for consistent rendering
-console = Console()
+
+class SimpleConsole:
+    """Minimal console facade compatible with previous Rich call sites."""
+
+    def print(self, *args, **kwargs) -> None:
+        """Log plain text messages."""
+        message = " ".join(str(arg) for arg in args)
+        message = _RICH_TAG_RE.sub("", message).strip()
+        if message:
+            logger.info(message)
+
+    def rule(self, title: str | None = None, **kwargs) -> None:
+        """Log a visual separator line."""
+        if title:
+            title = _RICH_TAG_RE.sub("", title).strip()
+            logger.info("---- %s ----", title)
+        else:
+            logger.info("--------------------")
+
+    @contextmanager
+    def status(self, message: str):
+        """Context manager that logs a status message once."""
+        message = _RICH_TAG_RE.sub("", message).strip()
+        logger.info("%s", message)
+        yield
+
+
+console = SimpleConsole()
 
 # Stage colour map (used by pipeline + training)
 STAGE_STYLES: dict[int, str] = {
@@ -34,30 +58,21 @@ STAGE_LABELS: dict[int, str] = {
 
 # UI helpers
 def stage_header(stage: int) -> None:
-    """Print a visually distinct stage banner via console (Rich) and logger.
+    """Print a stage banner with concise log output.
 
     Args:
         stage: Stage number (1-indexed, 1–6).
     """
     _logger = logging.getLogger("thesis")
-    style = STAGE_STYLES.get(stage, "bold")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
     total = 6
-    console.print()
-    console.rule(
-        Text(f"  STAGE {stage}/{total}  ·  {label}  ", style=style),
-        style=style,
-        characters="─",
-    )
-    console.print()
+    console.rule(f"STAGE {stage}/{total} | {label}")
     # Logger output for file capture
-    _logger.info("")
     _logger.info("STAGE %d/%d | %s", stage, total, label)
-    _logger.info("")
 
 
 def stage_skip(stage: int, reason: str) -> None:
-    """Print a dim skip line via console (Rich) and logger.
+    """Print a skip line and logger message.
 
     Args:
         stage: Stage number (1-indexed, 1–6).
@@ -65,6 +80,6 @@ def stage_skip(stage: int, reason: str) -> None:
     """
     _logger = logging.getLogger("thesis")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
-    console.print(Text(f"  ⊘ SKIP {label}: {reason}", style="dim"))
+    console.print(f"SKIP {label}: {reason}")
     # Logger output for file capture
     _logger.info("SKIP %s | %s", label, reason)

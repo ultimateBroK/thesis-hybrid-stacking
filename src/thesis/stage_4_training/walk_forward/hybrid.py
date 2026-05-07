@@ -25,6 +25,7 @@ from thesis.stage_4_training.walk_forward.utils import (
     _select_static_feature_cols,
     _window_dates,
     _window_diagnostics,
+    fit_static_feature_pipeline,
 )
 
 logger = logging.getLogger("thesis.pipeline")
@@ -391,15 +392,26 @@ def _wf_build_predict_phase(
     gru_feat_names = [
         f"gru_pc_{i}" if pca_k > 0 else f"gru_h{i}" for i in range(hidden_components)
     ]
-    all_feature_cols = gru_feat_names + static_cols
-    X_train = np.concatenate(
-        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_test = np.concatenate(
-        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
-    )
     y_train = train_aligned["label"].to_numpy().astype(np.int32)
     y_test = test_aligned["label"].to_numpy().astype(np.int32)
+    val_split_idx = max(1, int(len(train_aligned) * _VALIDATION_SPLIT_FRACTION))
+    pipeline_fit_df = train_aligned.slice(0, len(train_aligned) - val_split_idx)
+    pipeline_fit_y = y_train[:-val_split_idx]
+    static_pipeline, selected_static_cols = fit_static_feature_pipeline(
+        config,
+        pipeline_fit_df,
+        static_cols,
+        pipeline_fit_y,
+    )
+    X_train_static = static_pipeline.transform(
+        train_aligned.select(static_cols).to_pandas()
+    )
+    X_test_static = static_pipeline.transform(
+        test_aligned.select(static_cols).to_pandas()
+    )
+    all_feature_cols = gru_feat_names + selected_static_cols
+    X_train = np.concatenate([train_hidden, X_train_static], axis=1)
+    X_test = np.concatenate([test_hidden, X_test_static], axis=1)
     reg_y_train: np.ndarray | None = None
     if is_regression:
         reg_y_train = train_aligned["regression_target"].to_numpy().astype(np.float64)
@@ -414,7 +426,6 @@ def _wf_build_predict_phase(
     )
 
     # ── Train LightGBM ──
-    val_split_idx = max(1, int(len(X_train) * _VALIDATION_SPLIT_FRACTION))
     X_tr = X_train[:-val_split_idx]
     w_tr = train_weights[:-val_split_idx] if train_weights is not None else None
     X_val = X_train[-val_split_idx:]
