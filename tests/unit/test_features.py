@@ -109,9 +109,12 @@ EXPECTED_FEATURES: list[str] = [
     "return_1h",
     "return_4h",
     "rsi_14",
+    "sess_asia",
     "sess_london",
-    "sess_overlap",
+    "sess_ny_am",
+    "sess_ny_pm",
     "upper_wick_ratio",
+    "vwap",
     "volume_zscore_20",
 ]
 
@@ -408,11 +411,11 @@ def test_pivot_position_no_lookahead(sample_config: Config) -> None:
 @pytest.mark.unit
 @pytest.mark.features
 def test_session_dummies_four_columns() -> None:
-    """Test 4 session columns are produced (not 3)."""
+    """Test 4 session columns are produced."""
     df = create_synthetic_ohlcv(n_rows=100)
     result = _add_ny_session_dummies(df)
 
-    for col in ["sess_asia", "sess_london", "sess_overlap", "sess_ny_pm"]:
+    for col in ["sess_asia", "sess_london", "sess_ny_am", "sess_ny_pm"]:
         assert col in result.columns, f"Missing session column: {col}"
 
 
@@ -423,7 +426,7 @@ def test_session_dummies_binary() -> None:
     df = create_synthetic_ohlcv(n_rows=100)
     result = _add_ny_session_dummies(df)
 
-    for col in ["sess_asia", "sess_london", "sess_overlap", "sess_ny_pm"]:
+    for col in ["sess_asia", "sess_london", "sess_ny_am", "sess_ny_pm"]:
         values = result[col].to_numpy()
         assert np.all(np.isin(values, [0, 1])), f"{col} has non-binary values"
 
@@ -438,11 +441,11 @@ def test_session_dummies_coverage() -> None:
     total = (
         result["sess_asia"].cast(pl.Int32)
         + result["sess_london"].cast(pl.Int32)
-        + result["sess_overlap"].cast(pl.Int32)
+        + result["sess_ny_am"].cast(pl.Int32)
         + result["sess_ny_pm"].cast(pl.Int32)
     ).to_numpy()
     # Every hour should be in exactly one session (4 sessions cover 24h)
-    # Asia: 18-01 (8h), London: 03-07 (5h), Overlap: 08-11 (4h), NY PM: 12-17 (6h)
+    # Asia: 18-01 (8h), London: 03-07 (5h), NY AM: 08-11 (4h), NY PM: 12-17 (6h)
     # Total: 23h — hour 2 NY time is uncovered (gap between Asia and London)
     assert np.all(total <= 1), "Some hours belong to multiple sessions"
 
@@ -476,10 +479,11 @@ def test_all_features_together(sample_config: Config) -> None:
         "atr_ratio",
         "price_dist_ratio",
         "pivot_position",
+        "vwap",
         "atr_percentile",
         "sess_asia",
         "sess_london",
-        "sess_overlap",
+        "sess_ny_am",
         "sess_ny_pm",
     ]
 

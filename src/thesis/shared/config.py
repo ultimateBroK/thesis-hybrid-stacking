@@ -53,9 +53,9 @@ class ValidationConfig:
     """Walk-forward validation window sizes."""
 
     method: str = "sliding"
-    train_window_bars: int = 8760
-    test_window_bars: int = 1440
-    step_bars: int = 1440
+    train_window_bars: int = 6240
+    test_window_bars: int = 1040
+    step_bars: int = 1040
     purge_bars: int = 48
     embargo_bars: int = 50
     min_train_bars: int = 6000

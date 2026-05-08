@@ -24,9 +24,9 @@ test_end = "2026-04-30 23:59:59"
 [validation]
 # Sliding walk-forward: 1-year train, 2-month test windows.
 method = "sliding"
-train_window_bars = 8760   # ~1 year on 1H bars
-test_window_bars = 1440    # ~2 months on 1H bars
-step_bars = 1440           # non-overlapping 2-month test windows
+train_window_bars = 6240   # ~1 market year on 1H bars (24/5)
+test_window_bars = 1040    # ~2 market months on 1H bars (24/5)
+step_bars = 1040           # non-overlapping 2-month market windows
 purge_bars = 48            # 2x 24h horizon; above typical trade hold time
 embargo_bars = 50
 min_train_bars = 6000

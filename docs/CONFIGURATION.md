@@ -54,7 +54,7 @@ Momentum: return_1h, return_4h, macd_hist_atr, rsi_14
 Volatility: atr_pct_close, atr_ratio, atr_percentile, high_low_range_20
 Position: price_dist_ratio, price_position_20, pivot_position
 Candle: candle_body_ratio, upper_wick_ratio, lower_wick_ratio
-Session: sess_london, sess_overlap
+Session: sess_asia, sess_london, sess_ny_am, sess_ny_pm
 Volume: volume_zscore_20
 ```
 

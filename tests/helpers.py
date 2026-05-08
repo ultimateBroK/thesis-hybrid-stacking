@@ -140,8 +140,11 @@ def create_synthetic_features(
         "lower_wick_ratio": rng.uniform(0, 0.3, n_rows),
         "high_low_range_20": rng.uniform(0.005, 0.03, n_rows),
         "volume_zscore_20": rng.normal(0, 1, n_rows),
+        "vwap": df["close"].to_numpy() + rng.normal(0, 0.2, n_rows),
+        "sess_asia": rng.integers(0, 2, n_rows).astype(float),
         "sess_london": rng.integers(0, 2, n_rows).astype(float),
-        "sess_overlap": rng.integers(0, 2, n_rows).astype(float),
+        "sess_ny_am": rng.integers(0, 2, n_rows).astype(float),
+        "sess_ny_pm": rng.integers(0, 2, n_rows).astype(float),
     }
 
     return df.with_columns([pl.Series(k, v) for k, v in feature_data.items()])

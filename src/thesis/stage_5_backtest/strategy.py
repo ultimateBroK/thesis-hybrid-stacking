@@ -29,8 +29,15 @@ _MIN_ORDER_SIZE: int = 1
 
 
 def _calendar_day(value: object) -> object:
-    """Return calendar date for a timestamp-like value."""
-    return pd.Timestamp(value).date()
+    """Return 5PM NY-anchored market date for a timestamp-like value."""
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    else:
+        ts = ts.tz_convert("UTC")
+    ts_ny = ts.tz_convert("America/New_York")
+    # FX/CFD market day rolls at 5PM New York (24/5 session model).
+    return (ts_ny + pd.Timedelta(hours=7)).date()
 
 
 class HybridGRUStrategy(Strategy):

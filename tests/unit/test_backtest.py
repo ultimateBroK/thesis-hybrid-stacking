@@ -337,13 +337,13 @@ def test_signal_uses_index_minus_2(sample_config: Config) -> None:
 @pytest.mark.unit
 @pytest.mark.backtest
 def test_calendar_day_strips_intraday_time() -> None:
-    """Daily risk state must reset by date, not every bar timestamp."""
-    ts1 = pd.Timestamp("2026-04-29 09:00:00")
-    ts2 = pd.Timestamp("2026-04-29 17:00:00")
-    ts3 = pd.Timestamp("2026-04-30 00:00:00")
+    """Daily risk state must reset by 5PM New York market day."""
+    ts1 = pd.Timestamp("2026-04-29 20:00:00+00:00")  # 16:00 NY
+    ts2 = pd.Timestamp("2026-04-29 21:00:00+00:00")  # 17:00 NY (new market day)
+    ts3 = pd.Timestamp("2026-04-30 00:00:00+00:00")  # 20:00 NY (same as ts2 market day)
 
-    assert _calendar_day(ts1) == _calendar_day(ts2)
-    assert _calendar_day(ts1) != _calendar_day(ts3)
+    assert _calendar_day(ts1) != _calendar_day(ts2)
+    assert _calendar_day(ts2) == _calendar_day(ts3)
 
 
 # ---------------------------------------------------------------------------

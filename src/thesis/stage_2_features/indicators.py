@@ -74,6 +74,7 @@ def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
             "price_dist_ratio"
         )
     )
+    df = _add_vwap(df)
     df = _add_pivot_position(df)
     df = _add_ny_session_dummies(df)
     return df.with_columns(
@@ -92,6 +93,28 @@ def _add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
         pivots, left_on="_trading_day", right_on="_trading_day", how="left"
     ).drop("_trading_day")
     return _compute_pivot_position(df)
+
+
+def _add_vwap(df: pl.DataFrame) -> pl.DataFrame:
+    """Add session VWAP using 5PM NY-anchored market trading day."""
+    trading_day_expr = _to_ny_trading_day(df)
+    typical_price = (pl.col("high") + pl.col("low") + pl.col("close")) / 3.0
+    return (
+        df.with_columns(trading_day_expr.alias("_trading_day"))
+        .with_columns(
+            [
+                (typical_price * pl.col("volume"))
+                .cum_sum()
+                .over("_trading_day")
+                .alias("_cum_tpv"),
+                pl.col("volume").cum_sum().over("_trading_day").alias("_cum_vol"),
+            ]
+        )
+        .with_columns(
+            (pl.col("_cum_tpv") / (pl.col("_cum_vol") + FEATURE_EPS)).alias("vwap")
+        )
+        .drop(["_trading_day", "_cum_tpv", "_cum_vol"])
+    )
 
 
 def _to_ny_trading_day(df: pl.DataFrame) -> pl.Expr:
@@ -158,7 +181,7 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
             .cast(pl.Int8)
             .alias("sess_asia"),
             ny_hour.is_in(list(range(3, 8))).cast(pl.Int8).alias("sess_london"),
-            ny_hour.is_in(list(range(8, 12))).cast(pl.Int8).alias("sess_overlap"),
+            ny_hour.is_in(list(range(8, 12))).cast(pl.Int8).alias("sess_ny_am"),
             ny_hour.is_in(list(range(12, 18))).cast(pl.Int8).alias("sess_ny_pm"),
         ]
     )
