@@ -48,6 +48,7 @@ ENV/
 .opencode/
 .codex
 .understand-anything/
+.cocoindex_code/
 *.swp
 *.swo
 *~
