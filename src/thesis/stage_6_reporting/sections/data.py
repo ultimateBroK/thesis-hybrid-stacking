@@ -221,8 +221,9 @@ def _render_label_design_section(L: list[str], config: Config) -> None:
     L.append("")
     L.append(_tbl_row("Parameter", "Value"))
     L.append(_tbl_row("---------", "-----"))
-    L.append(_tbl_row("ATR TP multiplier", f"{labels_cfg.atr_tp_multiplier}×"))
-    L.append(_tbl_row("ATR SL multiplier", f"{labels_cfg.atr_sl_multiplier}×"))
+    L.append(
+        _tbl_row("ATR barrier multiplier", f"{labels_cfg.barrier_atr_multiplier}×")
+    )
     L.append(_tbl_row("Horizon", f"{labels_cfg.horizon_bars} bars"))
     L.append(_tbl_row("Classes", str(labels_cfg.num_classes)))
     L.append(

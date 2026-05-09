@@ -344,19 +344,8 @@ def _config_table(L: list[str], config: Config) -> None:
             (
                 "Labels",
                 "atr_mult / horizon",
-                f"{config.labels.atr_tp_multiplier}"
-                f"/{config.labels.atr_sl_multiplier}"
+                f"{config.labels.barrier_atr_multiplier}"
                 f" / {config.labels.horizon_bars}",
-            ),
-            (
-                "GRU",
-                "hidden/layers/seq",
-                f"{config.gru.hidden_size}/{config.gru.num_layers}/{config.gru.sequence_length}",
-            ),
-            (
-                "GRU",
-                "lr/dropout/epochs",
-                f"{config.gru.learning_rate}/{config.gru.dropout}/{config.gru.epochs}",
             ),
             (
                 "LGBM",

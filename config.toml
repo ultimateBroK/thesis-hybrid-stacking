@@ -44,48 +44,44 @@ macd_slow = 26                    # MACD slow EMA
 macd_signal = 9                   # MACD signal line
 correlation_threshold = 0.75      # Drop features above this pairwise correlation
 
+[features.lag]
+enabled = true
+lags = [1, 2, 3, 6, 12, 24]
+columns = [
+    "return_1h",
+    "rsi_14",
+    "macd_hist",
+    "atr_pct_close",
+    "adx_14",
+    "regime_strength",
+]
+
+[features.rolling]
+enabled = true
+windows = [6, 12, 24]
+
 # ── Label generation ─────────────────────────────────────────────────────────
 [labels]
-atr_tp_multiplier = 3.0           # Take-profit = multiplier × ATR (was 2.0)
-atr_sl_multiplier = 1.5           # Stop-loss   = multiplier × ATR (was 2.0)
+barrier_atr_multiplier = 2.0       # Symmetric barrier: ± multiplier × ATR
 horizon_bars = 24                 # Forward-looking window (hours)
 
 # ── Model selection ──────────────────────────────────────────────────────────
-# Architecture options: "hybrid" (GRU+LGBM), "lgbm" (LightGBM only), "gru" (GRU only)
+# Architecture options: "lgbm" (LightGBM only — this thesis version)
 [model]
-architecture = "hybrid"
+architecture = "lgbm"
 objective = "multiclass"           # Classification target: buy / hold / sell
-lgbm_expanded_features = false    # Whether to use expanded feature set for LightGBM
+lgbm_expanded_features = true      # Enable lag/rolling features
 num_leaves = 31                   # Max leaves per tree
-max_depth = 6                     # Max tree depth
+max_depth = 5                      # Max tree depth (reduced from 6)
 learning_rate = 0.02              # Boosting learning rate
-n_estimators = 300                # Number of boosting rounds (was 500)
-min_child_samples = 50            # Min samples per leaf
+n_estimators = 500                # Number of boosting rounds
+min_child_samples = 80            # Min samples per leaf (increased for regularization)
 subsample = 0.80                  # Row subsample ratio
 subsample_freq = 5                # Subsample every N rounds
 feature_fraction = 0.70           # Column subsample per tree
-reg_alpha = 0.05                  # L1 regularization
-reg_lambda = 5.0                  # L2 regularization
-early_stopping_rounds = 25        # Stop if no improvement for N rounds (was 40)
-
-# ── GRU neural network ──────────────────────────────────────────────────────
-[gru]
-objective = "multiclass"           # Same classification target
-hidden_size = 32                   # Reduced from 64 — less overfitting
-num_layers = 1                     # Single layer — less overfitting
-sequence_length = 24               # Input lookback window (was 48 — faster)
-dropout = 0.5                      # Stronger regularization (was 0.3)
-learning_rate = 0.0005             # Adam optimizer learning rate
-batch_size = 512                   # Samples per gradient step (was 256 — faster)
-epochs = 30                        # Max training epochs (was 50 — GRU overfits early)
-patience = 7                       # Early-stopping patience (was 10)
-min_epochs = 5                     # Minimum epochs before early stopping (was 10)
-bidirectional = false              # Single-direction GRU
-gradient_accumulation_steps = 1    # Accumulate gradients over N steps
-warmup_epochs = 2                  # LR warmup period (was 3)
-contrastive_pretrain_epochs = 5    # Contrastive pre-training rounds (was 10)
-temperature_scaling = false        # Post-hoc probability calibration
-pca_components = 8                 # PCA dims for GRU input (was 16 — less noise)
+reg_alpha = 0.10                  # L1 regularization (increased)
+reg_lambda = 10.0                 # L2 regularization (increased)
+early_stopping_rounds = 40        # Stop if no improvement for N rounds
 
 # ── Backtesting engine ──────────────────────────────────────────────────────
 [backtest]
@@ -94,13 +90,13 @@ leverage = 10                      # Broker leverage multiplier
 spread_ticks = 35                  # Bid-ask spread in ticks
 slippage_ticks = 5                 # Execution slippage in ticks
 commission_per_lot = 10.0          # Round-turn commission per lot
-atr_stop_multiplier = 1.5          # ATR-based stop-loss (aligned with labels)
-atr_tp_multiplier = 3.0            # ATR-based take-profit (aligned with labels)
-lots_per_trade = 0.02              # Default position size (was 0.01)
+atr_stop_multiplier = 2.0          # ATR-based stop-loss (aligned with labels)
+atr_tp_multiplier = 2.0            # ATR-based take-profit (aligned with labels)
+lots_per_trade = 0.02              # Default position size
 min_lots = 0.01                    # Minimum allowed lots
 max_lots = 0.5                     # Maximum allowed lots
 confidence_threshold = 0.50        # Min model confidence to trade
-min_bars_between_trades = 18       # Cooldown bars between entries (was 12)
+min_bars_between_trades = 18       # Cooldown bars between entries
 max_drawdown_cutoff = 0.30         # Halt trading if drawdown exceeds this
 dd_cooldown_bars = 12              # Cooldown after max drawdown trigger
 max_open_positions = 1             # Concurrent position limit

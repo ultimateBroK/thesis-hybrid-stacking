@@ -21,7 +21,6 @@ from thesis.stage_4_training.walk_forward.artifacts import (
     _save_training_history,
     _save_walk_forward_history,
 )
-from thesis.stage_4_training.walk_forward.hybrid import _compute_regression_target
 from thesis.stage_4_training.walk_forward.utils import (
     _CLASS_ORDER,
     _add_prediction_diagnostics,
@@ -62,7 +61,7 @@ def _prepare_static_wf_data(
     with console.status(f"[cyan]Loading labels[/] {labels_path}"):
         df = pl.read_parquet(labels_path)
     logger.info("Loaded labeled data for static baseline: %d rows", len(df))
-    df, is_regression_static = _compute_regression_target(df, config)
+    is_regression_static = False
 
     event_end = df["event_end"].to_numpy() if "event_end" in df.columns else None
     if event_end is None:

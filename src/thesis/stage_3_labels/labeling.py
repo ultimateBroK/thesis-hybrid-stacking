@@ -1,4 +1,4 @@
-"""Stage 3: asymmetric direction-barrier labeling.
+"""Stage 3: symmetric direction-barrier labeling.
 
 Encodes labels as ``+1`` (long), ``0`` (hold), ``-1`` (short), with ``-2`` as
 censored (insufficient forward horizon).
@@ -34,22 +34,21 @@ def generate_labels(config: Config) -> None:
     logger.info("Rows for labeling: %d", len(df))
     _log_atr_stats(df, atr_col, config.labels.min_atr)
 
+    barrier = config.labels.barrier_atr_multiplier
     labels, upper, lower, touched_bars, ambiguous_count = _compute_labels(
         close=df["close"].to_numpy(),
         high=df["high"].to_numpy(),
         low=df["low"].to_numpy(),
         atr=df[atr_col].to_numpy(),
-        tp_mult=config.labels.atr_tp_multiplier,
-        sl_mult=config.labels.atr_sl_multiplier,
+        tp_mult=barrier,
+        sl_mult=barrier,
         horizon=config.labels.horizon_bars,
         min_atr=config.labels.min_atr,
     )
 
     logger.info(
-        "Direction-barrier params: tp_mult=%.2f, sl_mult=%.2f,"
-        " horizon=%d, min_atr=%.6f",
-        config.labels.atr_tp_multiplier,
-        config.labels.atr_sl_multiplier,
+        "Direction-barrier params: barrier_atr=%.2f, horizon=%d, min_atr=%.6f",
+        barrier,
         config.labels.horizon_bars,
         config.labels.min_atr,
     )

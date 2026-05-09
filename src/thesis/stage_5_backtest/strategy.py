@@ -1,4 +1,4 @@
-"""HybridGRU trading strategy used in stage 5 backtests."""
+"""LightGBM trading strategy used in stage 5 backtests."""
 
 from __future__ import annotations
 
@@ -9,22 +9,11 @@ import pandas as pd
 
 logger = logging.getLogger("thesis.backtest")
 
-#: Floor to prevent microscopic stops in low-volatility regimes.
 _MIN_ATR_FLOOR: float = 0.0001
-
-#: Default initial capital used as fallback when BacktestConfig is unavailable.
 _DEFAULT_INITIAL_CAPITAL: float = 10_000.0
-
-#: Default commission per lot — fallback for _trades_to_list when config absent.
 _DEFAULT_COMMISSION_PER_LOT: float = 20.0
-
-#: Default contract size (units per lot) — fallback for _trades_to_list.
 _DEFAULT_CONTRACT_SIZE: float = 100.0
-
-#: Minimum bars required before the shifted-signal logic can activate.
 _MIN_BARS_FOR_SIGNAL: int = 2
-
-#: Minimum order size in units (backtesting.py requires whole-number sizes).
 _MIN_ORDER_SIZE: int = 1
 
 
@@ -36,11 +25,10 @@ def _calendar_day(value: object) -> object:
     else:
         ts = ts.tz_convert("UTC")
     ts_ny = ts.tz_convert("America/New_York")
-    # FX/CFD market day rolls at 5PM New York (24/5 session model).
     return (ts_ny + pd.Timedelta(hours=7)).date()
 
 
-class HybridGRUStrategy(Strategy):
+class LightGBMStrategy(Strategy):
     """Trade on ML signals with ATR stops and simple risk gates.
 
     Key detail: use ``signals[-2]`` so the prediction anchored at ``close[i-1]``
@@ -175,15 +163,12 @@ class HybridGRUStrategy(Strategy):
         The backtesting engine fills orders on the next bar, so signal
         bar ``i`` cannot trade at the same bar's close.
         """
-        # Cooldown tracking — detect auto-closure from framework SL/TP
         if self._position_was_open and not self.position:
             self._last_exit_bar = len(self.data)
             self._position_was_open = False
 
         self._update_risk_state()
 
-        # Signal shift: trade at bar i uses prediction from bar i-1 (signals[-2]),
-        # aligning label anchor close[i-1] with execution at open[i].
         if len(self.signals) < _MIN_BARS_FOR_SIGNAL:
             return
         raw_signal = float(self.signals[-2])
@@ -193,7 +178,6 @@ class HybridGRUStrategy(Strategy):
             signal = int(raw_signal)
         atr = self._floor_atr(self.atr[-1])
 
-        # Time-based exit
         if self.horizon_bars > 0 and self.position:
             entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
             if entry_bar is not None:
@@ -208,7 +192,6 @@ class HybridGRUStrategy(Strategy):
         if not self._is_trading_allowed():
             return
 
-        # Confidence gate
         confidence: float | None = None
         if self.confidence_threshold > 0 and self._has_proba:
             if signal == 1:
@@ -221,13 +204,11 @@ class HybridGRUStrategy(Strategy):
             if confidence < self.confidence_threshold:
                 return
 
-        # Position sizing
         proxy_entry_price = self.data.Close[-1]
         lots = self._compute_lots(confidence)
         size = lots * self.contract_size
         size = max(_MIN_ORDER_SIZE, round(size))
 
-        # Execute trades
         if signal == 1 and not self.position:
             self._entry_bar["long"] = len(self.data)
             sl_price = proxy_entry_price - (atr * self.atr_stop_mult)

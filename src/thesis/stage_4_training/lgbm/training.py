@@ -1,4 +1,4 @@
-"""Hybrid GRU + LightGBM — static train_model orchestrator."""
+"""LightGBM-only training — static train_model orchestrator."""
 
 from __future__ import annotations
 
@@ -14,26 +14,16 @@ import polars as pl
 from thesis.shared.config import Config
 from thesis.shared.constants import EXCLUDE_COLS
 from thesis.shared.ui import console
-from thesis.stage_4_training.gru import (
-    extract_hidden_states,
-    prepare_sequences,
-    save_gru_model,
-    train_gru,
-)
 from thesis.stage_4_training.lgbm.utils import (
-    _align_splits_with_sequences,
-    _build_hybrid_matrix,
     _compute_class_weights,
     _save_feature_importance,
     _train_fixed,
-    _wrap_np,
 )
 
 logger = logging.getLogger("thesis.model")
 
 
 def _normalize_label(lbl: int) -> str:
-    """Normalize a class label for probability column naming."""
     if lbl < 0:
         return f"minus{abs(lbl)}"
     return str(lbl)
@@ -47,7 +37,6 @@ def _save_predictions(
     class_order: list,
     preds_path: Path,
 ) -> None:
-    """Save predictions as Parquet and CSV files."""
     proba_cols = {
         f"pred_proba_class_{_normalize_label(cls)}": proba[:, idx]
         for idx, cls in enumerate(class_order)
@@ -67,10 +56,7 @@ def _save_predictions(
 
 
 def train_model(config: Config) -> None:
-    """Train and evaluate the hybrid GRU + LightGBM model.
-
-    This stage trains the GRU feature extractor, builds hybrid features,
-    trains LightGBM, saves artifacts, and computes interpretation outputs.
+    """Train and evaluate the LightGBM model on tabular features.
 
     Args:
         config: Resolved application configuration.
@@ -99,80 +85,23 @@ def train_model(config: Config) -> None:
         "Splits: train=%d val=%d test=%d", len(train_df), len(val_df), len(test_df)
     )
 
-    # --- 1. Train GRU feature extractor ---
-    logger.info("Stage 4.1: GRU Feature Extractor")
-    (
-        gru_model,
-        _gru_classifier,
-        train_hidden,
-        val_hidden,
-        gru_history,
-        gru_mean,
-        gru_std,
-        gru_cols,
-    ) = train_gru(config, train_df, val_df)
+    static_cols = [c for c in train_df.columns if c not in EXCLUDE_COLS]
+    logger.info("Static features: %d", len(static_cols))
 
-    # Save GRU model (single source of truth: paths.gru_model)
-    gru_path = Path(config.paths.gru_model)
-    gru_path.parent.mkdir(parents=True, exist_ok=True)
-    save_gru_model(gru_model, config, gru_path, mean=gru_mean, std=gru_std)
+    X_train = train_df.select(static_cols).to_pandas()
+    X_val = val_df.select(static_cols).to_pandas()
+    X_test = test_df.select(static_cols).to_pandas()
 
-    # Extract hidden states for test set (using dynamically filtered gru_cols)
-    test_seq, _, _ = prepare_sequences(test_df, gru_cols, config.gru.sequence_length)
-    test_hidden = extract_hidden_states(
-        gru_model,
-        test_seq,
-        config.gru.batch_size,
-        mean=gru_mean,
-        std=gru_std,
-    )
-
-    # --- 2. Align DataFrames with GRU sequences ---
-    seq_len = config.gru.sequence_length
-    train_aligned, val_aligned, test_aligned = _align_splits_with_sequences(
-        train_df,
-        val_df,
-        test_df,
-        train_hidden,
-        val_hidden,
-        test_hidden,
-        seq_len,
-    )
-
-    # --- 3. Build hybrid feature matrix ---
-    static_cols = [c for c in train_aligned.columns if c not in EXCLUDE_COLS]
-    hidden_size = config.gru.hidden_size
-    X_train, X_val, X_test, all_feature_cols = _build_hybrid_matrix(
-        train_hidden,
-        val_hidden,
-        test_hidden,
-        train_aligned,
-        val_aligned,
-        test_aligned,
-        static_cols,
-        hidden_size,
-    )
-
-    y_train = train_aligned["label"].to_numpy().astype(np.int32)
-    y_val = val_aligned["label"].to_numpy().astype(np.int32)
-    y_test = test_aligned["label"].to_numpy().astype(np.int32)
+    y_train = train_df["label"].to_numpy().astype(np.int32)
+    y_val = val_df["label"].to_numpy().astype(np.int32)
+    y_test = test_df["label"].to_numpy().astype(np.int32)
     train_weights = (
-        train_aligned["sample_weight"].to_numpy().astype(np.float64)
-        if "sample_weight" in train_aligned.columns
+        train_df["sample_weight"].to_numpy().astype(np.float64)
+        if "sample_weight" in train_df.columns
         else None
     )
 
-    logger.info(
-        "Features: %d total (%d GRU + %d static)",
-        len(all_feature_cols),
-        hidden_size,
-        len(static_cols),
-    )
-
-    # --- 4. Train LightGBM ---
-    logger.info("Stage 4.2: LightGBM (Fixed)")
     class_weights = _compute_class_weights(y_train)
-
     model = _train_fixed(
         X_train,
         y_train,
@@ -180,7 +109,7 @@ def train_model(config: Config) -> None:
         y_val,
         class_weights,
         config,
-        all_feature_cols,
+        static_cols,
         sample_weight=train_weights,
     )
 
@@ -197,28 +126,25 @@ def train_model(config: Config) -> None:
         "best_iteration": int(model.best_iteration_)
         if hasattr(model, "best_iteration_")
         else None,
-        "n_features": len(all_feature_cols),
+        "n_features": len(static_cols),
         "objective": config.model.objective,
         "n_classes": int(model.n_classes_) if hasattr(model, "n_classes_") else None,
     }
     training_history = {
-        "gru": gru_history,
         "lightgbm": lgbm_info,
     }
     with open(history_path, "w") as f:
         json.dump(training_history, f, indent=2)
 
-    # --- 5. Generate test predictions ---
-    logger.info("Stage 4.3: Predictions & Evaluation")
+    logger.info("Stage 4.2: Predictions & Evaluation")
 
     if is_regression:
-        raw_preds = model.predict(_wrap_np(X_test, all_feature_cols))
-        # Threshold at 0: pred > 0 → Long (1), pred < 0 → Short (-1)
+        raw_preds = model.predict(X_test)
         preds = np.where(raw_preds > 0, 1, np.where(raw_preds < 0, -1, 0))
-        proba = None  # No probability matrix for regression
+        proba = None
     else:
-        proba = model.predict_proba(_wrap_np(X_test, all_feature_cols))
-        preds = model.classes_[np.argmax(proba, axis=1)]  # Explicit class mapping
+        proba = model.predict_proba(X_test)
+        preds = model.classes_[np.argmax(proba, axis=1)]
 
     acc = (preds == y_test).mean()
 
@@ -238,12 +164,11 @@ def train_model(config: Config) -> None:
     logger.info("Test accuracy: %.4f", acc)
 
     if is_regression:
-        # Save predictions with raw values and thresholded labels
         preds_path = Path(config.paths.predictions)
         preds_path.parent.mkdir(parents=True, exist_ok=True)
         preds_df = pl.DataFrame(
             {
-                "timestamp": test_aligned["timestamp"],
+                "timestamp": test_df["timestamp"],
                 "true_label": y_test,
                 "pred_label": preds.astype(np.int32),
                 "pred_raw": raw_preds.astype(np.float64),
@@ -255,19 +180,15 @@ def train_model(config: Config) -> None:
     else:
         class_order = model.classes_.tolist()
         preds_path = Path(config.paths.predictions)
-        _save_predictions(test_aligned, y_test, preds, proba, class_order, preds_path)
+        _save_predictions(test_df, y_test, preds, proba, class_order, preds_path)
 
-    # --- 6. Feature importance ---
-    _save_feature_importance(model, all_feature_cols, config)
+    _save_feature_importance(model, static_cols, config)
 
     stage_time = time.perf_counter() - stage_start
     logger.info(
-        "Stage 4 complete | accuracy=%.4f gru_features=%d gru_layers=%d "
-        "lgbm_features=%d best_iter=%s time=%.1fs",
+        "Stage 4 complete | accuracy=%.4f lgbm_features=%d best_iter=%s time=%.1fs",
         acc,
-        hidden_size,
-        config.gru.num_layers,
-        len(all_feature_cols),
+        len(static_cols),
         getattr(model, "best_iteration_", "N/A"),
         stage_time,
     )

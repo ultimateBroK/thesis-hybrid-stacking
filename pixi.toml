@@ -37,7 +37,7 @@ docs-html = "sphinx-build -b html -W docs/source docs/_build/html"
 docs-pdf = "bash docs/build_pdf.sh"
 
 # ---------------------------------------------------------------------------
-# Dependencies — core pipeline + testing only
+# Dependencies — core pipeline + testing only (LightGBM only, no deep learning)
 # ---------------------------------------------------------------------------
 [dependencies]
 python = ">=3.13,<3.14"
@@ -54,9 +54,7 @@ pytest = ">=8.0.0,<9"
 joblib = ">=1.4.0,<2"
 pytest-cov = ">=7.1.0,<8"
 aiohttp = ">=3.13.5,<4"
-pytorch = ">=2.10.0,<3"
 numba = ">=0.65.0,<0.66"
-accelerate = ">=1.13.0,<2"
 streamlit = ">=1.56.0,<2"
 bokeh = ">=3.9.0,<4"
 jupyter = ">=1.1.1,<2"

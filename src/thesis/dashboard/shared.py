@@ -68,8 +68,7 @@ def render_config_summary(config: object) -> None:
     )
     st.markdown(
         f"**Labels**: horizon={config.labels.horizon_bars}, "
-        f"TP={config.labels.atr_tp_multiplier}×ATR, "
-        f"SL={config.labels.atr_sl_multiplier}×ATR"
+        f"barrier=±{config.labels.barrier_atr_multiplier}×ATR"
     )
     st.markdown(
         f"**Backtest**: capital=${config.backtest.initial_capital:,.0f}, "

@@ -144,14 +144,13 @@ def _run_stage(
 
 def _run_backtest_with_barrier_guard(config: Config) -> None:
     """Run backtest only when label and execution ATR barriers match."""
-    label_tp = config.labels.atr_tp_multiplier
-    label_sl = config.labels.atr_sl_multiplier
+    barrier = config.labels.barrier_atr_multiplier
     backtest_tp = config.backtest.atr_tp_multiplier
     backtest_sl = config.backtest.atr_stop_multiplier
-    if label_tp != backtest_tp or label_sl != backtest_sl:
+    if barrier != backtest_tp or barrier != backtest_sl:
         raise ValueError(
             "Label/Backtest ATR barrier mismatch: "
-            f"labels(tp={label_tp}, sl={label_sl}) != "
+            f"labels.barrier_atr_multiplier={barrier} != "
             f"backtest(tp={backtest_tp}, sl={backtest_sl}). "
             "Expected matching multipliers so training target and "
             "execution exits measure the same event."
