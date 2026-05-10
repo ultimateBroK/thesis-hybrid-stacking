@@ -317,7 +317,7 @@ def _train_fixed(
 def _save_feature_importance(
     model: Any, feature_cols: list[str], config: Config
 ) -> None:
-    """Save sorted model feature importances to JSON.
+    """Save sorted model feature importances into model_metrics.json.
 
     Args:
         model: Fitted model exposing ``feature_importances_``.
@@ -327,17 +327,23 @@ def _save_feature_importance(
     try:
         imp = model.feature_importances_
         pairs = sorted(zip(feature_cols, imp), key=lambda x: x[1], reverse=True)
+        fi_dict = {name: float(val) for name, val in pairs}
+
         if config.paths.session_dir:
-            out_path = (
-                Path(config.paths.session_dir) / "reports" / "feature_importance.json"
-            )
-        else:
-            out_path = Path("results/feature_importance.json")
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(out_path, "w") as f:
-            json.dump({name: float(val) for name, val in pairs}, f, indent=2)
+            reports_dir = Path(config.paths.session_dir) / "reports"
+            metrics_path = reports_dir / "model_metrics.json"
+            metrics_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if metrics_path.exists():
+                with open(metrics_path) as f:
+                    existing = json.load(f)
+            else:
+                existing = {}
+            existing["feature_importance"] = fi_dict
+            with open(metrics_path, "w") as f:
+                json.dump(existing, f, indent=2)
         logger.info(
-            "Feature importance saved (top 5: %s)",
+            "Feature importance saved to model_metrics.json (top 5: %s)",
             [p[0] for p in pairs[:5]],
         )
     except (OSError, ValueError) as e:

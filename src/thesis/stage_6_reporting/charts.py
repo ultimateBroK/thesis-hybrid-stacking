@@ -72,25 +72,33 @@ def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> Non
 
 
 def _load_feature_importance(config: Config, out_dir: Path) -> dict:
-    """Load feature-importance JSON from session report outputs.
+    """Load feature-importance from model_metrics.json or session reports.
 
     Args:
         config: Application configuration.
         out_dir: Fallback directory when no session dir is configured.
 
     Returns:
-        Feature-importance dictionary, or an empty dict if the JSON
-        file is not found.
+        Feature-importance dictionary, or an empty dict if not found.
     """
-    fi_path = (
-        Path(config.paths.session_dir) / "reports" / "feature_importance.json"
-        if config.paths.session_dir
-        else out_dir.parent / "feature_importance.json"
-    )
-    if not fi_path.exists():
-        return {}
-    with open(fi_path) as f:
-        return json.load(f)
+    candidates = []
+    if config.paths.session_dir:
+        candidates.append(
+            Path(config.paths.session_dir) / "reports" / "feature_importance.json"
+        )
+        candidates.append(
+            Path(config.paths.session_dir) / "reports" / "model_metrics.json"
+        )
+    candidates.append(out_dir.parent / "feature_importance.json")
+
+    for path in candidates:
+        if path.exists():
+            with open(path) as f:
+                data = json.load(f)
+            if "feature_importance" in data:
+                return data["feature_importance"]
+            return data
+    return {}
 
 
 def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:

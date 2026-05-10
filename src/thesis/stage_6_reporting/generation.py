@@ -24,7 +24,6 @@ from thesis.stage_6_reporting.charts import (
 from thesis.stage_6_reporting.comparison import (
     _build_model_comparison_rows,
     _static_vs_hybrid_comparison,
-    _write_model_comparison_artifacts,
 )
 from thesis.stage_6_reporting.sections import (
     _render_auxiliary_regression_section,
@@ -55,11 +54,11 @@ _DIRECTIONAL_BASELINE: float = 0.5
 
 
 def _load_prediction_stats(preds_path: Path) -> dict | None:
-    """Compute prediction quality statistics from a predictions parquet file."""
+    """Compute prediction quality statistics from a predictions CSV file."""
     if not preds_path.exists():
         return None
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
         true = df["true_label"].to_numpy()
         pred = df["pred_label"].to_numpy()
 
@@ -375,8 +374,3 @@ def generate_report(config: Config) -> None:
     with model_metrics_path.open("w") as f:
         json.dump(pred_stats or {}, f, indent=2)
     logger.info("Model metrics saved: %s", model_metrics_path)
-
-    model_cmp_csv, model_cmp_md = _write_model_comparison_artifacts(
-        out_dir, model_comparison_rows
-    )
-    logger.info("Model comparison saved: %s, %s", model_cmp_csv, model_cmp_md)

@@ -205,7 +205,7 @@ class PathsConfig:
     val_data: str = "data/processed/val.parquet"
     test_data: str = "data/processed/test.parquet"
     model: str = "models/lightgbm_model.pkl"
-    predictions: str = "data/predictions/final_predictions.parquet"
+    predictions: str = "data/predictions/final_predictions.csv"
     backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
     data_quality_json: str = "data/processed/data_quality.json"

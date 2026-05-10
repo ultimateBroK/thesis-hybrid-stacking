@@ -149,7 +149,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
         return
 
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
     except (pl.ComputeError, OSError):
         logger.warning("Failed to load predictions for baselines", exc_info=True)
         L.append("*Predictions file could not be read.*")

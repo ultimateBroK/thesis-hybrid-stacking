@@ -100,8 +100,7 @@ def _save_oof_predictions(
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
     _validate_predictions(oof_df, preds_path)
-    oof_df.write_parquet(preds_path)
-    oof_df.write_csv(preds_path.with_suffix(".csv"))
+    oof_df.write_csv(preds_path)
     _write_prediction_manifest(
         oof_df,
         preds_path,
@@ -233,11 +232,17 @@ def _save_wf_artifacts(
         if last_lgbm_model is not None
         else {}
     )
+
+    wf_history = _build_wf_history(windows, window_diagnostics, len(oof_df))
+    if config.model.architecture:
+        wf_history["architecture"] = config.model.architecture
+
     _save_training_history(
         config,
         {
             "gru": last_gru_history,
             "lightgbm": lgbm_info,
+            "walk_forward": wf_history,
             "deployment_note": (
                 f"Model saved from window {last_window_index}/{len(windows)} "
                 "(the last chronological walk-forward window). "
@@ -247,22 +252,12 @@ def _save_wf_artifacts(
         },
     )
 
-    _save_walk_forward_history(
-        config,
-        windows=windows,
-        window_diagnostics=window_diagnostics,
-        oof_len=len(oof_df),
-        architecture=None,  # keep schema stable for hybrid
-    )
-
     _log_walk_forward_complete(
         arch_name="hybrid",
         windows_count=len(windows),
         oof_len=len(oof_df),
         stage_start=stage_start,
     )
-
-    _save_arch_copy(oof_df, "hybrid", config)
 
 
 def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> None:
@@ -272,6 +267,6 @@ def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> Non
     session_dir = Path(config.paths.session_dir)
     preds_dir = session_dir / "predictions"
     preds_dir.mkdir(parents=True, exist_ok=True)
-    arch_path = preds_dir / f"preds_{arch_name}.parquet"
-    oof_df.write_parquet(arch_path)
+    arch_path = preds_dir / f"preds_{arch_name}.csv"
+    oof_df.write_csv(arch_path)
     logger.info("Per-arch predictions saved: %s", arch_path)

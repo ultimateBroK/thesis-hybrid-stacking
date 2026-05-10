@@ -122,7 +122,7 @@ def _calibration_summary_text(config: Config) -> str | None:
         "pred_proba_class_1",
     ]
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
     except (pl.ComputeError, OSError):
         logger.warning(
             "Failed to load predictions for calibration check: %s",

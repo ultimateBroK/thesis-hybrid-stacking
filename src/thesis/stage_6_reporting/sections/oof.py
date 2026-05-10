@@ -115,7 +115,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
         if oos_start and oos_end:
             try:
-                df = pl.read_parquet(preds_path)
+                df = pl.read_csv(preds_path)
                 if "true_label" not in df.columns or "pred_label" not in df.columns:
                     logger.warning(
                         "Predictions parquet missing true_label/pred_label columns"

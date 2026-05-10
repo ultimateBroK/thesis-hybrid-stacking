@@ -418,11 +418,11 @@ def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
 
 
 def _compute_pred_metrics(preds_path: Path) -> dict[str, Any] | None:
-    """Compute classification metrics from a predictions parquet file."""
+    """Compute classification metrics from a predictions CSV file."""
     if not preds_path.exists():
         return None
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
         if "true_label" not in df.columns or "pred_label" not in df.columns:
             return None
         y_true = df["true_label"].to_numpy()
@@ -491,7 +491,7 @@ def _build_model_comparison_rows(
     preds_path = Path(config.paths.predictions)
     if preds_path.exists():
         try:
-            df = pl.read_parquet(preds_path)
+            df = pl.read_csv(preds_path)
             y_true = df["true_label"].to_numpy()
             close_path = Path(config.paths.ohlcv)
             y_returns = y_true.astype(np.float64)
@@ -537,9 +537,9 @@ def _build_model_comparison_rows(
     session_dir = config.paths.session_dir
     existing = {str(r["model"]).lower() for r in rows}
     arch_specs = [
-        ("LightGBM", "preds_lgbm.parquet"),
-        ("GRU-only", "preds_gru.parquet"),
-        ("Hybrid GRU + LightGBM", "preds_hybrid.parquet"),
+        ("LightGBM", "preds_lgbm.csv"),
+        ("GRU-only", "preds_gru.csv"),
+        ("Hybrid GRU + LightGBM", "preds_hybrid.csv"),
     ]
     for model_name, preds_file in arch_specs:
         if model_name.lower() in existing:
