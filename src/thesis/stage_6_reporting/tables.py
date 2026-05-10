@@ -123,7 +123,7 @@ def _calibration_summary_text(config: Config) -> str | None:
     ]
     try:
         df = pl.read_csv(preds_path)
-    except (pl.ComputeError, OSError):
+    except (pl.exceptions.ComputeError, OSError):
         logger.warning(
             "Failed to load predictions for calibration check: %s",
             preds_path,

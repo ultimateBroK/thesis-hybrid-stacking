@@ -43,7 +43,7 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
             dist[name] = (count, pct)
         dist["total"] = total
         return dist
-    except (pl.ComputeError, OSError):
+    except (pl.exceptions.ComputeError, OSError):
         logger.warning(
             "Failed to load label distribution: %s", labels_path, exc_info=True
         )
@@ -202,7 +202,11 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
                     )
                 )
                 L.append("")
-        except (pl.ComputeError, pl.ColumnNotFoundError, ValueError):
+        except (
+            pl.exceptions.ComputeError,
+            pl.exceptions.ColumnNotFoundError,
+            ValueError,
+        ):
             logger.warning("Failed to compute data quality from OHLCV", exc_info=True)
 
 

@@ -125,7 +125,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                     if ts_col.dtype != pl.Datetime:
                         try:
                             ts_col = ts_col.str.strptime(pl.Datetime)
-                        except (pl.ComputeError, ValueError):
+                        except (pl.exceptions.ComputeError, ValueError):
                             ts_col = ts_col.cast(pl.Datetime)
                     start_dt = _parse_date(oos_start)
                     end_dt = _parse_date(oos_end)
@@ -171,7 +171,11 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                             oos_class_f1 = {
                                 k: per_class_metrics[k]["f1"] for k in ("-1", "0", "1")
                             }
-            except (pl.ColumnNotFoundError, ValueError, pl.ComputeError):
+            except (
+                pl.exceptions.ColumnNotFoundError,
+                ValueError,
+                pl.exceptions.ComputeError,
+            ):
                 logger.warning(
                     "Failed to compute OOS prediction metrics", exc_info=True
                 )

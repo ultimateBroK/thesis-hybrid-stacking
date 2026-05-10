@@ -150,7 +150,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
 
     try:
         df = pl.read_csv(preds_path)
-    except (pl.ComputeError, OSError):
+    except (pl.exceptions.ComputeError, OSError):
         logger.warning("Failed to load predictions for baselines", exc_info=True)
         L.append("*Predictions file could not be read.*")
         L.append("")
@@ -175,7 +175,11 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
                 n = min(len(y_true), len(bar_returns))
                 y_returns = bar_returns[-n:]
                 y_true = y_true[-n:]
-        except (pl.ComputeError, pl.ColumnNotFoundError, ValueError):
+        except (
+            pl.exceptions.ComputeError,
+            pl.exceptions.ColumnNotFoundError,
+            ValueError,
+        ):
             logger.warning("Failed to load OHLCV for baseline returns", exc_info=True)
 
     if y_returns is None:

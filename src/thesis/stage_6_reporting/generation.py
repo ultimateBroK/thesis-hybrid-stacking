@@ -123,7 +123,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
                 "directional_accuracy": hc_dir_acc,
             }
         return result
-    except (pl.ComputeError, pl.ColumnNotFoundError, OSError):
+    except (pl.exceptions.ComputeError, pl.exceptions.ColumnNotFoundError, OSError):
         logger.warning(
             "Failed to load prediction statistics: %s", preds_path, exc_info=True
         )
