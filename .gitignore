@@ -49,6 +49,7 @@ ENV/
 .codex
 .understand-anything/
 .cocoindex_code/
+graphify-out/
 *.swp
 *.swo
 *~
