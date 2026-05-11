@@ -1,4 +1,4 @@
-"""Shared walk-forward utility functions used by both hybrid and static paths."""
+"""Shared walk-forward utility functions for tabular model paths."""
 
 from __future__ import annotations
 
@@ -26,9 +26,6 @@ _CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
 
 _HIGH_CONFIDENCE_THRESHOLD = 0.70
 _SHORT_BIAS_RATIO_THRESHOLD = 0.5
-_GRU_SIGNAL_F_SCORE_THRESHOLD = 0.5
-_ANOVA_MIN_SAMPLES_PER_CLASS = 2
-_SIGNAL_QUALITY_TOP_N = 5
 
 
 def _select_static_feature_cols(
@@ -311,85 +308,6 @@ def _add_prediction_diagnostics(
             "Window %d: L/S balanced — ratio %.2f",
             diag["window"],
             ls_ratio if short_count > 0 else float("inf"),
-        )
-
-
-def _log_gru_signal_quality(
-    hidden_states: np.ndarray,
-    labels: np.ndarray,
-    config: Config,
-) -> None:
-    """Log GRU hidden-state signal-to-noise diagnostic using ANOVA F-statistic."""
-    try:
-        from sklearn.feature_selection import f_classif  # type: ignore[import-untyped]
-    except ImportError:
-        logger.warning("sklearn not available — skipping GRU signal quality check")
-        return
-
-    if hidden_states is None or hidden_states.size == 0:
-        logger.warning("GRU signal quality: empty hidden states, skipping")
-        return
-
-    if labels is None or labels.size == 0:
-        logger.warning("GRU signal quality: empty labels, skipping")
-        return
-
-    if len(hidden_states) != len(labels):
-        logger.warning(
-            "GRU signal quality: shape mismatch hidden=%s vs labels=%s, skipping",
-            hidden_states.shape,
-            labels.shape,
-        )
-        return
-
-    unique_labels = np.unique(labels)
-    if len(unique_labels) < 2:
-        logger.warning(
-            "GRU signal quality: only %d class(es) present, "
-            "cannot compute F-statistic (need ≥2)",
-            len(unique_labels),
-        )
-        return
-
-    for cls in unique_labels:
-        if np.sum(labels == cls) < _ANOVA_MIN_SAMPLES_PER_CLASS:
-            logger.warning(
-                "GRU signal quality: class %s has < %d samples, skipping",
-                cls,
-                _ANOVA_MIN_SAMPLES_PER_CLASS,
-            )
-            return
-
-    try:
-        f_scores, _p_values = f_classif(hidden_states, labels)
-    except (ValueError, TypeError) as exc:
-        logger.warning("GRU signal quality: f_classif failed — %s", exc)
-        return
-
-    n_features = len(f_scores)
-    sorted_indices = np.argsort(f_scores)[::-1]
-
-    top_n = min(_SIGNAL_QUALITY_TOP_N, n_features)
-    bottom_n = min(_SIGNAL_QUALITY_TOP_N, n_features)
-
-    top_indices = sorted_indices[:top_n]
-    bottom_indices = sorted_indices[-bottom_n:][::-1]
-
-    mean_f = float(np.mean(f_scores))
-
-    logger.info(
-        "GRU hidden signal quality: mean F=%.4f | top-5: %s | bottom-5: %s",
-        mean_f,
-        ", ".join(f"dim{i}={f_scores[i]:.3f}" for i in top_indices),
-        ", ".join(f"dim{i}={f_scores[i]:.3f}" for i in bottom_indices),
-    )
-
-    if mean_f < _GRU_SIGNAL_F_SCORE_THRESHOLD:
-        logger.warning(
-            "GRU hidden states show no detectable signal — GRU contributes noise "
-            "(mean F=%.4f across %d dimensions)",
-            mean_f,
-            n_features,
         )
 
 

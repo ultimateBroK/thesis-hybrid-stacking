@@ -1,6 +1,6 @@
 """Walk-forward artifact persistence helpers.
 
-Shared by LGBM-only, GRU-only, and hybrid walk-forward workflows.
+Shared by LightGBM-only and stacking walk-forward workflows.
 """
 
 from __future__ import annotations
@@ -37,8 +37,7 @@ def _build_lgbm_info(
         "artifact_strategy": "last_walk_forward_window",
         "validation_protocol": {
             "outer_windows": "bar_based_walk_forward_with_purge_embargo",
-            "gru_validation": "tail_20_percent_of_outer_train",
-            "lgbm_validation": "tail_20_percent_of_sequence_aligned_outer_train",
+            "lgbm_validation": "tail_20_percent_of_outer_train",
         },
         "last_window_accuracy": last_window_accuracy,
         "best_iteration": int(last_lgbm_model.best_iteration_)
@@ -159,110 +158,6 @@ def _log_walk_forward_complete(
         oof_len,
         time.perf_counter() - stage_start,
     )
-
-
-def _save_wf_artifacts(
-    config: Config,
-    all_oof_preds: list[pl.DataFrame],
-    gru_model: Any,
-    gru_mean: Any,
-    gru_std: Any,
-    last_lgbm_model: Any,
-    last_feature_cols: list[str],
-    last_window_accuracy: float | None,
-    last_window_index: int,
-    last_gru_history: list[dict],
-    windows: list,
-    window_diagnostics: list[dict[str, Any]],
-    stage_start: float,
-    is_regression: bool,
-) -> None:
-    """Validate OOF predictions and persist all walk-forward artifacts."""
-    import joblib
-
-    from thesis.stage_4_training.gru import save_gru_model
-    from thesis.stage_4_training.lgbm.utils import _save_feature_importance
-
-    if not all_oof_preds or gru_model is None:
-        raise RuntimeError(
-            "No OOF predictions generated — all walk-forward windows were skipped"
-        )
-
-    if config.paths.session_dir:
-        gru_path = Path(config.paths.session_dir) / "models" / "gru_model.pt"
-        save_gru_model(gru_model, config, gru_path, mean=gru_mean, std=gru_std)
-
-    oof_df = _save_oof_predictions(
-        config,
-        all_oof_preds=all_oof_preds,
-        window_diagnostics=window_diagnostics,
-    )
-
-    if last_lgbm_model is not None:
-        model_path = Path(config.paths.model)
-        model_path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(last_lgbm_model, model_path)
-    if last_lgbm_model is not None and last_feature_cols:
-        _save_feature_importance(last_lgbm_model, last_feature_cols, config)
-
-    per_window_accuracies: dict[str, float | None] = {}
-    for d in window_diagnostics:
-        key = str(d.get("window", ""))
-        if key:
-            per_window_accuracies[key] = d.get("accuracy")
-
-    last_train_dates: dict[str, str] = {}
-    last_test_dates: dict[str, str] = {}
-    last_win_key = str(last_window_index)
-    for d in window_diagnostics:
-        if str(d.get("window", "")) == last_win_key:
-            last_train_dates = d.get("train_dates", {})
-            last_test_dates = d.get("test_dates", {})
-            break
-
-    lgbm_info = (
-        _build_lgbm_info(
-            last_lgbm_model,
-            last_feature_cols,
-            last_window_accuracy,
-            window_index=last_window_index,
-            total_windows=len(windows),
-            window_train_dates=last_train_dates,
-            window_test_dates=last_test_dates,
-        )
-        if last_lgbm_model is not None
-        else {}
-    )
-    _save_training_history(
-        config,
-        {
-            "gru": last_gru_history,
-            "lightgbm": lgbm_info,
-            "deployment_note": (
-                f"Model saved from window {last_window_index}/{len(windows)} "
-                "(the last chronological walk-forward window). "
-                "This model has NOT seen any future data beyond its training window."
-            ),
-            "per_window_accuracies": per_window_accuracies,
-        },
-    )
-
-    _save_walk_forward_history(
-        config,
-        windows=windows,
-        window_diagnostics=window_diagnostics,
-        oof_len=len(oof_df),
-        architecture=None,  # keep schema stable for hybrid
-    )
-
-    _log_walk_forward_complete(
-        arch_name="hybrid",
-        windows_count=len(windows),
-        oof_len=len(oof_df),
-        stage_start=stage_start,
-    )
-
-    _save_arch_copy(oof_df, "hybrid", config)
 
 
 def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> None:

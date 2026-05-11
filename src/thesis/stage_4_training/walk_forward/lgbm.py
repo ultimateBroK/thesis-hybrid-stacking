@@ -21,7 +21,7 @@ from thesis.stage_4_training.walk_forward.artifacts import (
     _save_training_history,
     _save_walk_forward_history,
 )
-from thesis.stage_4_training.walk_forward.hybrid import _compute_regression_target
+from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
 from thesis.stage_4_training.walk_forward.utils import (
     _CLASS_ORDER,
     _add_prediction_diagnostics,
@@ -39,7 +39,7 @@ logger = logging.getLogger("thesis.pipeline")
 _STATIC_MIN_TRAIN_ROWS = 2  # Minimum training rows for static walk-forward
 
 # --- Validation Split ---
-_VALIDATION_SPLIT_FRACTION = 0.2  # Tail validation split for GRU/LGBM/static
+_VALIDATION_SPLIT_FRACTION = 0.2  # Tail validation split for tabular LightGBM
 
 
 def _prepare_static_wf_data(
@@ -123,7 +123,6 @@ def _train_and_predict_static_window(
             c
             for c in feature_cols
             if c in train_df.columns
-            and not c.startswith("gru_")
             and c != "regression_target"
         ]
         mode_tag = "expanded"
@@ -325,8 +324,8 @@ def _save_lgbm_wf_artifacts(
 def train_lgbm_walk_forward(config: Config, *, expanded_features: bool = False) -> None:
     """Train LightGBM with walk-forward validation.
 
-    Isolates whether GRU hidden states add value. Uses event-time purged
-    windows, LightGBM, sample weights, and OOF prediction output. When
+    Uses event-time purged windows, LightGBM, sample weights, and OOF
+    prediction output. When
     ``expanded_features`` is True, uses all available feature columns.
 
     Args:
@@ -406,10 +405,8 @@ def train_lgbm_fixed(config: Config) -> None:
     triple-barrier labels, boundary samples can leak future information from
     the adjacent split. For evaluation, prefer walk-forward validation.
     """
-    from thesis.stage_4_training.lgbm import train_model
-
     logger.warning(
-        "Fixed split mode does not apply purge/embargo — potential label leakage "
-        "at split boundaries. Recommended: validation.method = 'sliding'."
+        "Fixed split training has been removed from the main runtime. "
+        "Running LightGBM walk-forward instead."
     )
-    train_model(config)
+    train_lgbm_walk_forward(config)
