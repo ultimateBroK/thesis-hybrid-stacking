@@ -2,249 +2,282 @@
 
 ## 3.1. Nguồn dữ liệu
 
-### 3.1.1. Mô tả dữ liệu gốc
+Dữ liệu sử dụng trong đồ án là dữ liệu XAU/USD được xử lý thành thanh OHLCV khung 1 giờ. XAU/USD biểu diễn giá vàng theo đô la Mỹ. Vàng là thị trường có thanh khoản cao và chịu tác động của nhiều yếu tố như lãi suất thực, lạm phát kỳ vọng, rủi ro địa chính trị, nhu cầu đầu tư và hoạt động mua bán của ngân hàng trung ương [3].
 
-Dữ liệu được sử dụng trong đồ án là dữ liệu tick thô của cặp tiền XAU/USD (vàng/đô la Mỹ), thu thập từ nguồn dữ liệu thị trường ngoại hối. Dữ liệu tick ghi lại mỗi giao dịch thực tế bao gồm:
+Bảng mô tả bộ dữ liệu:
 
-- **Timestamp:** Thời điểm giao dịch chính xác đến mili-giây.
-- **Bid/Ask:** Giá mua/bán tại thời điểm giao dịch.
-- **Volume:** Khối lượng giao dịch (nếu có).
-
-Dữ liệu OHLCV (Open-High-Low-Close-Volume) sau khi xử lý sử dụng các thông số:
-
-| Thông số | Giá trị |
+| Thuộc tính | Giá trị |
 |---|---|
-| Cặp tiền | XAU/USD |
-| Khung thời gian | 1 giờ (1H) |
-| Múi giờ thị trường | America/New_York |
-| Ngày bắt đầu | 2018-01-01 |
-| Ngày kết thúc | 2026-04-30 |
-| Tick size | 0.01 USD |
-| Contract size | 100 oz/lot |
+| Tài sản | XAU/USD |
+| Khung thời gian | H1 |
+| Giai đoạn dữ liệu | 2018-01-01 đến 2026-04-30 |
+| Dạng xử lý | OHLCV |
+| Múi giờ | America/New_York |
+| Bài toán | Phân loại Short/Hold/Long |
 
-Khoảng thời gian 8+ năm bao gồm nhiều chế độ thị trường: xu hướng tăng mạnh (2020), dao động ngang (2021–2022), và xu hướng mới (2023–2025), đảm bảo mô hình được thử thách trên đủ loại điều kiện thị trường [1].
+Dữ liệu tài chính theo chuỗi thời gian không được xáo trộn ngẫu nhiên khi đánh giá. Mọi bước xử lý cần giữ thứ tự thời gian và tránh sử dụng thông tin tương lai.
 
-### 3.1.2. Lý do chọn khung thời gian 1H
+## 3.2. Từ tick đến OHLCV
 
-Khung thời gian 1 giờ được chọn vì:
+Nếu dữ liệu gốc ở dạng tick, pipeline tổng hợp thành OHLCV theo từng giờ:
 
-1. **Cân bằng giữa độ chi tiết và nhiễu:** Khung 1H cung cấp đủ chi tiết để nắm bắt biến động trong ngày mà không bị nhiễu ngắn hạn như các khung thời gian nhỏ hơn (M15, M5).
-2. **Phù hợp với mục tiêu dự báo ngắn hạn:** Horizon 24 giờ (24 thanh giá 1H) tương ứng với khoảng thời gian giữ vị thế 1 ngày giao dịch.
-3. **Số lượng mẫu đủ lớn:** Khoảng 72,000 thanh giá trong 8+ năm, đủ cho huấn luyện deep learning.
-4. **Thực tế giao dịch:** Nhiều nhà giao dịch swing và day-trader sử dụng khung 1H làm khung chính [2].
+- Open: giá đầu tiên trong giờ.
+- High: giá cao nhất trong giờ.
+- Low: giá thấp nhất trong giờ.
+- Close: giá cuối cùng trong giờ.
+- Volume: tổng khối lượng hoặc proxy volume trong giờ.
 
-## 3.2. Từ Tick đến OHLCV
+Trường hợp có bid/ask, giá mid có thể được tính bằng:
 
-### 3.2.1. Quy trình tổng hợp
-
-Dữ liệu tick thô được tổng hợp thành thanh giá OHLCV theo các bước:
-
-1. **Gom nhóm theo khung thời gian:** Tick được nhóm theo giờ (từ 00:00 đến 23:59, múi giờ New York).
-2. **Tính toán OHLCV:**
-   - **Open:** Giá mid (trung bình bid/ask) của tick đầu tiên trong giờ.
-   - **High:** Giá mid cao nhất trong giờ.
-   - **Low:** Giá mid thấp nhất trong giờ.
-   - **Close:** Giá mid của tick cuối cùng trong giờ.
-   - **Volume:** Tổng khối lượng giao dịch trong giờ.
-
-3. **Xử lý giờ trống:** Các giờ không có giao dịch (cuối tuần, một số giờ giao dịch chậm) không tạo thanh giá — duy trì tính liên tục thực tế.
-
-### 3.2.2. Xử lý múi giờ
-
-Thị trường forex hoạt động 24/5, nhưng dữ liệu cần được neo vào một múi giờ nhất định để đảm bảo nhất quán. Đồ án sử dụng múi giờ New York (America/New_York) vì:
-
-- New York là trung tâm giao dịch vàng lớn nhất thế giới.
-- Phiên New York (13:30–20:00 GMT) có thanh khoản cao nhất cho XAU/USD.
-- Việc cố định múi giờ tránh lỗi do thay đổi giờ mùa hè (DST).
-
-## 3.3. Làm sạch dữ liệu
-
-### 3.3.1. Kiểm tra tính toàn vẹn
-
-Pipeline kiểm tra các tiêu chí sau trước khi xử lý:
-
-**Sắp xếp thời gian:** Đảm bảo timestamp tăng dần nghiêm ngặt (strictly ascending). Bất kỳ sự đảo ngược nào đều gây lỗi.
-
-**Duy nhất timestamp:** Mỗi timestamp chỉ xuất hiện một lần. Trùng lặp timestamp gây lỗi khi join feature với label.
-
-**Khoảng trống (gap):** Kiểm tra khoảng cách giữa các thanh giá liên tiếp. Khoảng trống lớn hơn expected (1 giờ) được ghi nhận:
-
-```
-Feature input gap check: expected_delta=3600000 ms, gap_count=X, largest_gap=Y bars
+```text
+mid_price = (bid + ask) / 2
 ```
 
-### 3.3.2. Xử lý dữ liệu thiếu
+Việc dùng OHLCV H1 giúp cân bằng giữa chi tiết intraday và nhiễu microstructure. Khung nhỏ hơn như M1/M5 thường nhiễu hơn và nhạy với spread/slippage; khung lớn hơn như D1 có ít mẫu hơn.
 
-- **Thanh giá cuối tuần:** Không tạo thanh giả (no interpolation) — thị trường thực tế đóng cửa.
-- **Outlier giá:** Kiểm tra variation quá lớn giữa Open/Close (>10% trong 1 giờ) nhưng không loại bỏ — đây có thể là sự kiện thị trường hợp lệ.
-- **Volume bằng 0:** Giữ nguyên — thanh khoản thấp là thông tin thị trường thực.
+## 3.3. Kiểm tra chất lượng dữ liệu
 
-### 3.3.3. Kiểm tra phân phối
+Pipeline kiểm tra các điều kiện sau:
 
-Dữ liệu OHLCV được kiểm tra các thống kê mô tả cơ bản:
+1. Timestamp tăng dần.
+2. Không có timestamp trùng lặp.
+3. Các cột OHLCV bắt buộc tồn tại.
+4. Không có giá âm hoặc bất hợp lý.
+5. Ghi nhận gap thời gian do cuối tuần, ngày nghỉ hoặc thiếu dữ liệu.
+6. Kiểm tra thống kê cơ bản của close, return, volume và ATR.
 
-- Min/Max/Median của giá Close và Volume.
-- Tỷ lệ thanh giá có volume bằng 0.
-- Phân phối log-return (tỷ suất lợi nhuận log) để kiểm tra normality và fat tails.
+Các gap cuối tuần không được nội suy thành thanh giả vì thị trường thực tế không giao dịch. Việc nội suy có thể tạo ra dữ liệu nhân tạo và làm sai feature kỹ thuật.
 
-## 3.4. Feature Engineering
+## 3.4. Feature engineering causal
 
-### 3.4.1. Tổng quan
+Feature engineering là bước chuyển OHLCV thành ma trận đặc trưng cho mô hình. Nguyên tắc của đề tài là chỉ tạo feature từ quá khứ và hiện tại. Không đưa vào mô hình các cột có thông tin tương lai như label, touched_bar, event_end, upper_barrier, lower_barrier hoặc sample_weight.
 
-Feature engineering là bước tạo các đặc trưng (features) từ dữ liệu OHLCV thô để mô hình có thể học. Đồ án áp dụng nguyên tắc: ưu tiên cấu trúc giá và khoảng cách xu hướng hơn việc chồng chất nhiều chỉ báo, tránh biến đổi dư thừa của cùng một tín hiệu [3].
+Sau lần chạy mới nhất, feature whitelist còn 21 đặc trưng model-facing. Các feature bị loại do importance thấp gồm:
 
-Tổng cộng, pipeline tạo ra các nhóm đặc trưng sau:
-
-### 3.4.2. Nhóm 1: Giá và biến động (Price & Volatility)
-
-**Average True Range (ATR):**
-
-$$\text{ATR}_t = \text{EMA}_{14}\left(\max(H_t - L_t,\; |H_t - C_{t-1}|,\; |L_t - C_{t-1}|)\right)$$
-
-ATR là nền tảng cho barrier labeling và risk management. Chu kỳ 14 giờ (mặc định) cung cấp ước lượng biến động ổn định.
-
-**Log-return:**
-
-$$r_t = \ln\left(\frac{C_t}{C_{t-1}}\right)$$
-
-Log-return tại các chu kỳ 1, 2, 4, 8, 24 giờ (return_1h, return_2h, ..., return_24h) cho phép mô hình nắm bắt xu hướng ở nhiều thời lượng.
-
-**High-Low Range (phạm vi cao-thấp):**
-
-$$\text{hl\_range}_t = \frac{H_t - L_t}{C_t}$$
-
-Phạm vi dao động trong mỗi thanh giá, chuẩn hóa theo giá đóng cửa.
-
-### 3.4.3. Nhóm 2: Xu hướng và chất lượng xu hướng (Trend & Trend Quality)
-
-**ADX (Average Directional Index):** Đo lường sức mạnh xu hướng (không phân biệt hướng). ADX > 25 thường cho thấy xu hướng rõ ràng, ADX < 20 cho thị trường dao động ngang [4].
-
-**EMA Slope:** Độ dốc của EMA(20), tính bằng log-return của EMA:
-
-$$\text{ema\_slope}_t = \ln\left(\frac{\text{EMA}_{20,t}}{\text{EMA}_{20,t-1}}\right)$$
-
-EMA slope dương → xu hướng tăng, âm → xu hướng giảm. Độ lớn slope phản ánh tốc độ xu hướng.
-
-**EMA Crossover:** Tín hiệu giao nhau giữa EMA nhanh và EMA chậm:
-
-$$\text{ema\_cross}_t = \frac{\text{EMA}_{\text{fast},t} - \text{EMA}_{\text{slow},t}}{\text{ATR}_t}$$
-
-Chuẩn hóa bằng ATR để tín hiệu giao nhau có ý nghĩa tương đương giữa các chế độ biến động.
-
-### 3.4.4. Nhóm 3: Dao động (Oscillators)
-
-**RSI (Relative Strength Index):** Dao động đo tốc độ và sự thay đổi của biến động giá:
-
-$$\text{RSI}_t = 100 - \frac{100}{1 + \frac{\text{EMA}_{14}(\text{gain})}{\text{EMA}_{14}(\text{loss})}}$$
-
-RSI > 70 thường cho thấy quá mua (overbought), RSI < 30 cho thấy quá bán (oversold).
-
-**MACD (Moving Average Convergence Divergence):** Khác biệt giữa EMA(12) và EMA(26), với signal line EMA(9):
-
-$$\text{MACD}_t = \text{EMA}_{12}(C_t) - \text{EMA}_{26}(C_t)$$
-
-$$\text{MACD\_signal}_t = \text{EMA}_9(\text{MACD}_t)$$
-
-$$\text{MACD\_hist}_t = \text{MACD}_t - \text{MACD\_signal}_t$$
-
-MACD histogram đặc biệt hữu ích để phát hiện sự suy yếu xu hướng.
-
-### 3.4.5. Nhóm 4: Chế độ thị trường (Market Regime)
-
-**Regime composite:** Đặc trưng tổng hợp phân loại chế độ thị trường dựa trên kết hợp ADX, ATR, và xu hướng giá:
-
-- Regime 0: Dao động ngang (low ADX, low ATR)
-- Regime 1: Xu hướng tăng (high ADX, positive slope)
-- Regime 2: Xu hướng giảm (high ADX, negative slope)
-- Regime 3: Biến động cao (high ATR bất kể hướng)
-
-Biến regime giúp mô hình điều chỉnh chiến lược dự báo theo điều kiện thị trường hiện tại [5].
-
-**Volume Z-score:** Khối lượng giao dịch chuẩn hóa:
-
-$$\text{vol\_z}_t = \frac{V_t - \mu_V}{\sigma_V}$$
-
-Volume z-score cao → thanh khoản bất thường, thường liên quan đến sự kiện thị trường.
-
-### 3.4.6. Nhóm 5: OHLCV chuẩn hóa cho GRU
-
-Để GRU xử lý chuỗi đầu vào ổn định, các giá trị OHLCV gốc được chuẩn hóa:
-
-- **Price normalization:** Close, Open, High, Low được chuẩn hóa theo close cuối chuỗi (relative price).
-- **Volume normalization:** Volume được log-transform và chuẩn hóa z-score.
-
-Các đặc trưng này là đầu vào trực tiếp cho GRU (không phải cho LightGBM), giúp mạng nơ-ron học mẫu hình thời gian từ chuỗi giá thô.
-
-### 3.4.7. Loại bỏ warm-up rows
-
-Các hàng đầu tiên có chỉ báo kỹ thuật chưa đủ dữ liệu lịch sử (ví dụ: EMA(26) cần ít nhất 26 thanh giá) → giá trị NaN hoặc không chính xác. Pipeline loại bỏ các hàng này:
-
-```
-Dropped X warm-up rows with incomplete model-facing features
+```text
+regime_strength
+upper_wick_ratio
+lower_wick_ratio
+volume_zscore_20
 ```
 
-### 3.4.8. Lọc đặc trưng tương quan cao
+Việc giảm feature nhằm giảm nhiễu và giúp báo cáo dễ bảo vệ hơn. Tuy nhiên, các indicator gốc không nhất thiết bị xóa khỏi code; chỉ whitelist model-facing được tinh chỉnh.
 
-Các đặc trưng có tương quan tuyệt đối > 0.75 với đặc trưng khác bị loại bỏ để tránh đa cộng tuyến (multicollinearity), giữ lại đặc trưng giải thích cao nhất [3]. Ngưỡng này được cấu hình qua `correlation_threshold` trong `config.toml`.
+## 3.5. Nhóm đặc trưng sử dụng
 
-## 3.5. Kiểm tra chất lượng dữ liệu (Data Quality Validation)
+### 3.5.1. Trend
 
-### 3.5.1. Kiểm tra ở mỗi giai đoạn
+Các đặc trưng xu hướng mô tả quan hệ giữa giá và đường trung bình:
 
-Pipeline thực hiện validation tại mỗi biên giai đoạn (stage boundary):
+- `ema34_vs_ema89`: khoảng cách EMA34 so với EMA89.
+- `close_vs_ema_34`: vị trí giá đóng cửa so với EMA34.
+- `ema_slope_20`: độ dốc EMA20.
+- `adx_14`: cường độ xu hướng.
 
-| Giai đoạn | Kiểm tra |
-|---|---|
-| OHLCV → Features | Timestamp unique, sorted, required columns, gap analysis |
-| Features → Labels | Timestamp unique, ATR column exists, ATR statistics |
-| Labels → Training | Censored labels dropped, NaN regression targets removed |
+ADX và các mẫu kỹ thuật có thể được nghiên cứu dưới góc nhìn thống kê, như hướng tiếp cận của Lo, Mamaysky và Wang [11]. Trong pipeline, chúng không được dùng như quy tắc vào lệnh cứng mà là feature cho mô hình.
 
-### 3.5.2. Kiểm tra phân phối ATR
+### 3.5.2. Momentum
 
-ATR là thành phần cốt lõi của Triple Barrier labeling. Pipeline ghi nhận thống kê ATR:
+Momentum phản ánh tốc độ thay đổi giá:
 
+- `return_1h`, `return_4h`: log-return ngắn hạn.
+- `rsi_14`: dao động quá mua/quá bán.
+- `macd_hist_atr`: MACD histogram chuẩn hóa theo ATR.
+
+Log-return được dùng vì có tính cộng dồn theo thời gian và thường phù hợp hơn return tỷ lệ đơn giản khi phân tích chuỗi giá.
+
+### 3.5.3. Volatility
+
+Biến động là thành phần quan trọng trong cả feature và labeling:
+
+- `atr_pct_close`: ATR chia cho close.
+- `atr_ratio`: ATR hiện tại so với mức nền.
+- `high_low_range_20`: range cao-thấp rolling.
+- `price_dist_ratio`: khoảng cách giá được chuẩn hóa.
+
+ATR giúp barrier thích nghi với biến động: khi thị trường biến động mạnh, TP/SL rộng hơn; khi biến động thấp, TP/SL hẹp hơn nhưng vẫn có floor để tránh barrier quá nhỏ.
+
+### 3.5.4. Price position
+
+Nhóm này mô tả vị trí giá trong cấu trúc gần đây:
+
+- `price_position_20`: vị trí close trong range rolling 20.
+- `pivot_position`: vị trí so với pivot.
+- `vwap`: giá trung bình có trọng số volume.
+
+Các feature này giúp mô hình nhận biết giá đang ở gần vùng cao/thấp tương đối hay gần trung tâm range.
+
+### 3.5.5. Session
+
+XAU/USD có hành vi khác nhau theo phiên giao dịch. Pipeline dùng các biến session:
+
+- `sess_asia`
+- `sess_london`
+- `sess_ny_am`
+- `sess_ny_pm`
+
+Session features giúp mô hình phân biệt các giai đoạn thanh khoản và biến động trong ngày.
+
+## 3.6. Warm-up và xử lý missing values
+
+Các chỉ báo kỹ thuật cần một số lượng quan sát tối thiểu. Ví dụ EMA26 hoặc rolling window 20 chưa có ý nghĩa ở các dòng đầu. Pipeline loại bỏ warm-up rows có feature model-facing chưa hoàn chỉnh. Sau khi tạo feature, hệ thống kiểm tra null/NaN để đảm bảo dữ liệu đưa vào training sạch.
+
+## 3.7. Gán nhãn dữ liệu
+
+Stage 3 đọc feature matrix và OHLCV để tạo nhãn triple-barrier. Cấu hình đang dùng:
+
+```toml
+[labels]
+atr_tp_multiplier = 2.0
+atr_sl_multiplier = 2.0
+horizon_bars = 24
 ```
-ATR stats (atr_14): min=X, median=Y, p5=Z, p95=W, below_min_atr=V%
+
+Với khung H1, horizon 24 tương ứng tối đa 24 giờ. TP/SL đối xứng 2.0 ATR giúp tránh thiên lệch ban đầu về Long hoặc Short. Các mẫu bị censored không phù hợp được loại khỏi training.
+
+Phân phối nhãn trong phiên gần nhất:
+
+```text
+Short: 43.6%
+Hold :  9.0%
+Long : 47.4%
 ```
 
-Nếu ATR quá thấp (dưới `min_atr`), barrier sẽ quá hẹp → nhãn Hold nhiều → không hữu ích cho giao dịch. Floor `min_atr` đảm bảo barrier tối thiểu.
+Hold thấp cho thấy đa số sự kiện chạm một trong hai barrier trong 24 giờ. Đã thử horizon 48 nhưng Hold giảm còn khoảng 1.5%, nên horizon 24 được giữ lại vì ít làm bài toán lệch khỏi thiết kế 3 lớp hơn.
 
-### 3.5.3. Kiểm tra phân phối nhãn
+## 3.8. Tập dữ liệu huấn luyện cuối cùng
 
-Sau khi tạo nhãn, pipeline ghi nhận tỷ lệ mỗi lớp:
+Bộ dữ liệu huấn luyện cuối cùng gồm:
 
+- Timestamp để giữ thứ tự thời gian và join dữ liệu.
+- 21 feature model-facing.
+- Label Short/Hold/Long.
+- Event metadata như event_end và sample_weight phục vụ purge/embargo và weighting.
+
+Các metadata này không được đưa vào X khi huấn luyện. Chúng chỉ phục vụ validation và đánh giá.
+
+## 3.9. Tổng kết chương
+
+Chương này trình bày quy trình từ dữ liệu XAU/USD H1 đến ma trận feature-label dùng cho mô hình. Các quyết định quan trọng gồm: giữ thứ tự thời gian, không nội suy cuối tuần, tạo feature causal, loại warm-up rows, gán nhãn bằng ATR triple-barrier và kiểm tra phân phối lớp. Đây là nền tảng để Stage 4 huấn luyện mô hình mà không bị rò rỉ thông tin tương lai.
+
+## 3.10. Data contract giữa các stage
+
+Pipeline hoạt động ổn định nhờ mỗi stage có data contract rõ ràng. Nếu một stage thay đổi schema mà stage sau không biết, kết quả có thể sai hoặc pipeline dừng.
+
+| Stage | Input chính | Output chính | Điều kiện bắt buộc |
+|---|---|---|---|
+| Stage 1 | Raw/tick/OHLCV source | `ohlcv.parquet` | timestamp sorted, OHLCV hợp lệ |
+| Stage 2 | OHLCV | `features.parquet`, feature list | ATR tồn tại, feature causal, không null sau warm-up |
+| Stage 3 | Features + OHLCV | `labels.parquet` | có `atr_14`, label ∈ {-1,0,1,-2}, có `event_end` |
+| Stage 4 | Labels + features | predictions, model, metrics | không dùng metadata làm feature |
+| Stage 5 | Predictions + OHLCV | backtest results | TP/SL backtest khớp label |
+| Stage 6 | Metrics + backtest | report | đọc đúng artifacts mới nhất |
+
+Data contract giúp báo cáo giải thích được vì sao thay đổi feature phải rerun Stage 2 trở đi, còn thay đổi label phải rerun Stage 3 trở đi.
+
+## 3.11. Cột bị loại khỏi feature model-facing
+
+Một số cột bị loại khỏi X training dù vẫn xuất hiện trong dataset:
+
+| Nhóm cột | Ví dụ | Lý do loại |
+|---|---|---|
+| Định danh/thời gian | `timestamp` | dùng để sort/join, không phải tín hiệu trực tiếp |
+| Target | `label` | chính là nhãn cần dự báo |
+| Barrier metadata | `upper_barrier`, `lower_barrier`, `touched_bar`, `event_end` | được tạo bằng thông tin tương lai |
+| Raw OHLCV | `open`, `high`, `low`, `close`, `volume` | tránh raw price scale và leakage không kiểm soát |
+| Helper | `atr_14` | dùng tạo barrier; dùng feature normalized thay thế |
+
+Việc loại các cột này là một lớp bảo vệ leakage. Nếu đưa barrier hoặc event_end vào mô hình, mô hình có thể học trực tiếp thông tin của quá trình gán nhãn, khiến kết quả không còn ý nghĩa.
+
+## 3.12. Danh sách feature model-facing hiện tại
+
+Feature whitelist sau pruning gồm các nhóm sau.
+
+### Trend và trend quality
+
+```text
+ema34_vs_ema89
+close_vs_ema_34
+adx_14
+ema_slope_20
 ```
-Class -1 (Short): X% 
-Class  0 (Hold):  Y%
-Class +1 (Long): Z%
+
+### Momentum
+
+```text
+return_1h
+return_4h
+macd_hist_atr
+rsi_14
 ```
 
-Phân phối lớp mất cân bằng nghiêm trọng (ví dụ: Hold > 80%) cảnh báo rằng barrier không phù hợp với chế độ thị trường hiện tại [6].
+### Volatility và range
 
-### 3.5.4. Kiểm tra tính khả thi kinh tế của nhãn (Label Profitability)
-
-Pipeline kiểm tra tỷ lệ nhãn Long/Short thực sự có lãi sau chi phí giao dịch (spread + slippage + commission). Nếu cả hai lớp đều dưới 60%, cảnh báo được phát ra:
-
+```text
+atr_pct_close
+atr_ratio
+high_low_range_20
+price_dist_ratio
 ```
-LABEL PROFITABILITY LOW: Long X%, Short Y% -- labels may not be economically useful
+
+### Price position
+
+```text
+price_position_20
+pivot_position
+vwap
 ```
 
-Kiểm tra này đảm bảo nhãn có ý nghĩa kinh tế, không chỉ ý nghĩa thống kê.
+### Candle/session và feature phụ trợ còn giữ
 
-## 3.6. Tổng kết chương
+```text
+candle_body_ratio
+sess_asia
+sess_london
+sess_ny_am
+sess_ny_pm
+```
 
-Chương này đã trình bày toàn bộ quy trình từ dữ liệu tick thô đến feature matrix sẵn sàng cho huấn luyện: tổng hợp OHLCV, làm sạch, tạo 5 nhóm đặc trưng (price/volatility, trend, oscillators, regime, normalized OHLCV), và validation đa lớp. Các quyết định thiết kế (ATR-based barriers, correlation filtering, warm-up removal) đều nhằm đảm bảo chất lượng dữ liệu đầu vào cho mô hình.
+Tập feature này không nhằm bao phủ mọi chỉ báo kỹ thuật có thể có. Nó được chọn để cân bằng giữa khả năng biểu diễn, tính giải thích và rủi ro overfit.
 
-## Tài liệu tham khảo chương này
+## 3.13. Kiểm tra phân phối feature
 
-[1] Cordero, C.A., et al. (2017). "Predicting the XAU-USD Foreign Exchange Prices using Machine Learning." *Master's thesis*.
+Trước khi train, cần kiểm tra:
 
-[2] Amini, A. & Kalantari, R. (2024). "Gold price prediction by a CNN-Bi-LSTM model." *PLOS ONE*, 19(3), e0298426.
+1. Feature có NaN hoặc infinite không.
+2. Feature có variance gần 0 không.
+3. Feature có outlier cực đoan không.
+4. Feature có tương quan quá cao với feature khác không.
+5. Feature có bị tính bằng thông tin tương lai không.
 
-[3] Oikonomou, K. & Damigos, D. (2025). "Assets Forecasting with Feature Engineering and Transformation Techniques using LightGBM." *arXiv:2501.07580*.
+Đặc biệt trong tài chính, outlier không luôn là lỗi. Spike giá có thể là sự kiện thật. Vì vậy pipeline không nên xóa outlier một cách tùy tiện; thay vào đó cần ghi nhận và dùng mô hình/regularization phù hợp.
 
-[4] Lo, A.W., Mamaysky, H., & Wang, J. (2000). "Foundations of Technical Analysis." *The Journal of Finance*, 55(4), 1705–1765.
+## 3.14. Phân phối nhãn và ý nghĩa
 
-[5] Arian, H., et al. (2025). "Regime-Aware LightGBM for Stock Market Forecasting." *Electronics*, 15(6), 1334.
+Phân phối nhãn mới nhất:
 
-[6] Kim, H., et al. (2025). "Stock Price Prediction Using Triple Barrier Labeling and Raw OHLCV Data." *arXiv:2504.02249*.
+| Lớp | Tỷ lệ | Diễn giải |
+|---|---:|---|
+| Short | 43.6% | Giá thường chạm lower barrier trước trong các sự kiện này |
+| Hold | 9.0% | Ít sự kiện không chạm barrier trong 24 giờ |
+| Long | 47.4% | Giá thường chạm upper barrier trước trong các sự kiện này |
+
+Tỷ lệ Hold thấp là điểm cần lưu ý. Nó có thể khiến bài toán gần với binary Long/Short hơn mong muốn. Tuy nhiên, giữ Hold vẫn có ý nghĩa vì lớp này đại diện cho tình huống không nên giao dịch hoặc tín hiệu không rõ ràng. Thay vì bỏ Hold ngay, báo cáo phân tích điểm yếu của lớp này qua F1 và confusion matrix.
+
+## 3.15. Vì sao không đổi sang binary ngay
+
+Chuyển sang binary Long/Short có thể làm metric đẹp hơn, nhưng sẽ thay đổi bản chất bài toán. Nếu bỏ Hold, hệ thống bị ép đưa ra tín hiệu giao dịch ở mọi thời điểm. Trong thực tế, không giao dịch cũng là một quyết định quan trọng.
+
+Ngoài ra, code hiện tại được thiết kế cho multiclass:
+
+- Class order `[-1, 0, 1]`.
+- Report per-class Short/Hold/Long.
+- Confusion matrix ba lớp.
+- Stacking probability features ba cột mỗi base learner.
+- Backtest logic nhận tín hiệu Hold như trạng thái không vào lệnh.
+
+Vì vậy, binary là refactor lớn và không phù hợp nếu mục tiêu hiện tại là hoàn thiện báo cáo ổn định.
+
+## 3.16. Kết luận chi tiết về dữ liệu
+
+Chất lượng dữ liệu trong đề tài không chỉ là “không thiếu dòng”. Nó bao gồm tính đúng của thời gian, tính causal của feature, tính hợp lý của nhãn và sự nhất quán giữa stage. Nếu dữ liệu bị leakage, mô hình có thể đạt kết quả cao nhưng không có giá trị. Do đó, chương dữ liệu cần được xem là nền tảng của toàn bộ luận văn, không chỉ là phần mô tả nguồn dữ liệu.

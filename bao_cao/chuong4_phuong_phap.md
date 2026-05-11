@@ -1,303 +1,343 @@
-# Chương 4. Phương pháp đề xuất
+# Chương 4. Phương pháp
 
-## 4.1. Tổng quan kiến trúc
+## 4.1. Tổng quan pipeline
 
-Hệ thống được thiết kế theo dạng pipeline tuần tự gồm 6 giai đoạn (stage):
+Pipeline gồm 6 stage:
 
+1. Data Preparation: tạo OHLCV H1.
+2. Feature Engineering: sinh đặc trưng causal.
+3. Label Generation: tạo nhãn triple-barrier.
+4. Model Training: walk-forward Classic Hybrid Stacking.
+5. Backtest: minh họa ứng dụng tín hiệu.
+6. Reporting: tổng hợp metrics, comparison và biểu đồ.
+
+Thiết kế theo stage giúp mỗi bước có input/output rõ ràng. Khi sửa label, pipeline chạy lại từ Stage 3; khi sửa feature, pipeline chạy lại từ Stage 2. Cách này giảm nguy cơ kết quả cũ bị trộn với cấu hình mới.
+
+## 4.2. Công thức bài toán
+
+Với mỗi thời điểm t, mô hình nhận vector đặc trưng X_t và dự báo:
+
+```text
+y_t ∈ {-1, 0, +1}
 ```
-Stage 1: Thu thập & tổng hợp dữ liệu (Data Processing)
-    ↓
-Stage 2: Tạo đặc trưng (Feature Engineering)
-    ↓
-Stage 3: Gán nhãn (Labeling — Triple Barrier)
-    ↓
-Stage 4: Huấn luyện mô hình (Training — Walk-Forward Hybrid)
-    ↓
-Stage 5: Backtest minh họa (Backtest Demo)
-    ↓
-Stage 6: Báo cáo kết quả (Reporting)
+
+Trong đó:
+
+- -1 là Short.
+- 0 là Hold.
+- +1 là Long.
+
+Mục tiêu học máy là xấp xỉ xác suất có điều kiện:
+
+```text
+P(y_t = k | X_t), k ∈ {-1, 0, +1}
 ```
 
-Chương này tập trung vào các quyết định thiết kế ở Stage 3 và Stage 4 — phần cốt lõi của phương pháp đề xuất.
+Tín hiệu cuối cùng lấy từ lớp có xác suất cao nhất. Trong backtest, có thể thêm confidence threshold để tránh giao dịch khi xác suất quá thấp.
 
-## 4.2. Thiết kế nhãn (Label Design)
+## 4.3. Thiết kế nhãn triple-barrier
 
-### 4.2.1. Thông số Triple Barrier
+Tại mỗi thời điểm t, pipeline đặt ba barrier:
 
-Nhãn được tạo bằng phương pháp Triple Barrier (Chương 2, mục 2.6) với các thông số:
+```text
+TP_long  = close_t + 2.0 * ATR_t
+SL_long  = close_t - 2.0 * ATR_t
+horizon  = t + 24 bars
+```
 
-| Thông số | Giá trị | Giải thích |
+Logic nhãn:
+
+- Nếu giá chạm upper barrier trước lower barrier: Long.
+- Nếu giá chạm lower barrier trước upper barrier: Short.
+- Nếu hết horizon chưa chạm: Hold.
+
+Triple-barrier giúp nhãn phản ánh bài toán giao dịch có rủi ro thay vì chỉ phản ánh dấu của return sau N nến [5]. Vì ATR thay đổi theo biến động, khoảng TP/SL cũng thích nghi với điều kiện thị trường.
+
+## 4.4. Walk-forward với purge/embargo
+
+Dữ liệu được chia thành nhiều cửa sổ train/test theo thời gian. Ở mỗi cửa sổ:
+
+1. Train set nằm trước test set.
+2. Purge loại bỏ các mẫu train có event_end overlap với test.
+3. Embargo tạo khoảng đệm sau test để giảm leakage.
+4. Mô hình được huấn luyện lại và dự báo test window.
+5. Dự báo ngoài mẫu được ghép lại thành OOF predictions.
+
+Cách này phù hợp với khuyến nghị trong tài chính vì random K-fold có thể làm rò rỉ thông tin khi nhãn có horizon [5]. Nó cũng giảm rủi ro backtest overfitting được Bailey và cộng sự cảnh báo [7].
+
+## 4.5. Base learners
+
+### 4.5.1. Logistic Regression
+
+Logistic Regression đóng vai trò baseline tuyến tính. Nếu Logistic Regression đã đạt kết quả gần với mô hình phức tạp, điều đó cho thấy tín hiệu có thể chủ yếu tuyến tính hoặc mô hình phức tạp chưa khai thác thêm được cấu trúc phi tuyến.
+
+### 4.5.2. Random Forest
+
+Random Forest học nhiều cây trên các mẫu bootstrap và feature subset [15]. Mô hình này có thể bắt quan hệ phi tuyến và tương tác feature, đồng thời giảm phương sai so với decision tree đơn.
+
+### 4.5.3. LightGBM
+
+LightGBM là mô hình boosting tree hiệu quả cho dữ liệu tabular, dùng GOSS và EFB để tăng tốc [17]. Trong đồ án, LightGBM vừa là base learner trong stacking vừa là ablation/baseline mạnh.
+
+## 4.6. Classic Hybrid Stacking
+
+Trong mỗi train window, pipeline thực hiện:
+
+1. Chia train window theo thời gian thành base-train và meta-train.
+2. Train Logistic Regression, Random Forest và LightGBM trên base-train.
+3. Dự báo xác suất Short/Hold/Long trên meta-train.
+4. Ghép xác suất thành meta-features:
+
+```text
+[p_lr_short, p_lr_hold, p_lr_long,
+ p_rf_short, p_rf_hold, p_rf_long,
+ p_lgbm_short, p_lgbm_hold, p_lgbm_long]
+```
+
+5. Train Logistic Regression meta-model trên meta-train.
+6. Dự báo xác suất test window bằng base learners, sau đó qua meta-model.
+
+Thiết kế này tuân theo stacked generalization [18] nhưng tránh lỗi phổ biến là train meta-model trên dự báo in-sample. Split base/meta theo thời gian giúp mô phỏng điều kiện dự báo ngoài mẫu tốt hơn.
+
+## 4.7. Feature pruning
+
+Sau lần chạy trước, feature importance cho thấy một số feature có đóng góp thấp. Pipeline đã giảm whitelist từ 25 xuống 21 feature, bỏ:
+
+```text
+regime_strength
+upper_wick_ratio
+lower_wick_ratio
+volume_zscore_20
+```
+
+Mục tiêu của feature pruning không phải tối ưu quá mức, mà là giảm nhiễu, giảm độ phức tạp báo cáo và giữ tập feature dễ giải thích. Trong tài chính, thêm feature không luôn cải thiện kết quả vì có thể tăng overfitting và multiple testing risk [7], [9].
+
+## 4.8. Backtest minh họa
+
+Backtest nhận tín hiệu dự báo và mô phỏng giao dịch. Các giả định gồm:
+
+- Vào lệnh theo tín hiệu Long/Short.
+- Bỏ qua Hold.
+- Có spread/slippage/commission.
+- Có lot size và rule thoát lệnh.
+- TP/SL trong backtest phải khớp logic labeling để tránh train một mục tiêu nhưng đánh giá một mục tiêu khác.
+
+Backtest không phải bằng chứng chính vì kết quả phụ thuộc mạnh vào giả định thực thi. Classification metrics trong walk-forward mới là cơ sở đánh giá mô hình.
+
+## 4.9. Quy trình thực nghiệm
+
+Quy trình thực nghiệm chuẩn:
+
+1. Chạy Stage 2 để tạo feature.
+2. Chạy Stage 3 và kiểm tra phân phối nhãn.
+3. Nếu nhãn quá lệch, chỉ chỉnh label trước.
+4. Chạy Stage 4 để huấn luyện stacking và baseline.
+5. Đọc `model_metrics.json` và `model_comparison.md`.
+6. Nếu kết quả xấu, xem feature importance rồi giảm feature có cơ sở.
+7. Chạy Stage 5/6 để tạo backtest demo và report.
+8. Viết kết luận trung thực, không chọn kết quả đẹp bằng cách thử quá nhiều cấu hình.
+
+## 4.10. Thiết kế validation chi tiết
+
+Thiết kế validation kế thừa khung cũ nhưng được chỉnh cho runtime hiện tại là Classic Hybrid Stacking.
+
+| Tham số | Ý nghĩa | Vai trò |
 |---|---|---|
-| `atr_tp_multiplier` | 2.0 | Take-profit = 2 × ATR |
-| `atr_sl_multiplier` | 2.0 | Stop-loss = 2 × ATR |
-| `horizon_bars` | 24 | Vertical barrier = 24 giờ |
-| `min_atr` | (tự động) | Floor ATR tối thiểu |
+| `train_window_bars` | Độ dài cửa sổ train | Đảm bảo đủ dữ liệu quá khứ |
+| `test_window_bars` | Độ dài cửa sổ test | Tạo đánh giá ngoài mẫu |
+| `step_bars` | Bước trượt | Tránh test overlap quá nhiều |
+| `purge_bars` | Khoảng loại mẫu có thể overlap label | Chống leakage do horizon |
+| `embargo_bars` | Khoảng đệm sau test | Giảm ảnh hưởng lan truyền thông tin |
+| `min_train_bars` | Số mẫu train tối thiểu | Tránh train cửa sổ quá nhỏ |
 
-**Lý do chọn thông số:**
+Ví dụ trực quan:
 
-- **TP/SL bằng nhau (2.0 × ATR):** Nhắm đến risk-reward ratio 1:1, đồng thời đảm bảo phân phối nhãn cân bằng hơn giữa Long và Short. Nếu TP/SL không đối xứng, barrier dễ chạm hơn (nhỏ hơn) sẽ tạo ra nhiều nhãn về phía đó, khiến mô hình bị thiên vị hướng dự đoán [1].
-- **Horizon 24 giờ:** Tương ứng với khoảng thời gian giữ vị thế 1 ngày giao dịch — phù hợp với mục tiêu dự báo ngắn hạn.
-- **ATR-based barriers:** Thích ứng tự động với biến động thị trường, đảm bảo barrier có ý nghĩa kinh tế tương đương giữa các chế độ thị trường [2].
-
-### 4.2.2. Xử lý nhãn ambiguous
-
-Khi cả upper barrier và lower barrier đều bị chạm trong cùng một thanh giá (same-bar both-hit), OHLCV không cho biết đường giá đi theo thứ tự nào. Các mẫu này được gán nhãn Hold (0) — quyết định bảo thủ, tránh tạo nhãn sai [2].
-
-### 4.2.3. Xử lý nhãn censored
-
-Các mẫu trong khoảng `horizon_bars` (24 giờ) cuối chuỗi dữ liệu không có đủ dữ liệu tương lai để đánh giá barrier. Nếu giữ lại và gán nhãn Hold, sẽ tạo nhiễu nhãn (label noise). Thay vào đó, chúng được đánh dấu censored (−2) và **loại bỏ hoàn toàn** khỏi tập huấn luyện.
-
-### 4.2.4. Sample weighting
-
-Trọng số mẫu (sample weight) được tính bằng average uniqueness theo López de Prado (mục 2.6.3). Trọng số được chuẩn hóa để giá trị trung bình = 1, giữ nguyên scale của hàm mất mát:
-
-```python
-# Normalized to mean 1
-weights /= weights.mean()
+```text
+Train window      Purge/Embargo      Test window
+[ quá khứ ...... ][ khoảng đệm ][ tương lai cần dự báo ]
 ```
 
-Trọng số này được sử dụng cả cho GRU (trong training loss) và LightGBM (qua `sample_weight` parameter).
+Trong mỗi cửa sổ, mô hình chỉ được học từ dữ liệu trước test window. Điều này mô phỏng tình huống triển khai: tại thời điểm ra quyết định, tương lai chưa tồn tại.
 
-### 4.2.5. Kiểm tra tính khả thi kinh tế
+## 4.11. Event-time purge
 
-Sau khi tạo nhãn, pipeline kiểm tra tỷ lệ nhãn Long/Short thực sự có lãi sau chi phí giao dịch. Nếu cả hai lớp đều dưới 60%, cảnh báo được phát ra — nhãn có thể không hữu ích cho giao dịch thực tế.
+Purge cố định theo số bar là cách đơn giản nhưng không hoàn hảo. Với triple-barrier, mỗi mẫu có `event_end` khác nhau: có mẫu chạm barrier sau 2 giờ, có mẫu sau 20 giờ, có mẫu đến tận horizon. Vì vậy event-time purge chính xác hơn:
 
-## 4.3. Thiết kế Validation
+```text
+Giữ mẫu train nếu event_end_train < test_start
+Loại mẫu train nếu event_end_train >= test_start
+```
 
-### 4.3.1. Walk-forward sliding window
+Cách này loại bỏ đúng các mẫu mà nhãn của chúng có thể dùng thông tin trùng với test window. Nó cũng tránh loại bỏ quá nhiều mẫu đã kết thúc sự kiện từ sớm.
 
-Thiết kế validation sử dụng sliding walk-forward với các thông số:
+## 4.12. Base/meta split trong stacking
 
-| Thông số | Giá trị | Tương đương |
+Một lỗi phổ biến khi stacking là train base models và meta-model trên cùng một tập dự báo in-sample. Khi đó meta-model học từ dự báo quá đẹp vì base models đã thấy chính dữ liệu đó. Để tránh lỗi này, pipeline chia train window thành hai phần theo thời gian:
+
+```text
+Train window = [ base-train 80% ][ meta-train 20% ]
+```
+
+Quy trình:
+
+1. Base learners học trên base-train.
+2. Base learners dự báo xác suất trên meta-train.
+3. Meta learner học trên xác suất meta-train.
+4. Khi test, base learners dự báo test rồi meta learner kết hợp.
+
+Split theo thời gian quan trọng hơn random split vì meta-train phải xảy ra sau base-train, gần với điều kiện dự báo tương lai.
+
+## 4.13. Khung baseline chi tiết
+
+Khung baseline hiện tại gồm:
+
+| Nhóm | Mô hình | Mục đích |
 |---|---|---|
-| `train_window_bars` | 17,520 | ~2 năm trên khung 1H |
-| `test_window_bars` | 4,380 | ~6 tháng trên khung 1H |
-| `step_bars` | 4,380 | Không chồng chéo |
-| `purge_bars` | 48 | 2× horizon (24h) |
-| `embargo_bars` | 50 | Khoảng đệm bổ sung |
-| `min_train_bars` | 10,000 | Tối thiểu ~14 tháng |
+| Không học | Naive Direction | Kiểm tra persistence hướng giá |
+| Không học | Majority Baseline | Kiểm tra bias lớp đa số |
+| Không học | Random Baseline | Floor ngẫu nhiên |
+| Học máy tuyến tính | Logistic Regression | Baseline đơn giản, dễ giải thích |
+| Học máy cây bagging | Random Forest | Bắt phi tuyến và interaction |
+| Học máy boosting | LightGBM | Baseline tabular mạnh |
+| Ensemble stacking | Hybrid Stacking | Mô hình đề xuất |
 
-**Ví dụ cửa sổ:**
+Báo cáo cần nhấn mạnh rằng mô hình đề xuất không được đánh giá một mình. Nó phải được đặt cạnh baseline. Nếu không vượt LightGBM, kết quả vẫn có giá trị vì chỉ ra rằng kiến trúc đơn giản hơn đang phù hợp hơn với dữ liệu hiện tại.
 
-```
-Window 1: Train [2018-01 → 2020-06] → Purge → Embargo → Test [2020-07 → 2020-12]
-Window 2: Train [2020-01 → 2022-06] → Purge → Embargo → Test [2022-07 → 2022-12]
-Window 3: Train [2022-01 → 2024-06] → Purge → Embargo → Test [2024-07 → 2024-12]
-...
-```
+## 4.14. Cấu hình mô hình hiện tại
 
-Mỗi cửa sổ kiểm tra (test window) không chồng chéo với cửa sổ trước, tạo ra các đánh giá out-of-sample độc lập.
+Cấu hình chính:
 
-### 4.3.2. Event-time purge
-
-Thay vì purge cố định 48 thanh giá, đồ án sử dụng **event-time purge**: chỉ giữ lại các mẫu huấn luyện có `event_end < test_start`. Phương pháp này chính xác hơn vì:
-
-- Nhãn Triple Barrier có thời gian sự kiện biến đổi (touched_bar từ 1 đến 24 giờ).
-- Purge cố định có thể quá khắc nghiệt (loại bỏ mẫu đã kết thúc sự kiện) hoặc quá lỏng (giữ mẫu chưa kết thúc sự kiện).
-- Event-time purge loại bỏ chính xác các mẫu có rủi ro label lookahead [2].
-
-### 4.3.3. Embargo cho chống sequence leakage
-
-Khoảng embargo (50 thanh giá ≈ 2 ngày) đặc biệt quan trọng cho GRU vì:
-
-- GRU sử dụng chuỗi đầu vào dài 48 thanh giá (sequence_length = 48).
-- Nếu test sample tại vị trí $t$ sử dụng chuỗi $[t-47, ..., t]$, và mẫu train tại $t-48$ được giữ lại → chuỗi test có chứa dữ liệu từ tập train.
-- Embargo 50 thanh giá > sequence_length 48 → đảm bảo không có sequence overlap [2, 3].
-
-Pipeline kiểm tra điều kiện này và raise error nếu `embargo_bars < sequence_length`:
-
-```python
-if gap_bars < seq_len:
-    raise ValueError("Leakage risk: gap < sequence_length")
+```toml
+[model]
+architecture = "stacking"
+objective = "multiclass"
+num_leaves = 15
+max_depth = 4
+learning_rate = 0.03
+n_estimators = 300
+min_child_samples = 80
+feature_fraction = 0.70
+reg_lambda = 10.0
+stacking_base_models = ["logistic_regression", "random_forest", "lightgbm"]
+stacking_meta_model = "logistic_regression"
+stacking_meta_fraction = 0.20
 ```
 
-### 4.3.4. Chia validation nội bộ (Internal validation split)
+Các tham số này thiên về regularization. Với dữ liệu tài chính nhiễu cao, việc giảm capacity thường an toàn hơn tăng complexity. `num_leaves=15`, `max_depth=4`, `min_child_samples=80` và `reg_lambda=10.0` đều nhằm hạn chế mô hình học nhiễu.
 
-Trong mỗi cửa sổ huấn luyện, 20% cuối được dành làm internal validation cho:
+## 4.15. LightGBM trong vai trò baseline mạnh
 
-- **GRU early stopping:** Dừng huấn luyện nếu validation loss không cải thiện sau 20 epoch.
-- **LightGBM early stopping:** Dừng boosting nếu validation loss không cải thiện sau 40 round.
-- **GRU hidden state PCA:** Fit PCA chỉ trên phần train (80% đầu), transform cả train và internal val.
+LightGBM được giữ như baseline mạnh vì:
 
-## 4.4. Mô hình Baseline
+- Phù hợp dữ liệu tabular.
+- Học được quan hệ phi tuyến.
+- Xử lý interaction feature tốt.
+- Huấn luyện nhanh hơn nhiều mô hình phức tạp.
+- Có feature importance để giải thích.
 
-### 4.4.1. Khung so sánh 4 nhóm mô hình
+Trong kết quả hiện tại, LightGBM vượt Hybrid Stacking. Vì vậy, khi viết báo cáo, không nên cố trình bày stacking như “tốt nhất tuyệt đối”. Thay vào đó, nên viết rằng stacking là kiến trúc đề xuất và được kiểm định công bằng; kết quả cho thấy LightGBM là ablation mạnh hơn trong lần chạy này.
 
-Để đánh giá tương đối hiệu suất mô hình hybrid, đồ án sử dụng khung so sánh **4 nhóm** nhằm tách biệt đóng góp của từng thành phần:
+## 4.16. Quy trình feature pruning
 
-| Nhóm | Kiến trúc | Mục đích |
-|---|---|---|
-| **Nhóm 1: Naive Direction** | Dự đoán lặp lại hướng thanh giá trước (persistence) | Baseline tối thiểu (không học) |
-| **Nhóm 2: LightGBM Static** | 22 đặc trưng tĩnh chỉ LightGBM | Trần hiệu suất đặc trưng bảng |
-| **Nhóm 3: GRU-only** | Chỉ hidden states GRU | Trần hiệu suất đặc trưng tuần tự |
-| **Nhóm 4: Hybrid GRU+LightGBM** | GRU PCA 16 + 22 đặc trưng tĩnh → LightGBM | Hệ thống đầy đủ (đóng góp luận văn) |
+Feature pruning được thực hiện sau khi có kết quả feature importance. Các feature bị bỏ:
 
-Ngoài 4 nhóm chính, các chiến lược baseline bổ sung được sử dụng làm tham chiếu phụ trong Nhóm 1:
-
-**Always Long / Always Short / Always Hold:** Luôn dự đoán một hướng cố định. Kiểm tra thiên vị hướng trong dữ liệu.
-
-**Majority Class:** Luôn dự đoán lớp phổ biến nhất trong tập huấn luyện. Nếu Hold chiếm đa số → mô hình có accuracy cao nhưng không có giá trị giao dịch. Phản ánh bias dữ liệu.
-
-**Random Baseline:** Dự đoán ngẫu nhiên từ {−1, 0, 1} với seed cố định. Thiết lập floor cho hiệu suất.
-
-**Naive Direction (Persistence):** Dự đoán hướng của thanh giá trước đó:
-
-$$\hat{y}_t = \text{sign}(r_{t-1})$$
-
-Giả định rằng xu hướng gần nhất sẽ tiếp tục — baseline tối thiểu cho bài toán prediction.
-
-### 4.4.2. Đánh giá baseline
-
-Mỗi baseline được chạy trên cùng các cửa sổ walk-forward với mô hình hybrid, đảm bảo so sánh công bằng. Các metric: accuracy, macro F1, directional accuracy.
-
-## 4.5. Kiến trúc Hybrid GRU + LightGBM
-
-### 4.5.1. Giai đoạn 1: GRU Feature Extraction
-
-**Chuẩn bị chuỗi đầu vào:**
-
-Từ feature matrix, GRU sử dụng chuỗi 48 thanh giá liên tiếp của các đặc trưng OHLCV chuẩn hóa (normalized OHLCV). Chuỗi được tạo bằng sliding window:
-
-$$X_i^{\text{GRU}} = [x_{i-47}, x_{i-46}, ..., x_i] \in \mathbb{R}^{48 \times d_{\text{input}}}$$
-
-trong đó $d_{\text{input}}$ là số đặc trưng GRU (normalized OHLCV columns). Mỗi đặc trưng được chuẩn hóa bằng mean và std tính trên tập huấn luyện:
-
-$$\hat{x} = \frac{x - \mu_{\text{train}}}{\sigma_{\text{train}}}$$
-
-**Kiến trúc GRU:**
-
-| Layer | Thông số |
-|---|---|
-| Input Normalization | LayerNorm |
-| Variational Dropout | p = 0.1 |
-| GRU | 2 layers, hidden_size = 64, dropout = 0.3 |
-| Attention Pooling | Linear(64 → 1) + Softmax |
-| Output | Context vector (64 chiều) |
-
-Quy trình forward:
-
-1. LayerNorm chuẩn hóa đầu vào.
-2. Variational dropout áp dụng mask đồng nhất trên toàn bộ chuỗi.
-3. GRU 2 lớp xử lý chuỗi, tạo hidden state cho mỗi bước thời gian.
-4. Attention pooling tính trọng số cho mỗi bước và tổng hợp thành context vector duy nhất.
-5. Context vector (64 chiều) là đầu ra của giai đoạn GRU.
-
-**Huấn luyện GRU:**
-
-- Optimizer: Adam, learning rate = 0.0005
-- Batch size: 256
-- Max epochs: 100, patience = 20 (early stopping)
-- Warmup: 3 epoch (linear ramp-up learning rate)
-- Gradient accumulation: 1 step
-
-GRU được huấn luyện như một classifier độc lập (multiclass: −1, 0, 1) để đảm bảo hidden states mang thông tin phân loại hữu ích. Validation split nội bộ (20%) dùng cho early stopping.
-
-### 4.5.2. Giảm chiều PCA
-
-Hidden states GRU (64 chiều) thường chứa nhiều nhiễu do mạng nơ-ron có xu hướng sử dụng không gian chiều cao không hoàn toàn [4]. PCA giảm xuống 16 thành phần chính:
-
-```python
-PCA(n_components=16)
+```text
+regime_strength
+upper_wick_ratio
+lower_wick_ratio
+volume_zscore_20
 ```
 
-PCA được fit chỉ trên tập huấn luyện (80% đầu) để tránh rò rỉ thông tin từ validation. Explained variance được ghi nhận:
+Quy trình đúng:
 
-```
-GRU hidden states: 64→16 PCs, explained variance=XX%
-```
+1. Chạy Stage 4 để có feature importance.
+2. Xác định feature importance thấp hoặc khó bảo vệ.
+3. Chỉ sửa whitelist model-facing.
+4. Rerun từ Stage 2 vì feature output thay đổi.
+5. So sánh metrics trước/sau.
 
-Nếu explained variance < 50%, cảnh báo được phát ra — không gian hidden state chủ yếu là nhiễu.
+Không nên xóa indicator khỏi code ngay vì indicator vẫn có thể hữu ích cho phân tích, chart hoặc thí nghiệm sau.
 
-### 4.5.3. Giai đoạn 2: Xây dựng ma trận đặc trưng lai (Hybrid Feature Matrix)
+## 4.17. Backtest barrier guard
 
-Ma trận đặc trưng cho LightGBM được xây dựng bằng cách ghép (concatenate):
+Một điểm thiết kế quan trọng là backtest TP/SL phải khớp label TP/SL. Nếu mô hình được train để dự báo sự kiện TP/SL 2.0 ATR nhưng backtest lại thoát lệnh theo rule khác, kết quả backtest sẽ không đánh giá đúng mục tiêu học.
 
-$$X^{\text{hybrid}} = [\text{GRU\_PCs} \| \text{Static\_Features}]$$
+Pipeline có guard:
 
-- **GRU_PCs:** 16 thành phần chính từ hidden states GRU.
-- **Static_Features:** Các đặc trưng kỹ thuật đã lọc (RSI, ATR, ADX, MACD, EMA slope, returns, regime, v.v.).
-
-Ma trận lai có kích thước $N \times (16 + d_{\text{static}})$.
-
-Alignment quan trọng: GRU chuỗi đầu vào bắt đầu từ sample $i-47$, nên hidden state tại sample $i$ chỉ tồn tại từ sample 47 trở đi. Pipeline tự động align:
-
-```python
-train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
+```text
+labels.tp == backtest.tp
+labels.sl == backtest.sl
 ```
 
-### 4.5.4. Giai đoạn 3: Phân loại LightGBM
+Nếu không khớp, pipeline raise error. Đây là lựa chọn tốt vì nó buộc nghiên cứu nhất quán giữa target học máy và mô phỏng ứng dụng.
 
-**Thông số LightGBM:**
+## 4.18. Reproducibility
 
-| Thông số | Giá trị | Giải thích |
-|---|---|---|
-| `num_leaves` | 31 | Số lá tối đa |
-| `max_depth` | 6 | Độ sâu tối đa |
-| `learning_rate` | 0.02 | Shrinkage |
-| `n_estimators` | 500 | Số vòng boosting tối đa |
-| `min_child_samples` | 50 | Regularization |
-| `subsample` | 0.80 | Row subsampling |
-| `feature_fraction` | 0.70 | Column subsampling |
-| `reg_alpha` | 0.05 | L1 regularization |
-| `reg_lambda` | 5.0 | L2 regularization |
-| `early_stopping` | 40 rounds | Dừng sớm |
+Để kết quả có thể lặp lại, pipeline cố định:
 
-**Class weighting:** Trọng số lớp được tính tự động để bù đắp mất cân bằng:
+- Random seed.
+- Config TOML.
+- Feature whitelist.
+- Window split.
+- Output artifacts theo session timestamp.
+- Metrics lưu thành JSON/Markdown.
 
-$$w_c = \frac{N}{K \cdot n_c}$$
+Khi báo cáo kết quả, cần nêu rõ session artifact:
 
-trong đó $N$ là tổng số mẫu, $K$ là số lớp, và $n_c$ là số mẫu trong lớp $c$.
+```text
+results/XAUUSD_1H_20260511_231114/
+```
 
-**Distribution shift weighting:** Vì mỗi cửa sổ walk-forward có thể có phân phối lớp khác nhau, trọng số shift được tính:
+Điều này giúp người đọc truy ngược từ số liệu trong luận văn về file kết quả cụ thể.
 
-$$w_{\text{shift}}(c) = \frac{p_{\text{train}}(c)}{p_{\text{val}}(c)}$$
+## 4.19. Tổng kết phương pháp
 
-Trọng số này được nhân với average-uniqueness sample weight:
+Phương pháp đề xuất không chỉ là một mô hình stacking. Nó là toàn bộ quy trình gồm label design, leakage control, model comparison và reporting. Trong tài chính, pipeline quan trọng vì một mô hình tốt nhưng validation sai sẽ cho kết luận sai. Thiết kế của đồ án ưu tiên tính kiểm soát, giải thích và khả năng bảo vệ học thuật hơn việc tối ưu một metric ngắn hạn.
 
-$$w_{\text{combined}} = w_{\text{uniqueness}} \times w_{\text{shift}}$$
+## 4.20. Pseudo-code thuật toán tổng thể
 
-### 4.5.5. Dự đoán và thu thập OOF
+Quy trình tổng thể có thể mô tả bằng pseudo-code:
 
-Mỗi cửa sổ walk-forward tạo ra dự đoán trên tập kiểm tra (out-of-fold predictions). Các OOF predictions được gom lại thành một chuỗi dự đoán liên tục — cho phép đánh giá hiệu suất tổng thể trên toàn bộ dữ liệu out-of-sample.
+```text
+Input: OHLCV H1, config
+Output: OOF predictions, metrics, backtest demo, report
 
-## 4.6. Biện pháp chống rò rỉ thông tin (Anti-Leakage)
+1. Load OHLCV và kiểm tra timestamp
+2. Tạo feature causal
+3. Loại warm-up rows
+4. Tạo triple-barrier labels
+5. Loại censored rows
+6. Tạo walk-forward windows
+7. For each window:
+   a. Tách train/test theo thời gian
+   b. Purge train samples có event_end overlap test
+   c. Chia train thành base-train và meta-train
+   d. Train Logistic Regression, Random Forest, LightGBM trên base-train
+   e. Dự báo xác suất meta-train
+   f. Train Logistic Regression meta-model
+   g. Dự báo test window
+   h. Lưu OOF predictions và window metrics
+8. Gộp OOF predictions
+9. Tính metrics tổng và per-class
+10. Chạy backtest demo
+11. Sinh báo cáo
+```
 
-### 4.6.1. Tổng hợp các biện pháp
+Pseudo-code này giúp hội đồng thấy rõ mô hình đề xuất không được train/test tùy tiện. Mọi dự báo test đều đến từ mô hình chỉ học từ quá khứ.
 
-Đồ án triển khai nhiều lớp bảo vệ chống rò rỉ thông tin [2, 3, 5]:
+## 4.21. Kiểm soát lỗi triển khai
 
-| Lớp | Biện pháp | Vai trò |
-|---|---|---|
-| Label | Censored label removal | Loại bỏ mẫu thiếu forward data |
-| Label | Event-time purge | Train labels kết thúc trước test boundary |
-| Sequence | Embargo ≥ sequence_length | GRU chuỗi không overlap test |
-| Feature | Train-only feature selection | Correlation filter chỉ fit trên train |
-| Feature | Train-only normalization | Mean/std chỉ từ train set |
-| Dimensionality | Train-only PCA | PCA fit chỉ trên train hidden states |
-| Model | Train-only early stopping | Val split nội bộ từ train window |
-| Sample | Average-uniqueness weighting | Giảm bias từ overlapping labels |
+Pipeline có một số kiểm soát kỹ thuật:
 
-### 4.6.2. Tại sao cần nhiều lớp?
+- Config dataclass báo lỗi nếu có key lạ.
+- Feature registry xác định output schema.
+- EXCLUDE_COLS loại cột không được làm feature.
+- Barrier guard đảm bảo label/backtest TP/SL khớp nhau.
+- Ruff và compileall kiểm tra lỗi code trước khi chạy pipeline.
+- Artifacts được ghi theo session để tránh ghi đè kết quả.
 
-Rò rỉ thông tin trong tài chính thường tinh vi và khó phát hiện [5]. Một số dạng phổ biến:
+Các kiểm soát này không phải phần mô hình, nhưng rất quan trọng trong đồ án phần mềm. Chúng giúp kết quả có thể tái lập và giảm lỗi do thay đổi code/config.
 
-- **Label lookahead:** Nhãn tại $t$ dùng data từ $t$ đến $t+h$; nếu $t+h$ nằm trong test set → leakage. Purge + embargo giải quyết.
-- **Feature lookahead:** Feature selection trên toàn bộ data trước khi split → leakage. Train-only selection giải quyết.
-- **Normalization leakage:** Tính mean/std trên cả train + test → leakage. Train-only normalization giải quyết.
-- **Sequence overlap:** GRU input tại test sample $t$ chứa data từ train period. Embargo giải quyết.
+## 4.22. Tổng kết mở rộng chương phương pháp
 
-## 4.7. Tổng kết chương
-
-Chương này đã trình bày phương pháp đề xuất với các đóng góp chính: (1) thiết kế nhãn Triple Barrier với ATR-based barriers và sample weighting; (2) walk-forward validation với event-time purge và embargo chống sequence leakage; (3) kiến trúc hybrid GRU (feature extractor) + LightGBM (classifier) với PCA giảm chiều; và (4) đa lớp bảo vệ chống rò rỉ thông tin. Chương tiếp theo sẽ trình bày kết quả thực nghiệm.
-
-## Tài liệu tham khảo chương này
-
-[1] Kim, H., et al. (2025). "Stock Price Prediction Using Triple Barrier Labeling and Raw OHLCV Data." *arXiv:2504.02249*.
-
-[2] López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley.
-
-[3] Kapoor, S., et al. (2023). "On Leakage in Machine Learning Pipelines." *arXiv:2311.04179*.
-
-[4] Gong, X., et al. (2025). "A Hybrid Data Mining Framework for Financial Time-Series Prediction." *Research Square preprint*.
-
-[5] Bailey, D.H., et al. (2014). "Pseudo-Mathematics and Financial Charlatanism." *Notices of the AMS*, 61(5), 458–471.
+Chương phương pháp cần cho thấy ba điểm: mô hình được thiết kế có lý do, validation phù hợp tài chính, và pipeline có kiểm soát kỹ thuật. Nếu chỉ mô tả thuật toán stacking mà không mô tả label, purge/embargo và artifact, báo cáo sẽ thiếu phần quan trọng nhất của financial ML. Vì vậy bản cuối nên giữ đầy đủ các mục từ thiết kế nhãn đến reproducibility.

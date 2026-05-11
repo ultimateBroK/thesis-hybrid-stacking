@@ -1,290 +1,170 @@
 # Glossary
 
-> Simple definitions for all technical terms used in this project.
+## Model Architecture
+
+### Classic Hybrid Stacking
+
+A two-level ensemble. Base models first produce probabilities for Short/Hold/Long. A meta-model (Logistic Regression) then learns how to combine those probabilities into a final prediction. This project uses three base learners: Logistic Regression, Random Forest, and LightGBM.
+
+### Base Learner
+
+A model in the first layer of stacking. This project uses:
+- **Logistic Regression**: linear baseline, fast to train, provides calibrated probability estimates
+- **Random Forest**: bagging tree ensemble (300 trees, max_depth=6), robust to outliers
+- **LightGBM**: gradient boosting tree learner, typically the strongest single model
+
+### Meta Learner
+
+The second-layer model in stacking. This project uses Logistic Regression as the meta learner, which takes the 9-dimensional probability vector (3 classes × 3 base learners) and learns optimal combination weights.
+
+### LightGBM-Only Ablation
+
+A single-model baseline using only LightGBM without stacking. Serves as a comparison point to evaluate whether the added complexity of stacking provides value.
 
 ---
 
-## A
+## Labeling
 
-**ATR (Average True Range)**
-A number that shows how much a price typically moves in one time period. If ATR = 5, the price usually moves about $5 per hour. High ATR means the market is volatile (moving a lot). Low ATR means the market is calm.
+### Triple-Barrier Labeling
 
-**ATR Multiplier**
-A number you multiply by ATR to set how far your take-profit or stop-loss should be. If ATR = 5 and multiplier = 1.5, then TP/SL distance = $7.50.
+A financial labeling method (from Marcos Lopez de Prado) with three exits:
+- **Take-profit (TP)**: upper barrier hit → Long label (+1)
+- **Stop-loss (SL)**: lower barrier hit → Short label (-1)
+- **Timeout/Horizon**: no barrier hit → Hold label (0)
 
-**Ablation Study**
-An experiment where you remove parts of your model one at a time to see which parts are actually helping. Like testing a car without its turbo to see how much the turbo really adds.
+It is safer than simply asking whether price is higher after N bars because it accounts for intra-period volatility through ATR-based barriers.
 
----
+### Direction-Barrier Labeling
 
-## B
+The specific implementation in this project. Barriers are computed using ATR:
+```text
+upper = close + atr_tp_multiplier × ATR
+lower = close - atr_sl_multiplier × ATR
+```
 
-**Backtest**
-A simulation of how a trading strategy would have performed in the past. You pretend to trade using historical data and see if you would have made money. It is not a guarantee of future results.
+The algorithm scans forward up to `horizon_bars` to find the first barrier hit.
 
-**Base Learner**
-A standalone model (such as GRU or LightGBM) that can be trained independently on its own feature set.
+### Asymmetric Barriers
 
-**Batch Size**
-The number of data samples processed at once during neural network training. A batch size of 64 means the model looks at 64 examples, updates its weights, then looks at the next 64.
+TP and SL can use different ATR multipliers. Current config uses symmetric 2.0/2.0, but asymmetric settings (e.g., 3.0/1.5) can produce different label distributions.
 
-**Bid / Ask**
-Two prices you always see in trading. The **bid** is the highest price a buyer is willing to pay. The **ask** is the lowest price a seller is willing to accept. The difference between them is the spread.
+### Censored Labels
 
----
+Bars whose forward horizon extends beyond available data are labeled -2 and dropped before training. This prevents training on incomplete information.
 
-## C
+### Sample Weights (Average Uniqueness)
 
-**CFD (Contract for Difference)**
-A financial product that lets you bet on price movements without owning the actual asset. You can go long (bet on price going up) or short (bet on price going down). You trade on margin with leverage.
-
-**Calmar Ratio**
-Total return divided by maximum drawdown. A Calmar ratio of 2.0 means you made twice as much as your worst drop. Higher is better.
-
-**Class Weight**
-A technique to handle imbalanced data. If you have 60% "Flat" labels and 20% "Long" and 20% "Short", class weights tell the model to pay more attention to the minority classes.
-
-**Commission**
-A fee you pay to your broker for each trade. In this project, the commission is $10 per standard lot round-trip (open + close).
-
-**Confidence Threshold**
-The minimum predicted probability required before the model takes a trade. In this project, the threshold is 0.50 (50%) — the model only trades when it is at least 50% confident. Set to 0 to disable and trade on all signals.
-
-**Confusion Matrix**
-A table that shows how many predictions were correct and how many were wrong. The rows are the actual values, the columns are the predicted values. A perfect model would only have numbers on the diagonal.
-
-**Correlation**
-A measure of how two things move together. If correlation = 1.0, they always move in the same direction. If -1.0, they always move in opposite directions. If 0.0, they are unrelated.
+Lopez de Prado's method to reduce overlap bias. When multiple labels cover the same time period (overlapping forward windows), each gets a lower weight proportional to how many other labels overlap with it. Weights are normalized to mean 1.0.
 
 ---
 
-## D
+## Validation
 
-**Data Leakage**
-A bug where information from the future accidentally gets into the training data. For example, using tomorrow's price to predict today's direction. The model looks great during training but fails in real trading.
+### Walk-Forward Validation
 
-**Drawdown**
-How much your account drops from its highest point. If your account was $120,000 and fell to $96,000, the drawdown is 20%. Maximum drawdown is the worst drop ever recorded.
+A chronological evaluation method. The model trains on past data and predicts future windows, then the window slides forward. This simulates how a model would perform in real-time deployment.
 
-**Dropout**
-A technique to prevent neural networks from memorizing data. During training, it randomly turns off some neurons (like temporarily firing some employees to make the remaining ones more capable).
+```text
+Window 1: |<- train ->| gap |<- test ->|
+Window 2:               |<- train ->| gap |<- test ->|
+Window 3:                              |<- train ->| gap |<- test ->|
+```
 
----
+### Sliding Window
 
-## E
+Each window uses a fixed-size train and test block that moves forward by `step_bars`. Non-overlapping test windows ensure each data point is predicted exactly once.
 
-**Early Stopping**
-A technique that stops training when the model stops improving on the validation data. Prevents the model from training too long and memorizing the training data.
+### Purge
 
-**EMA (Exponential Moving Average)**
-A type of average that gives more weight to recent data. It reacts faster to new information than a simple moving average.
+A gap between the end of the training block and the start of the test block. This removes label lookahead leakage because triple-barrier labels use forward-looking data. Default: 48 bars (2 days on H1).
 
-**Embargo**
-An extra gap added after the purge zone at data split boundaries. This is an additional safety measure against data leakage.
+### Embargo
 
-**Equity Curve**
-A line chart showing how your account balance changes over time as you make trades. A good equity curve goes up smoothly. A bad one looks like a rollercoaster.
+An additional gap after the test block before the next training block can use that data. Prevents information from the test period from leaking into the next window's training. Default: 50 bars.
 
-**Expectancy**
-The average amount of money you expect to make (or lose) per trade. Positive expectancy = the strategy is profitable on average.
+### Out-of-Fold (OOF) Predictions
+
+Predictions generated on test windows that were not used to train the model for that window. All OOF predictions are concatenated to form the final prediction file, giving one prediction per data point.
 
 ---
 
-## F
+## Metrics
 
-**Feature**
-A piece of information the model uses to make a prediction. In this project, RSI, ATR, and MACD are examples of features. Think of features as "clues" the model looks at.
+### Directional Accuracy
 
-**Feature Importance**
-A ranking of which features the model found most useful. If RSI has the highest importance, it means RSI was the most helpful feature for making predictions.
+Accuracy computed only on bars where both the true and predicted labels are non-zero (Short or Long). Hold predictions on directional bars count as wrong. Useful for evaluating actual trading signal quality.
 
-**Forward Fill (ffill)**
-A method to fill missing data by using the last known value. If the RSI at 3:00 PM is missing, it uses the RSI from 2:00 PM.
+### MDA (Market Directional Accuracy)
 
----
+Two variants:
+- **MDA (no hold)**: accuracy on bars where true label is Short or Long only
+- **MDA (binary)**: accuracy for Long vs Short only, Hold predictions count as wrong
 
-## G
+### Macro F1
 
-**Gradient Boosting**
-A machine learning method that builds many simple decision trees, one after another. Each new tree tries to fix the mistakes of the previous trees. LightGBM is a gradient boosting library.
+Average F1 score across all three classes (Short, Hold, Long). It penalizes models that ignore minority classes (especially Hold). More informative than accuracy for imbalanced datasets.
 
-**GRU (Gated Recurrent Unit)**
-A type of neural network designed for sequential data (like time series). It has "gates" that decide what information to remember and what to forget. It is similar to LSTM but simpler and faster. In this project, the GRU is trained with **multiclass focal loss** on Short/Hold/Long labels by default. Regression remains available only as an experiment.
+### Weighted F1
 
----
+Support-weighted average F1. Gives more weight to classes with more samples. Can be misleading if the majority class dominates.
 
-## H
+### Balanced Accuracy
 
-**Hidden States**
-The internal representation that a GRU produces after reading a sequence. In this project, the GRU produces 64 numbers (hidden states, reduced to 16 via PCA) that summarize the temporal pattern of the last 48 hours.
+Average recall across classes. Equivalent to (recall_Short + recall_Hold + recall_Long) / 3. Robust to class imbalance.
 
-**Horizon**
-The maximum time window for a trade. In triple barrier labeling, if the price does not hit TP or SL within the horizon (e.g., 24 bars), the trade is closed and labeled as "Flat".
+### Confusion Matrix
 
-**Hyperparameter**
-A setting you choose before training (like learning rate or number of trees). The model cannot learn these from data — you have to set them manually.
+A 3×3 matrix showing true labels (rows) vs predicted labels (columns):
+- Diagonal: correct predictions
+- Off-diagonal: misclassifications
+- Direction confusion matrix: 2×2 (Short vs Long only, Hold excluded)
 
----
+### Calibration
 
-## K
-
-**Killer Feature**
-Not a real technical term, but in this project, the "killer feature" is the hybrid architecture — GRU trained with multiclass focal loss produces temporal embeddings, and LightGBM uses those embeddings with static features to classify Short/Hold/Long decisions.
+How well do predicted probabilities match actual frequencies?
+- **ECE (Expected Calibration Error)**: weighted average of |accuracy - confidence| across probability bins
+- **Brier Score**: mean squared error of probability predictions
+- **Log Loss**: cross-entropy of predicted probabilities
 
 ---
 
-## L
+## Trading
 
-**Label**
-The correct answer for each data point. In this project, labels are: +1 (Long/buy), 0 (Flat/hold), -1 (Short/sell). Labels are generated using the Triple Barrier method.
+### Backtest
 
-**Leverage**
-Borrowed money from your broker. Leverage of 10:1 means with $10,000 in your account, you can trade as if you had $100,000. This project uses 10:1 leverage. Leverage amplifies both profits and losses.
+A simulator that translates model signals into hypothetical trades using the `backtesting.py` library with fractional lot support. In this thesis it is an application demo, not the primary proof.
 
-**LightGBM**
-A fast, efficient gradient boosting library developed by Microsoft. It builds decision trees and combines their predictions. It handles large datasets well and is widely used in competitions and industry.
+### CFD (Contract for Difference)
 
-**Long**
-A trade where you buy, hoping the price will go up. You make money if the price rises.
+A derivative that allows trading on price movements without owning the underlying asset. XAU/USD CFDs are typically traded with leverage.
 
----
+### Signal-to-Noise Ratio
 
-## M
+In financial time series, the predictable component (signal) is typically much smaller than the random component (noise). This makes prediction inherently difficult and limits achievable accuracy.
 
-**MACD (Moving Average Convergence Divergence)**
-A momentum indicator that shows the relationship between two moving averages. When the MACD line crosses above the signal line, it suggests upward momentum. When it crosses below, it suggests downward momentum.
+### ATR (Average True Range)
 
-**Margin Call**
-When your broker warns you that your account does not have enough money to maintain your open positions. If you do not add funds, the broker will close your positions.
-
-**Max Drawdown**
-The largest percentage drop from a peak to a trough in your equity curve. It measures the worst-case loss you would have experienced.
+Wilder's volatility measure. Used for:
+- Barrier computation in labels
+- Feature normalization (ATR-normalized distances)
+- Stop-loss/take-profit in backtest
 
 ---
 
-## N
+## Infrastructure
 
-**NumPy**
-A Python library for numerical computing. It handles arrays and mathematical operations very fast.
+### Session
 
----
+A timestamped directory containing all outputs from one pipeline run. Enables reproducibility and comparison across runs.
 
-## O
+### Config Snapshot
 
-**OHLCV**
-Open, High, Low, Close, Volume — the five pieces of information in each candlestick bar. Open = starting price, High = highest price, Low = lowest price, Close = ending price, Volume = number of trades.
+A copy of `config.toml` saved at the start of each session. Ensures the exact configuration can be retrieved for any past run.
 
-**Overfitting**
-When a model learns the training data too well, including the noise. It performs great on training data but poorly on new, unseen data. Like a student who memorized exam answers but cannot solve new problems.
+### Pipeline Cache
 
-**OOF (Out-of-Fold) Predictions**
-Predictions made on data that the model was NOT trained on during a specific walk-forward window. These are the test-slice predictions from each sliding window, concatenated to produce an unbiased evaluation dataset.
+Stage outputs are cached to avoid re-computation. Cache invalidation can be by file path, config hash, or disabled entirely.
 
----
+### GRU (Gated Recurrent Unit)
 
-## P
-
-**Parquet**
-A file format for storing tabular data efficiently. It is much faster to read and write than CSV, especially for large datasets.
-
-**Pip**
-The smallest price movement in a currency pair. For XAU/USD, one pip is typically $0.01 per ounce.
-
-**Pivot Points**
-Support and resistance levels calculated from the previous day's high, low, and close prices. Traders use them to identify potential price turning points.
-
-**Polars**
-A fast Python library for data manipulation, similar to Pandas but much faster. This project uses Polars for all data processing.
-
-**Profit Factor**
-Total profits divided by total losses. A profit factor of 2.0 means you made $2 for every $1 you lost. Above 1.0 = profitable. Below 1.0 = losing money.
-
-**Purge**
-A gap at the boundary between training and testing data. It removes data points that could cause leakage because they share information across the split.
-
----
-
-## R
-
-**R-squared (R²)**
-A metric that shows how well a model explains the data. Values range from 0 to 1. Higher is better.
-
-**Recovery Factor**
-Total net profit divided by maximum drawdown. It tells you how quickly the strategy recovers from its worst loss.
-
-**RSI (Relative Strength Index)**
-A momentum indicator that ranges from 0 to 100. Above 70 suggests the asset is overbought (price may drop). Below 30 suggests oversold (price may rise).
-
----
-
-## S
-
-**Sharpe Ratio**
-A measure of risk-adjusted return. It tells you how much return you get per unit of risk. A Sharpe of 1.0 is considered decent. Above 2.0 is excellent.
-
-**Short**
-A trade where you sell, hoping the price will go down. You make money if the price falls.
-
-**Sliding Window**
-A walk-forward validation technique where a fixed-size training window slides forward through time. Each window produces a separate train/test split, and the process generates out-of-fold predictions across the entire dataset.
-
-**Slippage**
-The difference between the price you wanted and the price you actually got. In fast markets, you might not get filled at the exact price you wanted.
-
-**Sortino Ratio**
-Similar to Sharpe ratio, but it only considers downside risk (losses). It is often preferred because upside volatility (gains) should not be penalized.
-
-**Spread**
-The difference between the bid and ask price. This is a cost you pay every time you trade. A spread of 2 pips means you start each trade $2 in the hole.
-
-**Stop-Loss (SL)**
-A price level where you automatically exit a losing trade to limit your loss. If you buy at $2,000 and set a stop-loss at $1,990, you will exit if the price drops to $1,990.
-
-**Stop-Out**
-When your broker forcibly closes your positions because your margin level is too low. This happens when losses are too large relative to your account balance.
-
----
-
-## T
-
-**Take-Profit (TP)**
-A price level where you automatically exit a winning trade to lock in your profit. If you buy at $2,000 and set take-profit at $2,020, you will exit when the price reaches $2,020.
-
-**Tick**
-The smallest price increment for an asset. For XAU/USD, one tick = $0.01 per ounce (config: `tick_size = 0.01`). Spread and slippage are measured in ticks.
-
-**Time Series**
-Data collected over time in chronological order. Stock prices, temperature readings, and heart rate monitors all produce time series data. Order matters — you cannot shuffle it randomly.
-
-**Triple Barrier Method**
-A labeling method that places three "barriers" around the entry price: a take-profit barrier above, a stop-loss barrier below, and a time barrier (horizon). Whichever barrier the price hits first determines the label.
-
-**Train / Validation / Test Split**
-Dividing your data into three parts:
-- **Train** — Static split training period: 2018-01-01 to 2023-09-30. Walk-forward training uses 2-year rolling windows after enough bars accumulate.
-- **Validation** — Static split validation period: 2023-10-01 to 2025-01-31.
-- **Test** — Static split test period: 2025-02-01 to 2026-04-30, never seen during training in static mode.
-
----
-
-## V
-
-**Validation Set**
-A portion of data used during training to check if the model is learning well. It helps you decide when to stop training (early stopping) and which hyperparameters work best.
-
----
-
-## W
-
-**Walk-Forward Validation**
-A time-series validation method where the model is trained on a historical window and tested on the subsequent period, then the window slides forward. This mimics real-world deployment and prevents look-ahead bias. The default mode in this project.
-
-**Win Rate**
-The percentage of trades that made money. A 55% win rate means 55 out of every 100 trades were profitable.
-
----
-
-## X
-
-**XAU/USD**
-The ticker symbol for gold priced in US dollars. XAU is the chemical symbol for gold. USD is the US dollar. It is one of the most traded instruments in the world.
+A recurrent neural network architecture. GRU was part of older experiment directions but is not the current production runtime for this thesis path.

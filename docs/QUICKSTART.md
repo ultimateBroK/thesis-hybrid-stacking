@@ -1,312 +1,149 @@
 # Quickstart
 
-> Step-by-step guide to run the project from scratch.
-
----
-
 ## Prerequisites
 
-Before you begin, make sure you have:
+- [Pixi](https://pixi.sh) package manager
+- Python 3.13 (managed by Pixi)
 
-- **Pixi** installed ([install guide](https://pixi.sh/latest/))
-- **Git** installed
-- **At least 2 GB of free disk space** (for data and models)
-- **8 GB RAM minimum** (16 GB recommended for training)
-
----
-
-## Setup Overview
-
-```mermaid
-flowchart LR
-    A["Clone"] --> B["Install"]
-    B --> C["Get Data"]
-    C --> D["Run"]
-    D --> E["View Results"]
-
-    style A fill:#2563EB,color:#fff
-    style B fill:#2563EB,color:#fff
-    style C fill:#2563EB,color:#fff
-    style D fill:#7C3AED,color:#fff
-    style E fill:#059669,color:#fff
-```
-
----
-
-## Step 1: Clone the Repository
-
-```bash
-git clone <your-repo-url> thesis
-cd thesis
-```
-
----
-
-## Step 2: Install Dependencies
-
-Pixi will download and install all required packages automatically:
+## Install
 
 ```bash
 pixi install
 ```
 
-This creates an isolated environment with Python 3.13 and all libraries (PyTorch, LightGBM, Polars, etc.).
+This installs all dependencies defined in `pixi.toml` including: polars, lightgbm, scikit-learn, numba, backtesting.py, pyecharts, streamlit, pandera, structlog.
 
-> **Note:** The first install may take a few minutes because it downloads PyTorch and other large packages.
+## Run the Pipeline
 
----
-
-## Step 3: Get the Data
-
-Place your raw XAU/USD tick data in the correct folder:
-
-```bash
-data/raw/XAUUSD/
-```
-
-Each file should be a **parquet file** containing tick data for one month. The columns expected are:
-
-| Column | Description |
-|--------|-------------|
-| `timestamp` | Date and time of the tick |
-| `bid` | Bid price |
-| `ask` | Ask price |
-
-> Alternatively, use the built-in downloader:
-> ```bash
-> pixi run data
-> ```
-> This downloads XAU/USD data from 2018 onwards (configured via `start_date` in `config.toml`).
-
----
-
-## Step 4: Run the Full Pipeline
-
-The simplest command — runs everything from data preparation to report generation:
+### Full Run
 
 ```bash
 pixi run workflow
 ```
 
-This command:
+This executes all 6 stages from scratch:
+1. Data Preparation → 2. Feature Engineering → 3. Label Generation → 4. Model Training → 5. Backtest → 6. Reporting
 
-```mermaid
-flowchart TD
-    S0["Stage 0: Convert ticks → OHLCV"] --> S1["Stage 1: Generate 11 indicators"]
-    S1 --> S2["Stage 2: Triple-barrier labeling"]
-    S2 --> S3["Stage 3: Walk-forward training<br/><i>GRU + LightGBM per window</i>"]
-    S3 --> S4["Stage 4: CFD backtest<br/><i>on concatenated OOF predictions</i>"]
-    S4 --> S5["Stage 5: Report + charts"]
-
-    style S0 fill:#2563EB,color:#fff
-    style S1 fill:#2563EB,color:#fff
-    style S2 fill:#2563EB,color:#fff
-    style S3 fill:#7C3AED,color:#fff
-    style S4 fill:#059669,color:#fff
-    style S5 fill:#059669,color:#fff
-```
-
-> **First run:** This may take 10–30 minutes depending on your hardware.
-> **Subsequent runs:** Stages are cached — only changed stages re-run.
-
-### Architecture Choice
-
-The pipeline uses the **hybrid architecture**, controlled by `model.architecture` in `config.toml`:
-
-| Architecture | Description | Config |
-|---|---|---|
-| **hybrid** (default) | GRU hidden states concatenated with static features → LightGBM | `model.architecture = "hybrid"` |
-
-The hybrid architecture uses walk-forward sliding-window validation when `validation.method = "sliding"`.
-
----
-
-## Step 5: View the Results
-
-After the pipeline finishes, look in the `results/` folder:
+### Run from a Specific Stage
 
 ```bash
-results/XAUUSD_1H_YYYYMMDD_HHMMSS/
+pixi run python main.py --stage 2 --force    # Rebuild features + downstream
+pixi run python main.py --stage 3 --force    # Rebuild labels + downstream
+pixi run python main.py --stage 4 --force    # Retrain model + downstream
+pixi run python main.py --stage 5 --force    # Re-run backtest + reporting
+pixi run python main.py --stage 6 --force    # Re-generate report only
 ```
 
-### Key Files to Check
+Stage behavior is downstream-oriented: running from Stage 3 continues through Stages 3-6.
 
-| File | What It Contains |
-|------|-----------------|
-| `reports/thesis_report.md` | Full written report with metrics and charts |
-| `reports/walk_forward_history.json` | Window boundaries, OOF prediction counts |
-| `backtest/backtest_results.json` | Trading metrics (win rate, return, Sharpe, etc.) |
-| `backtest/trades_detail.csv` | Trade-by-trade breakdown (entry/exit, PnL, duration) |
-| `backtest/equity_curve.csv` | Equity curve data points over time |
-| `backtest/backtest_chart.html` | Interactive Bokeh equity chart |
-| `reports/charts/` | All visualization charts |
-| `config/config_snapshot.toml` | The exact config used for this run |
-| `config/session_info.json` | Session metadata (run ID, timestamps, stage durations) |
-| `logs/pipeline.log` | Detailed execution log (ANSI-stripped) |
-
-### Quick Look at Results
+### Resume an Existing Session
 
 ```bash
-# View the report
-cat results/*/reports/thesis_report.md
-
-# View trading metrics
-cat results/*/backtest/backtest_results.json
-
-# List all charts
-ls results/*/reports/charts/*/
+pixi run python main.py --session XAUUSD_1H_20260511_231114 --stage 4 --force
 ```
 
----
+This loads the config snapshot from the existing session and re-runs from Stage 4.
 
-## Other Useful Commands
+### CLI Options
 
-| Command | What It Does |
-|---------|-------------|
-| `pixi run force` | Re-run all stages (ignoring cache) |
-| `pixi run test` | Run all tests with coverage |
-| `pixi run lint` | Check code for style issues |
-| `pixi run format` | Auto-format code |
-| `pixi run streamlit` | Interactive Streamlit dashboard (:8501) |
-| `pixi run pre-commit` | Lint + format + fast tests |
-| `pixi run clean-cache` | Delete processed data files |
-| `pixi run clean-all` | Delete processed data + models + results |
+| Option | Description |
+|---|---|
+| `--config PATH` | Config file path (default: `config.toml`) |
+| `--session NAME` | Resume from existing session directory name |
+| `--stage N` | Start at Stage N, continue through Stage 6 (1-6) |
+| `--force` | Force re-run, ignoring cache |
 
----
+## Inspect Results
 
-## Running Individual Stages
+Results are written to timestamped session directories:
 
-If you want to run just one stage, use the `workflow` toggles in `config.toml`:
-
-```toml
-[workflow]
-run_data_pipeline = false      # Skip data preparation
-run_feature_engineering = true  # Run feature engineering
-run_label_generation = false    # Skip label generation
-run_model_training = true       # Run model training
-run_backtest = true             # Run backtest
-run_reporting = true            # Generate report
-force_rerun = false             # Set true to ignore cache
+```text
+results/XAUUSD_1H_<timestamp>/
 ```
 
-Then run:
+### Key Files
+
+```text
+results/XAUUSD_1H_<timestamp>/
+├── config/
+│   ├── config_snapshot.toml          Config used for this run
+│   └── session_info.json             Metadata: timing, config hash, validation params
+├── predictions/
+│   └── final_predictions.parquet     OOF predictions with timestamps
+├── reports/
+│   ├── thesis_report.md              Full thesis report
+│   ├── model_metrics.json            All computed metrics
+│   ├── model_comparison.csv          Model comparison table
+│   ├── model_comparison.md           Markdown comparison
+│   ├── model_evaluation.md           Evaluation summary
+│   ├── walk_forward_history.json     Per-window training history
+│   └── feature_importance.json       Sorted feature importance
+├── backtest/
+│   ├── backtest_results.json         Backtest metrics
+│   ├── trades.csv                    Per-trade records
+│   ├── equity_curve.csv              Running equity + drawdown
+│   └── backtest_chart.html           Bokeh equity curve
+├── models/
+│   ├── lightgbm_model.pkl            Trained model
+│   └── training_history.json         Training metadata
+└── logs/
+    └── pipeline.log                  Full pipeline log
+```
+
+## Data Artifacts
+
+Intermediate data files are stored in:
+
+```text
+data/
+├── raw/XAUUSD/                       Downloaded tick data (monthly files)
+└── processed/
+    ├── ohlcv.parquet                 Stage 1 output
+    ├── features.parquet              Stage 2 output
+    ├── features.feature_list.json    Feature column list sidecar
+    ├── labels.parquet                Stage 3 output
+    └── data_quality.json             Data quality report
+```
+
+## Validation Commands
 
 ```bash
-pixi run workflow
-```
+# Lint
+pixi run ruff check src
 
-Only the stages set to `true` will execute.
+# Format check
+pixi run ruff format --check src
 
----
+# Syntax/import check
+pixi run python -m compileall -q src tests
 
-## Changing Settings
-
-All settings live in **`config.toml`**. Edit this file to change:
-
-- Date ranges (which years of data to use)
-- Model parameters (learning rate, number of trees, etc.)
-- Backtest parameters (capital, leverage, spread, etc.)
-- GRU architecture (hidden size, layers, sequence length, etc.)
-- Model architecture (hybrid)
-
-See the `Configuration Guide <CONFIGURATION.md>`_ for detailed instructions.
-
----
-
-## Troubleshooting
-
-### "No module named 'thesis'"
-
-Make sure you're using pixi to run commands:
-
-```bash
-pixi run workflow    # Correct
-python main.py       # May not find the package
-```
-
-### "File not found: data/raw/XAUUSD/*.parquet"
-
-You need raw tick data. Either:
-1. Place parquet files manually in `data/raw/XAUUSD/`
-2. Run `pixi run data` to download
-
-### "CUDA out of memory"
-
-The GRU training uses very little GPU memory. If you still see this error:
-
-```toml
-[gru]
-batch_size = 256    # Reduce if needed (e.g., 128 or 64)
-```
-
-### "Pipeline says 'skipping' stages"
-
-Stages are cached. To force re-run everything:
-
-```bash
-pixi run force
-```
-
-Or set in config.toml:
-
-```toml
-[workflow]
-force_rerun = true
-```
-
----
-
-## Running Tests
-
-```bash
-# All tests with coverage
-pixi run test
-
-# Unit tests only
-pixi run test-unit
-
-# Integration tests only
-pixi run test-integration
-
-# Fast tests (skip slow ones)
+# Fast tests
 pixi run test-fast
 
-# Single test file
-pixi run pytest tests/unit/test_features.py
-
-# Single test function
-pixi run pytest tests/unit/test_features.py::test_rsi_bounds
+# Full tests
+pixi run test
 ```
 
----
-
-## Quick Command Reference
+## Interactive Dashboard
 
 ```bash
-# === Setup ===
-pixi install                    # Install all dependencies
-
-# === Data ===
-pixi run data                   # Download XAU/USD data
-
-# === Pipeline ===
-pixi run workflow               # Run full pipeline
-pixi run force                  # Force re-run everything
-
-# === Visualization ===
-pixi run streamlit              # Interactive dashboard on :8501
-
-# === Code Quality ===
-pixi run lint                   # Check code style
-pixi run format                 # Format code
-pixi run pre-commit             # Lint + format + test
-
-# === Testing ===
-pixi run test                   # Run tests with coverage
-pixi run test-unit              # Unit tests only
-pixi run test-fast              # Skip slow tests
-
-# === Cleanup ===
-pixi run clean-cache            # Delete processed data
-pixi run clean-all              # Delete everything generated
+pixi run dashboard
 ```
+
+Launches a Streamlit dashboard for exploring session results, model metrics, charts, and backtest analysis. Features:
+- Session selection and comparison
+- Interactive metric cards with quality zone indicators
+- Walk-forward training history visualization
+- Feature importance charts
+- Backtest equity curve and trade analysis
+- OOF prediction analysis
+
+## Current Runtime Reminder
+
+The current runtime is Classic Hybrid Stacking:
+
+```text
+Logistic Regression + Random Forest + LightGBM -> Logistic Regression meta-model
+```
+
+Not GRU or any deep sequence model.

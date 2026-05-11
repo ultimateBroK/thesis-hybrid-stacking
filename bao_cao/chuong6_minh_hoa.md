@@ -1,129 +1,134 @@
-# Chương 6. Minh họa ứng dụng
+# Chương 6. Minh họa ứng dụng tín hiệu
 
-## 6.1. Mục đích của chương
+## 6.1. Vai trò của backtest
 
-Chương này minh họa cách mô hình hybrid có thể được áp dụng trong bối cảnh giao dịch thực tế thông qua một backtest demo. **Cần nhấn mạnh:** kết quả backtest trong chương này **không** là bằng chứng chính cho hiệu quả của phương pháp đề xuất. Mục tiêu chính của đồ án là đánh giá hiệu suất dự báo (Chương 5), không phải xây dựng hệ thống giao dịch [1].
+Backtest trong đồ án có vai trò minh họa cách tín hiệu Short/Hold/Long có thể được chuyển thành lệnh giao dịch giả lập. Trong nghiên cứu tài chính, backtest rất dễ bị overfit nếu nhà nghiên cứu thử nhiều tham số và chỉ chọn kết quả tốt nhất [7]. Vì vậy, đồ án không dùng backtest làm bằng chứng chính cho chất lượng mô hình.
 
-## 6.2. Thiết lập Backtest
+Bằng chứng chính là kết quả classification ngoài mẫu trong walk-forward validation. Backtest chỉ trả lời câu hỏi phụ: nếu dùng tín hiệu dự báo để giao dịch theo một bộ quy tắc đơn giản, kết quả mô phỏng sẽ như thế nào?
 
-### 6.2.1. Thông số giao dịch
+## 6.2. Quy tắc minh họa
 
-| Thông số | Giá trị | Giải thích |
-|---|---|---|
-| Vốn ban đầu | $10,000 | Tài khoản demo |
-| Đòn bẩy (leverage) | 10:1 | Đòn bẩy phổ biến cho vàng |
-| Spread | 35 ticks (0.35 USD) | Spread trung bình XAU/USD |
-| Slippage | 5 ticks (0.05 USD) | Trượt giá ước tính |
-| Commission | $10/lot/round-trip | Phí broker |
-| Lot size | 0.01 lot | Vị thế tối thiểu |
-| Contract size | 100 oz | 1 lot = 100 ounce vàng |
+Quy tắc backtest tổng quát:
 
-### 6.2.2. Chiến lược giao dịch
+1. Nếu mô hình dự báo Long và vượt điều kiện confidence, mở hoặc giữ vị thế Long.
+2. Nếu mô hình dự báo Short và vượt điều kiện confidence, mở hoặc giữ vị thế Short.
+3. Nếu mô hình dự báo Hold, không vào lệnh mới.
+4. Thoát lệnh theo TP/SL, tín hiệu đảo chiều hoặc điều kiện quản trị rủi ro.
+5. Tính spread, slippage và commission.
 
-Chiến lược `HybridGRUStrategy` hoạt động như sau:
+TP/SL của backtest cần khớp logic label. Nếu label dùng TP/SL 2.0 ATR nhưng backtest dùng rule khác hoàn toàn, kết quả giao dịch sẽ không còn đánh giá đúng mục tiêu mà mô hình học.
 
-**Tín hiệu:** Mô hình hybrid dự đoán nhãn cho mỗi thanh giá: Long (+1), Hold (0), hoặc Short (−1).
+## 6.3. Kết quả minh họa mới nhất
 
-**Lọc tín hiệu:** Tín hiệu chỉ được thực hiện nếu:
-- Độ tin cậy (confidence) vượt ngưỡng 0.50: `max(probability) > 0.50`.
-- Không có vị thế đang mở (max_open_positions = 1).
-- Đã qua ít nhất 6 thanh giá kể từ giao dịch trước (min_bars_between_trades = 6).
-
-**Quản lý rủi ro:**
-- Stop-loss: 2 × ATR tại thời điểm vào lệnh.
-- Take-profit: 2 × ATR tại thời điểm vào lệnh.
-- Max drawdown cutoff: 30% — dừng giao dịch nếu drawdown vượt ngưỡng.
-- Daily loss limit: 3% — giới hạn lỗ trong 1 ngày.
-- Drawdown cooldown: 12 thanh giá (12 giờ) sau khi hit max drawdown.
-
-**Shift tín hiệu:** Tín hiệu được dịch chuyển 1 thanh giá để tránh look-ahead bias:
-
-```python
-signal = self.signals[-2]  # Dùng tín hiệu của thanh trước
+```text
+Session: results/XAUUSD_1H_20260511_231114/
+Period: 2022-01-27 21:00:00 -> 2026-04-28 23:00:00
+Final equity: 10,003.64
+Total return: 0.0364%
+Max drawdown: -3.1270%
+Sharpe ratio: 0.0074
+Sortino ratio: 0.0113
+Profit factor: 0.9570
+Win rate: 47.67%
+Trades: 172
 ```
 
-Điều này đảm bảo quyết định giao dịch tại thanh $i$ dựa trên dự đoán tại thanh $i-1$, tương ứng với thực tế: mô hình dự đoán tại giờ $i-1$, giao dịch thực hiện tại giờ $i$.
+## 6.4. Ý nghĩa kết quả
 
-### 6.2.3. Cảnh báo về fractional trading
+Kết quả gần hòa vốn cho thấy tín hiệu có thể được đưa qua simulator nhưng chưa chứng minh lợi thế thực tế. Profit factor dưới 1 và Sharpe gần 0 cho thấy lợi nhuận chưa đủ bù rủi ro sau chi phí. Max drawdown khoảng 3.13% trong mô phỏng này chưa quá lớn, nhưng không đủ để khẳng định tính ổn định.
 
-`backtesting.py` không hỗ trợ giao dịch phân số (fractional trading). Vị thế được làm tròn xuống số nguyên gần nhất, có thể ảnh hưởng đến kết quả khi vốn nhỏ [2].
+Backtest cũng phụ thuộc mạnh vào giả định thực thi. Trong thực tế, spread của XAU/USD thay đổi theo phiên và sự kiện tin tức; slippage có thể tăng khi biến động mạnh; thanh khoản và điều kiện broker cũng ảnh hưởng kết quả. Vì vậy, mọi kết luận triển khai cần thận trọng.
 
-## 6.3. Kết quả Backtest Demo
+## 6.5. Điều kiện để tiến tới ứng dụng thực tế
 
-### 6.3.1. Metrics giao dịch chính
+Muốn nâng cấp từ demo sang nghiên cứu triển khai, cần thêm:
 
-*(Kết quả sẽ được điền sau khi chạy backtest)*
+- Kiểm định ngoài mẫu trên dữ liệu mới chưa từng dùng khi phát triển.
+- Phân tích độ nhạy theo spread, slippage, commission và lot size.
+- Calibration xác suất và thresholding.
+- Kiểm tra hiệu quả theo phiên giao dịch và regime biến động.
+- Risk management độc lập với mô hình dự báo.
+- Giới hạn số lần thử nghiệm để giảm backtest overfitting.
 
-| Metric | Giá trị | Giải thích |
+## 6.6. Kết luận chương
+
+Backtest minh họa hoàn thành vai trò chứng minh pipeline có thể biến dự báo thành hành động giao dịch giả lập. Tuy nhiên, kết quả hiện tại chưa đủ để khẳng định chiến lược sinh lời. Luận văn nên trình bày backtest như phần ứng dụng phụ, còn trọng tâm học thuật nằm ở quy trình labeling, validation, model comparison và phân tích lỗi.
+
+## 6.7. Thiết kế tín hiệu giao dịch từ xác suất mô hình
+
+Mô hình classification không trực tiếp xuất lệnh giao dịch; nó xuất xác suất cho các lớp. Một lớp chuyển đổi tín hiệu cần quyết định:
+
+```text
+Nếu P(Long) lớn nhất và confidence đủ cao -> Long
+Nếu P(Short) lớn nhất và confidence đủ cao -> Short
+Nếu P(Hold) lớn nhất hoặc confidence thấp -> Không vào lệnh
+```
+
+Confidence có thể được định nghĩa là xác suất lớn nhất trong ba lớp:
+
+```text
+confidence = max(P(Short), P(Hold), P(Long))
+```
+
+Nếu threshold quá thấp, hệ thống giao dịch nhiều và dễ nhiễu. Nếu threshold quá cao, hệ thống giao dịch ít, có thể bỏ lỡ cơ hội. Kết quả high-confidence ở Chương 5 cho thấy threshold 0.7 tạo rất ít mẫu, vì vậy cần calibration trước khi dùng threshold như một quyết định thực tế.
+
+## 6.8. Chi phí giao dịch và giả định thực thi
+
+Backtest chỉ có ý nghĩa khi giả định chi phí được nêu rõ. Với XAU/USD CFD, chi phí có thể gồm:
+
+- Spread giữa bid và ask.
+- Commission theo lot.
+- Slippage khi thị trường biến động mạnh.
+- Swap/overnight fee nếu giữ qua ngày.
+- Giới hạn margin và leverage.
+- Khác biệt giá giữa broker và nguồn dữ liệu.
+
+Nếu bỏ qua chi phí, backtest thường lạc quan. Trong kết quả hiện tại, profit factor đã dưới 1 dù return gần hòa vốn, vì vậy chỉ cần chi phí thực tế tăng nhẹ cũng có thể làm chiến lược xấu đi.
+
+## 6.9. Quản trị rủi ro tối thiểu
+
+Một ứng dụng thực tế không nên chỉ dựa vào tín hiệu mô hình. Cần thêm quản trị rủi ro:
+
+| Thành phần | Vai trò |
+|---|---|
+| Max position size | Giới hạn rủi ro mỗi lệnh |
+| Daily loss limit | Dừng giao dịch khi lỗ trong ngày vượt ngưỡng |
+| Cooldown | Tránh vào lệnh liên tục sau tín hiệu nhiễu |
+| Volatility filter | Giảm giao dịch khi biến động bất thường |
+| Session filter | Chỉ giao dịch phiên có thanh khoản phù hợp |
+| Confidence threshold | Chỉ vào lệnh khi xác suất đủ rõ |
+
+Các thành phần này chưa phải trọng tâm đồ án, nhưng cần nêu để tránh hiểu nhầm rằng mô hình classification là đủ cho hệ thống giao dịch thực.
+
+## 6.10. Phân biệt nghiên cứu và triển khai
+
+Bảng sau phân biệt phạm vi của luận văn và yêu cầu triển khai thật:
+
+| Hạng mục | Trong luận văn | Triển khai thật |
 |---|---|---|
-| Total Return | — | Lợi nhuận tổng |
-| Sharpe Ratio | — | Risk-adjusted return |
-| Max Drawdown | — | Mức sụt giảm vốn tối đa |
-| Win Rate | — | Tỷ lệ giao dịch có lãi |
-| Total Trades | — | Tổng số giao dịch |
-| Profit Factor | — | Tổng lãi / Tổng lỗ |
-| Avg. Trade Duration | — | Thời gian giữ vị thế trung bình |
+| Dữ liệu | Historical OHLCV | Realtime feed ổn định |
+| Mô hình | Train offline | Retrain/monitor định kỳ |
+| Đánh giá | Walk-forward + backtest demo | Paper trading + live monitoring |
+| Chi phí | Giả định mô phỏng | Chi phí broker thực tế |
+| Rủi ro | Mô tả cơ bản | Risk engine độc lập |
+| Vận hành | Script/pipeline | Hệ thống giám sát lỗi |
 
-### 6.3.2. Equity curve
+Vì vậy, kết luận của Chương 6 chỉ nên nói: pipeline có thể minh họa cách tín hiệu được dùng trong giao dịch giả lập. Không nên nói: hệ thống đã sẵn sàng giao dịch thật.
 
-Đường equity thể hiện sự thay đổi vốn theo thời gian. Đường equity lý tưởng tăng ổn định với drawdown nhỏ. Nếu equity curve có nhiều đợt sụt giảm sâu → chiến lược không ổn định.
+## 6.11. Kịch bản cải thiện backtest
 
-### 6.3.3. Trade distribution
+Nếu tiếp tục nghiên cứu, các thí nghiệm hợp lý gồm:
 
-Phân tích phân phối giao dịch:
-- **P&L per trade distribution:** Histogram lợi nhuận/lỗ mỗi giao dịch.
-- **Win rate by direction:** Tỷ lệ thắng Long vs. Short — nếu chênh lệch lớn → mô hình thiên vị.
-- **Duration distribution:** Thời gian giữ vị thế — có khớp với horizon 24 giờ không?
+1. Dùng confidence threshold sau khi calibration.
+2. Chỉ giao dịch khi LightGBM và Stacking đồng thuận.
+3. Lọc theo phiên London/New York.
+4. Lọc theo volatility regime.
+5. Tối ưu position sizing ngoài tập test.
+6. Kiểm tra sensitivity với spread/slippage.
+7. Tách riêng giai đoạn validation cho rule giao dịch, không dùng test set để chọn threshold.
 
-## 6.4. Hạn chế khi áp dụng giao dịch thực
+Điểm quan trọng là mọi cải thiện backtest phải có validation riêng. Nếu chọn rule dựa trên cùng kết quả backtest đã báo cáo, nguy cơ overfit rất cao.
 
-### 6.4.1. Hạn chế của backtest
+## 6.12. Kết luận mở rộng chương ứng dụng
 
-1. **Look-ahead bias tiềm ẩn:** Dù đã áp dụng nhiều biện pháp chống leakage, backtest vẫn có thể chứa bias tinh vi do:
-   - Backtest replay không phản ánh độ trễ thực tế của dữ liệu real-time (latency từ feed đến lệnh thực thi).
-   - Một số tham số pipeline (thông số barrier, cấu hình feature) được chọn dựa trên quan sát toàn bộ lịch sử, dù không rò rỉ trực tiếp vào model.
-
-2. **Slippage và liquidity:** Backtest giả định thực hiện tại giá close, nhưng thực tế:
-   - Lệnh lớn có thể move market (market impact).
-   - Thanh khoản thấp (off-hours) → slippage lớn hơn 5 ticks.
-   - Market gaps (cuối tuần, tin tức bất ngờ) → stop-loss có thể không execute tại giá mong muốn.
-
-3. **Survivorship bias:** XAU/USD không bị delisting, nhưng các cặp tiền khác có thể bị loại bỏ — không ảnh hưởng đồ án này nhưng cần lưu ý khi tổng quát hóa.
-
-4. **Overfitting to backtest:** Tối ưu hóa tham số dựa trên kết quả backtest → overfitting [1, 3]. Đồ án cố ý **không** tối ưu hóa tham số giao dịch.
-
-### 6.4.2. Hạn chế khi giao dịch thực
-
-1. **Latency:** Mô hình cần inference tại mỗi thanh giá mới. GRU + LightGBM inference nhanh (~ms) nhưng cần infrastructure ổn định.
-
-2. **Regime change đột ngột:** Mô hình walk-forward sử dụng 2 năm dữ liệu huấn luyện — có thể không phản ánh đủ nhanh regime change (ví dụ: COVID crash tháng 3/2020).
-
-3. **Chi phí giao dịch thực tế:** Spread, slippage, và commission trong backtest là ước tính. Giao dịch thực tế có thể đắt hơn đáng kể trong thời điểm biến động cao.
-
-4. **Tâm lý giao dịch:** Backtest không phản ánh yếu tố tâm lý — Trader có thể can thiệp, bỏ qua tín hiệu, hoặc thay đổi chiến lược trong thời gian thực.
-
-5. **Rủi ro mô hình:** Mô hình có thể hoạt động kém trong các điều kiện thị trường chưa từng xuất hiện trong dữ liệu huấn luyện (regime unprecedented).
-
-### 6.4.3. Backtest không phải bằng chứng chính
-
-López de Prado (2018) [1] cảnh báo mạnh mẽ về việc sử dụng backtest làm bằng chứng cho hiệu quả chiến lược:
-
-- Backtest luôn có thể được tối ưu hóa (qua parameter tuning, data selection, strategy design) để tạo kết quả tốt.
-- Deflated Sharpe Ratio [3] cho thấy hầu hết Sharpe ratio > 1.0 từ backtest không sống sót out-of-sample.
-- Harvey et al. (2016) [4] phát hiện rằng t-statistic threshold cần > 3.0 (thay vì 1.96) để bù đắp multiple testing trong tài chính.
-
-Vì vậy, kết quả dự báo (Chương 5) là bằng chứng chính; backtest chỉ minh họa cách mô hình **có thể** được sử dụng.
-
-## 6.5. Tổng kết chương
-
-Chương này đã trình bày backtest demo như một minh họa ứng dụng của mô hình hybrid, bao gồm thiết lập, chiến lược giao dịch, các metric đánh giá, và đặc biệt — các hạn chế nghiêm trọng khi áp dụng thực tế. Kết quả backtest không được coi là bằng chứng chính cho hiệu quả của phương pháp.
-
-## Tài liệu tham khảo chương này
-
-[1] López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley.
-
-[2] backtesting.py documentation. https://kernc.github.io/backtesting.py/
-
-[3] Bailey, D.H. & López de Prado, M. (2014). "The Deflated Sharpe Ratio." *Journal of Portfolio Management*, 40(5), 94–107.
-
-[4] Harvey, C.R., Liu, Y., & Zhu, H. (2016). "...and the Cross-Section of Expected Returns." *Review of Financial Studies*, 29(1), 5–68.
+Chương ứng dụng cho thấy khoảng cách giữa mô hình dự báo và hệ thống giao dịch. Một mô hình có thể có metric classification tốt nhưng backtest kém do chi phí, timing và risk management. Ngược lại, một backtest đẹp cũng không đủ nếu classification evaluation bị leakage. Vì vậy luận văn đặt trọng tâm vào quy trình học máy trước, rồi dùng backtest như minh họa có kiểm soát.

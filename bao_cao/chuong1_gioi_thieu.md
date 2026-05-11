@@ -1,87 +1,125 @@
 # Chương 1. Giới thiệu
 
-## 1.1. Đặt vấn đề
+## 1.1. Bối cảnh nghiên cứu
 
-Thị trường tài chính toàn cầu hoạt động liên tục 24 giờ mỗi ngày với khối lượng giao dịch khổng lồ, tạo ra các chuỗi thời gian giá phức tạp và nhiều nhiễu. Trong bối cảnh đó, dự báo xu hướng giá ngắn hạn — đặc biệt là phân loại hướng di chuyển giá (tăng, giảm, hoặc đi ngang) — là một bài toán có ý nghĩa thực tiễn lớn đối với các nhà giao dịch và nhà quản lý rủi ro. Khác với dự báo giá tuyệt đối (regression), phân loại xu hướng (classification) cho phép các nhà đầu tư đưa ra quyết định giao dịch rõ ràng: mua (long), bán (short), hoặc giữ vị thế (hold) [1, 2].
+Thị trường tài chính là môi trường dữ liệu khó cho học máy vì giá tài sản chịu ảnh hưởng đồng thời của thông tin vĩ mô, tâm lý thị trường, dòng tiền, thanh khoản và các sự kiện bất thường. Lý thuyết thị trường hiệu quả cho rằng giá đã phản ánh nhanh thông tin sẵn có, vì vậy việc tìm tín hiệu dự báo ổn định là thách thức lớn [1]. Thực nghiệm về đặc tính thống kê của lợi suất tài sản cũng cho thấy dữ liệu tài chính thường có phân phối đuôi dày, cụm biến động, bất đối xứng và thay đổi chế độ theo thời gian [2]. Những đặc điểm này khiến mô hình học máy dễ bị overfit nếu đánh giá không đúng.
 
-Các phương pháp thống kê truyền thống như ARIMA hay GARCH đã được sử dụng rộng rãi trong nhiều thập kỷ để mô hình hóa chuỗi thời gian tài chính [3]. Tuy nhiên, các mô hình này thường giả định tuyến tính và phân phối chuẩn — hai đặc điểm hiếm khi đúng trong dữ liệu tài chính thực tế. Những năm gần đây, học sâu (deep learning) và học máy (machine learning) đã cho thấy hiệu quả vượt trội trong việc nắm bắt các mối quan hệ phi tuyến và mẫu hình phức tạp trong dữ liệu giá [4, 5].
+Với XAU/USD, vàng vừa là tài sản hàng hóa, vừa là tài sản trú ẩn và công cụ dự trữ. Nhu cầu vàng chịu ảnh hưởng bởi lãi suất, lạm phát, rủi ro địa chính trị, nhu cầu ngân hàng trung ương và dòng tiền đầu tư [3]. Vì vậy, dự báo tín hiệu giao dịch XAU/USD không nên được trình bày như một bài toán “dự đoán chắc chắn giá tăng/giảm”, mà nên được xem như bài toán xây dựng một quy trình học máy có kiểm soát, minh bạch và tránh rò rỉ dữ liệu.
 
-Đặc biệt, các kiến trúc mạng hồi tiếp (recurrent neural networks) như LSTM (Long Short-Term Memory) và GRU (Gated Recurrent Unit) đã được chứng minh là có khả năng học các phụ thuộc thời gian dài hạn trong chuỗi thời gian tài chính [6, 7]. Song song đó, các mô hình ensemble dựa trên cây quyết định như LightGBM (Light Gradient Boosting Machine) [8] thể hiện sức mạnh đáng kể trong việc xử lý các đặc trưng dạng bảng (tabular features) với tốc độ huấn luyện nhanh và khả năng tổng hợp hóa tốt.
+Đề tài này tập trung vào khung thời gian H1. Mỗi mẫu dữ liệu đại diện cho một thanh giá 1 giờ, từ đó hệ thống tạo đặc trưng kỹ thuật, gán nhãn bằng phương pháp triple-barrier, huấn luyện mô hình và đánh giá bằng walk-forward validation. Mục tiêu không phải chứng minh chiến lược CFD vàng sinh lời ổn định, mà là chứng minh một pipeline nghiên cứu có đủ các thành phần học thuật cần thiết: dữ liệu sạch, feature causal, nhãn có ý nghĩa giao dịch, validation theo thời gian, baseline comparison và báo cáo kết quả trung thực.
 
-Một hướng tiếp cận đầy tiềm năng là kết hợp thế mạnh của cả hai họ mô hình này: sử dụng GRU để trích xuất đặc trưng tuần tự từ chuỗi giá, sau đó sử dụng các đặc trưng này làm đầu vào bổ sung cho LightGBM. Phương pháp hybrid stacking này đã cho thấy kết quả đáng khích lệ trong các nghiên cứu gần đây [9, 10].
+## 1.2. Vấn đề nghiên cứu
 
-## 1.2. Lý do chọn cặp tiền XAU/USD
+Bài toán được mô hình hóa thành phân loại ba lớp:
 
-XAU/USD (vàng so với đồng đô la Mỹ) là một trong những công cụ tài chính được giao dịch nhiều nhất trên thế giới, với khối lượng giao dịch hàng ngày vượt 183 tỷ USD vào năm 2024 [11]. Việc chọn XAU/USD làm đối tượng nghiên cứu dựa trên các lý do sau:
+```text
+Short (-1): ưu tiên tín hiệu bán
+Hold  (0): không đủ điều kiện giao dịch
+Long  (+1): ưu tiên tín hiệu mua
+```
 
-**Tính chất đặc thù của vàng:** Vàng vừa là tài sản trú ẩn an toàn (safe-haven asset), vừa là hàng hóa công nghiệp và phương tiện dự trữ giá trị. Giá vàng chịu ảnh hưởng bởi nhiều yếu tố vĩ mô bao gồm lãi suất của Fed (Cục Dự trữ Liên bang Mỹ), lạm phát, địa chính trị và sức mạnh đồng USD [12]. Đặc điểm này tạo ra các mẫu hình giá phức tạp, vừa có xu hướng (trending) vừa có tính dao động (volatile), phù hợp để đánh giá khả năng của mô hình hybrid.
+Khác với dự báo hồi quy giá tuyệt đối, phân loại tín hiệu phù hợp hơn với mục tiêu ra quyết định. Tuy nhiên, cách gán nhãn “giá sau N nến cao hơn hiện tại thì Long, thấp hơn thì Short” thường quá đơn giản vì không xét stop-loss, take-profit, thời gian giữ lệnh và biến động thị trường. Để khắc phục, đề tài dùng triple-barrier labeling theo hướng của López de Prado [5], trong đó mỗi mẫu có take-profit, stop-loss và horizon.
 
-**Tính thanh khoản và độ sẵn có dữ liệu:** XAU/USD được giao dịch gần như liên tục từ thứ Hai đến thứ Sáu trên nhiều sàn giao dịch toàn cầu. Điều này cung cấp nguồn dữ liệu OHLCV (Open-High-Low-Close-Volume) phong phú, ít khoảng trống (gap) và có độ tin cậy cao.
+## 1.3. Mục tiêu đề tài
 
-**Khoảng thời gian nghiên cứu:** Dữ liệu sử dụng trong đồ án trải dài từ tháng 1/2018 đến tháng 4/2026, bao gồm nhiều sự kiện thị trường quan trọng: đại dịch COVID-19 (2020), khủng hoảng lạm phát toàn cầu (2022–2023), và các chu kỳ lãi suất của Fed. Sự đa dạng về chế độ thị trường (market regime) giúp đánh giá tính ổn định của mô hình một cách toàn diện.
+Đồ án xây dựng pipeline dự báo tín hiệu XAU/USD H1 với các mục tiêu cụ thể:
 
-## 1.3. Mục tiêu nghiên cứu
+1. Chuẩn hóa dữ liệu tick/OHLCV thành bộ dữ liệu H1 có kiểm tra chất lượng.
+2. Sinh đặc trưng kỹ thuật theo hướng causal, chỉ sử dụng thông tin quá khứ và hiện tại.
+3. Tạo nhãn Short/Hold/Long bằng triple-barrier labeling dựa trên ATR.
+4. Huấn luyện và đánh giá mô hình bằng walk-forward validation có purge/embargo nhằm giảm leakage.
+5. So sánh baseline và các mô hình: Naive/Majority/Random baseline, Logistic Regression, Random Forest, LightGBM và Classic Hybrid Stacking.
+6. Đánh giá bằng Accuracy, Balanced Accuracy, Directional Accuracy, Macro F1, per-class F1 và confusion matrix.
+7. Dùng backtest như minh họa ứng dụng, không dùng làm bằng chứng chính cho hiệu quả mô hình.
 
-Đồ án này tập trung vào **đánh giá hiệu suất dự báo xu hướng ngắn hạn** của mô hình hybrid GRU + LightGBM trên cặp XAU/USD với khung thời gian 1 giờ (1H). Các mục tiêu cụ thể bao gồm:
+## 1.4. Kiến trúc đề xuất
 
-1. **Xây dựng pipeline dự báo xu hướng hoàn chỉnh:** Từ thu thập dữ liệu, tạo đặc trưng (feature engineering), gán nhãn theo phương pháp Triple Barrier [13], huấn luyện mô hình, đến đánh giá kết quả.
+Kiến trúc runtime chính là Classic Hybrid Stacking:
 
-2. **So sánh hiệu suất mô hình hybrid với các nhóm baseline:** Khung so sánh 4 nhóm — Naive Direction (baseline tối thiểu), LightGBM Static (baseline đặc trưng bảng), GRU-only (baseline đặc trưng tuần tự), và Hybrid GRU+LightGBM (mô hình đề xuất). Các chiến lược phụ (Always Long/Short/Hold, Majority Class, Random) được sử dụng làm tham chiếu bổ sung.
+```text
+Base learners: Logistic Regression + Random Forest + LightGBM
+Meta learner : Logistic Regression
+Output       : Short / Hold / Long
+```
 
-3. **Đánh giá tính ổn định qua nhiều cửa sổ thời gian (walk-forward):** Sử dụng validation trượt với purge và embargo để đảm bảo không rò rỉ thông tin giữa tập huấn luyện và tập kiểm tra [13, 14].
+Hybrid trong đề tài không có nghĩa là kết hợp mạng sâu với mô hình cây, mà là kết hợp nhiều họ mô hình có bản chất khác nhau. Logistic Regression đại diện cho mô hình tuyến tính dễ giải thích; Random Forest đại diện cho bagging tree có khả năng giảm phương sai [15]; LightGBM đại diện cho gradient boosting tree hiệu quả trên dữ liệu tabular [16], [17]. Meta-model Logistic Regression học cách kết hợp xác suất dự báo của các base learners theo nguyên lý stacked generalization [18].
 
-4. **Phân tích chi tiết kết quả dự báo:** Bao gồm confusion matrix, feature importance, calibration, và phân tích lỗi theo từng cửa sổ thời gian.
+## 1.5. Đóng góp chính
 
-**Lưu ý quan trọng:** Đồ án này **không** nhằm mục đích xây dựng hoặc tối ưu hóa một hệ thống giao dịch tự động (trading system). Phần minh họa backtest ở Chương 6 chỉ đóng vai trò tham khảo để hiểu cách mô hình có thể được ứng dụng, không phải bằng chứng chính cho hiệu quả kinh tế của phương pháp.
+Đóng góp chính của đồ án là quy trình đánh giá minh bạch cho bài toán học máy tài chính:
 
-## 1.4. Đóng góp của đồ án
+- Không dùng random split cho chuỗi thời gian.
+- Dùng walk-forward validation để mô phỏng huấn luyện trên quá khứ và kiểm tra trên tương lai.
+- Dùng purge/embargo để giảm rò rỉ thông tin do nhãn có horizon [5].
+- Dùng triple-barrier labeling để nhãn phản ánh logic TP/SL/horizon.
+- So sánh mô hình với baseline thay vì chỉ báo cáo một mô hình duy nhất.
+- Trình bày trung thực khi mô hình phức tạp không vượt mô hình đơn lẻ.
 
-1. Đề xuất và triển khai kiến trúc hybrid stacking GRU + LightGBM, trong đó GRU đóng vai trò trích xuất đặc trưng tuần tự (sequence feature extractor) với attention pooling, và LightGBM đóng vai trò phân loại cuối cùng trên ma trận đặc trưng kết hợp (hidden states + technical indicators).
+## 1.6. Phạm vi và giới hạn
 
-2. Áp dụng phương pháp gán nhãn Triple Barrier với ATR-based dynamic barriers và average-uniqueness sample weighting theo López de Prado [13], phù hợp với bài toán giao dịch có thời gian giữ vị thế biến đổi.
+Đề tài chỉ sử dụng dữ liệu giá và các đặc trưng kỹ thuật từ OHLCV, chưa tích hợp tin tức, dữ liệu vĩ mô, positioning, order book hoặc sentiment. Kết quả backtest là mô phỏng đơn giản với giả định về chi phí và lot size, không đại diện cho hiệu quả triển khai thực tế. Các kết luận trong đồ án nên được hiểu là kết quả nghiên cứu pipeline và phương pháp đánh giá, không phải khuyến nghị đầu tư.
 
-3. Triển khai walk-forward validation với event-time purge và embargo, ngăn chặn các dạng rò rỉ thông tin đặc thù của dữ liệu tài chính (label lookahead, sequence overlap).
+## 1.7. Câu hỏi nghiên cứu
 
-4. Phân tích toàn diện kết quả dự báo trên nhiều cửa sổ out-of-sample, bao gồm per-window stability analysis và error analysis.
+Để tránh việc đề tài bị hiểu như một hệ thống giao dịch hoàn chỉnh, các câu hỏi nghiên cứu được đặt theo hướng kiểm định pipeline học máy:
 
-## 1.5. Bố cục đồ án
+1. Có thể xây dựng một pipeline từ dữ liệu XAU/USD H1 đến dự báo Short/Hold/Long mà không dùng thông tin tương lai hay không?
+2. Triple-barrier labeling dựa trên ATR có tạo được nhãn có ý nghĩa giao dịch hơn nhãn tăng/giảm đơn giản hay không?
+3. Walk-forward validation có purge/embargo có giúp đánh giá thực tế hơn random split trong bối cảnh nhãn có event horizon hay không?
+4. Classic Hybrid Stacking có cải thiện so với Logistic Regression, Random Forest và LightGBM đơn lẻ hay không?
+5. Khi mô hình phức tạp không vượt baseline mạnh, có thể rút ra kết luận học thuật gì về dữ liệu tài chính nhiễu cao?
+6. Backtest demo cho thấy tín hiệu có thể chuyển thành hành động giao dịch như thế nào và còn thiếu gì để tiến tới triển khai thực tế?
 
-Đồ án được tổ chức thành 7 chương:
+Những câu hỏi này giúp luận văn có cấu trúc kiểm định rõ ràng. Nếu chỉ hỏi “mô hình có kiếm tiền không”, báo cáo sẽ phụ thuộc quá nhiều vào một kết quả backtest cụ thể, trong khi backtest có thể bị ảnh hưởng mạnh bởi chi phí giao dịch, thời điểm chọn mẫu, tham số threshold và các giả định thực thi.
 
-- **Chương 1** (chương này): Giới thiệu bài toán, mục tiêu và đóng góp.
-- **Chương 2:** Trình bày cơ sở lý thuyết về time-series forecasting, mạng GRU, LightGBM, hybrid stacking, walk-forward validation và Triple Barrier labeling.
-- **Chương 3:** Mô tả nguồn dữ liệu, quy trình tiền xử lý, feature engineering và kiểm tra chất lượng dữ liệu.
-- **Chương 4:** Trình bày phương pháp đề xuất: thiết kế nhãn, thiết kế validation, mô hình baseline, kiến trúc hybrid và các biện pháp chống rò rỉ thông tin.
-- **Chương 5:** Trình bày kết quả thực nghiệm, so sánh mô hình, phân tích ổn định và phân tích lỗi.
-- **Chương 6:** Minh họa ứng dụng qua backtest demo và thảo luận hạn chế.
-- **Chương 7:** Tổng kết, hạn chế và hướng phát triển.
+## 1.8. Động cơ chọn XAU/USD H1
 
-## 1.6. Tài liệu tham khảo chương này
+XAU/USD được chọn vì vàng là tài sản có vai trò đặc biệt trong tài chính toàn cầu. Vàng thường được xem như tài sản trú ẩn khi rủi ro thị trường tăng, đồng thời chịu tác động bởi lãi suất thực, sức mạnh USD, lạm phát kỳ vọng và nhu cầu của ngân hàng trung ương [3]. Do đó, giá vàng có nhiều giai đoạn biến động mạnh và thay đổi regime, phù hợp để kiểm tra độ bền của pipeline học máy.
 
-[1] Zhang, C., Sjarif, N.N.A., & Ibrahim, R. (2024). "Deep learning models for price forecasting of financial time series: A review of recent advancements: 2020–2022." *Wiley Interdisciplinary Reviews: Data Mining and Knowledge Discovery*, 14(1), e1519.
+Khung H1 được chọn vì cân bằng giữa số lượng mẫu và mức độ nhiễu:
 
-[2] Lim, W.L. & Tsiakas, I. (2024). "Deep Learning for Financial Time Series Prediction." *Computers, Materials & Continua*, 139(1), 193–230.
+| Khung | Ưu điểm | Nhược điểm |
+|---|---|---|
+| M1/M5 | Nhiều mẫu, phản ứng nhanh | Rất nhạy với spread, slippage, microstructure noise |
+| M15/M30 | Cân bằng hơn intraday | Vẫn có nhiễu ngắn hạn cao |
+| H1 | Đủ mẫu, ít nhiễu hơn, phù hợp horizon 24h | Có thể bỏ lỡ tín hiệu rất ngắn hạn |
+| H4/D1 | Ít nhiễu hơn | Số mẫu ít, khó train walk-forward nhiều cửa sổ |
 
-[3] Taylor, S.J. (2007). *Modelling Financial Time Series* (2nd ed.). World Scientific.
+Vì mục tiêu là đồ án học máy có kiểm soát, H1 là lựa chọn hợp lý hơn các khung quá nhỏ. Nó cho phép tạo đủ cửa sổ walk-forward nhưng vẫn tránh phần lớn nhiễu microstructure.
 
-[4] Ke, Z., et al. (2025). "A comprehensive survey of deep learning for time series forecasting: architectural diversity and open challenges." *Artificial Intelligence Review*, 58, Article 175.
+## 1.9. Đối tượng và phạm vi nghiên cứu
 
-[5] Li, W. & Law, K.E. (2024). "Deep learning models for time series forecasting: A review." *IEEE Access*. DOI: 10.1109/ACCESS.2024.3422528.
+Đối tượng nghiên cứu là pipeline dự báo tín hiệu giao dịch dựa trên dữ liệu OHLCV của XAU/USD. Phạm vi bao gồm:
 
-[6] Fischer, T. & Krauss, C. (2018). "Deep learning with long short-term memory networks for financial market predictions." *European Journal of Operational Research*, 270(2), 654–669.
+- Tiền xử lý dữ liệu OHLCV H1.
+- Feature engineering kỹ thuật causal.
+- Gán nhãn Short/Hold/Long bằng triple-barrier.
+- Huấn luyện mô hình học máy cổ điển.
+- Đánh giá bằng walk-forward validation.
+- Minh họa tín hiệu bằng backtest đơn giản.
 
-[7] Chung, J., Gulcehre, C., Cho, K., & Bengio, Y. (2014). "Empirical Evaluation of Gated Recurrent Neural Networks on Sequence Modeling." *arXiv preprint arXiv:1412.3555*.
+Phạm vi không bao gồm:
 
-[8] Ke, G., et al. (2017). "LightGBM: A Highly Efficient Gradient Boosting Decision Tree." *Advances in Neural Information Processing Systems (NIPS) 30*, pp. 3149–3157.
+- Tối ưu hệ thống giao dịch thực chiến.
+- Dự báo tin tức hoặc dữ liệu macro theo thời gian thực.
+- Quản trị vốn nâng cao ở cấp portfolio.
+- Kết nối broker hoặc giao dịch tự động.
+- Cam kết lợi nhuận trong thực tế.
 
-[9] Ju, Y., et al. (2020). "An improved Stacking framework for stock index prediction by leveraging tree-based ensemble models and deep learning algorithms." *Physica A*, 541, 122272.
+## 1.10. Ý nghĩa khoa học và thực tiễn
 
-[10] Liu, Y., et al. (2024). "Development of a Time Series E-Commerce Sales Prediction Method for Short-Shelf-Life Products Using GRU-LightGBM." *Applied Sciences*, 14(2), 866.
+Về khoa học, đề tài minh họa cách áp dụng các khuyến nghị của financial machine learning vào một bài toán cụ thể: tránh random split, dùng nhãn event-based, kiểm soát leakage, so sánh baseline và phân tích per-class. Đây là các điểm thường bị bỏ qua trong các bài toán dự báo tài chính đơn giản.
 
-[11] World Gold Council (2024). *Gold Demand Trends Full Year 2024*. https://www.gold.org/
+Về thực tiễn, pipeline tạo ra một khung thử nghiệm có thể mở rộng. Khi có dữ liệu mới hoặc giả thuyết mới, người nghiên cứu có thể thay đổi label, feature hoặc mô hình nhưng vẫn giữ nguyên quy trình đánh giá. Điều này quan trọng hơn một kết quả backtest đơn lẻ vì nó giúp tránh việc “chọn tham số theo kết quả”.
 
-[12] Amini, A. & Kalantari, R. (2024). "Gold price prediction by a CNN-Bi-LSTM model along with automatic parameter tuning." *PLOS ONE*, 19(3), e0298426.
+## 1.11. Cấu trúc luận văn
 
-[13] López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley. ISBN: 978-1-119-48208-6.
+Luận văn được tổ chức như sau:
 
-[14] Bailey, D.H., Borwein, J.M., López de Prado, M., & Zhu, Q.J. (2017). "The Probability of Backtest Overfitting." *Journal of Computational Finance*, 20(4), 458–471.
+- Chương 1 giới thiệu bối cảnh, mục tiêu, phạm vi và đóng góp.
+- Chương 2 trình bày cơ sở lý thuyết về dữ liệu tài chính, labeling, validation, mô hình và metrics.
+- Chương 3 trình bày dữ liệu, tiền xử lý, feature engineering và label distribution.
+- Chương 4 trình bày phương pháp đề xuất và thiết kế pipeline.
+- Chương 5 trình bày thực nghiệm và phân tích kết quả.
+- Chương 6 minh họa cách chuyển tín hiệu mô hình thành backtest demo.
+- Chương 7 kết luận, nêu hạn chế và hướng phát triển.

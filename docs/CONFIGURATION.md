@@ -1,227 +1,302 @@
 # Configuration
 
-This project keeps `config.toml` intentionally small. Public settings cover the experiment surface; hidden defaults live in `src/thesis/shared/config.py`.
+This project keeps the public experiment surface in `config.toml`. Runtime dataclasses and defaults live in `src/thesis/shared/config.py`. Unknown config keys fail fast with an error message.
+
+---
 
 ## Current Default Profile
 
-- Data: XAU/USD, 1H, `2018-01-01` to `2026-04-30`.
-- Static split ratio: 70/15/15 by calendar months.
-- Validation: sliding walk-forward, 2-year train windows, 6-month test windows.
-- Model: GRU sequence encoder + LightGBM multiclass classifier.
-- Volatility handling: model-facing volatility features use relative scale (`atr_pct_close`, `atr_ratio`, `macd_hist_atr`) instead of raw price-scale ATR/MACD. Raw `atr_14` is still retained in the features file as a label-barrier helper.
-- Backtest: fixed small lot size; confidence filters entries only.
+| Setting | Value |
+|---|---|
+| Data | XAU/USD, H1 |
+| Data range | January 2018 – April 2026 |
+| Timezone | America/New_York (exchange timezone) |
+| Validation | Sliding walk-forward with purge/embargo |
+| Model | Classic Hybrid Stacking |
+| Objective | Multiclass Short / Hold / Long |
+| Backtest | Application demo only |
+| Reproducibility | Seed 2024 |
 
-## Model Inputs
+---
 
-### GRU sequence input
+## Config Sections
 
-Default GRU input has 20 features:
+### `[data]` — Market Data Settings
 
 ```toml
-feature_cols = [
-  "log_returns",
-  "return_1h",
-  "return_4h",
-  "atr_pct_close",
-  "atr_ratio",
-  "close_vs_ema_34",
-  "ema34_vs_ema89",
-  "price_position_20",
-  "candle_body_ratio",
-  "macd_hist_atr",
-  "rsi_14",
-  "atr_percentile",
-  "adx_14",
-  "ema_slope_20",
-  "regime_strength",
-  "volume_zscore_20",
-  "open_norm",
-  "high_norm",
-  "low_norm",
-  "close_norm",
-]
-input_size = 20
-hidden_size = 64
+[data]
+symbol = "XAUUSD"                    # Ticker
+timeframe = "1H"                     # Bar granularity (supports M, H, D, W)
+market_tz = "America/New_York"       # Exchange timezone
+start_date = "2021-01-01"            # Ingestion start
+end_date = "2026-04-30"              # Ingestion end
+tick_size = 0.01                     # Minimum price increment
+contract_size = 100                  # Ounce value per lot
 ```
 
-### LightGBM static input
+Hidden defaults (not in TOML):
+- `symbol_download = "XAUUSD"` — download symbol override
+- `asset_class = "fx"` — asset class for data source
+- `download_concurrency = 20` — parallel download workers
+- `download_max_retries = 7`
+- `download_skip_current_month = true`
 
-Default static input has 22 features:
+### `[splitting]` — Static Train/Val/Test Boundaries
+
+```toml
+[splitting]
+train_start = "2021-01-01"
+train_end = "2024-12-31 23:59:59"
+val_start = "2025-01-01"
+val_end = "2025-12-31 23:59:59"
+test_start = "2026-01-01"
+test_end = "2026-04-30 23:59:59"
+```
+
+These define the outer boundary of each split. Walk-forward windows slide within the train+val range. The test range is used for final out-of-sample evaluation.
+
+Hidden defaults:
+- `purge_bars = 48` — overrides `[validation]` purge if set here
+- `embargo_bars = 50` — scaled by timeframe automatically
+- `embargo_scale_by_timeframe = true`
+- `embargo_reference_timeframe = "1H"`
+
+### `[validation]` — Walk-Forward Validation
+
+```toml
+[validation]
+method = "sliding"               # "sliding" for walk-forward, other values fall back to static split
+train_window_bars = 6240         # ~1 market year (24h * 5d * 52w)
+test_window_bars = 1040          # ~2 market months (24h * 5d * ~8.5w)
+step_bars = 1040                 # Non-overlapping step
+purge_bars = 48                  # Gap between train/test to remove label lookahead
+embargo_bars = 50                # Additional gap after test
+min_train_bars = 6000            # Minimum bars required for training
+```
+
+Hidden defaults:
+- `oof_ensemble = true` — concatenate OOF predictions across windows
+
+When `method = "sliding"`, Stage 4 uses walk-forward training. Otherwise it falls back to static train/val/test split with `train_lgbm_fixed`.
+
+### `[features]` — Feature Engineering
+
+```toml
+[features]
+rsi_period = 14                  # RSI lookback
+atr_period = 14                  # ATR lookback
+adx_period = 14                  # ADX lookback
+ema_slope_period = 20            # EMA slope lookback
+macd_fast = 12                   # MACD fast EMA
+macd_slow = 26                   # MACD slow EMA
+macd_signal = 9                  # MACD signal line
+correlation_threshold = 0.75     # Drop features above this pairwise correlation
+```
+
+Hidden defaults:
+- `static_feature_cols` — defaults to `CORE_STATIC_FEATURES` from `constants.py` (21 features)
+- `multi_timeframe.sma_periods = [50]`
+- `multi_timeframe.ema_long = 200`
+- `multi_timeframe.bb_period = 20`
+- `multi_timeframe.bb_std = 2.0`
+- `multi_timeframe.return_lookbacks = [1, 4, 24]` — generates `return_1h`, `return_4h`, `return_1d`
+- `multi_timeframe.range_lookback = 20`
+- `multi_timeframe.volume_zscore_period = 20`
+
+### `[labels]` — Triple-Barrier Labeling
+
+```toml
+[labels]
+atr_tp_multiplier = 2.0          # Take-profit = multiplier * ATR
+atr_sl_multiplier = 2.0          # Stop-loss   = multiplier * ATR
+horizon_bars = 24                # Forward-looking window (hours on H1)
+```
+
+Hidden defaults:
+- `num_classes = 3` — Short / Hold / Long
+- `min_atr = 0.5` — ATR floor to prevent near-zero barriers
+
+If TP/SL multipliers change here, the backtest ATR barriers **must** be kept in sync (see `[backtest]`).
+
+Safe rule: tune labels before tuning model complexity.
+
+### `[model]` — Model Training
+
+```toml
+[model]
+architecture = "stacking"        # "stacking" or "lgbm"
+objective = "multiclass"         # Classification target
+
+# LightGBM hyperparameters
+lgbm_expanded_features = false   # Use expanded feature set for LightGBM
+num_leaves = 15                  # Max leaves per tree
+max_depth = 4                    # Max tree depth
+learning_rate = 0.03             # Boosting learning rate
+n_estimators = 300               # Number of boosting rounds
+min_child_samples = 80           # Min samples per leaf
+subsample = 0.80                 # Row subsample ratio
+subsample_freq = 5               # Subsample every N rounds
+feature_fraction = 0.70          # Column subsample per tree
+reg_alpha = 0.05                 # L1 regularization
+reg_lambda = 10.0                # L2 regularization
+early_stopping_rounds = 30       # Stop if no improvement
+
+# Stacking configuration
+stacking_base_models = ["logistic_regression", "random_forest", "lightgbm"]
+stacking_meta_model = "logistic_regression"
+stacking_meta_fraction = 0.20    # Fraction of train window for meta-learner
+stacking_passthrough = false     # Pass base features to meta-learner
+
+# Random Forest parameters
+random_forest_n_estimators = 300
+random_forest_max_depth = 6
+random_forest_min_samples_leaf = 80
+```
+
+Supported architectures:
+- `"stacking"`: Classic Hybrid Stacking (current main path)
+- `"lgbm"`: LightGBM-only ablation/baseline
+
+Do not use GRU as the runtime architecture for the current thesis path.
+
+### `[backtest]` — Trading Simulation
+
+```toml
+[backtest]
+initial_capital = 10000.0         # Starting account equity
+leverage = 10                     # Broker leverage
+spread_ticks = 35                 # Bid-ask spread in ticks
+slippage_ticks = 5                # Execution slippage in ticks
+commission_per_lot = 10.0         # Round-turn commission per lot
+atr_stop_multiplier = 2.0         # ATR stop-loss (MUST match [labels])
+atr_tp_multiplier = 2.0           # ATR take-profit (MUST match [labels])
+lots_per_trade = 0.02             # Default position size
+min_lots = 0.01                   # Minimum lots
+max_lots = 0.5                    # Maximum lots
+confidence_threshold = 0.50       # Min model confidence to trade
+min_bars_between_trades = 18      # Cooldown bars between entries
+max_drawdown_cutoff = 0.30        # Halt if drawdown exceeds 30%
+dd_cooldown_bars = 12             # Cooldown after max drawdown
+max_open_positions = 1            # Concurrent positions
+daily_loss_limit = 0.03           # Daily loss halt at 3%
+```
+
+Hidden defaults:
+- `oob_start_date = ""` — out-of-backtest start date filter
+- `oob_end_date = ""` — out-of-backtest end date filter
+
+### `[workflow]` — Pipeline Controls
+
+```toml
+[workflow]
+force_rerun = false               # Ignore cached intermediates
+random_seed = 2024                # Global reproducibility seed
+n_jobs = -1                       # Parallel workers (-1 = all cores)
+```
+
+Hidden defaults:
+- `run_data_pipeline = true` — Stage 1 toggle
+- `run_feature_engineering = true` — Stage 2 toggle
+- `run_label_generation = true` — Stage 3 toggle
+- `run_model_training = true` — Stage 4 toggle
+- `run_backtest = true` — Stage 5 toggle
+- `run_reporting = true` — Stage 6 toggle
+- `cache_invalidation = "path"` — Cache strategy: `"path"`, `"hash"`, or `"none"`
+- `session_timestamp = ""` — Set automatically per run
+
+---
+
+## Feature Set
+
+Default model-facing features are defined in:
 
 ```text
-Trend: ema34_vs_ema89, close_vs_ema_34, adx_14, ema_slope_20, regime_strength
-Momentum: return_1h, return_4h, macd_hist_atr, rsi_14
-Volatility: atr_pct_close, atr_ratio, atr_percentile, high_low_range_20
-Position: price_dist_ratio, price_position_20, pivot_position
-Candle: candle_body_ratio, upper_wick_ratio, lower_wick_ratio
-Session: sess_asia, sess_london, sess_ny_am, sess_ny_pm
-Volume: volume_zscore_20
+src/thesis/shared/constants.py → CORE_STATIC_FEATURES
 ```
 
-With PCA-reduced GRU hidden states, the hybrid matrix is `16 GRU PCA features + 22 static features = 38 features`.
+These 21 features are used by LightGBM and as input to the stacking meta-learner:
 
-## Public `config.toml` Sections
+```text
+# Trend
+ema34_vs_ema89          EMA34-EMA89 crossover distance (ATR-normalized)
+close_vs_ema_34         Close-EMA34 distance (ATR-normalized)
+adx_14                  Wilder ADX trend strength
+ema_slope_20            5-bar EMA slope (percent change)
 
-### `[data]`
+# Momentum
+return_1h               1-hour log return
+return_4h               4-hour log return
+macd_hist_atr           MACD histogram (ATR-normalized)
+rsi_14                  Wilder RSI
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `symbol` | `"XAUUSD"` | Display symbol for sessions and reports. |
-| `timeframe` | `"1H"` | Bar timeframe. |
-| `market_tz` | `"America/New_York"` | Timezone for session features. |
-| `start_date` | `"2018-01-01"` | Inclusive data start. |
-| `end_date` | `"2026-04-30"` | Inclusive data end. |
-| `tick_size` | `0.01` | Minimum price movement. |
-| `contract_size` | `100` | Units per lot for the backtest demo. |
+# Volatility / Regime
+atr_pct_close           ATR as percentage of close
+atr_ratio               ATR(5) / ATR(20) ratio
+atr_percentile          Rolling 50-bar ATR rank percentile
+high_low_range_20       20-bar high-low range (ATR-normalized)
 
-### `[splitting]`
+# Position / Location
+price_dist_ratio        Close distance from EMA89 (ATR-normalized)
+price_position_20       Close position in 20-bar range [0, 1]
+pivot_position          Price position between previous-day S1/R1 [0, 1]
+vwap                    Session VWAP (5PM NY-anchored trading day)
 
-Static 70/15/15 calendar split across Jan 2018 through Apr 2026:
+# Candle Structure
+candle_body_ratio       |close - open| / (high - low)
 
-| Parameter | Default |
-| --- | --- |
-| `train_start` | `"2018-01-01"` |
-| `train_end` | `"2023-09-30 23:59:59"` |
-| `val_start` | `"2023-10-01"` |
-| `val_end` | `"2025-01-31 23:59:59"` |
-| `test_start` | `"2025-02-01"` |
-| `test_end` | `"2026-04-30 23:59:59"` |
+# Session (24/5 market model, NY timezone)
+sess_asia               Asian session dummy (18:00-01:59 ET)
+sess_london             London session dummy (03:00-07:59 ET)
+sess_ny_am              NY morning session dummy (08:00-11:59 ET)
+sess_ny_pm              NY afternoon session dummy (12:00-17:59 ET)
+```
 
-These dates are used by static split mode and report metadata. Default training uses walk-forward windows below.
+Do not add raw OHLCV, timestamp, label, or barrier metadata as model-facing features. The exclusion set is enforced in `EXCLUDE_COLS`.
 
-### `[validation]`
+---
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `method` | `"sliding"` | Sliding walk-forward or static split. |
-| `train_window_bars` | `17520` | About 2 years of H1 bars. |
-| `test_window_bars` | `4380` | About 6 months of H1 bars. |
-| `step_bars` | `4380` | Non-overlapping test windows. |
-| `purge_bars` | `48` | Anti-leakage gap; 2x the 24-bar label horizon. |
-| `embargo_bars` | `50` | Extra gap after purge. |
-| `min_train_bars` | `10000` | Minimum bars required to build a window. |
+## Safe Tuning Order
 
-Sliding walk-forward retrains both GRU and LightGBM at every window. Window sizes are bar counts, so calendar duration can vary when market closures or missing bars exist.
+1. **Label distribution** — check Short/Hold/Long balance after Stage 3
+2. **Feature whitelist** — modify `CORE_STATIC_FEATURES` in `constants.py`
+3. **Model regularization/capacity** — tune LightGBM params in `[model]`
+4. **Backtest demo settings** — adjust `[backtest]` for presentation
+5. **Report/docs wording** — update report text
 
-### `[features]`
+When changing features, rerun from Stage 2. When changing labels, rerun from Stage 3.
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `rsi_period` | `14` | RSI lookback. |
-| `atr_period` | `14` | ATR lookback. |
-| `adx_period` | `14` | ADX trend-strength lookback. |
-| `ema_slope_period` | `20` | EMA span for slope/regime strength. |
-| `macd_fast` | `12` | MACD fast EMA span. |
-| `macd_slow` | `26` | MACD slow EMA span. |
-| `macd_signal` | `9` | MACD signal span. |
-| `correlation_threshold` | `0.75` | Feature filtering threshold. |
+---
 
-Hidden feature defaults include `static_feature_cols`, GRU `feature_cols`, and multi-timeframe helper parameters. Keep the public file compact unless you intentionally run feature-set experiments.
+## Validation Rules
 
-### `[labels]`
+The config loader (`src/thesis/shared/config.py`) enforces:
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `atr_tp_multiplier` | `2.0` | Take-profit barrier width. |
-| `atr_sl_multiplier` | `2.0` | Stop-loss barrier width. |
-| `horizon_bars` | `24` | Max label look-ahead bars. |
+- **Unknown keys fail fast**: misspelled config keys raise `ValueError`
+- **Unknown sections are warned**: unknown TOML sections are logged and ignored
+- **Embargo scaling**: `embargo_bars` is automatically scaled by timeframe ratio
+- **Directory creation**: `data/raw/` and `data/processed/` are created on load
 
-Backtest `atr_tp_multiplier` and `atr_stop_multiplier` must match these values.
+---
 
-### `[model]`
+## Config Caching
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `architecture` | `"hybrid"` | `"static"` LightGBM only or `"hybrid"` GRU + LightGBM. |
-| `objective` | `"multiclass"` | 3-class Short/Hold/Long classifier. |
-| `static_expanded` | `false` | Use all feature columns for static baseline if true. |
-| `num_leaves` | `31` | LightGBM leaf count. |
-| `max_depth` | `6` | Tree depth cap. |
-| `learning_rate` | `0.02` | Boosting learning rate. |
-| `n_estimators` | `500` | Max boosting rounds. |
-| `min_child_samples` | `50` | Minimum samples per leaf. |
-| `subsample` | `0.80` | Row subsample ratio. |
-| `subsample_freq` | `5` | Row subsample frequency. |
-| `feature_fraction` | `0.70` | Feature subsample ratio. |
-| `reg_alpha` | `0.05` | L1 regularization. |
-| `reg_lambda` | `5.0` | L2 regularization. |
-| `early_stopping_rounds` | `40` | Stop after no validation improvement. |
+Pipeline stages cache their output. The caching behavior depends on `cache_invalidation`:
 
-### `[gru]`
+| Strategy | Behavior |
+|---|---|
+| `"path"` | Skip if output file exists (default) |
+| `"hash"` | Append config fingerprint to filename; different config = different cache |
+| `"none"` | Never skip, always rerun |
 
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `objective` | `"multiclass"` | Stable default: focal loss on Short/Hold/Long labels. Regression is experimental. |
-| `hidden_size` | `64` | GRU hidden state dimension. |
-| `num_layers` | `2` | Stacked GRU layers. |
-| `sequence_length` | `48` | Input sequence length in bars. |
-| `dropout` | `0.3` | Dropout between recurrent layers. |
-| `learning_rate` | `0.0005` | Adam learning rate. |
-| `batch_size` | `256` | Training batch size. |
-| `epochs` | `100` | Max epochs. |
-| `patience` | `20` | Early-stopping patience. |
-| `min_epochs` | `10` | Minimum epochs before stopping. |
-| `bidirectional` | `false` | Disabled to avoid look-ahead bias. |
-| `gradient_accumulation_steps` | `1` | Effective-batch scaling. |
-| `warmup_epochs` | `3` | LR warmup before cosine schedule. |
-| `contrastive_pretrain_epochs` | `10` | Triplet pretraining epochs. |
-| `temperature_scaling` | `false` | Probability calibration toggle. |
-| `pca_components` | `16` | PCA dimensions passed to LightGBM. |
+Use `--force` to override cache and rerun all enabled stages.
 
-### `[backtest]`
+Config sections mapped to each stage for hash computation:
 
-Backtest settings are demo controls, not the thesis proof. The thesis claim should rely on ML metrics first.
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `initial_capital` | `10000.0` | Starting equity. |
-| `leverage` | `10` | Margin leverage. |
-| `spread_ticks` | `35` | Spread cost. |
-| `slippage_ticks` | `5` | Slippage cost. |
-| `commission_per_lot` | `10.0` | Commission per standard lot. |
-| `atr_stop_multiplier` | `2.0` | Must match label SL barrier. |
-| `atr_tp_multiplier` | `2.0` | Must match label TP barrier. |
-| `lots_per_trade` | `0.01` | Fixed conservative size. |
-| `confidence_threshold` | `0.50` | Entry filter only. |
-| `min_bars_between_trades` | `6` | Cooldown after exit. |
-| `max_drawdown_cutoff` | `0.30` | Equity circuit breaker. |
-| `dd_cooldown_bars` | `12` | Pause after drawdown breach. |
-| `max_open_positions` | `1` | Single-position default. |
-| `daily_loss_limit` | `0.03` | Daily loss circuit breaker. |
-
-### `[workflow]`
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `force_rerun` | `false` | Ignore cache. |
-| `random_seed` | `2024` | Reproducibility seed. |
-| `n_jobs` | `-1` | Worker count. |
-
-Stage toggles, cache invalidation, paths, download options, and runtime session paths are hidden defaults in `src/thesis/shared/config.py`.
-
-## Fail-Fast Validation
-
-Unknown keys inside known config sections raise `ValueError`. This prevents silent typos such as `timeframe_typo = "1H"`.
-
-## Parameters Worth Changing
-
-| Section | Parameter | Use |
-| --- | --- | --- |
-| `validation` | `train_window_bars`, `test_window_bars`, `purge_bars` | Evaluation shape and leakage safety. |
-| `labels` | `atr_tp_multiplier`, `atr_sl_multiplier`, `horizon_bars` | Target definition. |
-| `model` | `architecture`, tree complexity | Static vs hybrid comparison. |
-| `gru` | `hidden_size`, `sequence_length`, `epochs`, `pca_components` | Temporal representation capacity. |
-| `backtest` | `confidence_threshold`, `lots_per_trade`, cooldowns | Demo-only trade filtering/risk. |
-
-## Evaluation Rules
-
-Treat a result as useful only if it beats simple baselines:
-
-| Metric | Minimum expectation |
-| --- | --- |
-| Accuracy | Higher than majority-class baseline. |
-| Macro F1 | Better than predicting only Hold. |
-| Directional accuracy | Higher than 50% on non-Hold rows. |
-| High-confidence accuracy | Higher than full-sample accuracy. |
-
-Backtest return is secondary. A profitable backtest with weak ML metrics is likely noise or overfitting.
+| Stage | Config Sections |
+|---|---|
+| 1 | `[data]` |
+| 2 | `[features]` |
+| 3 | `[labels]` |
+| 4 | `[model]`, `[validation]` |
+| 5 | `[backtest]`, `[labels]` |
+| 6 | (none) |

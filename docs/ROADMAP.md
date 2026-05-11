@@ -1,125 +1,140 @@
 # Roadmap
 
-> What is done and what is still pending.
-
----
-
 ## Completed
 
 ### Core Pipeline
 
-- [x] **Data preparation** — Raw tick data to OHLCV bars aggregation (`src/thesis/stage_1_data/`)
-- [x] **Feature engineering** — 28 technical indicators including regime features (ADX, EMA slope, regime strength), candle structure, and session dummies (`src/thesis/stage_2_features/`)
-- [x] **Data quality analysis** — Missing bars, OHLC consistency, volatility distribution, seasonal patterns, label drift (`src/thesis/stage_6_reporting/`)
-- [x] **Label generation** — Triple Barrier method with symmetric 2xATR take-profit and stop-loss (`src/thesis/stage_3_labels/`)
-- [x] **Walk-forward validation** — Rolling window cross-validation with purge and embargo; distribution-shift weight correction per window (`src/thesis/stage_4_training/validation.py`)
-- [x] **Correlation filtering** — Automatic removal of highly correlated features (>0.75) computed on train set only
+- [x] **Data preparation**: raw tick data → OHLCV H1 bars (`src/thesis/stage_1_data/`)
+  - Dukascopy tick download with monthly file caching
+  - OHLCV aggregation with deduplication and date filtering
+  - Data quality checks: gap classification, candle consistency, outlier detection
+  - Quality report JSON sidecar
+- [x] **Feature engineering**: causal tabular indicators with static whitelist (`src/thesis/stage_2_features/`)
+  - 21 core features across 6 categories (trend, momentum, volatility, position, candle, session)
+  - Polars-native computation (no pandas in feature pipeline)
+  - Pandera schema validation
+  - Warmup row detection and drop
+  - Feature list sidecar JSON
+  - Leakage guard: no `shift(-n)`, no `center=True`
+- [x] **Label generation**: triple-barrier Short/Hold/Long labels (`src/thesis/stage_3_labels/`)
+  - Numba-accelerated barrier scanning
+  - Asymmetric TP/SL with ATR-based barriers
+  - Average-uniqueness sample weights (Lopez de Prado)
+  - Censored label filtering
+  - Label profitability diagnostics
+- [x] **Walk-forward validation**: chronological sliding windows with purge/embargo (`src/thesis/stage_4_training/validation.py`)
+  - Non-overlapping test windows
+  - Configurable purge and embargo gaps
+  - Event-time purge option
+  - Window date logging for audit trail
+- [x] **Classic Hybrid Stacking runtime**: Logistic Regression + Random Forest + LightGBM → meta Logistic Regression (`src/thesis/stage_4_training/walk_forward/stacking.py`)
+  - Chronological base/meta split within each train window
+  - Distribution-shift weighting
+  - Balanced class weights
+  - Validation filtering for unseen classes
+  - OOF prediction persistence with manifest
+- [x] **LightGBM-only ablation/baseline** (`src/thesis/stage_4_training/walk_forward/lgbm.py`)
+  - Same walk-forward framework
+  - Fixed hyperparameters with early stopping
+  - Feature group interaction constraints
+- [x] **Baseline strategies** (`src/thesis/stage_4_training/baselines.py`)
+  - Naive direction, majority class, random, always-predict
+  - Computed on same walk-forward windows for fair comparison
+- [x] **Application-demo backtest** (`src/thesis/stage_5_backtest/`)
+  - CFD signal simulation with fractional lots
+  - Confidence-threshold filtering
+  - Risk gates: max drawdown, daily loss limit, cooldown
+  - ATR stop-loss/take-profit aligned with label barriers
+  - Barrier alignment guard
+  - Per-trade CSV, equity curve CSV, Bokeh chart
+- [x] **Evaluation-first reporting**: classification metrics primary, backtest secondary (`src/thesis/stage_6_reporting/`)
+  - Full classification metrics (accuracy, directional accuracy, macro F1, per-class F1, confusion matrix)
+  - Calibration metrics (ECE, Brier, log-loss)
+  - Model comparison table
+  - Feature importance report
+  - Metric quality zone assessment
+  - Deployment recommendation engine
+  - OOF vs OOS generalization check
+  - Markdown report with 15 sections
+- [x] **Interactive dashboard** (`src/thesis/dashboard/`)
+  - Streamlit-based session explorer
+  - Metric cards with quality zone indicators
+  - Walk-forward training history
+  - Chart visualization (pyecharts)
+  - Session comparison
+- [x] **Session management**: timestamped session directories with config snapshots
+  - Config snapshot for reproducibility
+  - Session manifest with config hash, timing, metadata
+  - Session resume support
+- [x] **Pipeline caching**: stage-level cache with path/hash/none strategies
+- [x] **Feature pruning pass**: reduced model-facing whitelist from 25 to 21 features
+- [x] **Leakage guard tests**: verify no look-ahead in features, no shift(-n), no center=True, unique OOF timestamps
+- [x] **Comprehensive test suite**: unit tests, integration tests, leakage guard tests, config contract tests
 
-### Models
+### Latest Verified Run
 
-- [x] **GRU feature extractor** — 2-layer GRU, 64 hidden units, 48-bar sequences, 20 input features including raw OHLCV z-scores and relative volatility features (`src/thesis/stage_4_training/gru/`)
-- [x] **GRU multiclass objective** — GRU trains on Short/Hold/Long class labels; regression remains experimental
-- [x] **Cosine-annealing LR schedule** — Warm restarts (T_0=10, T_mult=2) with warmup for better convergence
-- [x] **LightGBM classifier** — Multiclass with distribution-shift weight correction (`src/thesis/stage_4_training/lgbm/training.py`)
-- [x] **Hybrid training pipeline** — GRU hidden states (PCA 16-dim) + 22 static features → LightGBM (`src/thesis/pipeline.py`, orchestrated via `stage_4_training/walk_forward/`)
+```text
+Session: results/XAUUSD_1H_20260511_231114/
+Hybrid Stacking accuracy: 0.3397
+Hybrid Stacking macro F1: 0.3162
+LightGBM accuracy: 0.3770
+LightGBM macro F1: 0.3281
+Backtest demo win rate: 47.67%
+Backtest demo trades: 172
+```
 
-
-### Evaluation
-
-- [x] **Evaluation-first report restructure** — Report reorganised around ML metrics (classification accuracy, F1, confusion matrix) as primary evidence; backtest demoted to application demo (`src/thesis/stage_6_reporting/generation.py`)
-- [x] **Classification metrics as primary** — Accuracy, macro-F1, per-class precision/recall, directional accuracy, high-confidence accuracy computed in `model_metrics.py`; rendered first in report
-- [x] **Regression auxiliary metrics** — MAE, RMSE, R² on return magnitude as supplementary evidence alongside classification (`model_metrics.py`)
-- [x] **Baseline model comparison** — Naive direction (persistence), majority-class, random, and buy-and-hold baselines computed on same walk-forward windows as hybrid model (`baselines.py`); comparison table in report
-- [x] **Probability calibration** — ECE, Brier score, log-loss, confidence-bin reliability (`calibration.py`)
-- [x] **Data quality evidence** — OHLCV consistency, missing-bar gaps, outlier returns, label distribution, volatility regime statistics (`data_quality.py`); rendered as evidence section in report
-- [x] **Metric zone gauges** — Color-coded metric evaluation (green/yellow/red) with boringedge recommendations (`shared/zones.py`)
-- [x] **CFD backtest** — via `backtesting.py` with native margin, spread, commission, ATR stop-loss, circuit breakers, trade cooldown (`src/thesis/stage_5_backtest/`)
-- [x] **Fixed-risk sizing after confidence filter** — Confidence filters trades but no longer amplifies lot size
-- [x] **Trade cooldown** — min_bars_between_trades=6 prevents overtrading
-- [x] **Fractional lot support** — Uses `FractionalBacktest` for precise sizing
-- [x] **Comprehensive metrics** — 20+ trading metrics (Sharpe, Sortino, Calmar, SQN, drawdown, etc.)
-- [x] **Trade details CSV** — Per-trade export with entry/exit, P&L, duration, confidence
-- [x] **Prediction detail CSV** — Per-row predictions with confidence scores and probability columns
-- [x] **Equity curve CSV** — Exported equity + drawdown series for external analysis
-- [x] **OOF vs OOS comparison** — Out-of-fold vs out-of-sample metric comparison in report
-- [x] **Benchmark comparison** — Random strategy baseline and buy-and-hold comparison in report
-
-### Visualization
-
-- [x] **Data charts** — Candlestick, label distribution, feature correlation, feature distributions (`src/thesis/charts/`)
-- [x] **Model charts** — Confusion matrix, confidence distribution, feature importance, SHAP summary (`src/thesis/charts/`)
-- [x] **Backtest charts** — Equity curve, drawdown, P&L histogram, monthly returns heatmap, rolling Sharpe, duration vs P&L scatter (`src/thesis/charts/`)
-- [x] **Metric zone gauges** — Color-coded metric evaluation (green/yellow/red) with boringedge recommendations and extreme value detection (`src/thesis/shared/zones.py`)
-- [x] **Auto-generated report** — Markdown report with all metrics, tables, charts, data quality analysis, and verdict (`src/thesis/stage_6_reporting/`)
-- [x] **Streamlit dashboard** — Modular ECharts-based visualization on :8501 (`src/thesis/dashboard/` — 10 modules, entry via `main.py`)
-
-### Infrastructure
-
-- [x] **Config management** — Single TOML config with typed dataclasses (`src/thesis/shared/config.py`)
-- [x] **Session-based output** — Timestamped results folder (local time) for each run (`src/thesis/shared/session_paths.py`)
-- [x] **CLI entry point** — `main.py` with `--force` flag
-- [x] **Pixi package management** — Reproducible environment with `pixi.toml`
-- [x] **Test suite** — Unit and integration tests with 60% coverage minimum
-- [x] **Code quality** — Ruff linting and formatting
-- [x] **CI/CD workflows** — GitHub Actions for testing and releases
-- [x] **Git conventions** — Conventional commits, branch strategy, PR templates
-- [x] **Stage-based subpackages** — Source organized as `stage_1_data/`, `stage_2_features/`, etc. with sub-packages for GRU (`gru/`), walk-forward (`walk_forward/`), report sections (`sections/`), charts, and dashboard. Shared utilities in `shared/`.
+Interpretation: the pipeline runs end-to-end. Hybrid Stacking does not beat LightGBM in this run, which should be reported honestly.
 
 ### Documentation
 
-- [x] **Architecture doc** — System design and data flow (`docs/ARCHITECTURE.md`)
-- [x] **Quickstart guide** — Setup and first run (`docs/QUICKSTART.md`)
-- [x] **Evaluation guide** — Metric definitions and interpretation (`docs/EVALUATION.md`)
-- [x] **Configuration reference** — All config keys and defaults (`docs/CONFIGURATION.md`)
-- [x] **Glossary** — Trading and ML term definitions (`docs/GLOSSARY.md`)
-- [x] **Tuning guide** — Hyperparameter tuning tips (`docs/TUNING.md`)
-- [x] **API docstrings** — Google-style docstrings on all public functions
+- [x] README updated to Classic Hybrid Stacking
+- [x] `docs/ARCHITECTURE.md` — full pipeline and module reference
+- [x] `docs/CONFIGURATION.md` — all config sections with hidden defaults
+- [x] `docs/EVALUATION.md` — metrics, results, interpretation guide
+- [x] `docs/QUICKSTART.md` — install, run, inspect, dashboard
+- [x] `docs/TUNING.md` — safe tuning order with commands
+- [x] `docs/ROADMAP.md` — completed and pending work
+- [x] `docs/GLOSSARY.md` — plain-language term definitions
+- [x] `bao_cao/` chapter drafts updated away from old runtime wording
 
 ---
 
 ## Pending
 
-### Model Improvements
+### Model / Label Improvements
 
-- [ ] **Transformer encoder** — Experiment with self-attention as an alternative to GRU
-- [ ] **Multi-timeframe features** — Add features from 4H and daily timeframes (config scaffolding exists in `MultiTimeframeConfig`)
-- [ ] **Sentiment features** — Incorporate news sentiment or macro indicators
-- [ ] **Volume profile analysis** — Add volume-based features (VWAP, volume clusters)
+- [ ] Improve label design so Hold is not too rare while Long/Short remain balanced
+- [ ] Test confidence thresholding/calibration for better signal quality
+- [ ] Analyze feature importance by market regime
+- [ ] Compare `architecture = "lgbm"` against stacking as a strong simple baseline
+- [ ] Test different `stacking_meta_fraction` values (current: 0.20)
+- [ ] Experiment with stacking passthrough features (`stacking_passthrough = true`)
+
+### Reporting Improvements
+
+- [ ] Add a dedicated subsection explaining why Hybrid Stacking may underperform LightGBM on noisy financial data
+- [ ] Add final thesis tables from the latest verified session
+- [ ] Optionally add SHAP plots if runtime and dependencies are stable
+- [ ] Add walk-forward window visualization to dashboard
 
 ### Backtest Enhancements
 
-- [ ] **Swap/rollover costs** — Model overnight holding costs in the CFD simulator
-- [ ] **Slippage model** — Add realistic slippage based on volatility and liquidity
-- [ ] **Multi-asset support** — Extend to other currency pairs (EUR/USD, GBP/USD)
-- [ ] **Monte Carlo simulation** — Randomize trade order to test robustness of metrics
-- [ ] **Parameter sensitivity analysis** — Test how small changes in spread, leverage, etc. affect results
+- [ ] Model swap/rollover costs
+- [ ] Improve slippage assumptions
+- [ ] Add parameter sensitivity analysis for spread, leverage, and confidence threshold
+- [ ] Add benchmark comparison (buy-and-hold, random strategy, moving average crossover)
 
-### Operational
+### Infrastructure
 
-- [ ] **Real-time inference** — Deploy model for live signal generation
-- [ ] **Model versioning** — Track and compare model versions across experiments
-- [ ] **Data pipeline monitoring** — Alert when data quality drops or drifts
-
-### Research
-
-- [ ] **Experiment log** — Track all experiments with parameters and results
-- [ ] **Literature comparison** — Compare results with published research benchmarks
-- [ ] **Statistical significance tests** — Add Diebold-Mariano or similar tests for model comparison
+- [ ] Add Optuna hyperparameter optimization for LightGBM
+- [ ] Add experiment tracking (MLflow or similar)
+- [ ] Add CI/CD pipeline for automated testing and linting
+- [ ] Add data versioning for OHLCV artifacts
 
 ---
 
-## Progress Summary
+## Current Recommendation
 
-| Category          | Completed | Pending | Total |
-|-------------------|-----------|---------|-------|
-| Core Pipeline     | 6         | 0       | 6     |
-| Models            | 5         | 4       | 9     |
-| Evaluation        | 17        | 5       | 22    |
-| Visualization     | 6         | 0       | 6     |
-| Infrastructure    | 9         | 0       | 9     |
-| Documentation     | 7         | 0       | 7     |
-| Operational       | 0         | 3       | 3     |
-| Research          | 0         | 3       | 3     |
-| **Total**         | **50**    | **15**  | **65**|
+Do not reintroduce GRU/deep sequence runtime for the current thesis completion path. Finish the thesis narrative around controlled evaluation, transparent comparison, and honest limitations.
 
-> **Overall: 77% complete** — Core research pipeline is fully functional. Evaluation-first report restructure done. Remaining items are enhancements and production features.
+The thesis contribution is the controlled evaluation pipeline, not guaranteed market outperformance.

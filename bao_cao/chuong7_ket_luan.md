@@ -1,109 +1,134 @@
 # Chương 7. Kết luận
 
-## 7.1. Tổng kết kết quả đạt được
+## 7.1. Tổng kết
 
-Đồ án này đã xây dựng và đánh giá hệ thống dự báo xu hướng ngắn hạn XAU/USD sử dụng kiến trúc hybrid GRU + LightGBM. Các kết quả chính bao gồm:
+Đồ án đã xây dựng pipeline học máy dự báo tín hiệu XAU/USD H1 theo hướng đánh giá có kiểm soát cho chuỗi thời gian tài chính. Pipeline gồm 6 stage: chuẩn bị dữ liệu, tạo feature, gán nhãn, huấn luyện, backtest minh họa và báo cáo. Thiết kế này giúp tách biệt rõ dữ liệu, mô hình và đánh giá, đồng thời giảm nguy cơ rò rỉ thông tin.
 
-### 7.1.1. Về mặt hệ thống
+## 7.2. Kết quả đạt được
 
-1. **Pipeline hoàn chỉnh:** Xây dựng pipeline end-to-end từ thu thập dữ liệu đến báo cáo kết quả, bao gồm 6 giai đoạn: data processing → feature engineering → labeling → model training → backtest → reporting.
+Các kết quả chính:
 
-2. **Kiến trúc hybrid:** Triển khai thành công kiến trúc stacking GRU + LightGBM, trong đó GRU đóng vai trò trích xuất đặc trưng tuần tự (với attention pooling và variational dropout), PCA giảm chiều, và LightGBM phân loại trên ma trận đặc trưng lai.
+1. Xây dựng dữ liệu OHLCV H1 và kiểm tra chất lượng dữ liệu.
+2. Tạo feature causal từ OHLCV, tập trung vào trend, momentum, volatility, price position và session.
+3. Áp dụng triple-barrier labeling với TP/SL theo ATR và horizon 24 bars.
+4. Áp dụng walk-forward validation với purge/embargo để giảm leakage.
+5. Triển khai Classic Hybrid Stacking gồm Logistic Regression, Random Forest, LightGBM và meta Logistic Regression.
+6. So sánh với baseline và base models.
+7. Sinh báo cáo classification metrics, confusion matrix, model comparison và backtest demo.
 
-3. **Triple Barrier labeling:** Áp dụng phương pháp gán nhãn Triple Barrier với ATR-based dynamic barriers, average-uniqueness sample weighting, và xử lý nhãn censored/ambiguous — phù hợp với đặc thù bài toán giao dịch.
+## 7.3. Kết quả thực nghiệm chính
 
-4. **Walk-forward validation:** Triển khai validation trượt với event-time purge và embargo, đảm bảo không rò rỉ thông tin giữa tập huấn luyện và kiểm tra — kể cả cho chuỗi GRU (sequence overlap).
+Trong lần chạy mới nhất:
 
-### 7.1.2. Về mặt kỹ thuật
+```text
+Hybrid Stacking Accuracy  0.3397
+Hybrid Stacking Macro F1  0.3162
+LightGBM Accuracy         0.3770
+LightGBM Macro F1         0.3281
+Backtest Win Rate         47.67%
+Backtest Total Return     0.0364%
+```
 
-5. **Đa lớp chống leakage:** 8 biện pháp chống rò rỉ thông tin ở các cấp: label, feature, normalization, dimensionality, model, và sample weighting.
+Hybrid Stacking không vượt LightGBM đơn lẻ. Đây là kết quả cần trình bày trung thực: trên dữ liệu tài chính nhiễu cao, tăng độ phức tạp mô hình không luôn tạo cải thiện ngoài mẫu. Đóng góp của đồ án không nằm ở việc chứng minh chiến lược giao dịch sinh lời, mà ở việc xây dựng quy trình đánh giá có kiểm soát và minh bạch.
 
-6. **Feature engineering có chủ ý:** 5 nhóm đặc trưng (price/volatility, trend, oscillators, regime, normalized OHLCV) với lọc tương quan và loại warm-up rows.
+## 7.4. Đóng góp học thuật và kỹ thuật
 
-7. **Đánh giá toàn diện:** Classification metrics (accuracy, macro F1, directional accuracy), regression auxiliary metrics, per-window stability analysis, confusion matrix, feature importance, và calibration.
+Đồ án có các đóng góp sau:
 
-### 7.1.3. Về mặt học thuật
+- Áp dụng triple-barrier labeling thay vì nhãn tăng/giảm đơn giản.
+- Áp dụng walk-forward validation thay vì random split.
+- Sử dụng purge/embargo để giảm leakage do event horizon.
+- So sánh nhiều baseline và mô hình thay vì chỉ báo cáo mô hình chính.
+- Phân tích per-class metrics để phát hiện điểm yếu lớp Hold.
+- Tách backtest khỏi bằng chứng chính, tránh overclaim về profitability.
+- Ghi nhận kết quả âm hoặc chưa vượt baseline như một phần hợp lệ của nghiên cứu.
 
-8. **So sánh với baseline:** Mô hình hybrid được so sánh với naive persistence, majority class, và random baseline trên cùng các cửa sổ walk-forward.
+## 7.5. Hạn chế
 
-9. **Code chất lượng cao:** Toàn bộ source code được lint (Ruff), test (pytest, coverage ≥ 60%), và tổ chức module hóa theo stage pattern.
+Các hạn chế chính:
 
-## 7.2. Hạn chế
+1. Feature chỉ dựa trên OHLCV, chưa có dữ liệu vĩ mô, tin tức, sentiment hoặc order book.
+2. Lớp Hold thấp, làm bài toán ba lớp khó cân bằng.
+3. Directional Accuracy chưa vượt baseline rõ ràng.
+4. Hybrid Stacking chưa cải thiện so với LightGBM.
+5. Backtest demo chưa tính đầy đủ mọi điều kiện thực thi thực tế.
+6. Chưa có phân tích SHAP chi tiết theo từng giai đoạn thị trường.
 
-### 7.2.1. Hạn chế của dữ liệu
+## 7.6. Hướng phát triển
 
-1. **Độ phủ thị trường:** Dữ liệu chỉ bao gồm XAU/USD trên một nguồn duy nhất. Các thị trường khác (equity, crypto, commodities) có thể có đặc điểm khác.
+Các hướng phát triển hợp lý:
 
-2. **Volume data:** Khối lượng giao dịch trong forex không centralized — volume data có thể không phản ánh chính xác tổng khối lượng thị trường.
+1. Thiết kế lại nhãn để tăng tỷ lệ Hold hợp lý hơn, ví dụ điều chỉnh barrier hoặc định nghĩa no-trade zone.
+2. Calibration xác suất để dùng confidence threshold tốt hơn [23].
+3. Phân tích SHAP theo regime để hiểu mô hình dựa vào feature nào [22].
+4. Thử thêm dữ liệu vĩ mô như lãi suất, DXY, yield, CPI hoặc biến động thị trường.
+5. Kiểm tra robustness theo chi phí giao dịch và giai đoạn thị trường.
+6. Giữ LightGBM-only như baseline mạnh; chỉ thêm mô hình phức tạp nếu có giả thuyết rõ ràng.
+7. Chỉ xem xét deep sequence models sau khi pipeline classical đã ổn định và có thêm dữ liệu/kiểm định phù hợp.
 
-3. **Chỉ OHLCV:** Không sử dụng dữ liệu bổ sung như order book depth, sentiment, macro economic indicators, hoặc inter-market correlations.
+## 7.7. Kết luận cuối
 
-### 7.2.2. Hạn chế của mô hình
+Đề tài đã hoàn thành mục tiêu xây dựng một pipeline học máy có kiểm soát cho dự báo tín hiệu XAU/USD H1. Kết quả thực nghiệm cho thấy bài toán khó và mô hình phức tạp không tự động vượt baseline mạnh. Đây là kết luận phù hợp với đặc thù tài chính: tín hiệu yếu, dữ liệu nhiễu và nguy cơ overfitting cao. Giá trị chính của đồ án là phương pháp luận: dữ liệu causal, nhãn có ý nghĩa giao dịch, validation đúng theo thời gian, so sánh baseline và báo cáo trung thực.
 
-4. **Chỉ GRU:** Chưa thử nghiệm các kiến trúc khác như LSTM, Transformer, hoặc Temporal Convolutional Network (TCN) làm feature extractor.
+## 7.8. Trả lời câu hỏi nghiên cứu
 
-5. **PCA tuyến tính:** PCA giả định tuyến tính trong việc giảm chiều hidden states — có thể mất thông tin phi tuyến. Tùy chọn: autoencoder, t-SNE, UMAP.
+### Câu hỏi 1: Pipeline có tránh được thông tin tương lai không?
 
-6. **Không tuning hyperparameter:** Các hyperparameter (learning rate, num_leaves, hidden_size, v.v.) được chọn dựa trên kinh nghiệm, không qua systematic optimization (Optuna, Grid Search). Điều này có nghĩa hiệu suất có thể chưa tối ưu.
+Pipeline đã áp dụng nhiều lớp kiểm soát: feature causal, loại bỏ cột label/barrier khỏi feature, walk-forward split, event-time purge và embargo. Điều này không đảm bảo tuyệt đối không có mọi dạng leakage, nhưng tốt hơn đáng kể so với random split thông thường.
 
-7. **Không có meta-labeling:** Chưa áp dụng meta-labeling [1] (mô hình thứ hai quyết định có theo tín hiệu của mô hình chính hay không) — có thể cải thiện precision.
+### Câu hỏi 2: Triple-barrier có phù hợp hơn nhãn tăng/giảm đơn giản không?
 
-### 7.2.3. Hạn chế của phương pháp luận
+Triple-barrier phù hợp hơn vì nhãn gắn với TP, SL và horizon. Nó phản ánh câu hỏi giao dịch thực tế: trong một khoảng thời gian hữu hạn, giá chạm mục tiêu lợi nhuận hay rủi ro trước. Tuy nhiên, phân phối Hold thấp cho thấy thiết kế barrier vẫn cần cải thiện.
 
-8. **Horizon cố định:** Triple Barrier sử dụng horizon cố định 24 giờ. Trong thực tế, thời gian giữ vị thế tối ưu thay đổi theo chế độ thị trường.
+### Câu hỏi 3: Classic Hybrid Stacking có vượt mô hình đơn lẻ không?
 
-9. **Không đánh giá giao dịch thực:** Backtest chỉ là minh họa, không có forward test trên dữ liệu real-time hoặc paper trading.
+Trong lần chạy hiện tại, không. LightGBM có Macro F1 cao hơn Hybrid Stacking. Đây là kết quả quan trọng vì nó cho thấy không nên mặc định mô hình phức tạp hơn sẽ tốt hơn. Kết quả này cũng củng cố vai trò của baseline comparison.
 
-10. **Không so sánh với mô hình SOTA:** Chưa so sánh với các mô hình state-of-the-art như Temporal Fusion Transformer (TFT), PatchTST, hoặc iTransformer.
+### Câu hỏi 4: Backtest có chứng minh chiến lược sinh lời không?
 
-## 7.3. Hướng phát triển
+Không. Backtest gần hòa vốn nhưng profit factor dưới 1 và Sharpe gần 0. Nó chỉ chứng minh pipeline có thể tạo tín hiệu và mô phỏng giao dịch, không chứng minh lợi thế giao dịch thực tế.
 
-### 7.3.1. Ngắn hạn
+## 7.9. Bài học phương pháp luận
 
-1. **Hyperparameter optimization:** Sử dụng Optuna [2] để tối ưu hóa hyperparameter cho cả GRU và LightGBM trong walk-forward framework.
+Các bài học chính:
 
-2. **Thêm kiến trúc GRU:** Thử nghiệm bidirectional GRU, multi-head attention, và stacked GRU với skip connections.
+1. Trong tài chính, validation quan trọng ngang mô hình.
+2. Label design quyết định mô hình học bài toán gì.
+3. Baseline mạnh là bắt buộc để tránh overclaim.
+4. Accuracy có thể gây hiểu lầm khi class imbalance.
+5. Backtest đẹp không đủ nếu không kiểm soát overfitting.
+6. Mô hình phức tạp không tự động tạo hiệu quả ngoài mẫu.
+7. Kết quả không như kỳ vọng vẫn có giá trị nếu được phân tích đúng.
 
-3. **Meta-labeling:** Thêm mô hình meta-labeling (level 2) quyết định có act trên tín hiệu của mô hình hybrid hay không.
+## 7.10. Khuyến nghị cho bản bảo vệ
 
-4. **Nhiều chỉ báo kỹ thuật hơn:** Thêm các chỉ báo như Ichimoku, Bollinger Band width, VWAP, và các đặc trưng thống kê bậc cao (skewness, kurtosis rolling).
+Khi bảo vệ, nên nhấn mạnh:
 
-### 7.3.2. Trung hạn
+- “Hybrid” ở đây là stacking nhiều họ mô hình: tuyến tính, bagging tree, boosting tree.
+- Đóng góp chính là pipeline đánh giá có kiểm soát.
+- Kết quả LightGBM vượt Stacking được trình bày trung thực.
+- Backtest là demo ứng dụng, không phải claim lợi nhuận.
+- Hạn chế lớp Hold thấp đã được nhận diện và có hướng cải thiện.
 
-5. **Multi-asset:** Mở rộng sang các cặp tiền khác (EUR/USD, GBP/JPY) hoặc tài sản khác (S&P 500, Bitcoin) để đánh giá khả năng tổng quát hóa.
+Nếu hội đồng hỏi vì sao kết quả chưa cao, có thể trả lời:
 
-6. **Multi-timeframe:** Sử dụng đồng thời dữ liệu từ nhiều khung thời gian (M15, 1H, 4H, 1D) — cho phép mô hình nắm bắt cả cấu trúc vi mô và vĩ mô.
+```text
+Dữ liệu tài chính có tín hiệu yếu và non-stationary. Đề tài không cố tối ưu để có backtest đẹp, mà ưu tiên đánh giá đúng, tránh leakage và so sánh baseline. Việc LightGBM vượt Stacking là kết quả thực nghiệm có ý nghĩa: tăng độ phức tạp không đảm bảo cải thiện ngoài mẫu.
+```
 
-7. **Transformer-based feature extractor:** Thay thế GRU bằng Temporal Fusion Transformer (TFT) [3] hoặc PatchTST [4] — các kiến trúc SOTA cho time-series forecasting.
+## 7.11. Công việc cần làm nếu có thêm thời gian
 
-8. **Dynamic horizon:** Thay vì horizon cố định 24h, sử dụng dynamic horizon dựa trên ATR regime — barrier rộng hơn trong thị trường biến động, hẹp hơn trong thị trường bình ổn.
+Ưu tiên tiếp theo nên là:
 
-### 7.3.3. Dài hạn
+1. Thiết kế lại vùng Hold bằng no-trade zone hoặc barrier/horizon khác.
+2. Tạo thêm feature vĩ mô: DXY, US10Y yield, real yield proxy, CPI/FOMC event flags.
+3. Calibration xác suất trước khi dùng confidence threshold.
+4. SHAP analysis cho LightGBM và Stacking.
+5. Robustness test với nhiều mức chi phí giao dịch.
+6. Kiểm tra rolling retrain schedule.
+7. Tạo out-of-time test sau 2026-04-30.
+8. So sánh với rule-based technical strategies đơn giản.
 
-9. **Online learning:** Triển khai mô hình học liên tục (online/incremental learning) thay vì retrain theo batch — cho phép thích ứng nhanh hơn với regime change.
+## 7.12. Kết luận bảo vệ cuối cùng
 
-10. **Explainability:** Tích hợp SHAP values và attention visualization để cung cấp giải thích trực quan cho từng dự đoán.
-
-11. **Paper trading / forward test:** Triển khai trên tài khoản demo real-time để đánh giá hiệu suất trong điều kiện thị trường thực (latency, slippage thực, tâm lý).
-
-12. **Risk management nâng cao:** Tích hợp Kelly criterion, CVaR optimization, hoặc reinforcement learning cho position sizing thay vì fixed lot size.
-
-## 7.4. Kết luận
-
-Đồ án này đã trình bày một phương pháp dự báo xu hướng ngắn hạn XAU/USD dựa trên kiến trúc hybrid GRU + LightGBM với Triple Barrier labeling và walk-forward validation. Kiến trúc stacking kết hợp thế mạnh nắm bắt mẫu hình tuần tự của GRU với khả năng xử lý đặc trưng bảng phi tuyến của LightGBM, trong khi các biện pháp chống leakage đa lớp đảm bảo tính hợp lệ của kết quả đánh giá.
-
-Kết quả thực nghiệm cho thấy mô hình hybrid có tiềm năng trong bài toán phân loại xu hướng, nhưng cũng bộc lộ những hạn chế nhất định — đặc biệt trong các giai đoạn regime change đột ngột và thị trường dao động ngang. Điều này phù hợp với kỳ vọng học thuật: dự báo tài chính là bài toán intrinsically khó, và không có mô hình đơn lẻ nào có thể giải quyết hoàn toàn [1, 5].
-
-Đóng góp chính của đồ án không phải là một chiến lược giao dịch sinh lời, mà là một framework đánh giá nghiêm ngặt cho mô hình hybrid trong bối cảnh tài chính — với emphasis trên phương pháp luận đúng (proper validation, anti-leakage, honest evaluation) hơn là kết quả backtest lạc quan.
-
-## Tài liệu tham khảo chương này
-
-[1] López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley.
-
-[2] Akiba, T., et al. (2019). "Optuna: A Next-generation Hyperparameter Optimization Framework." *KDD 2019*.
-
-[3] Lim, B., et al. (2021). "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting." *International Journal of Forecasting*, 37(4), 1748–1764.
-
-[4] Nie, Y., et al. (2023). "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers." *ICLR 2023*.
-
-[5] López de Prado, M. (2018). "The 10 Reasons Most Machine Learning Funds Fail." *Journal of Portfolio Management*, 44(6), 120–133.
+Luận văn nên được bảo vệ như một nghiên cứu xây dựng và kiểm định pipeline học máy tài chính. Thành công của đồ án nằm ở việc biến một bài toán dễ bị overfit thành một quy trình có kiểm soát: dữ liệu có contract, feature causal, label event-based, validation theo thời gian, purge/embargo, baseline comparison, metrics đa chiều và backtest minh họa. Kết quả thực nghiệm hiện tại chưa chứng minh lợi thế giao dịch, nhưng cung cấp nền tảng rõ ràng để tiếp tục cải thiện một cách khoa học.

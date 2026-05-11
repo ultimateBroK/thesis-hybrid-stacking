@@ -1,137 +1,214 @@
 # TÀI LIỆU THAM KHẢO
 
-## Nhóm 1: Time-Series Forecasting in Finance
+Danh mục này ưu tiên nguồn học thuật/nhà xuất bản uy tín: Journal of Finance, Quantitative Finance, Wiley, Cambridge University Press, NeurIPS, Machine Learning, Annals of Statistics, PLOS ONE, scikit-learn documentation và World Gold Council. Các nguồn preprint chỉ dùng khi phù hợp và không thay thế nguồn nền tảng.
 
-[1] Zhang, C., Sjarif, N.N.A., & Ibrahim, R. (2024). "Deep learning models for price forecasting of financial time series: A review of recent advancements: 2020–2022." *Wiley Interdisciplinary Reviews: Data Mining and Knowledge Discovery*, 14(1), e1519. DOI: 10.1002/widm.1519
+## Nhóm 1: Nền tảng thị trường tài chính và dữ liệu tài chính
 
-[2] Lim, W.L. & Tsiakas, I. (2024). "Deep Learning for Financial Time Series Prediction." *Computers, Materials & Continua*, 139(1), 193–230.
+[1] Fama, E. F. (1970). "Efficient Capital Markets: A Review of Theory and Empirical Work." *The Journal of Finance*, 25(2), 383–417. DOI: 10.1111/j.1540-6261.1970.tb00518.x.
 
-[3] Ke, Z., et al. (2025). "A comprehensive survey of deep learning for time series forecasting: architectural diversity and open challenges." *Artificial Intelligence Review*, 58, Article 175. DOI: 10.1007/s10462-025-11223-9
+[2] Cont, R. (2001). "Empirical properties of asset returns: stylized facts and statistical issues." *Quantitative Finance*, 1(2), 223–236. DOI: 10.1080/713665670.
 
-[4] Li, W. & Law, K.E. (2024). "Deep learning models for time series forecasting: A review." *IEEE Access*. DOI: 10.1109/ACCESS.2024.3422528
+[3] World Gold Council. (2024). *Gold Demand Trends: Full Year 2024*. https://www.gold.org/goldhub/research/gold-demand-trends.
 
-[5] Taylor, S.J. (2007). *Modelling Financial Time Series* (2nd ed.). World Scientific Publishing.
+[4] Taylor, S. J. (2007). *Modelling Financial Time Series* (2nd ed.). World Scientific Publishing.
 
-[6] Cont, R. (2001). "Empirical properties of asset returns: stylized facts and statistical issues." *Quantitative Finance*, 1(2), 223–236.
+## Nhóm 2: Financial machine learning, labeling và validation
 
-## Nhóm 2: GRU / RNN in Financial Prediction
+[5] López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley. ISBN: 978-1-119-48208-6.
 
-[7] Chung, J., Gulcehre, C., Cho, K., & Bengio, Y. (2014). "Empirical Evaluation of Gated Recurrent Neural Networks on Sequence Modeling." *arXiv preprint arXiv:1412.3555*. https://arxiv.org/abs/1412.3555
+[6] López de Prado, M. (2020). *Machine Learning for Asset Managers*. Cambridge University Press.
 
-[8] Hochreiter, S. & Schmidhuber, J. (1997). "Long Short-Term Memory." *Neural Computation*, 9(8), 1735–1780.
+[7] Bailey, D. H., Borwein, J. M., López de Prado, M., & Zhu, Q. J. (2017). "The Probability of Backtest Overfitting." *Journal of Computational Finance*, 20(4), 39–69. DOI: 10.21314/JCF.2016.322.
 
-[9] Fischer, T. & Krauss, C. (2018). "Deep learning with long short-term memory networks for financial market predictions." *European Journal of Operational Research*, 270(2), 654–669. DOI: 10.1016/j.ejor.2017.11.054
+[8] Bailey, D. H., & López de Prado, M. (2014). "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality." *Journal of Portfolio Management*, 40(5), 94–107.
 
-[10] Bao, W., Yue, J., & Rao, Y. (2017). "A deep learning framework for financial time series using stacked autoencoders and long-short term memory." *PLOS ONE*, 12(7), e0180944. DOI: 10.1371/journal.pone.0180944
+[9] Harvey, C. R., Liu, Y., & Zhu, H. (2016). "...and the Cross-Section of Expected Returns." *Review of Financial Studies*, 29(1), 5–68. DOI: 10.1093/rfs/hhv059.
 
-[11] Zhang, S., et al. (2025). "MCI-GRU: Stock Prediction Model Based on Multi-Head Cross-Attention and Improved GRU." *Neurocomputing*, 638, 130168. arXiv: 2410.20679
+[10] Arnott, R., Harvey, C. R., & Markowitz, H. M. (2019). "A Backtesting Protocol in the Era of Machine Learning." *Journal of Financial Data Science*, 1(1), 64–74. DOI: 10.3905/jfds.2019.1.1.064.
 
-[12] Gal, Y. & Ghahramani, Z. (2016). "A Theoretically Grounded Application of Dropout in Recurrent Neural Networks." *Advances in Neural Information Processing Systems 29*.
+## Nhóm 3: Phân tích kỹ thuật và feature engineering
 
-## Nhóm 3: LightGBM and Gradient Boosting for Finance
+[11] Lo, A. W., Mamaysky, H., & Wang, J. (2000). "Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation." *The Journal of Finance*, 55(4), 1705–1765. DOI: 10.1111/0022-1082.00265.
 
-[13] Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., & Liu, T.-Y. (2017). "LightGBM: A Highly Efficient Gradient Boosting Decision Tree." *Advances in Neural Information Processing Systems (NIPS) 30*, pp. 3149–3157.
+[12] Patel, J., Shah, S., Thakkar, P., & Kotecha, K. (2015). "Predicting stock market index using fusion of machine learning techniques." *Expert Systems with Applications*, 42(4), 2162–2172. DOI: 10.1016/j.eswa.2014.10.031.
 
-[14] Friedman, J.H. (2001). "Greedy Function Approximation: A Gradient Boosting Machine." *Annals of Statistics*, 29(5), 1189–1232.
+[13] Krauss, C., Do, X. A., & Huck, N. (2017). "Deep neural networks, gradient-boosted trees, random forests: Statistical arbitrage on the S&P 500." *European Journal of Operational Research*, 259(2), 689–702. DOI: 10.1016/j.ejor.2016.10.031.
 
-[15] Sun, X., Liu, M., & Sima, Z. (2020). "A novel cryptocurrency price trend forecasting model based on LightGBM." *Finance Research Letters*, 32, 101084. DOI: 10.1016/j.frl.2019.101084
+## Nhóm 4: Mô hình học máy sử dụng trong đề tài
 
-[16] Wang, Y., et al. (2024). "Enhancing financial time series forecasting in the shipping market: A hybrid approach with LightGBM." *Engineering Applications of Artificial Intelligence*, 133, 108510. DOI: 10.1016/j.engappai.2024.108510
+[14] Hosmer, D. W., Lemeshow, S., & Sturdivant, R. X. (2013). *Applied Logistic Regression* (3rd ed.). Wiley. DOI: 10.1002/9781118548387.
 
-[17] Kou, G., et al. (2025). "An innovative hybrid LightGBM-BPNN model for enhanced commodity forecasting accuracy." *Finance Research Open*, 1(1), 100004.
+[15] Breiman, L. (2001). "Random Forests." *Machine Learning*, 45, 5–32. DOI: 10.1023/A:1010933404324.
 
-[18] Arian, H., et al. (2025). "Regime-Aware LightGBM for Stock Market Forecasting: A Validated Approach." *Electronics*, 15(6), 1334.
+[16] Friedman, J. H. (2001). "Greedy Function Approximation: A Gradient Boosting Machine." *Annals of Statistics*, 29(5), 1189–1232.
 
-## Nhóm 4: Hybrid Deep Learning + ML Models (Stacking)
+[17] Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., & Liu, T.-Y. (2017). "LightGBM: A Highly Efficient Gradient Boosting Decision Tree." *Advances in Neural Information Processing Systems 30*, 3149–3157. https://papers.nips.cc/paper/6907-lightgbm-a-highly-efficient-gradient-boosting-decision-tree.
 
-[19] Ju, Y., Sun, G., Chen, Q., Zhang, M., & Zhu, H. (2020). "An improved Stacking framework for stock index prediction by leveraging tree-based ensemble models and deep learning algorithms." *Physica A*, 541, 122272. DOI: 10.1016/j.physa.2019.122272
+[18] Wolpert, D. H. (1992). "Stacked Generalization." *Neural Networks*, 5(2), 241–259. DOI: 10.1016/S0893-6080(05)80023-1.
 
-[20] Wolpert, D.H. (1992). "Stacked Generalization." *Neural Networks*, 5(2), 241–259.
+[19] Ju, Y., Sun, G., Chen, Q., Zhang, M., & Zhu, H. (2020). "An improved Stacking framework for stock index prediction by leveraging tree-based ensemble models and deep learning algorithms." *Physica A*, 541, 122272. DOI: 10.1016/j.physa.2019.122272.
 
-[21] Liu, Y., et al. (2024). "Development of a Time Series E-Commerce Sales Prediction Method for Short-Shelf-Life Products Using GRU-LightGBM." *Applied Sciences*, 14(2), 866.
+## Nhóm 5: Đánh giá mô hình, diễn giải và calibration
 
-[22] Gong, X., et al. (2025). "A Hybrid Data Mining Framework for Financial Time-Series Prediction." *Research Square preprint*.
+[20] Pedregosa, F., Varoquaux, G., Gramfort, A., et al. (2011). "Scikit-learn: Machine Learning in Python." *Journal of Machine Learning Research*, 12, 2825–2830.
 
-[23] Shisodia, V., et al. (2026). "Hybrid Deep and Ensemble Learning for Adaptive Financial Time-Series Forecasting." *IJSRET*, 12(1).
+[21] scikit-learn developers. (2026). *Model evaluation: quantifying the quality of predictions*. https://scikit-learn.org/stable/modules/model_evaluation.html.
 
-## Nhóm 5: Triple Barrier Method and Financial Labeling
+[22] Lundberg, S. M., & Lee, S.-I. (2017). "A Unified Approach to Interpreting Model Predictions." *Advances in Neural Information Processing Systems 30*. arXiv:1705.07874. https://arxiv.org/abs/1705.07874.
 
-[24] López de Prado, M. (2018). *Advances in Financial Machine Learning*. Wiley. ISBN: 978-1-119-48208-6.
+[23] Guo, C., Pleiss, G., Sun, Y., & Weinberger, K. Q. (2017). "On Calibration of Modern Neural Networks." *Proceedings of the 34th International Conference on Machine Learning (ICML)*, 1321–1330.
 
-[25] López de Prado, M. (2020). *Machine Learning for Asset Managers*. Cambridge University Press.
+## Nhóm 6: Nghiên cứu liên quan về vàng và dự báo tài chính
 
-[26] Kim, H., Kim, S., & Kim, H. (2025). "Stock Price Prediction Using Triple Barrier Labeling and Raw OHLCV Data: Evidence from Korean Markets." *arXiv preprint arXiv:2504.02249*.
+[24] Amini, A., & Kalantari, R. (2024). "Gold price prediction by a CNN-Bi-LSTM model along with automatic parameter tuning." *PLOS ONE*, 19(3), e0298426. DOI: 10.1371/journal.pone.0298426.
 
-[27] De Paepe, T., et al. (2023). "Exploring Machine Learning Advances in Finance: Meta-labeling, Fractional Differentiation, and Data Parsing as Bars." *Master's thesis, UPC Barcelona*.
+[25] Sun, X., Liu, M., & Sima, Z. (2020). "A novel cryptocurrency price trend forecasting model based on LightGBM." *Finance Research Letters*, 32, 101084. DOI: 10.1016/j.frl.2019.101084.
 
-## Nhóm 6: Walk-Forward Validation / Time-Series Cross-Validation
+## Gợi ý cách trích dẫn trong báo cáo
 
-[28] Pardo, R. (2008). *The Evaluation and Optimization of Trading Strategies* (2nd ed.). Wiley.
+- Nền tảng thị trường hiệu quả: [1].
+- Stylized facts/fat tails/volatility clustering: [2].
+- Vai trò thị trường vàng: [3].
+- Triple-barrier, purge/embargo, financial ML: [5], [6].
+- Backtest overfitting: [7], [8], [9], [10].
+- Technical analysis/feature engineering: [11].
+- Logistic Regression/Random Forest/LightGBM/Stacking: [14], [15], [16], [17], [18].
+- Metrics và Macro F1: [20], [21].
+- SHAP: [22].
+- Calibration: [23].
 
-[29] Bailey, D.H., Borwein, J.M., López de Prado, M., & Zhu, Q.J. (2017). "The Probability of Backtest Overfitting." *Journal of Computational Finance*, 20(4), 458–471.
+## Ghi chú nguồn và cách dùng chi tiết
 
-[30] Rakthanmanon, T., et al. (2025). "Interpretable Hypothesis-Driven Trading: A Rigorous Walk-Forward Validation Framework." *arXiv preprint arXiv:2512.12924*.
+### [1] Fama (1970)
 
-[31] Arian, H., et al. (2025). "Backtest Overfitting in the Machine Learning Era: A Comparison of Out-of-Sample Validation Methods." *Knowledge-Based Systems*.
+Dùng trong Chương 1 và Chương 2 để giải thích vì sao dự báo thị trường tài chính là bài toán khó. Không cần trình bày EMH như một định luật tuyệt đối; chỉ cần dùng nó làm nền tảng cho luận điểm rằng thông tin có thể được phản ánh nhanh vào giá.
 
-## Nhóm 7: XAU/USD or Gold Price Prediction
+### [2] Cont (2001)
 
-[32] Amini, A. & Kalantari, R. (2024). "Gold price prediction by a CNN-Bi-LSTM model along with automatic parameter tuning." *PLOS ONE*, 19(3), e0298426. DOI: 10.1371/journal.pone.0298426
+Dùng để mô tả stylized facts: fat tails, volatility clustering, non-normality. Đây là nguồn mạnh để giải thích vì sao mô hình học máy dễ overfit trên dữ liệu tài chính.
 
-[33] Cordero, C.A., Danao, B.M., & Sy, L.A. (2017). "Predicting the XAU-USD Foreign Exchange Prices using Machine Learning." *Master's thesis*.
+### [3] World Gold Council
 
-[34] Achilles, S., et al. (2025). "An analytical framework for real-time gold trading using sentiment and time-series forecasting." *Scientific Reports*.
+Dùng cho bối cảnh vàng: vai trò tài sản trú ẩn, nhu cầu đầu tư, ngân hàng trung ương và các yếu tố ảnh hưởng đến thị trường vàng. Không dùng nguồn này để chứng minh mô hình dự báo.
 
-[35] Crasta, M., et al. (2025). "Integrating Economic Indicators and Sentiment Analysis for Gold Price Forecasting." *Master's thesis, NCI Dublin*.
+### [5] López de Prado (2018)
 
-## Nhóm 8: Feature Engineering for Financial Time-Series
+Nguồn chính cho financial machine learning, triple-barrier labeling, sample uniqueness, purging và embargo. Đây là nguồn quan trọng nhất cho phương pháp luận của đề tài.
 
-[36] Lo, A.W., Mamaysky, H., & Wang, J. (2000). "Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation." *The Journal of Finance*, 55(4), 1705–1765. DOI: 10.1111/0022-1082.00265
+### [7] Bailey et al. (2017)
 
-[37] Patel, J., Shah, S., Thakkar, P., & Kotecha, K. (2015). "Predicting stock market index using fusion of machine learning techniques." *Expert Systems with Applications*, 42(4), 2162–2172.
+Dùng để cảnh báo backtest overfitting. Nên trích khi giải thích vì sao backtest chỉ là demo và vì sao không nên thử quá nhiều cấu hình rồi chọn kết quả đẹp nhất.
 
-[38] Krauss, C., Do, X.A., & Huck, N. (2017). "Deep neural networks, gradient-boosted trees, random forests: Statistical arbitrage on the S&P 500." *European Journal of Operational Research*, 259(2), 689–702. DOI: 10.1016/j.ejor.2016.10.031
+### [9] Harvey, Liu & Zhu (2016)
 
-[39] Oikonomou, K. & Damigos, D. (2025). "Assets Forecasting with Feature Engineering and Transformation Techniques using LightGBM." *arXiv preprint arXiv:2501.07580*.
+Dùng để giải thích multiple testing trong tài chính. Khi thêm nhiều feature/mô hình/tham số, xác suất tìm thấy kết quả giả tăng lên.
 
-## Nhóm 9: Attention Mechanisms in RNN/LSTM
+### [11] Lo, Mamaysky & Wang (2000)
 
-[40] Bahdanau, D., Cho, K., & Bengio, Y. (2014). "Neural Machine Translation by Jointly Learning to Align and Translate." *arXiv preprint arXiv:1409.0473*. https://arxiv.org/abs/1409.0473
+Dùng để bảo vệ việc dùng chỉ báo kỹ thuật dưới góc nhìn thống kê. Không viết rằng technical analysis chắc chắn hiệu quả; viết rằng các mẫu kỹ thuật có thể được lượng hóa và kiểm định.
 
-[41] Vaswani, A., et al. (2017). "Attention Is All You Need." *Advances in Neural Information Processing Systems (NeurIPS) 30*, pp. 5998–6008. arXiv: 1706.03762
+### [15] Breiman (2001)
 
-[42] Qin, Y., et al. (2017). "A Dual-Stage Attention-Based Recurrent Neural Network for Time Series Prediction." *IJCAI*. arXiv: 1704.02971
-
-[43] Wu, N., et al. (2022). "Transformers in Time-series Analysis: A Tutorial." *arXiv preprint arXiv:2205.01138*.
-
-## Nhóm 10: Overfitting and Data Leakage in Financial ML
-
-[44] López de Prado, M. (2018). "The 10 Reasons Most Machine Learning Funds Fail." *Journal of Portfolio Management*, 44(6), 120–133.
-
-[45] Bailey, D.H., Borwein, J.M., López de Prado, M., & Zhu, Q.J. (2014). "Pseudo-Mathematics and Financial Charlatanism: The Effects of Backtest Overfitting on Out-of-Sample Performance." *Notices of the AMS*, 61(5), 458–471. https://www.ams.org/notices/201405/rnoti-p458.pdf
-
-[46] Bailey, D.H. & López de Prado, M. (2014). "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality." *Journal of Portfolio Management*, 40(5), 94–107.
-
-[47] Harvey, C.R., Liu, Y., & Zhu, H. (2016). "...and the Cross-Section of Expected Returns." *Review of Financial Studies*, 29(1), 5–68. DOI: 10.1093/rfs/hhv059
-
-[48] Harvey, C.R. (2017). "Presidential Address: The Scientific Outlook in Financial Economics." *Journal of Finance*, 72(4), 1399–1440. DOI: 10.1111/jofi.12530
-
-[49] Arnott, R., Harvey, C.R., & Markowitz, H.M. (2019). "A Backtesting Protocol in the Era of Machine Learning." *Journal of Financial Data Science*, 1(1), 64–74. DOI: 10.3905/jfds.2019.1.1.064
-
-[50] Kapoor, S., et al. (2023). "On Leakage in Machine Learning Pipelines." *arXiv preprint arXiv:2311.04179*.
-
-## Nhóm 11: Các tài liệu khác
-
-[51] Fama, E.F. (1970). "Efficient Capital Markets: A Review of Theory and Empirical Work." *Journal of Finance*, 25(2), 383–417.
-
-[52] World Gold Council (2024). *Gold Demand Trends Full Year 2024*. https://www.gold.org/
-
-[53] Lundberg, S.M. & Lee, S.I. (2017). "A Unified Approach to Interpreting Model Predictions." *Advances in Neural Information Processing Systems 30*.
-
-[54] Guo, C., et al. (2017). "On Calibration of Modern Neural Networks." *ICML 2017*.
-
-[55] Akiba, T., et al. (2019). "Optuna: A Next-generation Hyperparameter Optimization Framework." *KDD 2019*.
-
-[56] Lim, B., et al. (2021). "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting." *International Journal of Forecasting*, 37(4), 1748–1764.
-
-[57] Nie, Y., et al. (2023). "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers." *ICLR 2023*.
+Nguồn nền tảng cho Random Forest. Dùng ở phần mô hình và baseline.
+
+### [16] Friedman (2001)
+
+Nguồn nền tảng cho gradient boosting. Dùng để giải thích nguyên lý boosting trước khi giới thiệu LightGBM.
+
+### [17] Ke et al. (2017)
+
+Nguồn chính cho LightGBM. Dùng để giải thích vì sao LightGBM phù hợp dữ liệu tabular và huấn luyện hiệu quả.
+
+### [18] Wolpert (1992)
+
+Nguồn nền tảng cho stacking. Dùng để bảo vệ khái niệm Classic Hybrid Stacking.
+
+### [20], [21] scikit-learn/JMLR
+
+Dùng cho metrics và cách hiểu macro F1, precision, recall, confusion matrix. Đây là nguồn triển khai đáng tin cậy.
+
+### [22] Lundberg & Lee (2017)
+
+Nguồn chính cho SHAP. Dùng ở hướng phát triển hoặc phần diễn giải mô hình.
+
+### [23] Guo et al. (2017)
+
+Dùng cho calibration. Phù hợp khi nói về confidence threshold và reliability diagram.
+
+## Mẫu câu trích dẫn có thể dùng trực tiếp
+
+- “Theo Fama [1], trong thị trường hiệu quả, giá phản ánh thông tin sẵn có, do đó việc tìm tín hiệu dự báo ổn định là thách thức lớn.”
+- “Cont [2] tổng hợp các stylized facts của lợi suất tài chính như đuôi dày và cụm biến động, cho thấy giả định phân phối chuẩn là không phù hợp.”
+- “López de Prado [5] đề xuất triple-barrier labeling và purged cross-validation để xử lý đặc thù nhãn có event horizon trong tài chính.”
+- “Bailey et al. [7] chỉ ra rằng việc thử nhiều chiến lược trên cùng dữ liệu làm tăng xác suất backtest overfitting.”
+- “LightGBM của Ke et al. [17] là một triển khai gradient boosting decision tree hiệu quả cho dữ liệu tabular.”
+- “Stacked generalization của Wolpert [18] cung cấp cơ sở lý thuyết cho việc học cách kết hợp nhiều mô hình base learners.”
+- “SHAP của Lundberg và Lee [22] cung cấp một khung thống nhất để gán đóng góp feature cho từng dự báo.”
+
+## BibTeX gợi ý cho các nguồn chính
+
+```bibtex
+@article{fama1970efficient,
+  title={Efficient Capital Markets: A Review of Theory and Empirical Work},
+  author={Fama, Eugene F.},
+  journal={The Journal of Finance},
+  volume={25},
+  number={2},
+  pages={383--417},
+  year={1970},
+  doi={10.1111/j.1540-6261.1970.tb00518.x}
+}
+
+@article{cont2001empirical,
+  title={Empirical properties of asset returns: stylized facts and statistical issues},
+  author={Cont, Rama},
+  journal={Quantitative Finance},
+  volume={1},
+  number={2},
+  pages={223--236},
+  year={2001},
+  doi={10.1080/713665670}
+}
+
+@book{lopezdeprado2018afml,
+  title={Advances in Financial Machine Learning},
+  author={López de Prado, Marcos},
+  publisher={Wiley},
+  year={2018}
+}
+
+@article{breiman2001random,
+  title={Random Forests},
+  author={Breiman, Leo},
+  journal={Machine Learning},
+  volume={45},
+  pages={5--32},
+  year={2001},
+  doi={10.1023/A:1010933404324}
+}
+
+@inproceedings{ke2017lightgbm,
+  title={LightGBM: A Highly Efficient Gradient Boosting Decision Tree},
+  author={Ke, Guolin and Meng, Qi and Finley, Thomas and Wang, Taifeng and Chen, Wei and Ma, Weidong and Ye, Qiwei and Liu, Tie-Yan},
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2017}
+}
+
+@article{wolpert1992stacked,
+  title={Stacked Generalization},
+  author={Wolpert, David H.},
+  journal={Neural Networks},
+  volume={5},
+  number={2},
+  pages={241--259},
+  year={1992},
+  doi={10.1016/S0893-6080(05)80023-1}
+}
+
+@inproceedings{lundberg2017shap,
+  title={A Unified Approach to Interpreting Model Predictions},
+  author={Lundberg, Scott M. and Lee, Su-In},
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2017}
+}
+```
