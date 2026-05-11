@@ -60,7 +60,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 <div class="container">
 
 <h1>thesis — Complete Call Flow &amp; Architecture Documentation</h1>
-<p class="subtitle">Generated from graphify knowledge graph: 2522 nodes, 3880 edges, 159 communities. Commit: 1fa6076</p>
+<p class="subtitle">Generated from graphify knowledge graph: 2522 nodes, 3880 edges, 159 communities. Commit: 5e4aee0</p>
 
 <div class="nav">
     <a href="#overview">Architecture Overview</a>
@@ -73,11 +73,11 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
     <a href="#calibration-metrics">Calibration Metrics</a>
     <a href="#model-quality-assessment">Model Quality Assessment</a>
     <a href="#walk-forward-init">Walk-Forward Init</a>
-    <a href="#dashboard-init">Dashboard Init</a>
+    <a href="#shared-init">Shared Init</a>
     <a href="#evaluationmd-docs-codetext">Evaluationmd Docs Codetext</a>
     <a href="#chuong1-gioi-thieumd">Chuong1 Gioi Thieumd</a>
     <a href="#dashboard-thesis-sharedpy">Dashboard Thesis Sharedpy</a>
-    <a href="#features-stage-engineeringpy">Features Stage Engineeringpy</a>
+    <a href="#model-evaluationmd-results">Model Evaluationmd Results</a>
     <a href="#other">Other</a>
 </div>
 
@@ -96,9 +96,9 @@ flowchart LR
     class OUTPUTS_DOCS_ED82387C module;
     CLI_SKILLS_9964CBB8("CLI &amp; Skill Installers<br/><small>38 nodes</small>")
     class CLI_SKILLS_9964CBB8 module;
-    INGEST_CACHE_UPDATE_FF457338("Ingestion &amp; Updates<br/><small>74 nodes</small>")
+    INGEST_CACHE_UPDATE_FF457338("Ingestion &amp; Updates<br/><small>57 nodes</small>")
     class INGEST_CACHE_UPDATE_FF457338 module;
-    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>1511 nodes</small>")
+    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>1530 nodes</small>")
     class TESTS_FIXTURES_B84B1DCC module;
     CALIBRATION_METRICS_3117CA34("Calibration Metrics<br/><small>40 nodes</small>")
     class CALIBRATION_METRICS_3117CA34 module;
@@ -106,23 +106,23 @@ flowchart LR
     class MODEL_QUALITY_ASSESSMENT_7BAB12E4 module;
     WALK_FORWARD_INIT_DDE5356E("Walk-Forward Init<br/><small>25 nodes</small>")
     class WALK_FORWARD_INIT_DDE5356E module;
-    DASHBOARD_INIT_B2255B73("Dashboard Init<br/><small>24 nodes</small>")
-    class DASHBOARD_INIT_B2255B73 module;
+    SHARED_INIT_2F8A1A29("Shared Init<br/><small>24 nodes</small>")
+    class SHARED_INIT_2F8A1A29 module;
     EVALUATIONMD_DOCS_CODETEXT_BFF44205("Evaluationmd Docs Codetext<br/><small>21 nodes</small>")
     class EVALUATIONMD_DOCS_CODETEXT_BFF44205 module;
     CHUONG1_GIOI_THIEUMD_5AEA7082("Chuong1 Gioi Thieumd<br/><small>19 nodes</small>")
     class CHUONG1_GIOI_THIEUMD_5AEA7082 module;
     DASHBOARD_THESIS_SHAREDPY_321878FD("Dashboard Thesis Sharedpy<br/><small>18 nodes</small>")
     class DASHBOARD_THESIS_SHAREDPY_321878FD module;
-    FEATURES_STAGE_ENGINEERINGPY_DC67D74C("Features Stage Engineeringpy<br/><small>16 nodes</small>")
-    class FEATURES_STAGE_ENGINEERINGPY_DC67D74C module;
-    OTHER_D0941E68("Other<br/><small>214 nodes</small>")
+    MODEL_EVALUATIONMD_RESULTS_7712E5DD("Model Evaluationmd Results<br/><small>15 nodes</small>")
+    class MODEL_EVALUATIONMD_RESULTS_7712E5DD module;
+    OTHER_D0941E68("Other<br/><small>213 nodes</small>")
     class OTHER_D0941E68 module;
     TESTS_FIXTURES_B84B1DCC -->|contains x14| BUILD_GRAPH_321CBB04
-    OTHER_D0941E68 -->|contains x5| TESTS_FIXTURES_B84B1DCC
-    TESTS_FIXTURES_B84B1DCC -->|contains x5| OTHER_D0941E68
-    INGEST_CACHE_UPDATE_FF457338 -->|contains x5| TESTS_FIXTURES_B84B1DCC
+    TESTS_FIXTURES_B84B1DCC -->|contains x10| OTHER_D0941E68
+    OTHER_D0941E68 -->|contains x6| TESTS_FIXTURES_B84B1DCC
     WALK_FORWARD_INIT_DDE5356E -->|contains x4| TESTS_FIXTURES_B84B1DCC
+    INGEST_CACHE_UPDATE_FF457338 -->|contains x4| TESTS_FIXTURES_B84B1DCC
     TESTS_FIXTURES_B84B1DCC -->|contains x2| WALK_FORWARD_INIT_DDE5356E
     TESTS_FIXTURES_B84B1DCC -->|contains x2| INGEST_CACHE_UPDATE_FF457338
     INGEST_CACHE_UPDATE_FF457338 -->|contains| OTHER_D0941E68
@@ -143,7 +143,7 @@ flowchart LR
     <h4>Architecture Layers</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
-      <tr><td>Extraction Pipeline</td><td>92</td><td><code>7, 15, 129, 157</code></td></tr><tr><td>Graph Build</td><td>275</td><td><code>6, 18, 29, 30, 35, 41, 53, 56, 60, 73, 86, 115, 116, 131, 132, 156, 158</code></td></tr><tr><td>Outputs &amp; Docs</td><td>124</td><td><code>13, 17, 25, 63, 130</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>38</td><td><code>31, 85, 133</code></td></tr><tr><td>Ingestion &amp; Updates</td><td>74</td><td><code>21, 27, 66</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>1511</td><td><code>0, 1, 2, 3, 4, 5, 8, 10, 9, 11, 12, 14, 19, 20, 23, 24, 26, 28, 32, 34, 36, 37, 39, 40, 42, 43, 44, 45, 46, 47, 49, 50, 51, 52, 54, 57, 59, 61, 64, 65, 69, 70, 75, 76, 77, 78, 79, 80, 82, 83, 84, 89, 90, 92, 96, 100, 101, 102, 103, 104, 105, 106, 107, 108, 110, 111, 112, 113, 114, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155</code></td></tr><tr><td>Calibration Metrics</td><td>40</td><td><code>16</code></td></tr><tr><td>Model Quality Assessment</td><td>31</td><td><code>22</code></td></tr><tr><td>Walk-Forward Init</td><td>25</td><td><code>33</code></td></tr><tr><td>Dashboard Init</td><td>24</td><td><code>38</code></td></tr><tr><td>Evaluationmd Docs Codetext</td><td>21</td><td><code>48</code></td></tr><tr><td>Chuong1 Gioi Thieumd</td><td>19</td><td><code>55</code></td></tr><tr><td>Dashboard Thesis Sharedpy</td><td>18</td><td><code>58</code></td></tr><tr><td>Features Stage Engineeringpy</td><td>16</td><td><code>62</code></td></tr><tr><td>Other</td><td>214</td><td><code>67, 68, 71, 72, 74, 81, 87, 88, 91, 93, 94, 95, 97, 98, 99, 109, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145</code></td></tr>
+      <tr><td>Extraction Pipeline</td><td>92</td><td><code>7, 15, 129, 157</code></td></tr><tr><td>Graph Build</td><td>275</td><td><code>6, 18, 29, 30, 35, 42, 52, 55, 59, 73, 85, 115, 116, 131, 132, 156, 158</code></td></tr><tr><td>Outputs &amp; Docs</td><td>124</td><td><code>14, 17, 25, 61, 130</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>38</td><td><code>31, 84, 133</code></td></tr><tr><td>Ingestion &amp; Updates</td><td>57</td><td><code>21, 37</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>1530</td><td><code>0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13, 19, 20, 23, 24, 26, 27, 28, 32, 34, 36, 38, 40, 41, 43, 44, 45, 46, 47, 49, 50, 51, 53, 56, 58, 60, 62, 63, 66, 67, 71, 72, 75, 76, 77, 78, 79, 81, 82, 83, 88, 89, 91, 92, 96, 100, 101, 102, 103, 104, 105, 106, 107, 108, 110, 111, 112, 113, 114, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155</code></td></tr><tr><td>Calibration Metrics</td><td>40</td><td><code>16</code></td></tr><tr><td>Model Quality Assessment</td><td>31</td><td><code>22</code></td></tr><tr><td>Walk-Forward Init</td><td>25</td><td><code>33</code></td></tr><tr><td>Shared Init</td><td>24</td><td><code>39</code></td></tr><tr><td>Evaluationmd Docs Codetext</td><td>21</td><td><code>48</code></td></tr><tr><td>Chuong1 Gioi Thieumd</td><td>19</td><td><code>54</code></td></tr><tr><td>Dashboard Thesis Sharedpy</td><td>18</td><td><code>57</code></td></tr><tr><td>Model Evaluationmd Results</td><td>15</td><td><code>64</code></td></tr><tr><td>Other</td><td>213</td><td><code>65, 68, 69, 70, 74, 80, 86, 87, 90, 93, 94, 95, 97, 98, 99, 109, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145</code></td></tr>
     </table>
   </div>
   <div class="card">
@@ -1544,12 +1544,12 @@ flowchart LR
 
 <!-- ====== 6. Ingestion & Updates ====== -->
 <h2 id="ingest-cache-update">6. Ingestion &amp; Updates</h2>
-<p>Ingestion &amp; Updates groups implementation around stage, reporting, thesis, data, mostly in thesis/stage_6_reporting/tables.py, scripts/data_download.py, stage_6_reporting/sections/backtest.py. This section covers 74 nodes and 119 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Ingestion &amp; Updates groups implementation around data, downloadpy, thesis, stage, mostly in thesis/stage_6_reporting/tables.py, scripts/data_download.py, tests/unit/test_data_download.py. This section covers 57 nodes and 90 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Ingestion &amp; Updates (74 nodes, 119 edges)
+    %% Section: Ingestion &amp; Updates (57 nodes, 90 edges)
     subgraph ingest_cache_update_scripts_data_download_py_dbf0a4e8["scripts/data_download.py"]
         scripts_data_download_resolve_instrument_5d8387f5("_resolve_instrument()<br/><small>scripts/data_download.py</small>")
         scripts_data_download_trading_hour_slots_4dc0828f("_trading_hour_slots()<br/><small>scripts/data_download.py</small>")
@@ -1571,7 +1571,7 @@ flowchart LR
         stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6("_compute_ece_numpy()<br/><small>thesis/stage_6_reporting/tables.py</small>")
         stage_6_reporting_tables_calibration_summary_tex_2114b8c8("_calibration_summary_text()<br/><small>thesis/stage_6_reporting/tables.py</small>")
     end
-    sections_backtest_render_issues_c645d0ef("_render_issues()<br/><small>stage_6_reporting/sections/backtest.py</small>")
+    stage_6_reporting_tables_py_68ad2cb4("tables.py")
     stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_exec_table_3a81d004
     stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_accuracy_table_609459c3
     stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_backtest_metrics_table_20bd9ca9
@@ -1588,7 +1588,7 @@ flowchart LR
     scripts_data_download_resolve_instrument_5d8387f5 -->|calls| scripts_data_download_run_download_ddc7998b
     scripts_data_download_resolve_instrument_5d8387f5 -->|calls| scripts_data_download_main_fbb6afce
     scripts_data_download_run_download_ddc7998b -->|calls| scripts_data_download_main_fbb6afce
-    %% Omitted for readability: 56 nodes, 0 edges
+    %% Omitted for readability: 39 nodes, 0 edges
     class scripts_data_download_resolve_instrument_5d8387f5 function;
     class scripts_data_download_trading_hour_slots_4dc0828f function;
     class scripts_data_download_load_state_28007f0a function;
@@ -1606,7 +1606,7 @@ flowchart LR
     class stage_6_reporting_tables_backtest_metrics_table_20bd9ca9 function;
     class stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6 function;
     class stage_6_reporting_tables_calibration_summary_tex_2114b8c8 function;
-    class sections_backtest_render_issues_c645d0ef test;
+    class stage_6_reporting_tables_py_68ad2cb4 module;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -1875,30 +1875,28 @@ flowchart LR
     <h4>Key Files</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
-      <tr><td><code>thesis/stage_6_reporting/tables.py</code></td><td>24 nodes</td></tr>
+      <tr><td><code>thesis/stage_6_reporting/tables.py</code></td><td>22 nodes</td></tr>
 <tr><td><code>scripts/data_download.py</code></td><td>20 nodes</td></tr>
-<tr><td><code>stage_6_reporting/sections/backtest.py</code></td><td>14 nodes</td></tr>
 <tr><td><code>tests/unit/test_data_download.py</code></td><td>12 nodes</td></tr>
 <tr><td><code>thesis/stage_6_reporting/generation.py</code></td><td>2 nodes</td></tr>
-<tr><td><code>stage_6_reporting/sections/backtest.py</code></td><td>1 nodes</td></tr>
 <tr><td><code>stage_6_reporting/tables.py</code></td><td>1 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x49, explains x37, calls x16. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x35, explains x28, calls x16. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
 <!-- ====== 7. Tests & Fixtures ====== -->
 <h2 id="tests-fixtures">7. Tests &amp; Fixtures</h2>
-<p>Tests &amp; Fixtures groups implementation around test, tests, unit, thesis, mostly in tests/unit/test_features.py, tests/unit/test_report.py, tests/unit/test_labels.py. This section covers 1511 nodes and 2446 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Tests &amp; Fixtures groups implementation around test, tests, unit, thesis, mostly in tests/unit/test_features.py, tests/unit/test_report.py, tests/unit/test_labels.py. This section covers 1530 nodes and 2499 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Tests &amp; Fixtures (1511 nodes, 2446 edges)
+    %% Section: Tests &amp; Fixtures (1530 nodes, 2499 edges)
     subgraph tests_fixtures_main_py_2143e86d["main.py"]
         thesis_main_stripansiformatter_fb6d7998("_StripAnsiFormatter<br/><small>main.py</small>")
         thesis_main_stripansiformatter_format_682ce248("format()<br/><small>main.py</small>")
@@ -1933,7 +1931,7 @@ flowchart LR
     thesis_main_apply_stage_flags_b79b3269 -->|calls| thesis_main_main_a3f0efc6
     thesis_pipeline_cache_hash_27de27ac -->|calls| thesis_pipeline_resolve_cache_path_5d3cff29
     stage_1_data_processing_parse_datetime_bound_0d704dcb -->|calls| stage_1_data_processing_filter_date_range_5806753e
-    %% Omitted for readability: 1493 nodes, 0 edges
+    %% Omitted for readability: 1512 nodes, 0 edges
     class thesis_main_stripansiformatter_fb6d7998 function;
     class thesis_main_stripansiformatter_format_682ce248 function;
     class thesis_main_main_a3f0efc6 function;
@@ -2232,7 +2230,7 @@ flowchart LR
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x757, explains x552, method x316, calls x216. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x771, explains x562, method x316, calls x217. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
@@ -3216,14 +3214,14 @@ flowchart LR
 </div>
 <hr>
 
-<!-- ====== 11. Dashboard Init ====== -->
-<h2 id="dashboard-init">11. Dashboard Init</h2>
-<p>Dashboard Init groups implementation around chuong7, ket, luanmd, bao, mostly in bao_cao/chuong7_ket_luan.md. This section covers 24 nodes and 24 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 11. Shared Init ====== -->
+<h2 id="shared-init">11. Shared Init</h2>
+<p>Shared Init groups implementation around chuong7, ket, luanmd, bao, mostly in bao_cao/chuong7_ket_luan.md. This section covers 24 nodes and 24 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Dashboard Init (24 nodes, 24 edges)
+    %% Section: Shared Init (24 nodes, 24 edges)
     bao_cao_chuong7_ket_luan_ch_ng_7_k_t_lu_n_d1f3b39f("Chương 7. Kết luận<br/><small>bao_cao/chuong7_ket_luan.md</small>")
     bao_cao_chuong7_ket_luan_7_8_tr_l_i_c_u_h_i_nghi_75ce14c3("7.8. Trả lời câu hỏi nghiên cứu<br/><small>bao_cao/chuong7_ket_luan.md</small>")
     bao_cao_chuong7_ket_luan_md_8a0338a5("chuong7_ket_luan.md")
@@ -4267,286 +4265,60 @@ flowchart LR
 </div>
 <hr>
 
-<!-- ====== 15. Features Stage Engineeringpy ====== -->
-<h2 id="features-stage-engineeringpy">15. Features Stage Engineeringpy</h2>
-<p>Features Stage Engineeringpy groups implementation around features, stage, engineeringpy, thesis, mostly in thesis/stage_2_features/engineering.py, thesis/stage_2_features/__init__.py, stage_2_features/__init__.py. This section covers 16 nodes and 25 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 15. Model Evaluationmd Results ====== -->
+<h2 id="model-evaluationmd-results">15. Model Evaluationmd Results</h2>
+<p>Model Evaluationmd Results groups implementation around model, evaluationmd, results, xauusd, mostly in XAUUSD_1H_20260511_231114/reports/model_evaluation.md, XAUUSD_1H_20260507_223024/reports/model_evaluation.md, XAUUSD_1H_20260508_135654/reports/model_evaluation.md. This section covers 15 nodes and 14 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Features Stage Engineeringpy (16 nodes, 25 edges)
-    subgraph features_stage_engineeringpy_thesis_stage_2_feat_47c2673e["thesis/stage_2_features/engineering.py"]
-        stage_2_features_engineering_generate_features_d2205ddd("generate_features()<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_validate_ohlcv_inpu_eb09f733("_validate_ohlcv_input()<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_drop_warmup_rows_02b6f697("_drop_warmup_rows()<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_validate_feature_qu_ddd37a45("_validate_feature_quality()<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_save_feature_list_b4e811a5("_save_feature_list()<br/><small>thesis/stage_2_features/engineering.py</small>")
-        src_thesis_stage_2_features_engineering_py_2aaf5ffe("engineering.py")
-        stage_2_features_engineering_rationale_146_ca6a5a40("Drop rows with null/non-finite model-fa...<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_rationale_1_2e60da84("Feature engineering — production pipeli...<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_rationale_51_a74dc5d0("Generate and persist feature-enriched O...<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_rationale_167_ec0c99c3("Pandera + timestamp/uniqueness/null che...<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_rationale_107_35bfc4de("Raise on empty, unsorted, or duplicate...<br/><small>thesis/stage_2_features/engineering.py</small>")
-        stage_2_features_engineering_rationale_195_0becf3eb("Write a JSON sidecar listing feature co...<br/><small>thesis/stage_2_features/engineering.py</small>")
+    %% Section: Model Evaluationmd Results (15 nodes, 14 edges)
+    subgraph model_evaluationmd_results_XAUUSD_1H_20260511_23_ca29ed94["XAUUSD_1H_20260511_231114/reports/model_evaluation.md"]
+        reports_model_evaluation_model_evaluation_ff660f14("Model Evaluation<br/><small>XAUUSD_1H_20260511_231114/reports/model_evaluation.md</small>")
+        results_xauusd_1h_20260511_231114_reports_model_d306bd15("model_evaluation.md")
+        reports_model_evaluation_classification_metrics_85c83219("Classification Metrics (Primary)<br/><small>XAUUSD_1H_20260511_231114/reports/model_evaluation.md</small>")
+        reports_model_evaluation_per_class_metrics_b9e9e25f("Per-Class Metrics<br/><small>XAUUSD_1H_20260511_231114/reports/model_evaluation.md</small>")
+        reports_model_evaluation_model_comparison_75b93d3f("Model Comparison<br/><small>XAUUSD_1H_20260511_231114/reports/model_evaluation.md</small>")
     end
-    subgraph features_stage_engineeringpy_thesis_stage_2_feat_375358f7["thesis/stage_2_features/__init__.py"]
-        src_thesis_stage_2_features_init_py_00e2a3f0("__init__.py")
-        stage_2_features_init_rationale_1_b0dfc287("Feature engineering package for OHLCV-d...<br/><small>thesis/stage_2_features/__init__.py</small>")
-    end
-    stage_2_features_init_py_a65d543f("__init__.py")
-    stage_2_features_engineering_py_6cde6768("engineering.py")
-    stage_2_features_engineering_generate_features_d2205ddd -->|calls| stage_2_features_engineering_validate_ohlcv_inpu_eb09f733
-    stage_2_features_engineering_generate_features_d2205ddd -->|calls| stage_2_features_engineering_drop_warmup_rows_02b6f697
-    stage_2_features_engineering_generate_features_d2205ddd -->|calls| stage_2_features_engineering_validate_feature_qu_ddd37a45
-    stage_2_features_engineering_generate_features_d2205ddd -->|calls| stage_2_features_engineering_save_feature_list_b4e811a5
-    src_thesis_stage_2_features_init_py_00e2a3f0 -->|imports| src_thesis_stage_2_features_engineering_py_2aaf5ffe
-    stage_2_features_init_py_a65d543f -->|imports| stage_2_features_engineering_py_6cde6768
-    class stage_2_features_engineering_generate_features_d2205ddd function;
-    class stage_2_features_engineering_validate_ohlcv_inpu_eb09f733 function;
-    class stage_2_features_engineering_drop_warmup_rows_02b6f697 function;
-    class stage_2_features_engineering_validate_feature_qu_ddd37a45 function;
-    class stage_2_features_engineering_save_feature_list_b4e811a5 function;
-    class src_thesis_stage_2_features_engineering_py_2aaf5ffe module;
-    class stage_2_features_engineering_rationale_146_ca6a5a40 concept;
-    class stage_2_features_engineering_rationale_1_2e60da84 concept;
-    class stage_2_features_engineering_rationale_51_a74dc5d0 concept;
-    class stage_2_features_engineering_rationale_167_ec0c99c3 concept;
-    class stage_2_features_engineering_rationale_107_35bfc4de concept;
-    class stage_2_features_engineering_rationale_195_0becf3eb concept;
-    class src_thesis_stage_2_features_init_py_00e2a3f0 module;
-    class stage_2_features_init_rationale_1_b0dfc287 concept;
-    class stage_2_features_init_py_a65d543f module;
-    class stage_2_features_engineering_py_6cde6768 module;
-    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
-    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
-    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
-    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
-    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
-    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
-    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
-    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
-    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
-</div>
-
-<h3>Call Details</h3>
-<table class="call-table">
-<tr>
-  <th style="width:5%">#</th>
-  <th style="width:28%">Node</th>
-  <th style="width:10%">Type</th>
-  <th style="width:17%">Caller</th>
-  <th style="width:20%">Callees</th>
-  <th style="width:20%">Description</th>
-</tr>
-<tr>
-  <td>1</td>
-  <td><code>__init__.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/__init__.py</small></td>
-  <td><span class="tag tag-class">Module</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>engineering.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td>Module file in thesis/stage_2_features/__init__.py.</td>
-</tr>
-<tr>
-  <td>2</td>
-  <td><code>Feature engineering package for OHLCV-derived indicators.</code><br><small style="color:var(--muted)">thesis/stage_2_features/__init__.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Feature engineering package for OHLCV-derived indicators..</td>
-</tr>
-<tr>
-  <td>3</td>
-  <td><code>engineering.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-class">Module</span></td>
-  <td><code>__init__.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/__init__.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>Module file in thesis/stage_2_features/engineering.py.</td>
-</tr>
-<tr>
-  <td>4</td>
-  <td><code>generate_features()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>_drop_warmup_rows()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small><br><code>_save_feature_list()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small><br><code>_validate_feature_quality()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small><br>+1 more</td>
-  <td>generate_features() node in thesis/stage_2_features/engineering.py.</td>
-</tr>
-<tr>
-  <td>5</td>
-  <td><code>_validate_ohlcv_input()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>generate_features()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_validate_ohlcv_input() node in thesis/stage_2_features/engineering.py.</td>
-</tr>
-<tr>
-  <td>6</td>
-  <td><code>_drop_warmup_rows()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>generate_features()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_drop_warmup_rows() node in thesis/stage_2_features/engineering.py.</td>
-</tr>
-<tr>
-  <td>7</td>
-  <td><code>_validate_feature_quality()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>generate_features()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_validate_feature_quality() node in thesis/stage_2_features/engineering.py.</td>
-</tr>
-<tr>
-  <td>8</td>
-  <td><code>_save_feature_list()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>generate_features()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_save_feature_list() node in thesis/stage_2_features/engineering.py.</td>
-</tr>
-<tr>
-  <td>9</td>
-  <td><code>Feature engineering — production pipeline for price-action features.  The produc</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Feature engineering — production pipeline for price-action features.  The produc.</td>
-</tr>
-<tr>
-  <td>10</td>
-  <td><code>Generate and persist feature-enriched OHLCV bars.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Generate and persist feature-enriched OHLCV bars..</td>
-</tr>
-<tr>
-  <td>11</td>
-  <td><code>Raise on empty, unsorted, or duplicate timestamps; log gap stats.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Raise on empty, unsorted, or duplicate timestamps; log gap stats..</td>
-</tr>
-<tr>
-  <td>12</td>
-  <td><code>Drop rows with null/non-finite model-facing features.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Drop rows with null/non-finite model-facing features..</td>
-</tr>
-<tr>
-  <td>13</td>
-  <td><code>Pandera + timestamp/uniqueness/null checks on the feature dataset.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Pandera + timestamp/uniqueness/null checks on the feature dataset..</td>
-</tr>
-<tr>
-  <td>14</td>
-  <td><code>Write a JSON sidecar listing feature column names.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Write a JSON sidecar listing feature column names..</td>
-</tr>
-<tr>
-  <td>15</td>
-  <td><code>__init__.py</code><br><small style="color:var(--muted)">stage_2_features/__init__.py</small></td>
-  <td><span class="tag tag-class">Module</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>engineering.py</code><br><small style="color:var(--muted)">stage_2_features/engineering.py</small></td>
-  <td>Module file in stage_2_features/__init__.py.</td>
-</tr>
-<tr>
-  <td>16</td>
-  <td><code>engineering.py</code><br><small style="color:var(--muted)">stage_2_features/engineering.py</small></td>
-  <td><span class="tag tag-class">Module</span></td>
-  <td><code>__init__.py</code><br><small style="color:var(--muted)">stage_2_features/__init__.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>Module file in stage_2_features/engineering.py.</td>
-</tr>
-</table>
-
-<div class="grid">
-  <div class="card">
-    <h4>Key Files</h4>
-    <table style="width:100%;font-size:0.85rem;">
-      <tr><th>File</th><th>Coverage</th></tr>
-      <tr><td><code>thesis/stage_2_features/engineering.py</code></td><td>12 nodes</td></tr>
-<tr><td><code>thesis/stage_2_features/__init__.py</code></td><td>2 nodes</td></tr>
-<tr><td><code>stage_2_features/__init__.py</code></td><td>1 nodes</td></tr>
-<tr><td><code>stage_2_features/engineering.py</code></td><td>1 nodes</td></tr>
-    </table>
-  </div>
-  <div class="card">
-    <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x10, explains x9, calls x4, imports x2. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
-  </div>
-</div>
-<hr>
-
-<!-- ====== 16. Other ====== -->
-<h2 id="other">16. Other</h2>
-<p>Other groups implementation around thesis, cao, bao, chuong3, mostly in bao_cao/chuong3_du_lieu.md, thesis/shared/ui.py, docs/ROADMAP.md. This section covers 214 nodes and 209 internal edges; the diagram shows only representative relationships to stay readable.</p>
-
-<div class="mermaid">
-%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
-flowchart LR
-    %% Section: Other (214 nodes, 209 edges)
-    subgraph other_stage_4_training_walk_forward_lgbm_py_58def140["stage_4_training/walk_forward/lgbm.py"]
-        walk_forward_lgbm_prepare_static_wf_data_498299f9("_prepare_static_wf_data()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
-        walk_forward_lgbm_save_lgbm_wf_artifacts_c8a8903f("_save_lgbm_wf_artifacts()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
-        walk_forward_lgbm_train_and_predict_static_windo_3c3dfdf6("predict static window()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
-        walk_forward_lgbm_train_lgbm_walk_forward_43192795("train_lgbm_walk_forward()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
-        walk_forward_lgbm_train_lgbm_fixed_f7caa13e("train_lgbm_fixed()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
-    end
-    subgraph other_thesis_shared_ui_py_2f9592ab["thesis/shared/ui.py"]
-        shared_ui_simpleconsole_ba77e64a("SimpleConsole<br/><small>thesis/shared/ui.py</small>")
-        shared_ui_simpleconsole_print_977ca282("print()<br/><small>thesis/shared/ui.py</small>")
-        shared_ui_simpleconsole_rule_b7b70489("rule()<br/><small>thesis/shared/ui.py</small>")
-        shared_ui_stage_skip_c565b809("stage_skip()<br/><small>thesis/shared/ui.py</small>")
-        shared_ui_stage_header_c429e68c("stage_header()<br/><small>thesis/shared/ui.py</small>")
-    end
-    subgraph other_source_ext_suppress_same_doc_duplicates_py_f99ac32f["source/_ext/suppress_same_doc_duplicates.py"]
-        ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9("SameDocumentDuplicateFilter<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
-        ext_suppress_same_doc_duplicates_samedocumentdup_a6678398("filter()<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
-        ext_suppress_same_doc_duplicates_setup_02a30126("setup()<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
-    end
-    init_py_fb5b6150("__init__.py")
-    charts_init_py_3d5d24f4("__init__.py")
-    charts_shared_py_dca5b0b0("shared.py")
-    dashboard_init_py_5e9b0fba("__init__.py")
-    docs_source_conf_py_aba2bf26("conf.py")
-    walk_forward_lgbm_prepare_static_wf_data_498299f9 -->|calls| walk_forward_lgbm_train_lgbm_walk_forward_43192795
-    walk_forward_lgbm_train_and_predict_static_windo_3c3dfdf6 -->|calls| walk_forward_lgbm_train_lgbm_walk_forward_43192795
-    walk_forward_lgbm_save_lgbm_wf_artifacts_c8a8903f -->|calls| walk_forward_lgbm_train_lgbm_walk_forward_43192795
-    walk_forward_lgbm_train_lgbm_walk_forward_43192795 -->|calls| walk_forward_lgbm_train_lgbm_fixed_f7caa13e
-    shared_ui_simpleconsole_ba77e64a -->|method| shared_ui_simpleconsole_print_977ca282
-    shared_ui_simpleconsole_ba77e64a -->|method| shared_ui_simpleconsole_rule_b7b70489
-    shared_ui_simpleconsole_print_977ca282 -->|calls| shared_ui_stage_skip_c565b809
-    shared_ui_simpleconsole_rule_b7b70489 -->|calls| shared_ui_stage_header_c429e68c
-    ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 -->|method| ext_suppress_same_doc_duplicates_samedocumentdup_a6678398
-    ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 -->|calls| ext_suppress_same_doc_duplicates_setup_02a30126
-    %% Omitted for readability: 196 nodes, 0 edges
-    class walk_forward_lgbm_prepare_static_wf_data_498299f9 function;
-    class walk_forward_lgbm_save_lgbm_wf_artifacts_c8a8903f function;
-    class walk_forward_lgbm_train_and_predict_static_windo_3c3dfdf6 function;
-    class walk_forward_lgbm_train_lgbm_walk_forward_43192795 function;
-    class walk_forward_lgbm_train_lgbm_fixed_f7caa13e function;
-    class shared_ui_simpleconsole_ba77e64a klass;
-    class shared_ui_simpleconsole_print_977ca282 function;
-    class shared_ui_simpleconsole_rule_b7b70489 function;
-    class shared_ui_stage_skip_c565b809 function;
-    class shared_ui_stage_header_c429e68c function;
-    class ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 klass;
-    class ext_suppress_same_doc_duplicates_samedocumentdup_a6678398 function;
-    class ext_suppress_same_doc_duplicates_setup_02a30126 function;
-    class init_py_fb5b6150 module;
-    class charts_init_py_3d5d24f4 module;
-    class charts_shared_py_dca5b0b0 module;
-    class dashboard_init_py_5e9b0fba module;
-    class docs_source_conf_py_aba2bf26 module;
+    results_xauusd_1h_20260507_223024_reports_model_5cb76815("model_evaluation.md")
+    results_xauusd_1h_20260508_135654_reports_model_0b10af31("model_evaluation.md")
+    results_xauusd_1h_20260510_104839_reports_model_2151f3af("model_evaluation.md")
+    results_xauusd_1h_20260510_113714_reports_model_24cd597e("model_evaluation.md")
+    results_xauusd_1h_20260510_124643_reports_model_7ba5ee98("model_evaluation.md")
+    results_xauusd_1h_20260511_145031_reports_model_e16d6d3d("model_evaluation.md")
+    results_xauusd_1h_20260511_145654_reports_model_b8fd613c("model_evaluation.md")
+    results_xauusd_1h_20260511_230739_reports_model_f6c0943e("model_evaluation.md")
+    results_xauusd_1h_20260511_230830_reports_model_61d68c4e("model_evaluation.md")
+    results_xauusd_1h_20260511_230952_reports_model_32c51223("model_evaluation.md")
+    results_xauusd_1h_20260511_231114_reports_model_d306bd15 -->|contains| reports_model_evaluation_model_evaluation_ff660f14
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| reports_model_evaluation_classification_metrics_85c83219
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| reports_model_evaluation_per_class_metrics_b9e9e25f
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| reports_model_evaluation_model_comparison_75b93d3f
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260507_223024_reports_model_5cb76815
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260508_135654_reports_model_0b10af31
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260510_104839_reports_model_2151f3af
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260510_113714_reports_model_24cd597e
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260510_124643_reports_model_7ba5ee98
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260511_145031_reports_model_e16d6d3d
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260511_145654_reports_model_b8fd613c
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260511_230739_reports_model_f6c0943e
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260511_230830_reports_model_61d68c4e
+    reports_model_evaluation_model_evaluation_ff660f14 -->|contains| results_xauusd_1h_20260511_230952_reports_model_32c51223
+    class reports_model_evaluation_model_evaluation_ff660f14 concept;
+    class results_xauusd_1h_20260511_231114_reports_model_d306bd15 concept;
+    class reports_model_evaluation_classification_metrics_85c83219 concept;
+    class reports_model_evaluation_per_class_metrics_b9e9e25f concept;
+    class reports_model_evaluation_model_comparison_75b93d3f concept;
+    class results_xauusd_1h_20260507_223024_reports_model_5cb76815 concept;
+    class results_xauusd_1h_20260508_135654_reports_model_0b10af31 concept;
+    class results_xauusd_1h_20260510_104839_reports_model_2151f3af concept;
+    class results_xauusd_1h_20260510_113714_reports_model_24cd597e concept;
+    class results_xauusd_1h_20260510_124643_reports_model_7ba5ee98 concept;
+    class results_xauusd_1h_20260511_145031_reports_model_e16d6d3d concept;
+    class results_xauusd_1h_20260511_145654_reports_model_b8fd613c concept;
+    class results_xauusd_1h_20260511_230739_reports_model_f6c0943e concept;
+    class results_xauusd_1h_20260511_230830_reports_model_61d68c4e concept;
+    class results_xauusd_1h_20260511_230952_reports_model_32c51223 concept;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -4688,8 +4460,116 @@ flowchart LR
   <td>No direct outbound edge</td>
   <td>Documentation node describing model_evaluation.md.</td>
 </tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>XAUUSD_1H_20260511_231114/reports/model_evaluation.md</code></td><td>5 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260507_223024/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260508_135654/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260510_104839/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260510_113714/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260510_124643/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260511_145031/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+<tr><td><code>XAUUSD_1H_20260511_145654/reports/model_evaluation.md</code></td><td>1 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x14. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 16. Other ====== -->
+<h2 id="other">16. Other</h2>
+<p>Other groups implementation around thesis, cao, bao, chuong3, mostly in bao_cao/chuong3_du_lieu.md, thesis/shared/ui.py, docs/ROADMAP.md. This section covers 213 nodes and 213 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Other (213 nodes, 213 edges)
+    subgraph other_stage_4_training_walk_forward_lgbm_py_58def140["stage_4_training/walk_forward/lgbm.py"]
+        walk_forward_lgbm_prepare_static_wf_data_498299f9("_prepare_static_wf_data()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
+        walk_forward_lgbm_save_lgbm_wf_artifacts_c8a8903f("_save_lgbm_wf_artifacts()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
+        walk_forward_lgbm_train_lgbm_walk_forward_43192795("train_lgbm_walk_forward()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
+        walk_forward_lgbm_train_and_predict_static_windo_3c3dfdf6("predict static window()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
+        walk_forward_lgbm_train_lgbm_fixed_f7caa13e("train_lgbm_fixed()<br/><small>stage_4_training/walk_forward/lgbm.py</small>")
+    end
+    subgraph other_thesis_shared_ui_py_2f9592ab["thesis/shared/ui.py"]
+        shared_ui_simpleconsole_ba77e64a("SimpleConsole<br/><small>thesis/shared/ui.py</small>")
+        shared_ui_simpleconsole_print_977ca282("print()<br/><small>thesis/shared/ui.py</small>")
+        shared_ui_simpleconsole_rule_b7b70489("rule()<br/><small>thesis/shared/ui.py</small>")
+        shared_ui_stage_skip_c565b809("stage_skip()<br/><small>thesis/shared/ui.py</small>")
+        shared_ui_stage_header_c429e68c("stage_header()<br/><small>thesis/shared/ui.py</small>")
+    end
+    subgraph other_source_ext_suppress_same_doc_duplicates_py_f99ac32f["source/_ext/suppress_same_doc_duplicates.py"]
+        ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9("SameDocumentDuplicateFilter<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
+        ext_suppress_same_doc_duplicates_samedocumentdup_a6678398("filter()<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
+        ext_suppress_same_doc_duplicates_setup_02a30126("setup()<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
+    end
+    init_py_fb5b6150("__init__.py")
+    stage_2_features_init_py_a65d543f("__init__.py")
+    stage_2_features_engineering_py_6cde6768("engineering.py")
+    src_thesis_stage_2_features_init_py_00e2a3f0("__init__.py")
+    src_thesis_stage_2_features_engineering_py_2aaf5ffe("engineering.py")
+    walk_forward_lgbm_prepare_static_wf_data_498299f9 -->|calls| walk_forward_lgbm_train_lgbm_walk_forward_43192795
+    walk_forward_lgbm_train_and_predict_static_windo_3c3dfdf6 -->|calls| walk_forward_lgbm_train_lgbm_walk_forward_43192795
+    walk_forward_lgbm_save_lgbm_wf_artifacts_c8a8903f -->|calls| walk_forward_lgbm_train_lgbm_walk_forward_43192795
+    walk_forward_lgbm_train_lgbm_walk_forward_43192795 -->|calls| walk_forward_lgbm_train_lgbm_fixed_f7caa13e
+    shared_ui_simpleconsole_ba77e64a -->|method| shared_ui_simpleconsole_print_977ca282
+    shared_ui_simpleconsole_ba77e64a -->|method| shared_ui_simpleconsole_rule_b7b70489
+    shared_ui_simpleconsole_print_977ca282 -->|calls| shared_ui_stage_skip_c565b809
+    shared_ui_simpleconsole_rule_b7b70489 -->|calls| shared_ui_stage_header_c429e68c
+    ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 -->|method| ext_suppress_same_doc_duplicates_samedocumentdup_a6678398
+    ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 -->|calls| ext_suppress_same_doc_duplicates_setup_02a30126
+    src_thesis_stage_2_features_init_py_00e2a3f0 -->|imports| src_thesis_stage_2_features_engineering_py_2aaf5ffe
+    stage_2_features_init_py_a65d543f -->|imports| stage_2_features_engineering_py_6cde6768
+    %% Omitted for readability: 195 nodes, 0 edges
+    class walk_forward_lgbm_prepare_static_wf_data_498299f9 function;
+    class walk_forward_lgbm_save_lgbm_wf_artifacts_c8a8903f function;
+    class walk_forward_lgbm_train_lgbm_walk_forward_43192795 function;
+    class walk_forward_lgbm_train_and_predict_static_windo_3c3dfdf6 function;
+    class walk_forward_lgbm_train_lgbm_fixed_f7caa13e function;
+    class shared_ui_simpleconsole_ba77e64a klass;
+    class shared_ui_simpleconsole_print_977ca282 function;
+    class shared_ui_simpleconsole_rule_b7b70489 function;
+    class shared_ui_stage_skip_c565b809 function;
+    class shared_ui_stage_header_c429e68c function;
+    class ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 klass;
+    class ext_suppress_same_doc_duplicates_samedocumentdup_a6678398 function;
+    class ext_suppress_same_doc_duplicates_setup_02a30126 function;
+    class init_py_fb5b6150 module;
+    class stage_2_features_init_py_a65d543f module;
+    class stage_2_features_engineering_py_6cde6768 module;
+    class src_thesis_stage_2_features_init_py_00e2a3f0 module;
+    class src_thesis_stage_2_features_engineering_py_2aaf5ffe module;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
 <tr>
-  <td>16</td>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
   <td><code>ui.py</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-class">Module</span></td>
   <td>External entry / no inbound edge</td>
@@ -4697,7 +4577,7 @@ flowchart LR
   <td>Module file in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>17</td>
+  <td>2</td>
   <td><code>SimpleConsole</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-class">Class</span></td>
   <td>External entry / no inbound edge</td>
@@ -4705,7 +4585,7 @@ flowchart LR
   <td>SimpleConsole node in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>18</td>
+  <td>3</td>
   <td><code>.print()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>SimpleConsole</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
@@ -4713,7 +4593,7 @@ flowchart LR
   <td>.print() node in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>19</td>
+  <td>4</td>
   <td><code>.rule()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>SimpleConsole</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
@@ -4721,7 +4601,7 @@ flowchart LR
   <td>.rule() node in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>20</td>
+  <td>5</td>
   <td><code>status()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -4729,7 +4609,7 @@ flowchart LR
   <td>status() node in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>21</td>
+  <td>6</td>
   <td><code>stage_header()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>_run_stage()</code><br><small style="color:var(--muted)">src/thesis/pipeline.py</small><br><code>rule()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
@@ -4737,7 +4617,7 @@ flowchart LR
   <td>stage_header() node in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>22</td>
+  <td>7</td>
   <td><code>stage_skip()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>_run_stage()</code><br><small style="color:var(--muted)">src/thesis/pipeline.py</small><br><code>print()</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
@@ -4745,7 +4625,7 @@ flowchart LR
   <td>stage_skip() node in thesis/shared/ui.py.</td>
 </tr>
 <tr>
-  <td>23</td>
+  <td>8</td>
   <td><code>Shared lightweight CLI UI helpers without Rich dependency.</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4753,7 +4633,7 @@ flowchart LR
   <td>Design note for Shared lightweight CLI UI helpers without Rich dependency..</td>
 </tr>
 <tr>
-  <td>24</td>
+  <td>9</td>
   <td><code>Minimal console facade compatible with previous Rich call sites.</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4761,7 +4641,7 @@ flowchart LR
   <td>Design note for Minimal console facade compatible with previous Rich call sites..</td>
 </tr>
 <tr>
-  <td>25</td>
+  <td>10</td>
   <td><code>Log plain text messages.</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4769,7 +4649,7 @@ flowchart LR
   <td>Design note for Log plain text messages..</td>
 </tr>
 <tr>
-  <td>26</td>
+  <td>11</td>
   <td><code>Log a visual separator line.</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4777,7 +4657,7 @@ flowchart LR
   <td>Design note for Log a visual separator line..</td>
 </tr>
 <tr>
-  <td>27</td>
+  <td>12</td>
   <td><code>Print a stage banner with concise log output.      Args:         stage: Stage nu</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4785,7 +4665,7 @@ flowchart LR
   <td>Design note for Print a stage banner with concise log output.      Args:         stage: Stage nu.</td>
 </tr>
 <tr>
-  <td>28</td>
+  <td>13</td>
   <td><code>Print a skip line and logger message.      Args:         stage: Stage number (1-</code><br><small style="color:var(--muted)">thesis/shared/ui.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4793,7 +4673,7 @@ flowchart LR
   <td>Design note for Print a skip line and logger message.      Args:         stage: Stage number (1-.</td>
 </tr>
 <tr>
-  <td>29</td>
+  <td>14</td>
   <td><code>ui.py</code><br><small style="color:var(--muted)">shared/ui.py</small></td>
   <td><span class="tag tag-class">Module</span></td>
   <td>External entry / no inbound edge</td>
@@ -4801,12 +4681,132 @@ flowchart LR
   <td>Module file in shared/ui.py.</td>
 </tr>
 <tr>
-  <td>30</td>
+  <td>15</td>
+  <td><code>__init__.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/__init__.py</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>engineering.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td>Module file in thesis/stage_2_features/__init__.py.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>Feature engineering package for OHLCV-derived indicators.</code><br><small style="color:var(--muted)">thesis/stage_2_features/__init__.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Feature engineering package for OHLCV-derived indicators..</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>engineering.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td><code>__init__.py</code><br><small style="color:var(--muted)">thesis/stage_2_features/__init__.py</small></td>
+  <td>No direct outbound edge</td>
+  <td>Module file in thesis/stage_2_features/engineering.py.</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>_validate_ohlcv_input()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>_validate_ohlcv_input() node in thesis/stage_2_features/engineering.py.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>_drop_warmup_rows()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>_drop_warmup_rows() node in thesis/stage_2_features/engineering.py.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>_validate_feature_quality()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>_validate_feature_quality() node in thesis/stage_2_features/engineering.py.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>_save_feature_list()</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>_save_feature_list() node in thesis/stage_2_features/engineering.py.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>Feature engineering — production pipeline for price-action features.  The produc</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Feature engineering — production pipeline for price-action features.  The produc.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>Raise on empty, unsorted, or duplicate timestamps; log gap stats.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Raise on empty, unsorted, or duplicate timestamps; log gap stats..</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>Drop rows with null/non-finite model-facing features.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Drop rows with null/non-finite model-facing features..</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>Pandera + timestamp/uniqueness/null checks on the feature dataset.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Pandera + timestamp/uniqueness/null checks on the feature dataset..</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>Write a JSON sidecar listing feature column names.</code><br><small style="color:var(--muted)">thesis/stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Write a JSON sidecar listing feature column names..</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>__init__.py</code><br><small style="color:var(--muted)">stage_2_features/__init__.py</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>engineering.py</code><br><small style="color:var(--muted)">stage_2_features/engineering.py</small></td>
+  <td>Module file in stage_2_features/__init__.py.</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>engineering.py</code><br><small style="color:var(--muted)">stage_2_features/engineering.py</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td><code>__init__.py</code><br><small style="color:var(--muted)">stage_2_features/__init__.py</small></td>
+  <td>No direct outbound edge</td>
+  <td>Module file in stage_2_features/engineering.py.</td>
+</tr>
+<tr>
+  <td>29</td>
   <td><code>chuong3_du_lieu.md</code><br><small style="color:var(--muted)">bao_cao/chuong3_du_lieu.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
   <td>Documentation node describing chuong3_du_lieu.md.</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>Chương 3. Dữ liệu và tiền xử lý</code><br><small style="color:var(--muted)">bao_cao/chuong3_du_lieu.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Chương 3. Dữ liệu và tiền xử lý.</td>
 </tr>
 </table>
 
@@ -4819,15 +4819,15 @@ flowchart LR
 <tr><td><code>thesis/shared/ui.py</code></td><td>14 nodes</td></tr>
 <tr><td><code>docs/ROADMAP.md</code></td><td>13 nodes</td></tr>
 <tr><td><code>stage_4_training/walk_forward/lgbm.py</code></td><td>12 nodes</td></tr>
+<tr><td><code>thesis/stage_2_features/engineering.py</code></td><td>10 nodes</td></tr>
 <tr><td><code>DOCS.md</code></td><td>7 nodes</td></tr>
 <tr><td><code>bao_cao/README.md</code></td><td>7 nodes</td></tr>
 <tr><td><code>source/_ext/suppress_same_doc_duplicates.py</code></td><td>7 nodes</td></tr>
-<tr><td><code>src/thesis/pipeline.py</code></td><td>6 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x150, explains x45, calls x7, method x3. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x144, explains x53, calls x7, method x3. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
@@ -4857,7 +4857,7 @@ flowchart LR
 
 <div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
   <p>thesis — Architecture Documentation</p>
-  <p>Generated: 2026-05-11 18:07 UTC · graphify callflow-html</p>
+  <p>Generated: 2026-05-11 18:27 UTC · graphify callflow-html</p>
 </div>
 
 </div><!-- .container -->

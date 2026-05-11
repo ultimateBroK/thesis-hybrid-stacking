@@ -7,10 +7,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$SCRIPT_DIR/_build"
 
-echo "==> Building LaTeX sources..."
-sphinx-build -b latex -W "$SCRIPT_DIR/source" "$BUILD_DIR/latex"
-
 LATEX_DIR="$BUILD_DIR/latex"
+
+# Sphinx/mermaid leaves hashed support PDFs in the LaTeX directory. Clean the
+# directory first so each run contains only files referenced by the current .tex.
+rm -rf "$LATEX_DIR"
+
+echo "==> Building LaTeX sources..."
+sphinx-build -b latex -W "$SCRIPT_DIR/source" "$LATEX_DIR"
+
 if [ ! -f "$LATEX_DIR"/*.tex ]; then
     echo "ERROR: No .tex file produced."
     exit 1

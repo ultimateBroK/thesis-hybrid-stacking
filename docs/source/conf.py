@@ -73,3 +73,35 @@ html_theme_options = {
     "collapse_navigation": False,
     "sticky_navigation": True,
 }
+
+# -- LaTeX/PDF output --------------------------------------------------------
+# Keep the generated PDF compact and predictable:
+# - ``oneside,openany`` prevents report/manual classes from inserting blank
+#   verso pages before major sections.
+# - A compact custom title page avoids Sphinx's default blank back-of-title page.
+latex_elements = {
+    "papersize": "a4paper",
+    "extraclassoptions": "oneside,openany",
+    "maketitle": r"""
+\pagenumbering{Alph}
+\makeatletter
+\begin{center}
+  \vspace*{2cm}
+  {\Huge\bfseries \@title\par}
+  \vspace{1cm}
+  {\large Release \release\par}
+  \vspace{1cm}
+  {\large \@author\par}
+  \vspace{1cm}
+  {\large \@date\par}
+\end{center}
+\clearpage
+\makeatother
+\pagenumbering{roman}
+""",
+    "tableofcontents": r"""
+\sphinxtableofcontents
+\clearpage
+\pagenumbering{arabic}
+""",
+}

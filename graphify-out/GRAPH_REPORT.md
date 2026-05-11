@@ -1,7 +1,7 @@
 # Graph Report - thesis  (2026-05-12)
 
 ## Corpus Check
-- 141 files · ~998,283 words
+- 141 files · ~980,670 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1fa6076b`
+- Built from commit: `5e4aee0e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -200,16 +200,16 @@ Cohesion: 0.05
 Nodes (57): _apply_section(), BacktestConfig, DataConfig, FeaturesConfig, get_config(), LabelsConfig, LGBMConfig, load_config() (+49 more)
 
 ### Community 1 - "Feature Engineering"
+Cohesion: 0.04
+Nodes (62): create_synthetic_ohlcv(), Create synthetic OHLCV data for testing.      Default 300 rows provides enough w, Tests for features module.  Tests technical indicator helpers and validates the, Test that all compact features have zero nulls after fill., Test that all features have finite values (no inf/nan) after pipeline., Test ema_slope_20 column is produced., Test EMA slope sign follows price direction.      A monotonically increasing ser, Test RSI is bounded [0, 100]. (+54 more)
+
+### Community 2 - "Data Processing & Quality"
 Cohesion: 0.05
 Nodes (36): _equity_series_from_closed_trades(), _load_feature_importance(), _plot_equity_curve(), _plot_feature_importance(), Chart rendering helpers for the thesis report.  Contains equity-curve and featur, Timestamps and equity from closed-trade PnL (not mark-to-market)., Render and save an equity curve image from trade history.      Args:         tra, Load feature-importance JSON from session report outputs.      Args:         con (+28 more)
 
-### Community 2 - "Data Processing & Quality"
+### Community 3 - "Model Evaluation Metrics"
 Cohesion: 0.06
 Nodes (34): apply_event_time_purge(), apply_purge_embargo(), generate_windows(), log_windows(), Bar-based walk-forward sliding window validation with purge and embargo.  Genera, Adjust a raw window to account for purge and embargo gaps.      * **Purge** remo, Adjust a window using label event-end times instead of fixed purge bars.      Tr, Index-based train / test slice for one walk-forward fold.      Attributes: (+26 more)
-
-### Community 3 - "Model Evaluation Metrics"
-Cohesion: 0.05
-Nodes (58): create_synthetic_ohlcv(), Create synthetic OHLCV data for testing.      Default 300 rows provides enough w, Tests for features module.  Tests technical indicator helpers and validates the, Test that all compact features have zero nulls after fill., Test that all features have finite values (no inf/nan) after pipeline., Test RSI is bounded [0, 100]., Test pivot_position is clipped to [0, 1]., Test that pivot uses previous day's levels (shifted by 1). (+50 more)
 
 ### Community 4 - "Walk-Forward Validation"
 Cohesion: 0.05
@@ -228,32 +228,32 @@ Cohesion: 0.04
 Nodes (47): 0. Todo đã xử lý, 10. Quy tắc vàng để đỡ vất vả, 1. Kết luận ngắn, 2. Xác nhận từ web search, 3. Ràng buộc giữa các stage trong code hiện tại, 4. Hướng sửa file theo mức ưu tiên, 5. Checklist sửa đổi an toàn theo stage, 6. Câu chuyện bảo vệ nên dùng (+39 more)
 
 ### Community 8 - "Label Generation"
+Cohesion: 0.09
+Nodes (43): generate_features(), Generate and persist feature-enriched OHLCV bars., _add_context_features(), _add_ema_crossover(), _add_ema_slope(), _add_high_low_range(), _add_log_returns(), _add_macd() (+35 more)
+
+### Community 9 - "Pipeline Orchestration"
 Cohesion: 0.05
 Nodes (44): 4.10. Thiết kế validation chi tiết, 4.11. Event-time purge, 4.12. Base/meta split trong stacking, 4.13. Khung baseline chi tiết, 4.14. Cấu hình mô hình hiện tại, 4.15. LightGBM trong vai trò baseline mạnh, 4.16. Quy trình feature pruning, 4.17. Backtest barrier guard (+36 more)
 
-### Community 9 - "Pipeline Orchestration"
+### Community 10 - "Feature Registry"
 Cohesion: 0.08
 Nodes (23): _annualized_sharpe(), compute_benchmark_comparison(), _compute_random_strategy(), _equity_curve_from_bar_returns(), _load_close_prices_for_benchmark(), _max_drawdown_pct(), _model_label(), Benchmark comparison helpers — naive strategies vs model.  Provides equity-curve (+15 more)
 
-### Community 10 - "Feature Registry"
+### Community 11 - "Trading Strategy"
 Cohesion: 0.07
 Nodes (38): configure_session_paths(), load_config_for_session(), Session-scoped artifact paths — single place for CLI and dashboard.  ``config.to, Point session-owned artifact paths at a session directory.      Updates ``paths., Load session config from a snapshot when available.      Applies :func:`configur, _apply_force_flag(), _apply_stage_flags(), _find_session() (+30 more)
 
-### Community 11 - "Trading Strategy"
+### Community 12 - "Report Data Sections"
 Cohesion: 0.08
 Nodes (20): always_predict_class(), compute_baseline_metrics(), majority_class_baseline(), naive_direction(), random_baseline(), Baseline prediction strategies for walk-forward comparison.  All baselines opera, Predict the direction of the previous bar's return (persistence).      Maps: ret, Return predictions that always equal *class_label*. (+12 more)
 
-### Community 12 - "Report Data Sections"
+### Community 13 - "Chart Data Layer"
 Cohesion: 0.06
 Nodes (41): Asymmetric Barriers, ATR (Average True Range), Backtest, Balanced Accuracy, Base Learner, Calibration, Censored Labels, CFD (Contract for Difference) (+33 more)
 
-### Community 13 - "Chart Data Layer"
+### Community 14 - "Session Management"
 Cohesion: 0.05
 Nodes (41): Architecture, Barrier Alignment Guard, Barrier Computation, Baselines, Classic Hybrid Stacking, code:text (Classic Hybrid Stacking), code:text (src/thesis/), code:mermaid (flowchart TD) (+33 more)
-
-### Community 14 - "Session Management"
-Cohesion: 0.09
-Nodes (39): _add_context_features(), _add_ema_crossover(), _add_high_low_range(), _add_log_returns(), _add_macd(), _add_ny_session_dummies(), _add_ohlcv_norm(), _add_pivot_position() (+31 more)
 
 ### Community 15 - "Backtest Visualization"
 Cohesion: 0.06
@@ -300,12 +300,12 @@ Cohesion: 0.07
 Nodes (24): begin, btn, element, end, getCellValue(), header, helpCheck, line_height (+16 more)
 
 ### Community 26 - "Dashboard UI"
-Cohesion: 0.11
-Nodes (19): _load_label_distribution(), Data-quality and methodology section renderers.  Renderers for data quality, lab, Render the Label Design & Methodology explanation section., Render the Validation Methodology section (walk-forward, purge/embargo)., Render auxiliary regression metrics section (MAE/RMSE/R²) if available., Compute class distribution from the labels parquet file., Render the Data Quality analysis section from the JSON sidecar., _render_auxiliary_regression_section() (+11 more)
+Cohesion: 0.1
+Nodes (22): _compute_avg_win_loss_ratio(), Backtest metric zones, baseline comparison, and verdict section renderers.  Cont, Render baseline strategy comparison using the _baselines module., Render sorted issues and recommendations into markdown lines., Append one-paragraph ML quality assessment to markdown lines., Append synthesized verdict (model quality + trading edge + rec)., Append primary issue identification and application demo summary., Compute average win / average loss ratio from trade records. (+14 more)
 
 ### Community 27 - "Metric Cards"
-Cohesion: 0.14
-Nodes (25): _build_markdown(), Build concise metrics-first markdown report., _accuracy_table(), _backtest_metrics_table(), _backtest_params_table(), _calibration_summary_text(), _compute_ece_numpy(), _config_table() (+17 more)
+Cohesion: 0.11
+Nodes (19): _load_label_distribution(), Data-quality and methodology section renderers.  Renderers for data quality, lab, Render the Label Design & Methodology explanation section., Render the Validation Methodology section (walk-forward, purge/embargo)., Render auxiliary regression metrics section (MAE/RMSE/R²) if available., Compute class distribution from the labels parquet file., Render the Data Quality analysis section from the JSON sidecar., _render_auxiliary_regression_section() (+11 more)
 
 ### Community 28 - "OOF Analysis"
 Cohesion: 0.13
@@ -344,148 +344,148 @@ Cohesion: 0.09
 Nodes (21): _compute_class_weights(), Save sorted model feature importances to JSON.      Args:         model: Fitted, Compute balanced class weights for multiclass labels.      Args:         y: Targ, _save_feature_importance(), Tests for model module.  Tests LightGBM training helpers, class weight computati, Test class weights with highly imbalanced data., Tabular inputs should not emit empty constraint groups., Create a sample config for testing. (+13 more)
 
 ### Community 37 - "Charts Shared"
+Cohesion: 0.15
+Nodes (23): _build_markdown(), Build concise metrics-first markdown report., _accuracy_table(), _backtest_metrics_table(), _backtest_params_table(), _calibration_summary_text(), _compute_ece_numpy(), _config_table() (+15 more)
+
+### Community 38 - "Dashboard Init"
 Cohesion: 0.08
 Nodes (24): _add_atr(), Add ATR and close-normalized ATR columns., Test ATR > 0 for valid data., Test MACD produces raw and ATR-normalized histograms., Test atr_ratio > 0 (ratio of short to long ATR)., Test price_dist_ratio is computed., Test atr_percentile is within [0, 1]., Test edge case: insufficient rows for indicator windows. (+16 more)
 
-### Community 38 - "Dashboard Init"
+### Community 39 - "Shared Init"
 Cohesion: 0.09
 Nodes (23): 7.10. Khuyến nghị cho bản bảo vệ, 7.11. Công việc cần làm nếu có thêm thời gian, 7.12. Kết luận bảo vệ cuối cùng, 7.1. Kết quả đạt được, 7.1. Tổng kết, 7.2. Kết quả đạt được, 7.2. Kết quả thực nghiệm, 7.3. Kết quả thực nghiệm chính (+15 more)
 
-### Community 39 - "Shared Init"
+### Community 40 - "UI Rationale"
 Cohesion: 0.14
 Nodes (15): build_exclude_cols(), build_feature_output_cols(), build_label_output_cols(), get_label_helper_cols(), get_static_feature_cols(), Single source of truth for feature column lists across pipeline stages., Return the static (non-sequential) feature columns from config., Return helper columns used during label construction (e.g. ATR). (+7 more)
 
-### Community 40 - "UI Rationale"
+### Community 41 - "Schemas Rationale"
 Cohesion: 0.09
 Nodes (19): Smoke tests for chart builder module., Minimal feature importance., Large dataset triggers downsampling., Empty DataFrame should not crash (Grid is still returned)., Fewer trades than window should return empty Line., Empty trades should return empty Grid., Minimal OHLCV data (5 rows)., Minimal features data. (+11 more)
 
-### Community 41 - "Schemas Rationale"
+### Community 42 - "Schemas Rationale 2"
 Cohesion: 0.16
 Nodes (21): _aligned_predict_proba(), _build_sklearn_base_model(), _classification_summary(), _fit_meta_model(), _fit_predictable_classifier(), Classical time-safe stacking walk-forward trainer., Fit the probability-level meta model., Predict probabilities aligned to the canonical class order [-1, 0, 1]. (+13 more)
 
-### Community 42 - "Schemas Rationale 2"
-Cohesion: 0.14
-Nodes (14): TestCountsDict, TestPctDict, TestWindowDiagnostics, _counts_dict(), fit_static_feature_pipeline(), _pct_dict(), Shared walk-forward utility functions for tabular model paths., Convert count dict to rounded percentages. (+6 more)
-
 ### Community 43 - "Schemas Rationale 3"
+Cohesion: 0.14
+Nodes (14): TestAlignProbabilityMatrix, TestLabelSuffix, TestOneHotProbaColumns, _align_probability_matrix(), fit_static_feature_pipeline(), _label_suffix(), _one_hot_proba_columns(), _probability_columns() (+6 more)
+
+### Community 44 - "Community 44"
 Cohesion: 0.14
 Nodes (13): load_session_data(), Session artifact loading for dashboard charts., Load session artifacts required by interactive chart builders.      Args:, find_sessions(), load_config(), parse_session_meta(), Session discovery, parsing, and loading helpers., Discover available session directories under ``results/``. (+5 more)
 
-### Community 44 - "Community 44"
+### Community 45 - "Community 45"
 Cohesion: 0.16
 Nodes (13): _check_columns(), FeaturesSchema, LabelsSchema, OhlcvSchema, Column contract validation for pipeline stage boundaries., Validate raw OHLCV column contract., Validate feature-enriched column contract., Validate labelled column contract. (+5 more)
 
-### Community 45 - "Community 45"
-Cohesion: 0.12
-Nodes (14): Config, Runtime configuration grouped by TOML section., TestAlignProbabilityMatrix, TestLabelSuffix, TestOneHotProbaColumns, TestProbabilityColumns, _align_probability_matrix(), _label_suffix() (+6 more)
-
 ### Community 46 - "Community 46"
 Cohesion: 0.14
-Nodes (11): _assess_trading_edge(), _get_zone_info(), _identify_primary_issue(), Assessment helpers and constants for backtest verdict logic.  Contains quality t, Classify trading edge into NEGATIVE / MARGINAL / POSITIVE., Return the single most critical issue description, or None., Return (emoji, zone_label, recommended_range) for a backtest metric., Unit tests for _assess_trading_edge. (+3 more)
+Nodes (13): OOF vs OOS generalization check section renderer.  Renders the out-of-fold vs ou, Render OOF vs OOS comparison section with side-by-side metrics table., _render_oof_vs_oos_section(), _make_wf_history_json(), Write a synthetic walk-forward history JSON file., Tests for _render_oof_vs_oos_section., Graceful message when session_dir is empty., Graceful message when walk_forward_history.json is missing. (+5 more)
 
 ### Community 47 - "Community 47"
 Cohesion: 0.14
-Nodes (13): OOF vs OOS generalization check section renderer.  Renders the out-of-fold vs ou, Render OOF vs OOS comparison section with side-by-side metrics table., _render_oof_vs_oos_section(), _make_wf_history_json(), Write a synthetic walk-forward history JSON file., Tests for _render_oof_vs_oos_section., Graceful message when session_dir is empty., Graceful message when walk_forward_history.json is missing. (+5 more)
+Nodes (11): _assess_trading_edge(), _get_zone_info(), _identify_primary_issue(), Assessment helpers and constants for backtest verdict logic.  Contains quality t, Classify trading edge into NEGATIVE / MARGINAL / POSITIVE., Return the single most critical issue description, or None., Return (emoji, zone_label, recommended_range) for a backtest metric., Unit tests for _assess_trading_edge. (+3 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.11
 Nodes (20): Auxiliary Regression Metrics (If Available), Backtest Interpretation, Backtest Metric Quality Zones, Calibration Metrics (Secondary), Classification Results, code:text (results/XAUUSD_1H_20260511_231114/), code:text (Accuracy              0.3397), code:text (Short  0.3684) (+12 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.11
-Nodes (20): _add_adx(), _add_ema_slope(), Add Wilder ADX trend-strength feature., Add five-bar percent-change slope of EMA., Test ema_slope_20 column is produced., Test EMA slope sign follows price direction.      A monotonically increasing ser, Test regime_strength column is produced., Test regime_strength sign matches EMA slope sign.      regime_strength = adx_sig (+12 more)
-
-### Community 50 - "Community 50"
 Cohesion: 0.15
 Nodes (14): MockWindow, TestBuildWfHistory, _build_wf_history(), _log_walk_forward_complete(), Walk-forward artifact persistence helpers.  Shared by LightGBM-only and stacking, Write ``models/training_history.json`` under the session dir if enabled., Write ``reports/walk_forward_history.json`` under the session dir if enabled., Save per-architecture prediction copy for multi-arch comparison. (+6 more)
 
-### Community 51 - "Community 51"
+### Community 50 - "Community 50"
 Cohesion: 0.17
 Nodes (12): compute_proxy_return(), compute_regression_auxiliary(), mae(), r_squared(), Classification and regression auxiliary metric functions.  Primary metrics measu, Mean Absolute Error on continuous return arrays., Root Mean Squared Error on continuous return arrays., R² (coefficient of determination) on continuous return arrays. (+4 more)
 
-### Community 52 - "Community 52"
+### Community 51 - "Community 51"
 Cohesion: 0.18
 Nodes (17): _compute_spread_rate(), _create_fractional_backtest(), _make_commission_fn(), _prepare_df(), Stage 5 backtest helpers (prep + runner)., Convert tick-based spread + slippage to relative rate for backtesting.py., Build a commission function closure for backtesting.py., Configure ``FractionalBacktest`` without running it. (+9 more)
 
-### Community 53 - "Community 53"
+### Community 52 - "Community 52"
 Cohesion: 0.15
 Nodes (15): build_confidence_distribution_chart(), build_confusion_matrix_chart(), build_feature_importance_chart(), build_prediction_distribution_chart(), Model performance chart builders., Build a horizontal top-N feature-importance chart.      Args:         fi: Mappin, Build a normalized confusion-matrix heatmap for 3-class labels.      Args:, Build actual-vs-predicted label distribution bars. (+7 more)
 
-### Community 54 - "Community 54"
+### Community 53 - "Community 53"
 Cohesion: 0.15
 Nodes (14): Metric card renderers and CSS constants for the dashboard., Render a metric card with colour-coded zone indicator., Render a styled metric card with gradient background and accent border., render_metric_card(), render_zoned_metric(), _get_metric_zone(), _is_extreme_value(), Metric zone definitions for CFD backtest benchmarks.  Provides zone classificati (+6 more)
 
-### Community 55 - "Community 55"
+### Community 54 - "Community 54"
 Cohesion: 0.11
 Nodes (18): 1.10. Ý nghĩa khoa học và thực tiễn, 1.11. Cấu trúc luận văn, 1.1. Bối cảnh, 1.1. Bối cảnh nghiên cứu, 1.2. Mục tiêu, 1.2. Vấn đề nghiên cứu, 1.3. Kiến trúc đề xuất, 1.3. Mục tiêu đề tài (+10 more)
 
-### Community 56 - "Community 56"
+### Community 55 - "Community 55"
 Cohesion: 0.11
 Nodes (18): 6.10. Phân biệt nghiên cứu và triển khai, 6.11. Kịch bản cải thiện backtest, 6.12. Kết luận mở rộng chương ứng dụng, 6.1. Kết quả minh họa mới nhất, 6.1. Vai trò của backtest, 6.2. Ý nghĩa, 6.2. Quy tắc minh họa, 6.3. Kết quả minh họa mới nhất (+10 more)
 
-### Community 57 - "Community 57"
+### Community 56 - "Community 56"
 Cohesion: 0.14
 Nodes (12): macro_f1(), _precision_recall_f1_for_class(), precision_recall_f1_per_class(), Support-weighted F1 score., Per-class precision, recall, F1 keyed by human-readable name., Return (precision, recall, f1) for a single class., Macro-averaged F1 score., weighted_f1() (+4 more)
 
-### Community 58 - "Community 58"
+### Community 57 - "Community 57"
 Cohesion: 0.16
 Nodes (14): Reports section renderer., Render the reports page with thesis markdown and artifact visuals., render_reports_section(), date_only(), Shared chart renderer and config/trade summary helpers., Render a pyecharts chart into the Streamlit app., Return the date part of a config timestamp string., Hide report sections duplicated by dashboard-native charts. (+6 more)
 
-### Community 59 - "Community 59"
+### Community 58 - "Community 58"
 Cohesion: 0.15
 Nodes (11): _compute_distribution_shift_weights(), Compute per-sample training weights to reduce stale-regime bias.      Compares c, Tests for _compute_distribution_shift_weights time-safe weighting., When train and val have similar class distributions, weights ≈ 1.0., When val has a different class distribution, weights diverge from 1.0., Weights array length matches y_train, not y_val., No individual weight exceeds the default clip range [0.5, 3.0]., A perfectly uniform val distribution produces uniform weights. (+3 more)
 
-### Community 60 - "Community 60"
+### Community 59 - "Community 59"
 Cohesion: 0.21
 Nodes (15): brier_score(), calibration_reliability_data(), compute_all_calibration_metrics(), confidence_bins_accuracy(), expected_calibration_error(), log_loss(), Probability calibration metrics: ECE, Brier, log-loss, confidence bins., Return bin centers, accuracies, and counts for calibration curve plotting. (+7 more)
 
-### Community 61 - "Community 61"
+### Community 60 - "Community 60"
 Cohesion: 0.17
 Nodes (10): Resolve the effective cache check path based on invalidation strategy.      Args, _resolve_cache_path(), Cache path strategies., Strategy none should skip cache reads., Strategy path should reuse the base path., Strategy hash should append an 8-char hex suffix., Strategy hash should no-op for unmapped stages., A missing base path should stay missing. (+2 more)
 
-### Community 62 - "Community 62"
-Cohesion: 0.21
-Nodes (12): _drop_warmup_rows(), generate_features(), Feature engineering — production pipeline for price-action features.  The produc, Raise on empty, unsorted, or duplicate timestamps; log gap stats., Drop rows with null/non-finite model-facing features., Pandera + timestamp/uniqueness/null checks on the feature dataset., Write a JSON sidecar listing feature column names., Generate and persist feature-enriched OHLCV bars. (+4 more)
-
-### Community 63 - "Community 63"
+### Community 61 - "Community 61"
 Cohesion: 0.12
 Nodes (15): Classic Hybrid Stacking for XAU/USD H1, code:text (Classic Hybrid Stacking), code:bash (pixi install), code:bash (pixi run python main.py --stage 3 --force), code:text (results/XAUUSD_1H_<timestamp>/), code:text (results/XAUUSD_1H_20260511_231114/), code:mermaid (flowchart LR), code:text (src/thesis/) (+7 more)
 
-### Community 64 - "Community 64"
-Cohesion: 0.21
-Nodes (10): _make_mock_model(), Tests for _build_lgbm_info deployment model metadata., When window_index is provided, provenance keys are in the dict., Missing kwargs → no crash and no window-provenance keys in result., Result includes per-window provenance when kwargs are supplied., None accuracy is handled without crash — key present with None., window_oof_accuracy mirrors last_window_accuracy when set., TestDeploymentModelMetadata (+2 more)
-
-### Community 65 - "Community 65"
+### Community 62 - "Community 62"
 Cohesion: 0.23
 Nodes (10): _build_interaction_constraints(), _filter_validation_to_seen_classes(), LightGBM utilities for tabular walk-forward training., Drop validation rows whose class is absent from the training fold.      LightGBM, Train LightGBM with fixed hyperparameters.      Args:         X_train: Training, Wrap a NumPy matrix as a pandas DataFrame.      Args:         X: Feature matrix, Interaction constraints for LightGBM feature groups.      Currently disabled — r, _train_fixed() (+2 more)
 
-### Community 66 - "Community 66"
-Cohesion: 0.19
-Nodes (13): _compute_avg_win_loss_ratio(), Backtest metric zones, baseline comparison, and verdict section renderers.  Cont, Render baseline strategy comparison using the _baselines module., Render sorted issues and recommendations into markdown lines., Append one-paragraph ML quality assessment to markdown lines., Append synthesized verdict (model quality + trading edge + rec)., Append primary issue identification and application demo summary., Compute average win / average loss ratio from trade records. (+5 more)
+### Community 63 - "Community 63"
+Cohesion: 0.21
+Nodes (10): _make_mock_model(), Tests for _build_lgbm_info deployment model metadata., When window_index is provided, provenance keys are in the dict., Missing kwargs → no crash and no window-provenance keys in result., Result includes per-window provenance when kwargs are supplied., None accuracy is handled without crash — key present with None., window_oof_accuracy mirrors last_window_accuracy when set., TestDeploymentModelMetadata (+2 more)
 
-### Community 67 - "Community 67"
+### Community 64 - "Community 64"
 Cohesion: 0.13
 Nodes (4): Classification Metrics (Primary), Model Comparison, Model Evaluation, Per-Class Metrics
 
-### Community 68 - "Community 68"
+### Community 65 - "Community 65"
 Cohesion: 0.21
 Nodes (10): Shared lightweight CLI UI helpers without Rich dependency., Minimal console facade compatible with previous Rich call sites., Log plain text messages., Log a visual separator line., Print a stage banner with concise log output.      Args:         stage: Stage nu, Print a skip line and logger message.      Args:         stage: Stage number (1-, SimpleConsole, stage_header() (+2 more)
 
-### Community 69 - "Community 69"
+### Community 66 - "Community 66"
 Cohesion: 0.19
 Nodes (9): _cache_hash(), Compute an 8-char SHA-256 fingerprint of config sections relevant to a stage., Stages without mapped sections should not hash., Training hash should track tabular model and stacking edits., Stage cache fingerprints., Relevant edits should change a stage hash., Same values should produce same hashes., A stage hash should ignore unrelated sections. (+1 more)
 
-### Community 70 - "Community 70"
-Cohesion: 0.19
-Nodes (9): Render backtest metric quality zones with emoji indicators., _render_metric_zones_section(), Tests for _render_metric_zones_section., All configured metrics appear in the output., Good metric values should show green emoji indicators., Poor metric values should show red emoji indicators., None values should render as N/A., When trades are provided, Avg Win/Avg Loss row is rendered. (+1 more)
+### Community 67 - "Community 67"
+Cohesion: 0.14
+Nodes (14): _add_adx(), Add Wilder ADX trend-strength feature., Test regime_strength column is produced., Test regime_strength sign matches EMA slope sign.      regime_strength = adx_sig, Test regime_strength is near zero when ADX is low (ranging market).      When AD, Test ADX (adx_14) is non-negative and finite after warmup.      ADX is theoretic, Test that ADX produces reasonable values for a trending series.      A monotonic, Test that regime features don't use future data.      Regime features use rollin (+6 more)
 
-### Community 71 - "Community 71"
+### Community 68 - "Community 68"
+Cohesion: 0.2
+Nodes (10): _drop_warmup_rows(), Feature engineering — production pipeline for price-action features.  The produc, Raise on empty, unsorted, or duplicate timestamps; log gap stats., Drop rows with null/non-finite model-facing features., Pandera + timestamp/uniqueness/null checks on the feature dataset., Write a JSON sidecar listing feature column names., _save_feature_list(), _validate_feature_quality() (+2 more)
+
+### Community 69 - "Community 69"
 Cohesion: 0.14
 Nodes (13): 3.10. Data contract giữa các stage, 3.11. Cột bị loại khỏi feature model-facing, 3.13. Kiểm tra phân phối feature, 3.14. Phân phối nhãn và ý nghĩa, 3.15. Vì sao không đổi sang binary ngay, 3.16. Kết luận chi tiết về dữ liệu, 3.3. Kiểm tra chất lượng dữ liệu, 3.6. Tổng kết chương (+5 more)
 
-### Community 72 - "Community 72"
+### Community 70 - "Community 70"
 Cohesion: 0.27
 Nodes (11): _prepare_static_wf_data(), LightGBM training entry points (walk-forward + fixed split)., Train LightGBM and generate predictions for a single static window.      Returns, Validate OOF predictions and persist static walk-forward artifacts.      Args:, Train LightGBM with walk-forward validation.      Uses event-time purged windows, Train LightGBM using the fixed train/val/test split.      Args:         config:, Load labeled data, pre-compute regression target, and generate windows.      Arg, _save_lgbm_wf_artifacts() (+3 more)
+
+### Community 71 - "Community 71"
+Cohesion: 0.18
+Nodes (9): Config, Runtime configuration grouped by TOML section., TestPctDict, TestProbabilityColumns, TestWindowDiagnostics, _pct_dict(), Convert count dict to rounded percentages., Build per-window label diagnostics for logs and JSON artifacts. (+1 more)
+
+### Community 72 - "Community 72"
+Cohesion: 0.22
+Nodes (8): _exec_verdict(), One-paragraph ML-first overall assessment with synthesized verdict.      Delegat, Integration tests for the extended _exec_verdict function., Verdict line must appear when both pred_stats and metrics exist., Verdict line shows model quality even without backtest metrics., Returns early with no output lines., Fallback message when only the demo ran., TestExecVerdict
 
 ### Community 73 - "Community 73"
 Cohesion: 0.18
@@ -497,11 +497,11 @@ Nodes (12): Backtest Enhancements, code:text (Session: results/XAUUSD_1H_2026051
 
 ### Community 75 - "Community 75"
 Cohesion: 0.24
-Nodes (6): compute_all_classification_metrics(), Compute the full suite of classification metrics.      Optionally includes regre, When y_true_returns and y_proba are provided, regression aux is computed., When y_true_returns and y_pred_returns are provided., When no returns are provided, regression_auxiliary is absent., TestComputeAll
+Nodes (6): accuracy(), mda_including_hold(), Overall accuracy: fraction of correct predictions., MDA including Hold — exact match across all three classes., TestAccuracy, TestMdaIncludingHold
 
 ### Community 76 - "Community 76"
 Cohesion: 0.24
-Nodes (6): accuracy(), mda_including_hold(), Overall accuracy: fraction of correct predictions., MDA including Hold — exact match across all three classes., TestAccuracy, TestMdaIncludingHold
+Nodes (6): compute_all_classification_metrics(), Compute the full suite of classification metrics.      Optionally includes regre, When y_true_returns and y_proba are provided, regression aux is computed., When y_true_returns and y_pred_returns are provided., When no returns are provided, regression_auxiliary is absent., TestComputeAll
 
 ### Community 77 - "Community 77"
 Cohesion: 0.17
@@ -516,52 +516,52 @@ Cohesion: 0.24
 Nodes (7): Tests for walk-forward dispatcher — architecture routing., test_lgbm_architecture_routes_correctly(), test_stacking_architecture_routes_correctly(), TestDispatcher, Walk-forward training dispatcher — routes supported model architecture variants., Dispatch walk-forward training to the configured architecture.      Supported ru, train_walk_forward()
 
 ### Community 80 - "Community 80"
-Cohesion: 0.22
-Nodes (6): Integration tests for the extended _exec_verdict function., Verdict line must appear when both pred_stats and metrics exist., Verdict line shows model quality even without backtest metrics., Returns early with no output lines., Fallback message when only the demo ran., TestExecVerdict
-
-### Community 81 - "Community 81"
 Cohesion: 0.18
 Nodes (11): 3.4.1. Tổng quan, 3.4.2. Nhóm 1: Giá và biến động (Price & Volatility), 3.4.3. Nhóm 2: Xu hướng và chất lượng xu hướng (Trend & Trend Quality), 3.4.4. Nhóm 3: Dao động (Oscillators), 3.4.5. Nhóm 4: Chế độ thị trường (Market Regime), 3.4.6. Nhóm 5: OHLCV chuẩn hóa cho GRU, 3.4.7. Loại bỏ warm-up rows, 3.4.8. Lọc đặc trưng tương quan cao (+3 more)
 
-### Community 82 - "Community 82"
+### Community 81 - "Community 81"
 Cohesion: 0.24
 Nodes (6): TestAddPredictionDiagnostics, TestComputePerClassMetrics, _add_prediction_diagnostics(), _compute_per_class_metrics(), Compute per-class precision, recall, F1, and support from predictions., Attach prediction distribution, confidence, and per-class metrics to *diag*.
 
-### Community 83 - "Community 83"
+### Community 82 - "Community 82"
 Cohesion: 0.2
 Nodes (9): Leakage guard tests: verify no look-ahead data leaks into features or training., EXCLUDE_COLS must contain all raw OHLCV + label-derived columns., Feature code must not use shift(-n) (future-looking shift)., Feature code must not use center=True in rolling/ewm operations (uses future)., OOF walk-forward predictions must have unique timestamps (no duplicate leakage)., test_forbidden_cols_not_in_features(), test_no_center_true_in_rolling_features(), test_no_negative_shift_in_features_source() (+1 more)
 
-### Community 84 - "Community 84"
+### Community 83 - "Community 83"
 Cohesion: 0.27
 Nodes (9): _make_synthetic_data(), ML invariants: calibration and reliability tests for the backtest engine.  Tests, Perfect predictions on a strong uptrend with zero costs → Sharpe > 2.0.      Use, Random predictions on zero-drift random walk → Sharpe ≈ 0.      Uses daily bars, An always-LONG strategy on an uptrending market → positive return.      The stra, Create synthetic OHLCV data and predictions for invariant tests.      Args:, test_always_long_matches_market_return(), test_perfect_predictions_produce_positive_sharpe() (+1 more)
 
-### Community 85 - "Community 85"
+### Community 84 - "Community 84"
 Cohesion: 0.24
 Nodes (6): main(), Dashboard entry point — sidebar, navigation, and section dispatch., Render the Streamlit dashboard with session selection and navigation., Training section renderer., Render tabular training history and pipeline logs., render_training_section()
 
-### Community 86 - "Community 86"
+### Community 85 - "Community 85"
 Cohesion: 0.2
 Nodes (5): config, event, languages, languageSwitch, versionSwitch
 
-### Community 88 - "Community 88"
+### Community 87 - "Community 87"
 Cohesion: 0.22
 Nodes (10): 3.5.1. Kiểm tra ở mỗi giai đoạn, 3.5.2. Kiểm tra phân phối ATR, 3.5.3. Kiểm tra phân phối nhãn, 3.5.4. Kiểm tra tính khả thi kinh tế của nhãn (Label Profitability), 3.5. Kiểm tra chất lượng dữ liệu (Data Quality Validation), 3.7. Gán nhãn dữ liệu, code:toml ([labels]), code:text (Short: 43.6%) (+2 more)
 
-### Community 89 - "Community 89"
+### Community 88 - "Community 88"
 Cohesion: 0.25
 Nodes (7): create_synthetic_features(), create_synthetic_labeled_data(), _interval_to_minutes(), Shared test fixtures and synthetic data generators.  Provides parameterized help, Create synthetic features + triple-barrier label columns.      Combines ``create, Convert interval string like '1h', '4h', '15m', '1d' to minutes., Create a DataFrame with OHLCV + ATR and basic feature columns.      Lightweight
 
-### Community 90 - "Community 90"
+### Community 89 - "Community 89"
 Cohesion: 0.33
 Nodes (4): _derive_recommendation(), Produce a deployment recommendation from model quality + trading edge., Unit tests for _derive_recommendation., TestDeriveRecommendation
 
-### Community 91 - "Community 91"
+### Community 90 - "Community 90"
 Cohesion: 0.22
 Nodes (9): 3.12. Danh sách feature model-facing hiện tại, Candle/session và feature phụ trợ còn giữ, code:text (return_1h), code:text (atr_pct_close), code:text (price_position_20), code:text (candle_body_ratio), Momentum, Price position (+1 more)
 
-### Community 92 - "Community 92"
+### Community 91 - "Community 91"
 Cohesion: 0.25
 Nodes (7): Config contract tests., Signals and trades must use the same ATR barriers., A short TOML file should still produce a complete config., Typos in public config should not be ignored., test_label_backtest_barriers_match(), test_minimal_public_config_uses_hidden_defaults(), test_unknown_config_keys_fail_fast()
+
+### Community 92 - "Community 92"
+Cohesion: 0.32
+Nodes (5): TestCountsDict, _counts_dict(), Write compact diagnostics beside final_predictions.parquet., Return class/count dict with string keys for JSON., _write_prediction_manifest()
 
 ### Community 93 - "Community 93"
 Cohesion: 0.39
@@ -593,35 +593,35 @@ Nodes (6): Báo cáo luận văn, Checklist trước khi nộp, code:text (Logis
 
 ### Community 100 - "Community 100"
 Cohesion: 0.47
-Nodes (3): TestWindowDates, Return start/end timestamps for a window slice., _window_dates()
+Nodes (3): TestSelectStaticFeatureCols, Return static features for LightGBM, preferring the config whitelist., _select_static_feature_cols()
 
 ### Community 101 - "Community 101"
 Cohesion: 0.47
-Nodes (3): TestSelectStaticFeatureCols, Return static features for LightGBM, preferring the config whitelist., _select_static_feature_cols()
+Nodes (3): TestWindowDates, Return start/end timestamps for a window slice., _window_dates()
 
 ### Community 102 - "Community 102"
 Cohesion: 0.47
-Nodes (3): directional_accuracy(), Accuracy on bars where *both* true and predicted labels are non-zero.      Hold-, TestDirectionalAccuracy
+Nodes (3): mda_binary(), MDA for Long vs Short only.      Hold predictions on directional bars count as w, TestMdaBinary
 
 ### Community 103 - "Community 103"
 Cohesion: 0.47
-Nodes (3): majority_baseline_accuracy(), Accuracy if we always predict the most common class., TestMajorityBaseline
+Nodes (3): mda_no_hold(), MDA excluding Hold — only evaluate rows where true label is Short or Long., TestMdaNoHold
 
 ### Community 104 - "Community 104"
 Cohesion: 0.47
-Nodes (3): mda_no_hold(), MDA excluding Hold — only evaluate rows where true label is Short or Long., TestMdaNoHold
+Nodes (3): majority_baseline_accuracy(), Accuracy if we always predict the most common class., TestMajorityBaseline
 
 ### Community 105 - "Community 105"
 Cohesion: 0.47
-Nodes (3): mda_binary(), MDA for Long vs Short only.      Hold predictions on directional bars count as w, TestMdaBinary
+Nodes (3): balanced_accuracy(), Average recall across classes., TestBalancedAccuracy
 
 ### Community 106 - "Community 106"
 Cohesion: 0.47
-Nodes (3): high_confidence_accuracy(), Accuracy when max predicted probability exceeds *threshold*., TestHighConfidenceAccuracy
+Nodes (3): directional_accuracy(), Accuracy on bars where *both* true and predicted labels are non-zero.      Hold-, TestDirectionalAccuracy
 
 ### Community 107 - "Community 107"
 Cohesion: 0.47
-Nodes (3): balanced_accuracy(), Average recall across classes., TestBalancedAccuracy
+Nodes (3): high_confidence_accuracy(), Accuracy when max predicted probability exceeds *threshold*., TestHighConfidenceAccuracy
 
 ### Community 108 - "Community 108"
 Cohesion: 0.33
@@ -645,11 +645,11 @@ Nodes (3): _patch_pandas_axis_positional(), Shared test fixtures., Allow positio
 
 ### Community 113 - "Community 113"
 Cohesion: 0.5
-Nodes (4): _create_synthetic_data_for_diagnostic(), Create synthetic data with a clear upward trend for diagnostic tests.      Retur, Zero-cost vs real-cost backtest to diagnose failure mode.      Runs the same str, test_zero_cost_backtest_isolates_model_edge()
+Nodes (4): _create_perfect_prediction_data(), Create synthetic OHLCV data with a strong deterministic uptrend.      Returns te, Feed perfect predictions into backtest to verify engine ceiling.      Creates sy, test_perfect_prediction_backtest_sanity()
 
 ### Community 114 - "Community 114"
 Cohesion: 0.5
-Nodes (4): _create_perfect_prediction_data(), Create synthetic OHLCV data with a strong deterministic uptrend.      Returns te, Feed perfect predictions into backtest to verify engine ceiling.      Creates sy, test_perfect_prediction_backtest_sanity()
+Nodes (4): _create_synthetic_data_for_diagnostic(), Create synthetic data with a clear upward trend for diagnostic tests.      Retur, Zero-cost vs real-cost backtest to diagnose failure mode.      Runs the same str, test_zero_cost_backtest_isolates_model_edge()
 
 ### Community 116 - "Community 116"
 Cohesion: 0.67
@@ -667,11 +667,11 @@ Nodes (3): 3.1.1. Mô tả dữ liệu gốc, 3.1.2. Lý do chọn khung thời 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Config` connect `Community 45` to `LGBM Training Pipeline`, `Feature Engineering`, `Model Evaluation Metrics`, `Walk-Forward Validation`, `Pipeline Orchestration`, `Feature Registry`, `Dashboard UI`, `LGBM Init`, `Charts Init`, `Shared Init`, `Schemas Rationale 2`, `Schemas Rationale 3`, `Community 44`, `Community 46`, `Community 47`, `Community 50`, `Community 59`, `Community 61`, `Community 64`, `Community 65`, `Community 69`, `Community 70`, `Community 79`, `Community 80`, `Community 82`, `Community 90`, `Community 96`, `Community 100`, `Community 101`?**
+- **Why does `Config` connect `Community 71` to `LGBM Training Pipeline`, `Feature Engineering`, `Data Processing & Quality`, `Walk-Forward Validation`, `Feature Registry`, `Trading Strategy`, `Dashboard UI`, `Metric Cards`, `LGBM Init`, `Charts Init`, `UI Rationale`, `Schemas Rationale 3`, `Community 44`, `Community 45`, `Community 46`, `Community 47`, `Community 49`, `Community 58`, `Community 60`, `Community 62`, `Community 63`, `Community 66`, `Community 72`, `Community 79`, `Community 81`, `Community 89`, `Community 92`, `Community 96`, `Community 100`, `Community 101`?**
   _High betweenness centrality (0.287) - this node is a cross-community bridge._
-- **Why does `create_synthetic_ohlcv()` connect `Model Evaluation Metrics` to `Charts Shared`, `Backtest Engine`, `Community 44`, `Session Management`, `Community 49`, `Zone-Based Metrics`, `Community 89`?**
+- **Why does `create_synthetic_ohlcv()` connect `Feature Engineering` to `Community 67`, `Backtest Engine`, `Dashboard Init`, `Label Generation`, `Community 45`, `Zone-Based Metrics`, `Community 88`?**
   _High betweenness centrality (0.086) - this node is a cross-community bridge._
-- **Why does `TestRegressionTailCensoring` connect `LGBM Training Pipeline` to `Model Visualization`, `Community 45`?**
+- **Why does `TestRegressionTailCensoring` connect `LGBM Training Pipeline` to `Model Visualization`, `Community 71`?**
   _High betweenness centrality (0.060) - this node is a cross-community bridge._
 - **Are the 60 inferred relationships involving `create_synthetic_ohlcv()` (e.g. with `.test_valid_data_consistent()` and `.test_violation_detected()`) actually correct?**
   _`create_synthetic_ohlcv()` has 60 INFERRED edges - model-reasoned connections that need verification._
