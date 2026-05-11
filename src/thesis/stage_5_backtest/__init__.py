@@ -5,10 +5,10 @@ from .simulation import (
     run_backtest_from_data,
     run_backtest_manual,
 )
-from .strategy import HybridGRUStrategy
+from .strategy import MLSignalStrategy
 
 __all__ = [
-    "HybridGRUStrategy",
+    "MLSignalStrategy",
     "run_backtest",
     "run_backtest_from_data",
     "run_backtest_manual",

@@ -21,7 +21,6 @@ from thesis.shared.config import Config
 from thesis.shared.constants import timeframe_to_ms as _timeframe_to_ms
 from thesis.shared.feature_registry import (
     build_feature_output_cols,
-    get_gru_feature_cols,
     get_static_feature_cols,
 )
 from thesis.shared.schemas import FeaturesSchema, OhlcvSchema
@@ -75,16 +74,14 @@ def generate_features(config: Config) -> None:
     df = _add_volume_zscore(df, config)
     df = _add_ohlcv_norm(df)
 
-    # GRU pipeline may reference `log_returns` as a legacy column name.
+    # Keep `log_returns` as a diagnostic/helper alias.
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
 
     desired_cols = build_feature_output_cols(config)
     existing_cols = [c for c in desired_cols if c in df.columns]
     df = df.select(existing_cols)
-    keep_features = sorted(
-        set(get_static_feature_cols(config)) | set(get_gru_feature_cols(config))
-    )
+    keep_features = sorted(set(get_static_feature_cols(config)))
     df = _drop_warmup_rows(df, keep_features)
     _validate_feature_quality(df, config)
 
@@ -93,9 +90,7 @@ def generate_features(config: Config) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
 
-    all_model_cols = set(get_static_feature_cols(config)) | set(
-        get_gru_feature_cols(config)
-    )
+    all_model_cols = set(get_static_feature_cols(config))
     feature_cols = sorted(c for c in df.columns if c in all_model_cols)
     _save_feature_list(out_path, feature_cols)
 

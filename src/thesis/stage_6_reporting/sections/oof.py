@@ -121,17 +121,28 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                         "Predictions parquet missing true_label/pred_label columns"
                     )
                 else:
-                    ts_col = df["timestamp"]
-                    if ts_col.dtype != pl.Datetime:
+                    timestamp_dtype = df.schema.get("timestamp")
+                    timestamp_expr = pl.col("timestamp")
+                    if timestamp_dtype != pl.Datetime:
                         try:
-                            ts_col = ts_col.str.strptime(pl.Datetime)
+                            timestamp_expr = timestamp_expr.str.strptime(pl.Datetime)
+                            timestamp_dtype = df.select(
+                                timestamp_expr.alias("timestamp")
+                            ).schema["timestamp"]
                         except (pl.ComputeError, ValueError):
-                            ts_col = ts_col.cast(pl.Datetime)
+                            timestamp_expr = timestamp_expr.cast(pl.Datetime)
+                            timestamp_dtype = df.select(
+                                timestamp_expr.alias("timestamp")
+                            ).schema["timestamp"]
+                    if getattr(timestamp_dtype, "time_zone", None):
+                        timestamp_expr = timestamp_expr.dt.replace_time_zone(None)
                     start_dt = _parse_date(oos_start)
                     end_dt = _parse_date(oos_end)
                     if start_dt is not None and end_dt is not None:
                         end_dt = end_dt.replace(hour=23, minute=59, second=59)
-                        oos_df = df.filter((ts_col >= start_dt) & (ts_col <= end_dt))
+                        oos_df = df.filter(
+                            (timestamp_expr >= start_dt) & (timestamp_expr <= end_dt)
+                        )
                         if len(oos_df) > 0:
                             true = oos_df["true_label"].to_numpy()
                             pred = oos_df["pred_label"].to_numpy()

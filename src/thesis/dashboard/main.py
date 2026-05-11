@@ -73,7 +73,7 @@ def main() -> None:
 
     # ── Sidebar Header ──
     st.sidebar.markdown("### 📈 Thesis Dashboard")
-    st.sidebar.caption("Hybrid GRU + LightGBM — XAU/USD")
+    st.sidebar.caption("Hybrid Stacking — XAU/USD")
 
     # ── Session Selector ──
     with st.sidebar.expander("📁 Session", expanded=True):

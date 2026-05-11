@@ -33,20 +33,15 @@ class TestModelLabel:
         config.model.architecture = "lgbm"
         assert _model_label(config) == "LightGBM"
 
-    def test_hybrid(self) -> None:
+    def test_stacking(self) -> None:
         config = Config()
-        config.model.architecture = "hybrid"
-        assert _model_label(config) == "Hybrid GRU + LightGBM"
-
-    def test_gru_only(self) -> None:
-        config = Config()
-        config.model.architecture = "gru"
-        assert _model_label(config) == "GRU-only"
+        config.model.architecture = "stacking"
+        assert _model_label(config) == "Hybrid Stacking"
 
     def test_unknown(self) -> None:
         config = Config()
-        config.model.architecture = "gru_only"
-        assert _model_label(config) == "Gru_Only Model"
+        config.model.architecture = "custom_arch"
+        assert _model_label(config) == "Custom_Arch Model"
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +150,34 @@ class TestLoadClosePricesForBenchmark:
         )
         assert result is not None
         assert len(result) == 3
+
+    def test_walkforward_filters_timezone_aware_ohlcv_with_naive_backtest_bounds(
+        self, tmp_path
+    ) -> None:
+        config = Config()
+        config.validation.method = "sliding"
+        config.paths.ohlcv = str(tmp_path / "ohlcv.parquet")
+
+        ts = pl.Series(
+            "timestamp",
+            [
+                "2023-01-01T00:00:00+00:00",
+                "2023-01-02T00:00:00+00:00",
+                "2023-01-03T00:00:00+00:00",
+            ],
+        ).str.to_datetime()
+        pl.DataFrame({"timestamp": ts, "close": [100.0, 101.0, 102.0]}).write_parquet(
+            config.paths.ohlcv
+        )
+
+        result = _load_close_prices_for_benchmark(
+            tmp_path / "nonexistent.parquet",
+            {"start": "2023-01-02 00:00:00", "end": "2023-01-03 00:00:00"},
+            config,
+        )
+
+        assert result is not None
+        assert result.tolist() == [101.0, 102.0]
 
     def test_no_data_returns_none(self, tmp_path) -> None:
         config = Config()

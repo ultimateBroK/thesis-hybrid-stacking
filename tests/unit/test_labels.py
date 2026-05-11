@@ -24,8 +24,8 @@ from thesis.stage_3_labels.labeling import (
     _merge_label_columns,
     generate_labels,
 )
-from thesis.stage_4_training.walk_forward.hybrid import _compute_regression_target
-from thesis.shared.config import Config, GRUConfig, LGBMConfig, LabelsConfig
+from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
+from thesis.shared.config import Config, LGBMConfig, LabelsConfig
 from thesis.shared.constants import CENSORED_LABEL
 
 
@@ -684,13 +684,12 @@ class TestRegressionTailCensoring:
         )
 
     def test_non_regression_objective_noop(self) -> None:
-        """When BOTH objectives are NOT regression, _compute_regression_target is a no-op."""
+        """When the model objective is NOT regression, _compute_regression_target is a no-op."""
         n = 30
         df_in = _make_labeled_df(n=n)
         cfg = Config()
         cfg.labels = LabelsConfig(horizon_bars=5)
         cfg.model = LGBMConfig(objective="multiclass")  # LGBM not regression
-        cfg.gru = GRUConfig(objective="multiclass")  # GRU not regression
 
         result_df, is_regression = _compute_regression_target(df_in, cfg)
 

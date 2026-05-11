@@ -22,7 +22,6 @@ from polars.exceptions import ColumnNotFoundError
 from thesis.shared.config import Config
 from thesis.stage_4_training import baselines as baselines_mod
 from thesis.stage_6_reporting.benchmarks import _model_label
-from thesis.stage_6_reporting.md_format import _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
@@ -184,282 +183,6 @@ def _find_architecture_session(
     return candidates[0][1]
 
 
-# ---------------------------------------------------------------------------
-# Public comparison renderer
-# ---------------------------------------------------------------------------
-
-
-def _static_vs_hybrid_comparison(L: list[str], config: Config) -> None:
-    """Render hybrid-vs-static statistical comparison section.
-
-    Loads walk-forward history from the current session and a sibling session
-    of the opposite architecture, performs a paired t-test on per-window
-    accuracy, and appends markdown lines to ``L``.
-
-    Args:
-        L: Output markdown lines.
-        config: Loaded runtime configuration.
-    """
-    current_arch = config.model.architecture
-    # Only meaningful for hybrid vs lgbm (or "all" which ends with hybrid)
-    if current_arch not in ("hybrid", "static", "lgbm"):
-        return
-
-    target_arch = "lgbm" if current_arch == "hybrid" else "hybrid"
-    current_session = config.paths.session_dir
-
-    if not current_session:
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append("*Comparison unavailable — no session directory configured.*")
-        L.append("")
-        return
-
-    current_wf_path = Path(current_session) / "reports" / "walk_forward_history.json"
-    if not current_wf_path.exists():
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append(
-            "*Comparison unavailable — walk-forward history not found for "
-            f"current {current_arch} session.*"
-        )
-        L.append("")
-        return
-
-    # Find sibling session with opposite architecture
-    results_dir = Path(current_session).parent
-    sibling_session = _find_architecture_session(
-        results_dir, target_arch, current_session
-    )
-
-    if sibling_session is None:
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append("*Comparison unavailable — run both static and hybrid first.*")
-        L.append(f"*No `{target_arch}` session found under `{results_dir}`.*")
-        L.append("")
-        return
-
-    sibling_wf_path = sibling_session / "reports" / "walk_forward_history.json"
-    if not sibling_wf_path.exists():
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append(
-            f"*Comparison unavailable — walk-forward history not found "
-            f"for {target_arch} session `{sibling_session.name}`.*"
-        )
-        L.append("")
-        return
-
-    # Load both histories
-    try:
-        current_history = json.loads(current_wf_path.read_text())
-        sibling_history = json.loads(sibling_wf_path.read_text())
-    except (OSError, json.JSONDecodeError):
-        logger.warning(
-            "Failed to load walk-forward history for hybrid-vs-static comparison",
-            exc_info=True,
-        )
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append("*Comparison unavailable — failed to load walk-forward history.*")
-        L.append("")
-        return
-
-    current_windows = current_history.get("window_details", [])
-    sibling_windows = sibling_history.get("window_details", [])
-
-    if (
-        len(current_windows) < _MIN_WINDOWS_COMPARISON
-        or len(sibling_windows) < _MIN_WINDOWS_COMPARISON
-    ):
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append(
-            "*Comparison unavailable — need at least "
-            f"{_MIN_WINDOWS_COMPARISON} windows in each "
-            f"session (have {len(current_windows)}/{len(sibling_windows)}).*"
-        )
-        L.append("")
-        return
-
-    # Pair windows by matching test date ranges
-    paired = _pair_windows_by_date(current_windows, sibling_windows)
-
-    if len(paired) < _MIN_WINDOWS_COMPARISON:
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append(
-            f"*Comparison unavailable — only {len(paired)} overlapping "
-            f"test windows found (need ≥{_MIN_WINDOWS_COMPARISON}).*"
-        )
-        L.append("")
-        return
-
-    current_accs = [p[0] for p in paired]
-    sibling_accs = [p[1] for p in paired]
-
-    # Paired t-test
-    try:
-        from scipy.stats import ttest_rel
-
-        t_stat, p_value = ttest_rel(current_accs, sibling_accs)
-    except (ValueError, TypeError):
-        logger.warning("ttest_rel failed", exc_info=True)
-        L.append("#### Hybrid vs Static Comparison")
-        L.append("")
-        L.append("*Comparison unavailable — statistical test failed.*")
-        L.append("")
-        return
-
-    current_mean = np.mean(current_accs)
-    sibling_mean = np.mean(sibling_accs)
-    delta_mean = current_mean - sibling_mean
-
-    # Determine significance
-    alpha = _SIGNIFICANCE_ALPHA
-    if p_value < alpha:
-        if delta_mean > 0:
-            result_line = (
-                f"{_model_label(config)} **significantly outperforms** "
-                f"{target_arch.title()} (p={p_value:.4f})"
-            )
-        else:
-            result_line = (
-                f"{target_arch.title()} **significantly outperforms** "
-                f"{_model_label(config)} (p={p_value:.4f})"
-            )
-    else:
-        result_line = (
-            f"{_model_label(config)} is **not significantly different** from "
-            f"{target_arch.title()} (p={p_value:.4f})"
-        )
-
-    L.append("#### Hybrid vs Static Comparison")
-    L.append("")
-    L.append(result_line)
-    L.append("")
-    L.append(_tbl_row("Metric", _model_label(config), target_arch.title(), "Delta"))
-    L.append(_tbl_row("------", "------", "------", "------"))
-    L.append(
-        _tbl_row(
-            "Mean Accuracy",
-            f"{current_mean * 100:.1f}%",
-            f"{sibling_mean * 100:.1f}%",
-            f"{delta_mean * 100:+.1f}pp",
-        )
-    )
-    L.append(
-        _tbl_row(
-            "Paired Windows",
-            str(len(paired)),
-            str(len(paired)),
-            "",
-        )
-    )
-    L.append(
-        _tbl_row(
-            "t-statistic",
-            "",
-            "",
-            f"{t_stat:.4f}",
-        )
-    )
-    L.append(
-        _tbl_row(
-            "p-value",
-            "",
-            "",
-            f"{p_value:.4f}",
-        )
-    )
-    L.append("")
-
-    # Per-window delta table (first N windows)
-    L.append(
-        f"**Per-Window Accuracy Delta** (first {_MAX_PER_WINDOW_DISPLAY} windows):"
-    )
-    L.append("")
-    L.append(
-        _tbl_row(
-            "Window",
-            _model_label(config),
-            target_arch.title(),
-            "Delta",
-        )
-    )
-    L.append(_tbl_row("------", "------", "------", "------"))
-    for i, (c_acc, s_acc) in enumerate(paired[:_MAX_PER_WINDOW_DISPLAY], 1):
-        delta = c_acc - s_acc
-        L.append(
-            _tbl_row(
-                str(i),
-                f"{c_acc * 100:.1f}%",
-                f"{s_acc * 100:.1f}%",
-                f"{delta * 100:+.1f}pp",
-            )
-        )
-    if len(paired) > _MAX_PER_WINDOW_DISPLAY:
-        L.append(f"*... and {len(paired) - _MAX_PER_WINDOW_DISPLAY} more windows.*")
-    L.append("")
-
-    logger.info(
-        "Hybrid vs Static comparison: %d paired windows, t=%.4f, p=%.4f, delta=%.4f",
-        len(paired),
-        t_stat,
-        p_value,
-        delta_mean,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Thesis-level model comparison rows & artifacts
-# ---------------------------------------------------------------------------
-
-
-def _compute_pred_metrics(preds_path: Path) -> dict[str, Any] | None:
-    """Compute classification metrics from a predictions parquet file."""
-    if not preds_path.exists():
-        return None
-    try:
-        df = pl.read_parquet(preds_path)
-        if "true_label" not in df.columns or "pred_label" not in df.columns:
-            return None
-        y_true = df["true_label"].to_numpy()
-        y_pred = df["pred_label"].to_numpy()
-        accuracy = float((y_true == y_pred).mean())
-
-        # Directional accuracy (exclude hold/0 class)
-        mask = y_true != 0
-        if mask.sum() > 0:
-            dir_acc = float((y_true[mask] == y_pred[mask]).mean())
-        else:
-            dir_acc = accuracy
-
-        # Per-class F1
-        from sklearn.metrics import f1_score
-
-        labels = sorted(set(y_true) | set(y_pred))
-        f1_scores = f1_score(
-            y_true, y_pred, labels=labels, average=None, zero_division=0
-        )
-        per_class: dict[str, dict[str, float]] = {}
-        for label, f1 in zip(labels, f1_scores):
-            name = {-1: "Short", 0: "Hold", 1: "Long"}.get(label, str(label))
-            per_class[name] = {"f1": float(f1)}
-        macro_f1 = float(f1_score(y_true, y_pred, average="macro", zero_division=0))
-
-        return {
-            "accuracy": accuracy,
-            "directional_accuracy": dir_acc,
-            "macro_f1": macro_f1,
-            "per_class": per_class,
-        }
-    except Exception:
-        logger.warning("Failed to compute metrics from %s", preds_path, exc_info=True)
-        return None
-
-
 def _build_model_comparison_rows(
     config: Config, pred_stats: dict | None
 ) -> list[dict[str, Any]]:
@@ -533,55 +256,67 @@ def _build_model_comparison_rows(
                 "Failed to build baseline rows for model comparison", exc_info=True
             )
 
-    # Per-architecture comparison from saved prediction files
+    # Per-model comparison emitted by stacking walk-forward.
     session_dir = config.paths.session_dir
     existing = {str(r["model"]).lower() for r in rows}
-    arch_specs = [
-        ("LightGBM", "preds_lgbm.parquet"),
-        ("GRU-only", "preds_gru.parquet"),
-        ("Hybrid GRU + LightGBM", "preds_hybrid.parquet"),
-    ]
-    for model_name, preds_file in arch_specs:
+    name_map = {
+        "logreg": "Logistic Regression",
+        "rf": "Random Forest",
+        "lgbm": "LightGBM",
+        "hybrid_stacking": "Hybrid Stacking",
+    }
+    comparison_json = (
+        Path(session_dir) / "reports" / "model_comparison.json" if session_dir else None
+    )
+    if comparison_json and comparison_json.exists():
+        try:
+            model_comparison = json.loads(comparison_json.read_text())
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Failed to read model comparison JSON", exc_info=True)
+            model_comparison = {}
+        for key, metrics in model_comparison.items():
+            model_name = name_map.get(key, str(key).replace("_", " ").title())
+            if model_name.lower() in existing:
+                continue
+            per_class = metrics.get("per_class", {})
+            rows.append(
+                {
+                    "model": model_name,
+                    "directional_accuracy": metrics.get("directional_accuracy"),
+                    "accuracy": metrics.get("accuracy"),
+                    "macro_f1": metrics.get("macro_f1"),
+                    "long_f1": per_class.get("1", {}).get("f1"),
+                    "short_f1": per_class.get("-1", {}).get("f1"),
+                    "mae_return": None,
+                    "rmse_return": None,
+                    "r2_return": None,
+                    "source": "walk_forward_model_comparison",
+                }
+            )
+            existing.add(model_name.lower())
+
+    for model_name in (
+        "Logistic Regression",
+        "Random Forest",
+        "LightGBM",
+        "Hybrid Stacking",
+    ):
         if model_name.lower() in existing:
             continue
-        arch_metrics = None
-        if session_dir:
-            arch_path = Path(session_dir) / "predictions" / preds_file
-            arch_metrics = _compute_pred_metrics(arch_path)
-        if arch_metrics:
-            rows.append(
-                {
-                    "model": model_name,
-                    "directional_accuracy": arch_metrics.get("directional_accuracy"),
-                    "accuracy": arch_metrics.get("accuracy"),
-                    "macro_f1": arch_metrics.get("macro_f1"),
-                    "long_f1": arch_metrics.get("per_class", {})
-                    .get("Long", {})
-                    .get("f1"),
-                    "short_f1": arch_metrics.get("per_class", {})
-                    .get("Short", {})
-                    .get("f1"),
-                    "mae_return": None,
-                    "rmse_return": None,
-                    "r2_return": None,
-                    "source": "multi_arch_comparison",
-                }
-            )
-        else:
-            rows.append(
-                {
-                    "model": model_name,
-                    "directional_accuracy": None,
-                    "accuracy": None,
-                    "macro_f1": None,
-                    "long_f1": None,
-                    "short_f1": None,
-                    "mae_return": None,
-                    "rmse_return": None,
-                    "r2_return": None,
-                    "source": "pending_experiment",
-                }
-            )
+        rows.append(
+            {
+                "model": model_name,
+                "directional_accuracy": None,
+                "accuracy": None,
+                "macro_f1": None,
+                "long_f1": None,
+                "short_f1": None,
+                "mae_return": None,
+                "rmse_return": None,
+                "r2_return": None,
+                "source": "pending_experiment",
+            }
+        )
     return rows
 
 

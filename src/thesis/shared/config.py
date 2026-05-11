@@ -97,8 +97,8 @@ class FeaturesConfig:
 class LabelsConfig:
     """Triple-barrier label settings."""
 
-    atr_tp_multiplier: float = 3.0
-    atr_sl_multiplier: float = 1.5
+    atr_tp_multiplier: float = 2.0
+    atr_sl_multiplier: float = 2.0
     horizon_bars: int = 24
     num_classes: int = 3
     min_atr: float = 0.5
@@ -106,70 +106,32 @@ class LabelsConfig:
 
 @dataclass
 class LGBMConfig:
-    """LightGBM model settings."""
+    """Tabular model and stacking settings."""
 
-    architecture: str = "hybrid"
+    architecture: str = "stacking"
     objective: str = "multiclass"
     lgbm_expanded_features: bool = False
-    num_leaves: int = 31
-    max_depth: int = 6
-    learning_rate: float = 0.02
+    num_leaves: int = 15
+    max_depth: int = 4
+    learning_rate: float = 0.03
     n_estimators: int = 300
-    min_child_samples: int = 50
+    min_child_samples: int = 80
     subsample: float = 0.80
     subsample_freq: int = 5
     feature_fraction: float = 0.70
     reg_alpha: float = 0.05
-    reg_lambda: float = 5.0
-    early_stopping_rounds: int = 25
-
-
-@dataclass
-class GRUConfig:
-    """GRU sequence encoder settings."""
-
-    objective: str = "multiclass"
-    input_size: int = 20
-    feature_cols: list[str] = field(
-        default_factory=lambda: [
-            "log_returns",
-            "return_1h",
-            "return_4h",
-            "atr_pct_close",
-            "atr_ratio",
-            "close_vs_ema_34",
-            "ema34_vs_ema89",
-            "price_position_20",
-            "candle_body_ratio",
-            "macd_hist_atr",
-            "rsi_14",
-            "atr_percentile",
-            "adx_14",
-            "ema_slope_20",
-            "regime_strength",
-            "volume_zscore_20",
-            "open_norm",
-            "high_norm",
-            "low_norm",
-            "close_norm",
-        ]
+    reg_lambda: float = 10.0
+    early_stopping_rounds: int = 30
+    stacking_base_models: list[str] = field(
+        default_factory=lambda: ["logistic_regression", "random_forest", "lightgbm"]
     )
-    hidden_size: int = 32
-    num_layers: int = 1
-    sequence_length: int = 24
-    dropout: float = 0.5
-    learning_rate: float = 0.0005
-    batch_size: int = 512
-    epochs: int = 30
-    patience: int = 7
-    min_epochs: int = 5
-    bidirectional: bool = False
-    gradient_accumulation_steps: int = 1
-    focal_loss_gamma: float = 2.0
-    warmup_epochs: int = 2
-    contrastive_pretrain_epochs: int = 5
-    temperature_scaling: bool = False
-    pca_components: int = 8
+    stacking_meta_model: str = "logistic_regression"
+    stacking_meta_fraction: float = 0.20
+    stacking_passthrough: bool = False
+    random_forest_n_estimators: int = 300
+    random_forest_max_depth: int = 6
+    random_forest_min_samples_leaf: int = 80
+
 
 
 @dataclass
@@ -181,8 +143,8 @@ class BacktestConfig:
     spread_ticks: float = 35.0
     slippage_ticks: float = 5.0
     commission_per_lot: float = 10.0
-    atr_stop_multiplier: float = 1.5
-    atr_tp_multiplier: float = 3.0
+    atr_stop_multiplier: float = 2.0
+    atr_tp_multiplier: float = 2.0
     lots_per_trade: float = 0.02
     min_lots: float = 0.01
     max_lots: float = 0.5
@@ -226,7 +188,6 @@ class PathsConfig:
     val_data: str = "data/processed/val.parquet"
     test_data: str = "data/processed/test.parquet"
     model: str = "models/lightgbm_model.pkl"
-    gru_model: str = "models/gru_model.pt"
     predictions: str = "data/predictions/final_predictions.parquet"
     backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
@@ -245,7 +206,6 @@ class Config:
     labels: LabelsConfig = field(default_factory=LabelsConfig)
     model: LGBMConfig = field(default_factory=LGBMConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
-    gru: GRUConfig = field(default_factory=GRUConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
@@ -258,7 +218,6 @@ _SECTION_MAP: dict[str, type] = {
     "labels": LabelsConfig,
     "model": LGBMConfig,
     "backtest": BacktestConfig,
-    "gru": GRUConfig,
     "workflow": WorkflowConfig,
     "paths": PathsConfig,
 }

@@ -226,7 +226,12 @@ def _load_inputs(config: Config) -> tuple[pl.DataFrame, str]:
     ohlc_required = {"open", "high", "low", "close"}
     if ohlc_required.issubset(set(df_features.columns)):
         logger.info("Features already contain OHLC columns — skipping OHLCV join")
-        return df_features, f"atr_{config.features.atr_period}"
+        atr_col = f"atr_{config.features.atr_period}"
+        if atr_col not in df_features.columns:
+            raise ValueError(
+                f"{atr_col} not in features. Run feature engineering first."
+            )
+        return df_features, atr_col
 
     logger.info("Loading OHLCV for missing OHLC columns: %s", ohlcv_path)
     with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):

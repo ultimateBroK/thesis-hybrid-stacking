@@ -10,7 +10,7 @@ import pandas as pd
 import polars as pl
 
 from thesis.shared.config import Config
-from thesis.stage_5_backtest.strategy import HybridGRUStrategy
+from thesis.stage_5_backtest.strategy import MLSignalStrategy
 
 logger = logging.getLogger("thesis.backtest")
 
@@ -139,7 +139,7 @@ def _create_fractional_backtest(
     """Configure ``FractionalBacktest`` without running it."""
     return FractionalBacktest(
         pdf,
-        HybridGRUStrategy,
+        MLSignalStrategy,
         cash=cash,
         spread=spread,
         commission=commission_fn,

@@ -57,10 +57,7 @@ def render_config_summary(config: object) -> None:
         f"purge={config.validation.purge_bars} bars"
     )
     st.markdown(
-        f"**GRU**: multiclass, inputs={config.gru.input_size}, "
-        f"hidden={config.gru.hidden_size}, seq={config.gru.sequence_length}, "
-        f"epochs={config.gru.epochs}"
-    )
+)
     st.markdown(
         f"**LightGBM**: {config.model.architecture}, "
         f"objective={config.model.objective}, leaves={config.model.num_leaves}, "

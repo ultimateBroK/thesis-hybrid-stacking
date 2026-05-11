@@ -349,14 +349,15 @@ def _config_table(L: list[str], config: Config) -> None:
                 f" / {config.labels.horizon_bars}",
             ),
             (
-                "GRU",
-                "hidden/layers/seq",
-                f"{config.gru.hidden_size}/{config.gru.num_layers}/{config.gru.sequence_length}",
+                "Stacking",
+                "base/meta",
+                "LogReg + RF + LGBM / Logistic Regression",
             ),
             (
-                "GRU",
-                "lr/dropout/epochs",
-                f"{config.gru.learning_rate}/{config.gru.dropout}/{config.gru.epochs}",
+                "Stacking",
+                "base/meta split",
+                f"{int((1 - config.model.stacking_meta_fraction) * 100)}/"
+                f"{int(config.model.stacking_meta_fraction * 100)} chronological",
             ),
             (
                 "LGBM",
@@ -468,31 +469,20 @@ def _accuracy_table(
             L.append("")
 
 
-def _gru_summary(L: list[str], config: Config) -> None:
-    """GRU architecture summary line (hybrid only — caller guards architecture)."""
-    gru = config.gru
-    L.append(
-        f"GRU: input={gru.input_size}, hidden={gru.hidden_size}, "
-        f"layers={gru.num_layers}, seq={gru.sequence_length}, "
-        f"dropout={gru.dropout}, epochs≤{gru.epochs}, patience={gru.patience}"
-    )
-    L.append("")
-
-
 def _feature_importance_table(L: list[str], feature_importance: dict) -> None:
     """Top-10 feature importance."""
     if not feature_importance:
         return
     items = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
-    gru_count = sum(1 for n, _ in items if n.startswith("gru_"))
+    model_count = sum(1 for n, _ in items if n.startswith("model_"))
     L.append(_tbl_row("Rank", "Feature", "Source", "Score"))
     L.append(_tbl_row("----", "-------", "------", "-----"))
     for i, (name, imp) in enumerate(items, 1):
-        src = "GRU" if name.startswith("gru_") else "Technical"
+        src = "Model" if name.startswith("model_") else "Technical"
         L.append(_tbl_row(str(i), f"`{name}`", src, f"{imp:.0f}"))
     L.append(
-        f"Top-10: {gru_count}/{len(items)} GRU features"
-        f" ({gru_count / len(items) * 100:.0f}%)"
+        f"Top-10: {model_count}/{len(items)} model-derived features"
+        f" ({model_count / len(items) * 100:.0f}%)"
     )
     L.append("")
 

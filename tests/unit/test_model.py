@@ -2,7 +2,7 @@
 
 Tests LightGBM training helpers, class weight computation,
 and deployment model metadata.
-Meta-learner tests removed — pipeline now uses GRU + LightGBM directly.
+Legacy meta-learner tests removed — pipeline now uses tabular walk-forward models.
 """
 
 import sys
@@ -120,14 +120,11 @@ def test_class_weights_with_imbalanced_data() -> None:
 @pytest.mark.unit
 @pytest.mark.models
 def test_interaction_constraints_skip_empty_groups() -> None:
-    """Pure-static or pure-GRU inputs should not emit empty constraint groups."""
+    """Tabular inputs should not emit empty constraint groups."""
     static_only = _build_interaction_constraints(["rsi_14", "atr_14"])
-    gru_only = _build_interaction_constraints(["gru_h0", "gru_h1"])
-
     # Interaction constraints are currently disabled — returns empty list
     # to allow full cross-group interaction in LightGBM.
     assert static_only == []
-    assert gru_only == []
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -381,66 +378,7 @@ class TestDistributionShiftWeights:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# _lgbm: _normalize_label and _save_predictions
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-@pytest.mark.unit
-@pytest.mark.models
-class TestNormalizeLabel:
-    def test_positive(self) -> None:
-        from thesis.stage_4_training.lgbm.training import _normalize_label
-
-        assert _normalize_label(0) == "0"
-        assert _normalize_label(1) == "1"
-
-    def test_negative(self) -> None:
-        from thesis.stage_4_training.lgbm.training import _normalize_label
-
-        assert _normalize_label(-1) == "minus1"
-        assert _normalize_label(-2) == "minus2"
-
-
-@pytest.mark.unit
-@pytest.mark.models
-class TestSavePredictions:
-    def test_saves_parquet_and_csv(self, tmp_path) -> None:
-        from thesis.stage_4_training.lgbm.training import _save_predictions
-
-        n = 10
-        timestamps = pl.datetime_range(
-            start=pl.datetime(2024, 1, 1),
-            end=pl.datetime(2024, 1, 1) + pl.duration(hours=n - 1),
-            interval="1h",
-            eager=True,
-        )
-        test_aligned = pl.DataFrame({"timestamp": timestamps})
-        y_test = np.array([1, -1, 0, 1, -1, 0, 1, -1, 0, 1])
-        preds = np.array([1, -1, 0, 0, -1, 0, 1, 0, 0, 1])
-        proba = np.random.RandomState(42).rand(n, 3)
-        proba = proba / proba.sum(axis=1, keepdims=True)
-        class_order = [-1, 0, 1]
-
-        preds_path = tmp_path / "predictions.parquet"
-        _save_predictions(test_aligned, y_test, preds, proba, class_order, preds_path)
-
-        assert preds_path.exists()
-        csv_path = preds_path.with_suffix(".csv")
-        assert csv_path.exists()
-
-        df = pl.read_parquet(preds_path)
-        assert "timestamp" in df.columns
-        assert "true_label" in df.columns
-        assert "pred_label" in df.columns
-        assert "pred_proba_class_minus1" in df.columns
-        assert "pred_proba_class_0" in df.columns
-        assert "pred_proba_class_1" in df.columns
-        assert len(df) == n
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# _lgbm_utils: _wrap_np, _align_splits_with_sequences, _build_hybrid_matrix,
-#              _filter_validation_to_seen_classes, _save_feature_importance
+# _lgbm_utils: _wrap_np, _filter_validation_to_seen_classes, _save_feature_importance
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -457,64 +395,6 @@ class TestWrapNp:
         assert list(result.columns) == ["a", "b"]
         assert result.shape == (2, 2)
 
-
-@pytest.mark.unit
-@pytest.mark.models
-class TestAlignSplitsWithSequences:
-    def test_slices_correctly(self) -> None:
-        from thesis.stage_4_training.lgbm.utils import _align_splits_with_sequences
-
-        df = pl.DataFrame({"a": range(20), "b": range(20, 40)})
-        seq_len = 5
-        hidden = np.zeros((16, 3))  # 20 - seq_len + 1 = 16
-
-        train_a, val_a, test_a = _align_splits_with_sequences(
-            df, df, df, hidden, hidden, hidden, seq_len
-        )
-        assert len(train_a) == 16
-        assert len(val_a) == 16
-        assert len(test_a) == 16
-
-    def test_alignment_values(self) -> None:
-        from thesis.stage_4_training.lgbm.utils import _align_splits_with_sequences
-
-        df = pl.DataFrame({"val": np.arange(10.0)})
-        seq_len = 3
-        hidden = np.zeros((8, 2))
-
-        aligned, _, _ = _align_splits_with_sequences(
-            df, df, df, hidden, hidden, hidden, seq_len
-        )
-        # Should start from index seq_len-1 = 2
-        assert aligned["val"][0] == 2.0
-        assert len(aligned) == 8
-
-
-@pytest.mark.unit
-@pytest.mark.models
-class TestBuildHybridMatrix:
-    def test_concatenates_hidden_and_static(self) -> None:
-        from thesis.stage_4_training.lgbm.utils import _build_hybrid_matrix
-
-        n = 10
-        hidden_size = 4
-        hidden = np.ones((n, hidden_size))
-        static_cols = ["s1", "s2"]
-
-        df = pl.DataFrame(
-            {"s1": np.arange(n, dtype=float), "s2": np.arange(n, 10 + n, dtype=float)}
-        )
-
-        X_train, X_val, X_test, feat_cols = _build_hybrid_matrix(
-            hidden, hidden, hidden, df, df, df, static_cols, hidden_size
-        )
-
-        assert X_train.shape == (n, hidden_size + len(static_cols))
-        assert len(feat_cols) == hidden_size + len(static_cols)
-        assert feat_cols[0] == "gru_h0"
-        assert feat_cols[-1] == "s2"
-        # First 4 cols are ones (hidden), next 2 are arange
-        np.testing.assert_array_equal(X_train[:, 0], np.ones(n))
 
 
 @pytest.mark.unit

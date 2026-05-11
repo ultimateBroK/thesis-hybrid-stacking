@@ -66,8 +66,8 @@ def test_model_label_matches_architecture() -> None:
     cfg.model.architecture = "lgbm"
     assert _model_label(cfg) == "LightGBM"
 
-    cfg.model.architecture = "hybrid"
-    assert _model_label(cfg) == "Hybrid GRU + LightGBM"
+    cfg.model.architecture = "stacking"
+    assert _model_label(cfg) == "Hybrid Stacking"
 
 
 @pytest.mark.unit
@@ -76,13 +76,13 @@ def test_benchmark_table_discloses_not_cost_equivalent(
 ) -> None:
     """Benchmark section should state benchmark cost assumptions explicitly."""
     cfg = Config()
-    cfg.model.architecture = "hybrid"
+    cfg.model.architecture = "stacking"
     metrics = {"return_pct": 1.0, "sharpe_ratio": 0.5, "max_drawdown_pct": -1.0}
 
     def fake_benchmarks(_test_path, _metrics, _config):
         return [
             {
-                "strategy": "Hybrid GRU+LGBM",
+                "strategy": "Hybrid Stacking",
                 "return_pct": 1.0,
                 "sharpe": 0.5,
                 "max_dd_pct": 1.0,
@@ -100,7 +100,7 @@ def test_benchmark_table_discloses_not_cost_equivalent(
     rendered = "\n".join(lines)
 
     assert "not trading-cost-equivalent" in rendered
-    assert "Hybrid GRU + LightGBM model" in rendered
+    assert "Hybrid Stacking model" in rendered
 
 
 # ---------------------------------------------------------------------------

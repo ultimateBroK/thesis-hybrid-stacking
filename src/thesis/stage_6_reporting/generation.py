@@ -23,7 +23,6 @@ from thesis.stage_6_reporting.charts import (
 )
 from thesis.stage_6_reporting.comparison import (
     _build_model_comparison_rows,
-    _static_vs_hybrid_comparison,
     _write_model_comparison_artifacts,
 )
 from thesis.stage_6_reporting.sections import (
@@ -44,7 +43,6 @@ from thesis.stage_6_reporting.tables import (
     _exec_table,
     _exec_verdict,
     _feature_importance_table,
-    _gru_summary,
     _issues_list,
 )
 
@@ -196,12 +194,9 @@ def _build_markdown(
 
     L.append("## Model Architecture & Features")
     L.append("")
-    if config.model.architecture == "hybrid":
-        _gru_summary(L, config)
     _feature_importance_table(L, feature_importance)
     L.append("")
 
-    _static_vs_hybrid_comparison(L, config)
     _render_baseline_comparison_section(L, config)
     _render_auxiliary_regression_section(L, pred_stats)
 

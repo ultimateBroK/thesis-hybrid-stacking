@@ -7,6 +7,7 @@ entry point used by the report builder.
 
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 from pathlib import Path
 
@@ -36,10 +37,8 @@ def _model_label(config: Config) -> str:
     architecture = config.model.architecture
     if architecture in ("static", "lgbm"):
         return "LightGBM"
-    if architecture == "gru":
-        return "GRU-only"
-    if architecture == "hybrid":
-        return "Hybrid GRU + LightGBM"
+    if architecture == "stacking":
+        return "Hybrid Stacking"
     return f"{architecture.title()} Model"
 
 
@@ -189,17 +188,23 @@ def _load_close_prices_for_benchmark(
         )
         return None
 
-    ts_col = df["timestamp"]
-    if ts_col.dtype == pl.Utf8:
-        ts_col = ts_col.str.to_datetime()
+    timestamp_dtype = df.schema.get("timestamp")
+    timestamp_expr = pl.col("timestamp")
+    if timestamp_dtype == pl.Utf8:
+        timestamp_expr = timestamp_expr.str.to_datetime()
+        timestamp_dtype = df.select(timestamp_expr.alias("timestamp")).schema[
+            "timestamp"
+        ]
+    if getattr(timestamp_dtype, "time_zone", None):
+        timestamp_expr = timestamp_expr.dt.replace_time_zone(None)
 
     bt_start = hybrid_metrics.get("start")
     bt_end = hybrid_metrics.get("end")
 
     if bt_start and bt_end:
-        start_dt = pl.lit(str(bt_start)[:19]).str.to_datetime()
-        end_dt = pl.lit(str(bt_end)[:19]).str.to_datetime()
-        df = df.filter((ts_col >= start_dt) & (ts_col <= end_dt))
+        start_dt = datetime.fromisoformat(str(bt_start)[:19])
+        end_dt = datetime.fromisoformat(str(bt_end)[:19])
+        df = df.filter((timestamp_expr >= start_dt) & (timestamp_expr <= end_dt))
 
     if len(df) < 2:
         logger.warning("OHLCV fallback for benchmarks: insufficient bars (%d)", len(df))

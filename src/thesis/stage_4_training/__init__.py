@@ -1,4 +1,4 @@
-"""Model training package for walk-forward GRU and LightGBM workflows."""
+"""Model training package for tabular walk-forward workflows."""
 
 from thesis.stage_4_training.baselines import (
     compute_baseline_metrics,
@@ -7,35 +7,21 @@ from thesis.stage_4_training.baselines import (
     random_baseline,
     run_all_baselines,
 )
-from thesis.stage_4_training.gru import (
-    extract_hidden_states,
-    load_gru_classifier,
-    load_gru_model,
-    predict_gru_proba,
-    prepare_sequences,
-    save_gru_model,
-    train_gru,
-)
 from thesis.stage_4_training.lgbm import train_model
 from thesis.stage_4_training.validation import (
     WalkForwardWindow,
     generate_windows,
 )
+from thesis.stage_4_training.walk_forward.stacking import train_stacking_walk_forward
 
 __all__ = [
     "WalkForwardWindow",
     "compute_baseline_metrics",
-    "extract_hidden_states",
     "generate_windows",
-    "load_gru_classifier",
-    "load_gru_model",
     "majority_class_baseline",
     "naive_direction",
-    "predict_gru_proba",
-    "prepare_sequences",
     "random_baseline",
     "run_all_baselines",
-    "save_gru_model",
-    "train_gru",
     "train_model",
+    "train_stacking_walk_forward",
 ]

@@ -1,4 +1,4 @@
-"""LightGBM utilities, training, and hybrid feature-matrix helpers."""
+"""LightGBM utilities for tabular walk-forward training."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import time
 from typing import Any
 
 import numpy as np
-import polars as pl
 
 from thesis.shared.config import Config
 from thesis.shared.constants import (
@@ -41,10 +40,8 @@ def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
 def _build_interaction_constraints(feature_cols: list[str]) -> list[list[int]]:
     """Interaction constraints for LightGBM feature groups.
 
-    Currently disabled — returning empty list allows full cross-group
-    interaction between GRU hidden states and static price-action features.
-    This lets LightGBM discover the most informative feature combinations
-    without artificial restrictions.
+    Currently disabled — returning an empty list allows full interaction
+    between tabular price-action features.
     """
     return []
 
@@ -211,18 +208,14 @@ def _train_fixed(
     m = config.model
     is_regression = m.objective == "regression"
     constraints = _build_interaction_constraints(feature_cols)
-    gru_feature_count = sum(1 for name in feature_cols if name.startswith("gru_h"))
-    static_feature_count = len(feature_cols) - gru_feature_count
     logger.info(
-        "LightGBM: %s leaves=%d depth=%d lr=%.4f"
-        " n_est=%d constraints=[%d GRU, %d static]",
+        "LightGBM: %s leaves=%d depth=%d lr=%.4f n_est=%d features=%d",
         "regressor" if is_regression else "classifier",
         m.num_leaves,
         m.max_depth,
         m.learning_rate,
         m.n_estimators,
-        gru_feature_count,
-        static_feature_count,
+        len(feature_cols),
     )
 
     start_time = time.perf_counter()
@@ -343,80 +336,3 @@ def _save_feature_importance(
     except (OSError, ValueError) as e:
         logger.warning("Feature importance save failed: %s", e)
 
-
-# ── Hybrid matrix helpers ───────────────────────────────────────────
-
-
-def _align_splits_with_sequences(
-    train_df: pl.DataFrame,
-    val_df: pl.DataFrame,
-    test_df: pl.DataFrame,
-    train_hidden: np.ndarray,
-    val_hidden: np.ndarray,
-    test_hidden: np.ndarray,
-    seq_len: int,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    """Align DataFrames with GRU sequence outputs.
-
-    Args:
-        train_df: Full training DataFrame.
-        val_df: Full validation DataFrame.
-        test_df: Full test DataFrame.
-        train_hidden: GRU hidden states for training.
-        val_hidden: GRU hidden states for validation.
-        test_hidden: GRU hidden states for test.
-        seq_len: GRU sequence length.
-
-    Returns:
-        Tuple of (train_aligned, val_aligned, test_aligned) DataFrames.
-    """
-    train_aligned = train_df.slice(seq_len - 1, len(train_hidden))
-    val_aligned = val_df.slice(seq_len - 1, len(val_hidden))
-    test_aligned = test_df.slice(seq_len - 1, len(test_hidden))
-    logger.info(
-        "Aligned: train=%d val=%d test=%d",
-        len(train_aligned),
-        len(val_aligned),
-        len(test_aligned),
-    )
-    return train_aligned, val_aligned, test_aligned
-
-
-def _build_hybrid_matrix(
-    train_hidden: np.ndarray,
-    val_hidden: np.ndarray,
-    test_hidden: np.ndarray,
-    train_aligned: pl.DataFrame,
-    val_aligned: pl.DataFrame,
-    test_aligned: pl.DataFrame,
-    static_cols: list[str],
-    hidden_size: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[str]]:
-    """Build hybrid feature matrices combining GRU hidden states with static features.
-
-    Args:
-        train_hidden: GRU hidden states for training.
-        val_hidden: GRU hidden states for validation.
-        test_hidden: GRU hidden states for test.
-        train_aligned: Aligned training DataFrame.
-        val_aligned: Aligned validation DataFrame.
-        test_aligned: Aligned test DataFrame.
-        static_cols: List of static feature column names.
-        hidden_size: GRU hidden size (number of GRU features).
-
-    Returns:
-        Tuple of (X_train, X_val, X_test, feature_names).
-    """
-    gru_feat_names = [f"gru_h{i}" for i in range(hidden_size)]
-    all_feature_cols = gru_feat_names + static_cols
-
-    X_train = np.concatenate(
-        [train_hidden, train_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_val = np.concatenate(
-        [val_hidden, val_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    X_test = np.concatenate(
-        [test_hidden, test_aligned.select(static_cols).to_numpy()], axis=1
-    )
-    return X_train, X_val, X_test, all_feature_cols

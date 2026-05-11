@@ -18,13 +18,12 @@ constants. Import from here to keep stages in sync.
 #:  - avg_spread/tick_count → microstructure columns kept for backtest
 #:    but not useful as ML features in their raw form
 #:  - atr_14 → label-barrier helper; normalized ATR is the model-facing feature
-#:  - log_returns → GRU sequence input; excluded from the *static* LightGBM features
-#:    to avoid double-counting the information already encoded in GRU hidden states
+#:  - log_returns → raw return input; excluded from tabular static features
+#:    to avoid unstable leakage-prone transformations
 #:
-#: All 28 engineered features (core indicators, multi-timeframe 4H, trend
-#: distances, Bollinger bands, volume z-score, log returns, range, and regime
-#: features) are intentionally NOT in this set — they are available as GRU
-#: sequence inputs and/or static LightGBM features.
+#: Engineered features (core indicators, multi-timeframe 4H, trend distances,
+#: Bollinger bands, volume z-score, returns, range, and regime features) are
+#: intentionally NOT in this set — they are available to tabular models.
 #:
 #: NOTE: For feature column lists, use thesis.shared.feature_registry as the
 #: source of truth.
@@ -45,7 +44,7 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "avg_spread",
         "tick_count",
         "atr_14",  # Label-barrier helper; normalized ATR is model-facing
-        "log_returns",  # GRU sequence input — not a static feature for LightGBM
+        "log_returns",  # raw return input — not a static feature for LightGBM
     ]
 )
 
@@ -152,24 +151,6 @@ FEATURE_EPS: float = 1e-10
 #: near-constant series.
 STD_EPS: float = 1e-8
 
-# GRU training hyper-parameter constants
-
-#: Gradient clipping max-norm for GRU encoder and classifier parameters.
-GRAD_CLIP_NORM: float = 1.0
-
-#: Number of linear warmup epochs before cosine annealing takes over.
-WARMUP_EPOCHS: int = 3
-
-#: Number of consecutive epochs without val-loss improvement before emitting
-#: a plateau warning (does not affect training — purely diagnostic).
-PLATEAU_PATIENCE: int = 5
-
-#: Cosine-annealing-with-warm-restarts base period (``T_0`` in PyTorch
-#: ``CosineAnnealingWarmRestarts`` semantics).
-COSINE_T0: int = 10
-
-#: Cosine-annealing-with-warm-restarts period multiplier (``T_mult``).
-COSINE_TMULT: int = 2
 
 #: Number of confidence bins for Expected Calibration Error (ECE).
 ECE_N_BINS: int = 10

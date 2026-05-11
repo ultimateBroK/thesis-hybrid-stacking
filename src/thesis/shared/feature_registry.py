@@ -38,10 +38,6 @@ def get_static_feature_cols(config) -> list[str]:
     return list(config.features.static_feature_cols)
 
 
-def get_gru_feature_cols(config) -> list[str]:
-    """Return the GRU-specific feature columns from config."""
-    return list(config.gru.feature_cols)
-
 
 def get_label_helper_cols(config) -> list[str]:
     """Return helper columns used during label construction (e.g. ATR)."""
@@ -51,7 +47,7 @@ def get_label_helper_cols(config) -> list[str]:
 def build_feature_output_cols(config) -> list[str]:
     """All columns that ``features.parquet`` must contain.
 
-    Combines OHLCV raw columns, label helpers, static features, and GRU
+    Combines OHLCV raw columns, label helpers, and model-facing tabular
     features into a sorted, deduplicated list.
     """
     return sorted(
@@ -59,7 +55,6 @@ def build_feature_output_cols(config) -> list[str]:
             OHLCV_RAW_COLS
             + get_label_helper_cols(config)
             + get_static_feature_cols(config)
-            + get_gru_feature_cols(config)
         )
     )
 
@@ -76,13 +71,13 @@ def build_exclude_cols(config) -> frozenset[str]:
     """Columns excluded from model training — the minimal non-feature set.
 
     These columns are either identifiers (timestamp), raw price/volume data,
-    labelling artefacts, or GRU sequence inputs that are not valid static
-    features for the LightGBM base model.
+    labelling artefacts, or helper/diagnostic columns that should not be
+    used as tabular model inputs.
     """
     return frozenset(
         OHLCV_RAW_COLS
         + OHLCV_OPTIONAL_COLS
         + get_label_helper_cols(config)
         + LABEL_META_COLS
-        + ["log_returns"]  # GRU sequence input, not static LightGBM feature
+        + ["log_returns"]  # helper return alias, excluded from static model inputs
     )

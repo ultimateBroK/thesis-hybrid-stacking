@@ -16,7 +16,6 @@ from thesis.stage_6_reporting.comparison import (
     _find_architecture_session,
     _pair_windows_by_date,
     _parse_date,
-    _static_vs_hybrid_comparison,
     _write_model_comparison_artifacts,
 )
 from thesis.stage_6_reporting.md_format import _tbl_row
@@ -240,41 +239,12 @@ class TestFindArchitectureSession:
         config_dir = session / "config"
         config_dir.mkdir()
         snapshot = config_dir / "config_snapshot.toml"
-        snapshot.write_text('[model]\narchitecture = "hybrid"\n')
+        snapshot.write_text('[model]\narchitecture = "stacking"\n')
 
         result = _find_architecture_session(tmp_path, "static", "/other")
         assert result is None
 
 
-# ---------------------------------------------------------------------------
-# _static_vs_hybrid_comparison
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestStaticVsHybridComparison:
-    def test_non_hybrid_or_static_arch_returns_early(self) -> None:
-        config = Config()
-        config.model.architecture = "gru_only"
-        L: list[str] = []
-        _static_vs_hybrid_comparison(L, config)
-        assert len(L) == 0
-
-    def test_no_session_dir(self) -> None:
-        config = Config()
-        config.model.architecture = "hybrid"
-        config.paths.session_dir = ""
-        L: list[str] = []
-        _static_vs_hybrid_comparison(L, config)
-        assert any("unavailable" in line.lower() for line in L)
-
-    def test_no_walk_forward_history(self, tmp_path) -> None:
-        config = Config()
-        config.model.architecture = "hybrid"
-        config.paths.session_dir = str(tmp_path)
-        L: list[str] = []
-        _static_vs_hybrid_comparison(L, config)
-        assert any("unavailable" in line.lower() for line in L)
 
 
 # ---------------------------------------------------------------------------
@@ -298,9 +268,9 @@ class TestBuildModelComparisonRows:
         assert rows[0]["accuracy"] == 0.65
         assert rows[0]["directional_accuracy"] == 0.7
 
-    def test_gru_pred_stats_use_gru_only_label(self) -> None:
+    def test_current_pred_stats_use_model_label(self) -> None:
         config = Config()
-        config.model.architecture = "gru"
+        config.model.architecture = "stacking"
         pred_stats = {
             "directional_accuracy": 0.7,
             "accuracy": 0.65,
@@ -308,7 +278,7 @@ class TestBuildModelComparisonRows:
             "per_class": {"Long": {"f1": 0.7}, "Short": {"f1": 0.5}},
         }
         rows = _build_model_comparison_rows(config, pred_stats)
-        assert rows[0]["model"] == "GRU-only"
+        assert rows[0]["model"] == "Hybrid Stacking"
         assert rows[0]["source"] == "current_session"
 
     def test_without_pred_stats(self) -> None:
@@ -318,7 +288,9 @@ class TestBuildModelComparisonRows:
         assert len(rows) >= 1
         models = [r["model"] for r in rows]
         assert any("LightGBM" in m for m in models)
-        assert "GRU-only" in models
+        assert "Logistic Regression" in models
+        assert "Random Forest" in models
+        assert "Hybrid Stacking" in models
 
     def test_with_predictions_file(self, tmp_path) -> None:
         config = Config()

@@ -45,7 +45,7 @@ class TestFeaturesSchema:
     def test_features_schema_full_with_config(self):
         cfg = Config()
         df = create_synthetic_features(cfg, n_rows=10)
-        # Add GRU-only cols that the helper doesn't generate
+        # Add prediction-only cols that the helper does not generate
         df = df.with_columns(
             [
                 pl.Series("log_returns", [0.0] * 10),
@@ -86,7 +86,7 @@ class TestLabelsSchema:
     def test_labels_schema_full_with_config(self):
         cfg = Config()
         df = create_synthetic_labeled_data(cfg, n_rows=10)
-        # Add GRU-only cols that the helper doesn't generate
+        # Add prediction-only cols that the helper does not generate
         df = df.with_columns(
             [
                 pl.Series("log_returns", [0.0] * 10),

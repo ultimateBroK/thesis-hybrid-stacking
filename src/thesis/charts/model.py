@@ -162,15 +162,15 @@ def build_feature_importance_chart(
         top_n: Number of top-ranked features to display.
 
     Returns:
-        A pyecharts ``Bar`` chart with stacked GRU/static contributions.
+        A pyecharts ``Bar`` chart with stacked model/static feature contributions.
     """
     items = sorted(fi.items(), key=lambda x: x[1], reverse=True)[:top_n]
     items = items[::-1]
     names = [n for n, _ in items]
 
-    # Split into two series: static features and GRU features
-    static_values = [v if not n.startswith("gru_") else 0 for n, v in items]
-    gru_values = [v if n.startswith("gru_") else 0 for n, v in items]
+    # Split into model-derived and technical feature buckets
+    static_values = [v if not n.startswith("model_") else 0 for n, v in items]
+    model_values = [v if n.startswith("model_") else 0 for n, v in items]
 
     chart = (
         Bar(init_opts=opts.InitOpts(height="600px"))
@@ -183,8 +183,8 @@ def build_feature_importance_chart(
             itemstyle_opts=opts.ItemStyleOpts(color=COLORS["primary"]),
         )
         .add_yaxis(
-            series_name="GRU Features",
-            y_axis=gru_values,
+            series_name="Model Features",
+            y_axis=model_values,
             stack="importance",
             label_opts=opts.LabelOpts(is_show=False),
             itemstyle_opts=opts.ItemStyleOpts(color=COLORS["secondary"]),

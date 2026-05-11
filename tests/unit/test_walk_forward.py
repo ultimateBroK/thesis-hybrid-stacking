@@ -210,7 +210,6 @@ from thesis.stage_4_training.walk_forward.utils import (
     _one_hot_proba_columns,
     _align_probability_matrix,
     _probability_columns,
-    _log_gru_signal_quality,
 )
 
 
@@ -433,38 +432,6 @@ class TestAddPredictionDiagnostics:
         assert diag["accuracy"] is None
         assert diag["mean_confidence"] is None
 
-
-@pytest.mark.unit
-class TestLogGruSignalQuality:
-    def test_empty_hidden_states(self) -> None:
-        """Empty hidden states should warn and return."""
-        _log_gru_signal_quality(np.array([]), np.array([]), Config())
-
-    def test_none_inputs(self) -> None:
-        _log_gru_signal_quality(None, np.array([0, 1]), Config())
-        _log_gru_signal_quality(np.array([[1, 2]]), None, Config())
-
-    def test_shape_mismatch(self) -> None:
-        _log_gru_signal_quality(np.array([[1, 2]]), np.array([0, 1]), Config())
-
-    def test_single_class(self) -> None:
-        hidden = np.random.randn(20, 5)
-        labels = np.zeros(20, dtype=np.int32)
-        _log_gru_signal_quality(hidden, labels, Config())
-
-    def test_insufficient_samples_per_class(self) -> None:
-        hidden = np.random.randn(3, 5)
-        labels = np.array([-1, 0, 1])  # Only 1 sample per class
-        _log_gru_signal_quality(hidden, labels, Config())
-
-    def test_valid_signal(self) -> None:
-        rng = np.random.RandomState(42)
-        hidden = rng.randn(100, 8)
-        # Create labels with some signal — first dim correlates with label
-        labels = np.where(
-            hidden[:, 0] > 0, 1, np.where(hidden[:, 0] < -0.5, -1, 0)
-        ).astype(np.int32)
-        _log_gru_signal_quality(hidden, labels, Config())
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""HybridGRU trading strategy used in stage 5 backtests."""
+"""ML signal trading strategy used in stage 5 backtests."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def _calendar_day(value: object) -> object:
     return (ts_ny + pd.Timedelta(hours=7)).date()
 
 
-class HybridGRUStrategy(Strategy):
+class MLSignalStrategy(Strategy):
     """Trade on ML signals with ATR stops and simple risk gates.
 
     Key detail: use ``signals[-2]`` so the prediction anchored at ``close[i-1]``

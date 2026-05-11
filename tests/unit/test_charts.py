@@ -118,9 +118,9 @@ def sample_fi() -> dict[str, float]:
     return {
         "rsi_14": 0.15,
         "atr_14": 0.12,
-        "gru_0": 0.10,
+        "model_logreg": 0.10,
         "macd": 0.08,
-        "gru_1": 0.07,
+        "model_lgbm": 0.07,
         "bb_width": 0.05,
     }
 
