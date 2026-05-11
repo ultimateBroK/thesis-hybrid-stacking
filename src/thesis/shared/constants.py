@@ -168,7 +168,6 @@ CORE_STATIC_FEATURES: tuple[str, ...] = (
     "close_vs_ema_34",
     "adx_14",
     "ema_slope_20",
-    "regime_strength",
     # Momentum
     "return_1h",
     "return_4h",
@@ -186,13 +185,9 @@ CORE_STATIC_FEATURES: tuple[str, ...] = (
     "vwap",
     # Candle Structure
     "candle_body_ratio",
-    "upper_wick_ratio",
-    "lower_wick_ratio",
     # Session
     "sess_asia",
     "sess_london",
     "sess_ny_am",
     "sess_ny_pm",
-    # Volume / Activity
-    "volume_zscore_20",
 )
