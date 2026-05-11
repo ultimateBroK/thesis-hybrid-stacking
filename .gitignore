@@ -47,6 +47,7 @@ ENV/
 .factory/
 .opencode/
 .codex
+.hermes/
 .understand-anything/
 .cocoindex_code/
 *.swp
