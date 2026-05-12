@@ -10,7 +10,6 @@ import pytest
 
 from thesis.shared.constants import EXCLUDE_COLS
 
-
 FORBIDDEN_COLS = {
     "label",
     "upper_barrier",

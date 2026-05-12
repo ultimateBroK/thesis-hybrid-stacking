@@ -73,7 +73,8 @@ def generate_labels(config: Config) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     right_cols = [c for c in df.columns if c.endswith("_right")]
-    assert not right_cols, f"labels.parquet contains join artifacts: {right_cols}"
+    if right_cols:
+        raise ValueError(f"labels.parquet contains join artifacts: {right_cols}")
 
     LabelsSchema.validate(df, config=config)
     df.write_parquet(out_path)
@@ -100,9 +101,9 @@ def _compute_labels(
     ambiguous_count = 0
 
     for i in range(n):
-        a = max(atr[i], min_atr)
-        upper = close[i] + tp_mult * a
-        lower = close[i] - sl_mult * a
+        effective_atr = max(atr[i], min_atr)
+        upper = close[i] + tp_mult * effective_atr
+        lower = close[i] - sl_mult * effective_atr
         upper_barriers[i] = upper
         lower_barriers[i] = lower
 
@@ -350,19 +351,29 @@ def _log_weight_stats(df: pl.DataFrame) -> None:
     )
 
 
-def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
-    """Log label profitability diagnostics after trading costs."""
-    if not {"close", "label", "timestamp"}.issubset(df.columns):
-        return
+def _roundtrip_cost_price_units(config: Config) -> float:
+    """Per-bar round-trip cost in price units (spread + slippage + commission).
 
-    h = config.labels.horizon_bars
-    cost = (
+    Unlike ``_compute_spread_rate`` in the backtest module (which normalises
+    by a per-trade median price), this returns an *absolute* price-unit cost
+    suitable for per-bar label diagnostics.
+    """
+    return (
         (config.backtest.spread_ticks + config.backtest.slippage_ticks)
         * config.data.tick_size
         + config.backtest.commission_per_lot
         * ROUNDTRIP_MULT
         / config.data.contract_size
     )
+
+
+def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
+    """Log label profitability diagnostics after trading costs."""
+    if not {"close", "label", "timestamp"}.issubset(df.columns):
+        return
+
+    h = config.labels.horizon_bars
+    cost = _roundtrip_cost_price_units(config)
     lev = config.backtest.leverage
 
     result = (

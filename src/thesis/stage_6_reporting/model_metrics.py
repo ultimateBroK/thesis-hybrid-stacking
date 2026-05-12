@@ -15,13 +15,12 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
+from thesis.shared.metrics import accuracy as accuracy
+from thesis.shared.metrics import directional_accuracy as directional_accuracy
+from thesis.shared.metrics import macro_f1 as macro_f1
+
 _DEFAULT_CLASSES: list[int] = [-1, 0, 1]
 _DEFAULT_CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
-
-
-def accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
-    """Overall accuracy: fraction of correct predictions."""
-    return float((y_true == y_pred).mean())
 
 
 def balanced_accuracy(
@@ -36,17 +35,6 @@ def balanced_accuracy(
         if mask.sum() > 0:
             recalls.append(float((y_pred[mask] == c).mean()))
     return float(np.mean(recalls)) if recalls else 0.0
-
-
-def directional_accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
-    """Accuracy on bars where *both* true and predicted labels are non-zero.
-
-    Hold-vs-direction mismatches are excluded rather than counted as wrong.
-    """
-    mask = (y_true != 0) & (y_pred != 0)
-    if mask.sum() == 0:
-        return 0.0
-    return float((y_true[mask] == y_pred[mask]).mean())
 
 
 def mda_no_hold(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -84,18 +72,6 @@ def _precision_recall_f1_for_class(
     prec = float((y_true[pred_mask] == cls).mean()) if pred_mask.sum() > 0 else 0.0
     f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
     return prec, rec, f1
-
-
-def macro_f1(
-    y_true: npt.NDArray,
-    y_pred: npt.NDArray,
-    classes: list[int] | None = None,
-) -> float:
-    """Macro-averaged F1 score."""
-    if classes is None:
-        classes = sorted(set(y_true.tolist()) | set(y_pred.tolist()))
-    f1s = [_precision_recall_f1_for_class(y_true, y_pred, c)[2] for c in classes]
-    return float(np.mean(f1s))
 
 
 def weighted_f1(

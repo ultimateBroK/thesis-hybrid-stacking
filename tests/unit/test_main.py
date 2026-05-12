@@ -1,16 +1,15 @@
 """Tests for main.py CLI stage resume logic and pipeline guards."""
 
-import sys
 from pathlib import Path
-from unittest.mock import patch
+import sys
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.shared.config import Config
 from main import _apply_stage_flags
+from thesis.shared.config import Config
 
 
 class TestStageResumeLogic:
@@ -99,7 +98,6 @@ class TestStageResumeLogic:
         result = _apply_force_flag(cfg, force=True)
 
         assert result.workflow.force_rerun is True
-
 
 
 # ---------------------------------------------------------------------------

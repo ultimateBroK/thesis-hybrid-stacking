@@ -12,8 +12,24 @@ import polars as pl
 import pytest
 
 from thesis.shared.config import Config
-from thesis.stage_4_training.walk_forward.utils import (
+from thesis.stage_4_training.walk_forward.artifacts import _build_wf_history
+from thesis.stage_4_training.walk_forward.diagnostics import (
+    _add_prediction_diagnostics,
+    _compute_per_class_metrics,
+    _counts_dict,
+    _pct_dict,
+    _window_dates,
+    _window_diagnostics,
+)
+from thesis.stage_4_training.walk_forward.feature_pipeline import (
+    _select_static_feature_cols,
+)
+from thesis.stage_4_training.walk_forward.predictions import (
     _add_confidence_columns,
+    _align_probability_matrix,
+    _label_suffix,
+    _one_hot_proba_columns,
+    _probability_columns,
     _validate_predictions,
     _write_prediction_manifest,
 )
@@ -198,25 +214,10 @@ def test_write_prediction_manifest(tmp_path) -> None:
 # Additional walk-forward utility function tests
 # ---------------------------------------------------------------------------
 
-from thesis.stage_4_training.walk_forward.utils import (
-    _select_static_feature_cols,
-    _counts_dict,
-    _pct_dict,
-    _window_dates,
-    _window_diagnostics,
-    _compute_per_class_metrics,
-    _add_prediction_diagnostics,
-    _label_suffix,
-    _one_hot_proba_columns,
-    _align_probability_matrix,
-    _probability_columns,
-)
-
 
 @pytest.mark.unit
 class TestSelectStaticFeatureCols:
     def test_uses_config_whitelist(self) -> None:
-        from thesis.shared.config import Config
 
         config = Config()
         config.features.static_feature_cols = ["rsi_14", "adx_14"]
@@ -225,7 +226,6 @@ class TestSelectStaticFeatureCols:
         assert result == ["rsi_14", "adx_14"]
 
     def test_fallback_when_config_cols_missing(self) -> None:
-        from thesis.shared.config import Config
 
         config = Config()
         config.features.static_feature_cols = ["nonexistent"]
@@ -234,7 +234,6 @@ class TestSelectStaticFeatureCols:
         assert result == ["a", "b"]
 
     def test_fallback_filters_to_available(self) -> None:
-        from thesis.shared.config import Config
 
         config = Config()
         config.features.static_feature_cols = ["nonexistent"]
@@ -433,12 +432,9 @@ class TestAddPredictionDiagnostics:
         assert diag["mean_confidence"] is None
 
 
-
 # ---------------------------------------------------------------------------
 # Walk-forward artifacts tests
 # ---------------------------------------------------------------------------
-
-from thesis.stage_4_training.walk_forward.artifacts import _build_wf_history
 
 
 class MockWindow:

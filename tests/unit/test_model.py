@@ -5,19 +5,17 @@ and deployment model metadata.
 Legacy meta-learner tests removed — pipeline now uses tabular walk-forward models.
 """
 
-import sys
 from pathlib import Path
+import sys
 from unittest.mock import MagicMock
 
 import numpy as np
-import polars as pl
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.shared.config import Config
 from thesis.stage_4_training.lgbm.utils import (
-    _build_interaction_constraints,
     _compute_class_weights,
     _compute_distribution_shift_weights,
 )
@@ -115,16 +113,6 @@ def test_class_weights_with_imbalanced_data() -> None:
     # Minority classes should have higher weights
     assert weights[0] > weights[1]
     assert weights[-1] > weights[1]
-
-
-@pytest.mark.unit
-@pytest.mark.models
-def test_interaction_constraints_skip_empty_groups() -> None:
-    """Tabular inputs should not emit empty constraint groups."""
-    static_only = _build_interaction_constraints(["rsi_14", "atr_14"])
-    # Interaction constraints are currently disabled — returns empty list
-    # to allow full cross-group interaction in LightGBM.
-    assert static_only == []
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -386,15 +374,15 @@ class TestDistributionShiftWeights:
 @pytest.mark.models
 class TestWrapNp:
     def test_wraps_as_dataframe(self) -> None:
-        from thesis.stage_4_training.lgbm.utils import _wrap_np
         import pandas as pd
+
+        from thesis.stage_4_training.lgbm.utils import _wrap_np
 
         X = np.array([[1, 2], [3, 4]])
         result = _wrap_np(X, ["a", "b"])
         assert isinstance(result, pd.DataFrame)
         assert list(result.columns) == ["a", "b"]
         assert result.shape == (2, 2)
-
 
 
 @pytest.mark.unit

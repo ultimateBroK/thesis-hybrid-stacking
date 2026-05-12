@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock
-
 import numpy as np
 import polars as pl
 import pytest
@@ -19,7 +16,6 @@ from thesis.stage_6_reporting.benchmarks import (
     _model_label,
     compute_benchmark_comparison,
 )
-
 
 # ---------------------------------------------------------------------------
 # _model_label

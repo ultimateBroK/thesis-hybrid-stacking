@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-from polars.exceptions import ComputeError, ColumnNotFoundError
+from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
 from thesis.stage_6_reporting.comparison import _parse_date

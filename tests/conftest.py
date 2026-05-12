@@ -1,8 +1,8 @@
 """Shared test fixtures."""
 
-import sys
 from functools import wraps
 from pathlib import Path
+import sys
 
 import pandas as pd
 

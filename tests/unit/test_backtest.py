@@ -4,8 +4,8 @@ Tests the thin wrapper around backtesting.py v0.6.5.
 """
 
 import logging
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import pandas as pd
@@ -871,8 +871,7 @@ def _apply_oos_filter(
     oob_start_date: str = "",
     oob_end_date: str = "",
 ) -> pd.DataFrame:
-    """Apply the OOS date-range filter logic from run_backtest.
-    """
+    """Apply the OOS date-range filter logic from run_backtest."""
     if oob_start_date:
         start_ts = pd.Timestamp(oob_start_date)
         pdf = pdf[pdf.index >= start_ts]

@@ -253,50 +253,6 @@ def apply_event_time_purge(
     )
 
 
-def split_data(
-    df: pl.DataFrame,
-    windows: list[WalkForwardWindow],
-    timestamp_col: str = "datetime",
-) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
-    """Slice a Polars DataFrame into (train, test) pairs per window.
-
-    Uses integer-row slicing (not date-based filtering) so the indices
-    in each :class:`WalkForwardWindow` map directly to row positions.
-    The default Stage 4 pipeline slices inline for readability; this helper is
-    retained for tests, notebooks, and external callers that need reusable
-    train/test frame pairs.
-
-    Args:
-        df: Source DataFrame containing all bars.
-        windows: Pre-computed walk-forward windows.
-        timestamp_col: Name of the timestamp column (used only for
-            logging; slicing is index-based).
-
-    Returns:
-        List of ``(train_df, test_df)`` tuples, one per window.
-    """
-    splits: list[tuple[pl.DataFrame, pl.DataFrame]] = []
-
-    for i, w in enumerate(windows):
-        train_df = df.slice(w.train_start_idx, w.train_end_idx - w.train_start_idx)
-        test_df = df.slice(w.test_start_idx, w.test_end_idx - w.test_start_idx)
-        splits.append((train_df, test_df))
-
-        logger.debug(
-            "Bar-based window %d — train rows [%d:%d] (%d), test rows [%d:%d] (%d)",
-            i,
-            w.train_start_idx,
-            w.train_end_idx,
-            len(train_df),
-            w.test_start_idx,
-            w.test_end_idx,
-            len(test_df),
-        )
-
-    logger.info("Split DataFrame into %d bar-based (train, test) pair(s)", len(splits))
-    return splits
-
-
 def log_windows(
     windows: list[WalkForwardWindow],
     df: pl.DataFrame,

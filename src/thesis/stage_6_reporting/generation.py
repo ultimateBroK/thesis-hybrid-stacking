@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
-from polars.exceptions import ComputeError, ColumnNotFoundError
+from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
 from thesis.shared.ui import console

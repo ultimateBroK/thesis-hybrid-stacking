@@ -37,15 +37,6 @@ def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
     return pd.DataFrame(X, columns=feature_cols)
 
 
-def _build_interaction_constraints(feature_cols: list[str]) -> list[list[int]]:
-    """Interaction constraints for LightGBM feature groups.
-
-    Currently disabled — returning an empty list allows full interaction
-    between tabular price-action features.
-    """
-    return []
-
-
 def _compute_class_weights(y: np.ndarray) -> dict[int, float]:
     """Compute balanced class weights for multiclass labels.
 
@@ -207,7 +198,6 @@ def _train_fixed(
 
     m = config.model
     is_regression = m.objective == "regression"
-    constraints = _build_interaction_constraints(feature_cols)
     logger.info(
         "LightGBM: %s leaves=%d depth=%d lr=%.4f n_est=%d features=%d",
         "regressor" if is_regression else "classifier",
@@ -249,7 +239,7 @@ def _train_fixed(
             colsample_bytree=m.feature_fraction,
             reg_alpha=m.reg_alpha,
             reg_lambda=m.reg_lambda,
-            interaction_constraints=constraints,
+            interaction_constraints=[],
             class_weight=class_weights,
             objective="multiclass",
             num_class=3,

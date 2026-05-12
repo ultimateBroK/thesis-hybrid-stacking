@@ -18,7 +18,7 @@ from thesis.shared.ui import console, stage_header, stage_skip
 from thesis.stage_1_data import generate_data
 from thesis.stage_2_features import generate_features
 from thesis.stage_3_labels import generate_labels
-from thesis.stage_4_training.walk_forward import train_lgbm_fixed, train_walk_forward
+from thesis.stage_4_training.walk_forward import train_walk_forward
 from thesis.stage_5_backtest import run_backtest
 from thesis.stage_6_reporting import generate_report
 
@@ -205,7 +205,10 @@ def run_pipeline(config: Config) -> None:
             stage_skip(4, "disabled")
     else:
         logger.info("Using fixed train/val/test split")
-        _run_stage(4, config, "run_model_training", None, train_lgbm_fixed)
+        if config.workflow.run_model_training:
+            train_walk_forward(config)
+        else:
+            stage_skip(4, "disabled")
 
     # Stage 5: Backtest (Optional Application Demo)
     _run_stage(

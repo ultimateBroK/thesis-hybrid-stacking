@@ -3,8 +3,8 @@
 Tests train/val/test splitting and label distribution logging.
 """
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl
@@ -75,21 +75,11 @@ def test_data_range_chronological_ordering(sample_config: Config) -> None:
     df = create_synthetic_labeled_data(n_rows=5000)
 
     ts_dtype = df["timestamp"].dtype
-    start = (
-        pl.lit(sample_config.data_range.start)
-        .str.to_datetime()
-        .cast(ts_dtype)
-    )
-    end = (
-        pl.lit(sample_config.data_range.end)
-        .str.to_datetime()
-        .cast(ts_dtype)
-    )
+    start = pl.lit(sample_config.data_range.start).str.to_datetime().cast(ts_dtype)
+    end = pl.lit(sample_config.data_range.end).str.to_datetime().cast(ts_dtype)
     assert start < end, "data_range start must be before end"
 
-    in_range = df.filter(
-        (pl.col("timestamp") >= start) & (pl.col("timestamp") <= end)
-    )
+    in_range = df.filter((pl.col("timestamp") >= start) & (pl.col("timestamp") <= end))
     assert len(in_range) > 0, "data should contain rows within data_range"
 
 
@@ -251,11 +241,11 @@ def test_compute_data_quality_stats_single_bar() -> None:
 # ---------------------------------------------------------------------------
 
 from thesis.stage_1_data.processing import (
-    _parse_datetime_bound,
     _deduplicate_and_filter,
     _filter_date_range,
-    _log_gap_report,
     _log_candle_quality_report,
+    _log_gap_report,
+    _parse_datetime_bound,
     _save_data_quality_json,
 )
 

@@ -54,7 +54,7 @@ def random_baseline(
 
 def compute_baseline_metrics(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict:
     """Compute accuracy, macro_f1, directional_accuracy for a baseline."""
-    from thesis.stage_6_reporting.model_metrics import (
+    from thesis.shared.metrics import (
         accuracy,
         directional_accuracy,
         macro_f1,

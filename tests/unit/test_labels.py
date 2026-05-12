@@ -3,8 +3,8 @@
 Tests triple-barrier labeling logic directly.
 """
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl
@@ -12,12 +12,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+from unittest.mock import patch
+
+from thesis.shared.config import Config, LabelsConfig, LGBMConfig
+from thesis.shared.constants import CENSORED_LABEL
 from thesis.stage_3_labels import (
     compute_average_uniqueness,
     compute_event_end,
 )
-from unittest.mock import patch
-
 from thesis.stage_3_labels.labeling import (
     _compute_labels,
     _filter_censored,
@@ -25,8 +27,6 @@ from thesis.stage_3_labels.labeling import (
     generate_labels,
 )
 from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
-from thesis.shared.config import Config, LGBMConfig, LabelsConfig
-from thesis.shared.constants import CENSORED_LABEL
 
 
 @pytest.mark.unit
@@ -786,8 +786,7 @@ def test_labels_skip_ohlcv_join_when_features_have_ohlc(
 
     # Only one read (features); OHLCV file should never be opened
     assert mock_read.call_count == 1, (
-        f"Expected exactly 1 parquet read (features only), "
-        f"got {mock_read.call_count}"
+        f"Expected exactly 1 parquet read (features only), got {mock_read.call_count}"
     )
 
 

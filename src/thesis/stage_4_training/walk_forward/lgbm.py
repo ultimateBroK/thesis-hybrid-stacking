@@ -1,10 +1,9 @@
-"""LightGBM training entry points (walk-forward + fixed split)."""
+"""LightGBM training entry points (walk-forward only)."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-import time
 from typing import Any
 
 import numpy as np
@@ -21,17 +20,22 @@ from thesis.stage_4_training.walk_forward.artifacts import (
     _save_training_history,
     _save_walk_forward_history,
 )
-from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
-from thesis.stage_4_training.walk_forward.utils import (
-    _CLASS_ORDER,
+from thesis.stage_4_training.walk_forward.diagnostics import (
     _add_prediction_diagnostics,
+    _window_diagnostics,
+)
+from thesis.stage_4_training.walk_forward.feature_pipeline import (
+    _select_static_feature_cols,
+    fit_static_feature_pipeline,
+)
+from thesis.stage_4_training.walk_forward.loop import run_walk_forward
+from thesis.stage_4_training.walk_forward.predictions import (
+    _CLASS_ORDER,
     _align_probability_matrix,
     _one_hot_proba_columns,
     _probability_columns,
-    _select_static_feature_cols,
-    _window_diagnostics,
-    fit_static_feature_pipeline,
 )
+from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
 
 logger = logging.getLogger("thesis.pipeline")
 
@@ -44,16 +48,13 @@ _VALIDATION_SPLIT_FRACTION = 0.2  # Tail validation split for tabular LightGBM
 
 def _prepare_static_wf_data(
     config: Config,
-) -> tuple[pl.DataFrame, list[Any], list[str], bool]:
+) -> tuple[pl.DataFrame, list[Any], list[str], dict[str, Any]]:
     """Load labeled data, pre-compute regression target, and generate windows.
 
-    Args:
-        config: Application configuration.
-
     Returns:
-        ``(df, windows, feature_cols, is_regression)`` — the full labeled
+        ``(df, windows, feature_cols, extra_data)`` — the full labeled
         DataFrame, walk-forward window objects, sorted feature column
-        names, and a boolean indicating regression objective.
+        names, and extra keyword data for *window_fn*.
     """
     labels_path = Path(config.paths.labels)
     if not labels_path.exists():
@@ -86,7 +87,7 @@ def _prepare_static_wf_data(
 
     log_windows(windows, df, "timestamp")
     feature_cols = sorted(c for c in df.columns if c not in EXCLUDE_COLS)
-    return df, windows, feature_cols, is_regression_static
+    return df, windows, feature_cols, {"is_regression_static": is_regression_static}
 
 
 def _train_and_predict_static_window(
@@ -95,14 +96,11 @@ def _train_and_predict_static_window(
     window: Any,
     df: pl.DataFrame,
     feature_cols: list[str],
+    *,
     is_regression_static: bool,
-    expanded_features: bool,
+    expanded_features: bool = False,
 ) -> dict[str, Any] | None:
-    """Train LightGBM and generate predictions for a single static window.
-
-    Returns a dict with ``oof_chunk``, ``model``, ``static_cols``,
-    ``accuracy``, and ``diag``, or ``None`` if the window is too small.
-    """
+    """Train LightGBM and generate predictions for a single static window."""
     from thesis.stage_4_training.lgbm.utils import (
         _compute_class_weights,
         _train_fixed,
@@ -218,40 +216,27 @@ def _train_and_predict_static_window(
     }
 
 
-def _save_lgbm_wf_artifacts(
+def _save_lgbm_wf_results(
     config: Config,
-    all_oof_preds: list[pl.DataFrame],
-    last_lgbm_model: Any,
-    last_feature_cols: list[str],
-    last_window_accuracy: float | None,
-    last_window_index: int,
+    results: list[dict[str, Any]],
     windows: list[Any],
-    window_diagnostics: list[dict[str, Any]],
     stage_start: float,
 ) -> None:
-    """Validate OOF predictions and persist static walk-forward artifacts.
-
-    Args:
-        config: Application configuration.
-        all_oof_preds: List of per-window OOF Polars DataFrames.
-        last_lgbm_model: LightGBM model from the last window.
-        last_feature_cols: Feature column names.
-        last_window_accuracy: Accuracy of the last window.
-        last_window_index: 1-based index of the last window.
-        windows: Walk-forward window objects.
-        window_diagnostics: Per-window diagnostic dictionaries.
-        stage_start: ``time.perf_counter()`` start timestamp.
-
-    Raises:
-        RuntimeError: If no predictions were generated.
-        ValueError: If duplicate timestamps are found in OOF data.
-    """
+    """Validate OOF predictions and persist static walk-forward artifacts."""
     import joblib
 
     from thesis.stage_4_training.lgbm.utils import _save_feature_importance
 
-    if not all_oof_preds or last_lgbm_model is None:
+    if not results:
         raise RuntimeError("No static OOF predictions generated")
+
+    all_oof_preds = [r["oof_chunk"] for r in results]
+    window_diagnostics = [r["diag"] for r in results]
+    last_result = results[-1]
+    last_lgbm_model = last_result["model"]
+    last_feature_cols = last_result["static_cols"]
+    last_window_accuracy = last_result["accuracy"]
+    last_window_index = len(results)
 
     oof_df = _save_oof_predictions(
         config,
@@ -265,7 +250,6 @@ def _save_lgbm_wf_artifacts(
     _save_feature_importance(last_lgbm_model, last_feature_cols, config)
 
     if config.paths.session_dir:
-        # Build per-window accuracy map from diagnostics
         per_window_accuracies: dict[str, float | None] = {}
         for d in window_diagnostics:
             key = str(d.get("window", ""))
@@ -321,91 +305,12 @@ def _save_lgbm_wf_artifacts(
 
 
 def train_lgbm_walk_forward(config: Config, *, expanded_features: bool = False) -> None:
-    """Train LightGBM with walk-forward validation.
-
-    Uses event-time purged windows, LightGBM, sample weights, and OOF
-    prediction output. When
-    ``expanded_features`` is True, uses all available feature columns.
-
-    Args:
-        config: Application configuration.
-        expanded_features: If True, use all available features rather
-            than the whitelist.
-    """
-    # 1. Prepare data and windows
-    df, windows, feature_cols, is_regression_static = _prepare_static_wf_data(config)
-
-    # 2. Walk-forward loop
-    all_oof_preds: list[pl.DataFrame] = []
-    last_lgbm_model = None
-    last_feature_cols: list[str] = []
-    last_window_accuracy: float | None = None
-    last_window_index = 0
-    window_diagnostics: list[dict[str, Any]] = []
-    stage_start = time.perf_counter()
-    for w_idx, window in enumerate(windows):
-        window_start = time.perf_counter()
-        console.rule(
-            f"[bold cyan]LGBM window {w_idx + 1}/{len(windows)}[/]", style="cyan"
-        )
-        logger.info(
-            "=== LGBM window %d/%d: train=[%d:%d] test=[%d:%d] ===",
-            w_idx + 1,
-            len(windows),
-            window.train_start_idx,
-            window.train_end_idx,
-            window.test_start_idx,
-            window.test_end_idx,
-        )
-        result = _train_and_predict_static_window(
-            config,
-            w_idx,
-            window,
-            df,
-            feature_cols,
-            is_regression_static,
-            expanded_features,
-        )
-        if result is None:
-            continue
-        all_oof_preds.append(result["oof_chunk"])
-        window_diagnostics.append(result["diag"])
-        last_lgbm_model = result["model"]
-        last_feature_cols = result["static_cols"]
-        last_window_accuracy = result["accuracy"]
-        last_window_index = w_idx + 1
-        logger.info(
-            "LGBM window %d done (%.1fs)",
-            w_idx + 1,
-            time.perf_counter() - window_start,
-        )
-
-    # 3. Validate and persist
-    _save_lgbm_wf_artifacts(
+    """Train LightGBM with walk-forward validation."""
+    run_walk_forward(
         config,
-        all_oof_preds,
-        last_lgbm_model,
-        last_feature_cols,
-        last_window_accuracy,
-        last_window_index,
-        windows,
-        window_diagnostics,
-        stage_start,
+        prepare_fn=_prepare_static_wf_data,
+        window_fn=lambda c, w_i, w, df, fc, **kw: _train_and_predict_static_window(
+            c, w_i, w, df, fc, expanded_features=expanded_features, **kw
+        ),
+        save_fn=_save_lgbm_wf_results,
     )
-
-
-def train_lgbm_fixed(config: Config) -> None:
-    """Train LightGBM using the fixed train/val/test split.
-
-    Args:
-        config: Application configuration.
-
-    Fixed split does not apply purge or embargo at split boundaries. With
-    triple-barrier labels, boundary samples can leak future information from
-    the adjacent split. For evaluation, prefer walk-forward validation.
-    """
-    logger.warning(
-        "Fixed split training has been removed from the main runtime. "
-        "Running LightGBM walk-forward instead."
-    )
-    train_lgbm_walk_forward(config)

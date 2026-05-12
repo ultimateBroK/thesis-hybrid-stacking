@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import numpy as np
 import polars as pl
 import pytest
@@ -19,7 +15,6 @@ from thesis.stage_6_reporting.comparison import (
     _write_model_comparison_artifacts,
 )
 from thesis.stage_6_reporting.md_format import _tbl_row
-
 
 # ---------------------------------------------------------------------------
 # _tbl_row
@@ -70,7 +65,6 @@ class TestParseDate:
         assert _parse_date("not-a-date") is None
 
     def test_long_iso_string(self) -> None:
-        from datetime import datetime
 
         result = _parse_date("2024-01-15T10:30:00+00:00")
         assert result is not None
@@ -243,8 +237,6 @@ class TestFindArchitectureSession:
 
         result = _find_architecture_session(tmp_path, "static", "/other")
         assert result is None
-
-
 
 
 # ---------------------------------------------------------------------------

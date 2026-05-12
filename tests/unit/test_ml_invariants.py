@@ -6,8 +6,8 @@ Tests that verify fundamental ML/trading invariants hold:
 3. Always-LONG strategy → return direction matches market direction
 """
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl

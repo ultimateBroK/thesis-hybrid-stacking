@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import logging
 from pathlib import Path
-import time
 from typing import Any
 
 import numpy as np
 import polars as pl
 
 from thesis.shared.config import Config
-from thesis.shared.ui import console
 from thesis.stage_4_training.lgbm.utils import (
     _compute_class_weights,
     _save_feature_importance,
@@ -26,15 +25,19 @@ from thesis.stage_4_training.walk_forward.artifacts import (
     _save_training_history,
     _save_walk_forward_history,
 )
-from thesis.stage_4_training.walk_forward.lgbm import _prepare_static_wf_data
-from thesis.stage_4_training.walk_forward.utils import (
-    _CLASS_ORDER,
+from thesis.stage_4_training.walk_forward.diagnostics import (
     _add_prediction_diagnostics,
-    _align_probability_matrix,
-    _probability_columns,
-    _select_static_feature_cols,
     _window_diagnostics,
+)
+from thesis.stage_4_training.walk_forward.feature_pipeline import (
+    _select_static_feature_cols,
     fit_static_feature_pipeline,
+)
+from thesis.stage_4_training.walk_forward.lgbm import _prepare_static_wf_data
+from thesis.stage_4_training.walk_forward.loop import run_walk_forward
+from thesis.stage_4_training.walk_forward.predictions import (
+    _CLASS_ORDER,
+    _probability_columns,
 )
 
 logger = logging.getLogger("thesis.pipeline")
@@ -45,6 +48,122 @@ _BASE_MODEL_ALIASES = {
     "lightgbm": "lgbm",
 }
 _MIN_SPLIT_ROWS = 4
+
+# ---------------------------------------------------------------------------
+# Base model registry (Step 5)
+# ---------------------------------------------------------------------------
+
+_BASE_MODEL_REGISTRY: dict[str, Callable[..., Any]] = {}
+
+
+def _register_base_model(name: str):
+    def decorator(fn):
+        _BASE_MODEL_REGISTRY[name] = fn
+        return fn
+
+    return decorator
+
+
+@_register_base_model("logistic_regression")
+def _build_logistic_regression(config: Config) -> Any:
+    from sklearn.linear_model import LogisticRegression
+
+    return LogisticRegression(
+        class_weight="balanced",
+        max_iter=1000,
+        solver="lbfgs",
+        random_state=config.workflow.random_seed,
+    )
+
+
+@_register_base_model("random_forest")
+def _build_random_forest(config: Config) -> Any:
+    from sklearn.ensemble import RandomForestClassifier
+
+    return RandomForestClassifier(
+        n_estimators=config.model.random_forest_n_estimators,
+        max_depth=config.model.random_forest_max_depth,
+        min_samples_leaf=config.model.random_forest_min_samples_leaf,
+        class_weight="balanced_subsample",
+        random_state=config.workflow.random_seed,
+        n_jobs=config.workflow.n_jobs,
+    )
+
+
+def _build_base_model(name: str, config: Config) -> Any:
+    if name not in _BASE_MODEL_REGISTRY:
+        raise ValueError(f"Unsupported sklearn base model: {name!r}")
+    return _BASE_MODEL_REGISTRY[name](config)
+
+
+# ---------------------------------------------------------------------------
+# Meta model registry (Step 5)
+# ---------------------------------------------------------------------------
+
+_META_MODEL_REGISTRY: dict[str, Callable[..., Any]] = {}
+
+
+def _register_meta_model(name: str):
+    def decorator(fn):
+        _META_MODEL_REGISTRY[name] = fn
+        return fn
+
+    return decorator
+
+
+def _fit_predictable_classifier(model: Any, X: np.ndarray, y: np.ndarray) -> Any:
+    """Fit a classifier, falling back to DummyClassifier for one-class folds."""
+    if len(np.unique(y)) < 2:
+        from sklearn.dummy import DummyClassifier
+
+        model = DummyClassifier(strategy="most_frequent")
+    model.fit(X, y)
+    return model
+
+
+@_register_meta_model("logistic_regression")
+def _build_meta_logreg(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
+    if len(np.unique(y_meta)) < 2:
+        from sklearn.dummy import DummyClassifier
+
+        return DummyClassifier(strategy="most_frequent").fit(X_meta, y_meta)
+    from sklearn.linear_model import LogisticRegression
+
+    return LogisticRegression(
+        class_weight="balanced",
+        max_iter=1000,
+        solver="lbfgs",
+        random_state=config.workflow.random_seed,
+    ).fit(X_meta, y_meta)
+
+
+@_register_meta_model("lightgbm")
+def _build_meta_lgbm(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
+    if len(np.unique(y_meta)) < 2:
+        from sklearn.dummy import DummyClassifier
+
+        return DummyClassifier(strategy="most_frequent").fit(X_meta, y_meta)
+    return _train_fixed(
+        X_meta,
+        y_meta,
+        X_meta,
+        y_meta,
+        _compute_class_weights(y_meta),
+        config,
+        [f"meta_{i}" for i in range(X_meta.shape[1])],
+    )
+
+
+def _fit_meta_model(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
+    name = config.model.stacking_meta_model
+    if name not in _META_MODEL_REGISTRY:
+        raise ValueError(f"Unsupported stacking_meta_model: {name!r}")
+    return _META_MODEL_REGISTRY[name](config, X_meta, y_meta)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
 
 
 def _split_base_meta(
@@ -62,83 +181,16 @@ def _split_base_meta(
     return train_df.slice(0, base_rows), train_df.slice(base_rows, meta_rows)
 
 
-def _build_sklearn_base_model(name: str, config: Config) -> Any:
-    """Build a scikit-learn base learner by configured name."""
-    if name == "logistic_regression":
-        from sklearn.linear_model import LogisticRegression
-
-        return LogisticRegression(
-            class_weight="balanced",
-            max_iter=1000,
-            solver="lbfgs",
-            random_state=config.workflow.random_seed,
-        )
-    if name == "random_forest":
-        from sklearn.ensemble import RandomForestClassifier
-
-        return RandomForestClassifier(
-            n_estimators=config.model.random_forest_n_estimators,
-            max_depth=config.model.random_forest_max_depth,
-            min_samples_leaf=config.model.random_forest_min_samples_leaf,
-            class_weight="balanced_subsample",
-            random_state=config.workflow.random_seed,
-            n_jobs=config.workflow.n_jobs,
-        )
-    raise ValueError(f"Unsupported sklearn base model: {name!r}")
-
-
-def _fit_predictable_classifier(model: Any, X: np.ndarray, y: np.ndarray) -> Any:
-    """Fit a classifier, falling back to DummyClassifier for one-class folds."""
-    if len(np.unique(y)) < 2:
-        from sklearn.dummy import DummyClassifier
-
-        model = DummyClassifier(strategy="most_frequent")
-    model.fit(X, y)
-    return model
-
-
-def _fit_meta_model(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
-    """Fit the probability-level meta model."""
-    if len(np.unique(y_meta)) < 2:
-        from sklearn.dummy import DummyClassifier
-
-        return DummyClassifier(strategy="most_frequent").fit(X_meta, y_meta)
-    if config.model.stacking_meta_model == "logistic_regression":
-        from sklearn.linear_model import LogisticRegression
-
-        return LogisticRegression(
-            class_weight="balanced",
-            max_iter=1000,
-            solver="lbfgs",
-            random_state=config.workflow.random_seed,
-        ).fit(X_meta, y_meta)
-    if config.model.stacking_meta_model == "lightgbm":
-        return _train_fixed(
-            X_meta,
-            y_meta,
-            X_meta,
-            y_meta,
-            _compute_class_weights(y_meta),
-            config,
-            [f"meta_{i}" for i in range(X_meta.shape[1])],
-        )
-    raise ValueError(
-        f"Unsupported stacking_meta_model: {config.model.stacking_meta_model!r}"
-    )
-
-
 def _aligned_predict_proba(
     model: Any,
     X: np.ndarray,
     feature_names: list[str] | None = None,
 ) -> np.ndarray:
-    """Predict probabilities aligned to the canonical class order [-1, 0, 1].
+    """Predict probabilities aligned to the canonical class order [-1, 0, 1]."""
+    from thesis.stage_4_training.walk_forward.predictions import (
+        _align_probability_matrix,
+    )
 
-    LightGBM/scikit estimators fitted on pandas DataFrames store feature names and
-    warn when later called with a nameless NumPy array.  Preserve names at the
-    prediction boundary for those estimators while keeping NumPy inputs for models
-    that were fitted without names.
-    """
     X_pred: Any = X
     fitted_names = getattr(model, "feature_names_in_", None)
     if fitted_names is not None:
@@ -215,6 +267,8 @@ def _train_and_predict_stacking_window(
     window: Any,
     df: pl.DataFrame,
     feature_cols: list[str],
+    *,
+    is_regression_static: bool = False,
 ) -> dict[str, Any] | None:
     """Train base/meta learners for one outer walk-forward window."""
     train_df = df.slice(
@@ -260,7 +314,7 @@ def _train_and_predict_stacking_window(
             )
         else:
             model = _fit_predictable_classifier(
-                _build_sklearn_base_model(configured_name, config), X_base, y_base
+                _build_base_model(configured_name, config), X_base, y_base
             )
         base_models[short_name] = model
         meta_train_outputs[short_name] = _aligned_predict_proba(
@@ -320,74 +374,41 @@ def _train_and_predict_stacking_window(
     }
 
 
-def _save_model_comparison(
+def _save_stacking_wf_results(
     config: Config,
-    comparison_inputs: dict[str, dict[str, list[int]]],
+    results: list[dict[str, Any]],
+    windows: list[Any],
+    stage_start: float,
 ) -> None:
-    """Persist aggregate base-vs-stacking classification metrics."""
-    out = {
-        name: _classification_summary(values["true"], values["pred"])
-        for name, values in comparison_inputs.items()
-    }
-    if config.paths.session_dir:
-        path = Path(config.paths.session_dir) / "reports" / "model_comparison.json"
-    else:
-        path = Path("results/model_comparison.json")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(out, indent=2))
+    """Persist stacking walk-forward artifacts."""
+    import joblib
 
+    if not results:
+        raise RuntimeError("No stacking OOF predictions generated")
 
-def train_stacking_walk_forward(config: Config) -> None:
-    """Train leakage-safe classical stacking with outer walk-forward validation."""
-    if config.model.objective != "multiclass":
-        raise ValueError(
-            "Stacking architecture currently supports objective='multiclass' only"
-        )
-    df, windows, feature_cols, _is_regression = _prepare_static_wf_data(config)
+    all_oof_preds = [r["oof_chunk"] for r in results]
+    window_diagnostics = [r["diag"] for r in results]
+    last_result = results[-1]
+    last_bundle = last_result["bundle"]
+    last_lgbm_model = last_result["lgbm_model"]
+    last_feature_cols = last_result["feature_cols"]
+    last_window_accuracy = last_result["accuracy"]
+    last_window_index = len(results)
 
-    all_oof_preds: list[pl.DataFrame] = []
-    window_diagnostics: list[dict[str, Any]] = []
+    # Model comparison accumulation
     comparison_inputs: dict[str, dict[str, list[int]]] = {
         "hybrid_stacking": {"true": [], "pred": []}
     }
-    last_bundle: dict[str, Any] | None = None
-    last_lgbm_model = None
-    last_feature_cols: list[str] = []
-    last_window_accuracy: float | None = None
-    last_window_index = 0
-    stage_start = time.perf_counter()
-
-    for w_idx, window in enumerate(windows):
-        console.rule(
-            f"[bold cyan]Stacking window {w_idx + 1}/{len(windows)}[/]", style="cyan"
-        )
-        result = _train_and_predict_stacking_window(
-            config, w_idx, window, df, feature_cols
-        )
-        if result is None:
-            continue
-        all_oof_preds.append(result["oof_chunk"])
-        window_diagnostics.append(result["diag"])
-        last_bundle = result["bundle"]
-        last_lgbm_model = result["lgbm_model"]
-        last_feature_cols = result["feature_cols"]
-        last_window_accuracy = result["accuracy"]
-        last_window_index = w_idx + 1
-
-        y_true = [int(x) for x in result["y_true"]]
+    for r in results:
+        y_true = [int(x) for x in r["y_true"]]
         comparison_inputs["hybrid_stacking"]["true"].extend(y_true)
         comparison_inputs["hybrid_stacking"]["pred"].extend(
-            [int(x) for x in result["final_preds"]]
+            [int(x) for x in r["final_preds"]]
         )
-        for name, preds in result["base_preds"].items():
+        for name, preds in r["base_preds"].items():
             comparison_inputs.setdefault(name, {"true": [], "pred": []})
             comparison_inputs[name]["true"].extend(y_true)
             comparison_inputs[name]["pred"].extend([int(x) for x in preds])
-
-    if not all_oof_preds or last_bundle is None:
-        raise RuntimeError("No stacking OOF predictions generated")
-
-    import joblib
 
     oof_df = _save_oof_predictions(
         config,
@@ -441,4 +462,35 @@ def train_stacking_walk_forward(config: Config) -> None:
         oof_len=len(oof_df),
         stage_start=stage_start,
         prefix="Stacking walk-forward complete",
+    )
+
+
+def _save_model_comparison(
+    config: Config,
+    comparison_inputs: dict[str, dict[str, list[int]]],
+) -> None:
+    """Persist aggregate base-vs-stacking classification metrics."""
+    out = {
+        name: _classification_summary(values["true"], values["pred"])
+        for name, values in comparison_inputs.items()
+    }
+    if config.paths.session_dir:
+        path = Path(config.paths.session_dir) / "reports" / "model_comparison.json"
+    else:
+        path = Path("results/model_comparison.json")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=2))
+
+
+def train_stacking_walk_forward(config: Config) -> None:
+    """Train leakage-safe classical stacking with outer walk-forward validation."""
+    if config.model.objective != "multiclass":
+        raise ValueError(
+            "Stacking architecture currently supports objective='multiclass' only"
+        )
+    run_walk_forward(
+        config,
+        prepare_fn=_prepare_static_wf_data,
+        window_fn=_train_and_predict_stacking_window,
+        save_fn=_save_stacking_wf_results,
     )

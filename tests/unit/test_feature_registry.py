@@ -40,7 +40,9 @@ class TestBuildExcludeCols:
     def test_build_exclude_cols_no_stale_columns(self, config: Config) -> None:
         excl = build_exclude_cols(config)
         for stale in ("tp_price", "sl_price"):
-            assert stale not in excl, f"stale column {stale!r} should not be in exclude set"
+            assert stale not in excl, (
+                f"stale column {stale!r} should not be in exclude set"
+            )
 
 
 @pytest.mark.unit

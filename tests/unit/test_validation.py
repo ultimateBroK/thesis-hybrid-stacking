@@ -1,7 +1,7 @@
 """Tests for validation module — walk-forward sliding window."""
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl
@@ -15,7 +15,6 @@ from thesis.stage_4_training.validation import (
     apply_purge_embargo,
     generate_windows,
     log_windows,
-    split_data,
 )
 
 
@@ -226,31 +225,6 @@ class TestGenerateWindows:
         )
         for w in windows:
             assert w.test_end_idx <= 5500
-
-
-class TestSplitData:
-    def test_basic_split(self):
-        df = _make_df(500)
-        windows = [WalkForwardWindow(0, 300, 300, 400)]
-        splits = split_data(df, windows, "timestamp")
-        assert len(splits) == 1
-        train_df, test_df = splits[0]
-        assert len(train_df) == 300
-        assert len(test_df) == 100
-
-    def test_multiple_splits(self):
-        df = _make_df(1000)
-        windows = [
-            WalkForwardWindow(0, 400, 400, 500),
-            WalkForwardWindow(100, 500, 500, 600),
-        ]
-        splits = split_data(df, windows, "timestamp")
-        assert len(splits) == 2
-
-    def test_empty_windows(self):
-        df = _make_df(500)
-        splits = split_data(df, [], "timestamp")
-        assert len(splits) == 0
 
 
 class TestConsecutiveWindowsNoOverlap:

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl
@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helpers import create_synthetic_ohlcv
+
 from thesis.stage_6_reporting.data_quality import (
     compute_data_quality_report,
     compute_label_distribution,
@@ -21,7 +22,6 @@ from thesis.stage_6_reporting.data_quality import (
     compute_ohlcv_consistency,
     compute_outlier_returns,
 )
-
 
 # ---------------------------------------------------------------------------
 # compute_ohlcv_consistency

@@ -14,7 +14,7 @@ from typing import Any
 import polars as pl
 
 from thesis.shared.config import Config
-from thesis.stage_4_training.walk_forward.utils import (
+from thesis.stage_4_training.walk_forward.predictions import (
     _add_confidence_columns,
     _validate_predictions,
     _write_prediction_manifest,

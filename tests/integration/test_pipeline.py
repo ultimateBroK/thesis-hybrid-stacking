@@ -4,11 +4,10 @@ Tests pipeline stage ordering, caching, and --force flag.
 These tests use a temporary directory and do NOT write to the project's results/ directory.
 """
 
+from pathlib import Path
 import sys
 import tempfile
-from pathlib import Path
 
-import numpy as np
 import polars as pl
 import pytest
 
@@ -16,8 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helpers import create_synthetic_ohlcv
-from thesis.shared.config import Config
+
 from thesis.pipeline import run_pipeline
+from thesis.shared.config import Config
 from thesis.stage_2_features import generate_features
 from thesis.stage_3_labels import generate_labels
 
@@ -358,14 +358,14 @@ def test_new_stage_package_layout() -> None:
     every stage must be importable and re-export its documented symbols.
     """
     import thesis.stage_1_data
+
+    # Stage 1 — data generation
+    from thesis.stage_1_data import generate_data
     import thesis.stage_2_features
     import thesis.stage_3_labels
     import thesis.stage_4_training
     import thesis.stage_5_backtest
     import thesis.stage_6_reporting
-
-    # Stage 1 — data generation
-    from thesis.stage_1_data import generate_data
 
     assert callable(generate_data)
 

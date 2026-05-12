@@ -1,16 +1,15 @@
 """Tests for schema validation classes."""
 
-import pytest
 import polars as pl
+import pytest
 
-from thesis.shared.config import Config
-from thesis.shared.schemas import FeaturesSchema, LabelsSchema, OhlcvSchema
 from tests.helpers import (
     create_synthetic_features,
     create_synthetic_labeled_data,
     create_synthetic_ohlcv,
 )
-
+from thesis.shared.config import Config
+from thesis.shared.schemas import FeaturesSchema, LabelsSchema, OhlcvSchema
 
 # ---------------------------------------------------------------------------
 # OhlcvSchema

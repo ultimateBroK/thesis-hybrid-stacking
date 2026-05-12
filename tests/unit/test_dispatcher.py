@@ -19,7 +19,9 @@ class TestDispatcher:
         train_walk_forward(config)
         mock_lgbm.assert_called_once_with(config, expanded_features=False)
 
-    @patch("thesis.stage_4_training.walk_forward.dispatcher.train_stacking_walk_forward")
+    @patch(
+        "thesis.stage_4_training.walk_forward.dispatcher.train_stacking_walk_forward"
+    )
     def test_stacking_architecture_routes_correctly(self, mock_stacking) -> None:
         config = Config()
         config.model.architecture = "stacking"
