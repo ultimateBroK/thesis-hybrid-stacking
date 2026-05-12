@@ -11,6 +11,7 @@ from typing import Any
 from backtesting.lib import FractionalBacktest
 import pandas as pd
 
+from thesis.shared.schemas import BacktestMetrics, TradeRecord
 from thesis.stage_5_backtest.strategy import (
     _DEFAULT_COMMISSION_PER_LOT,
     _DEFAULT_CONTRACT_SIZE,
@@ -29,25 +30,27 @@ CORE_BACKTEST_METRICS: tuple[tuple[str, str, str], ...] = (
     ("num_trades", "Trades", "{:,.0f}"),
 )
 
-CORE_BACKTEST_METRIC_KEYS = {
-    "return_pct",
-    "max_drawdown_pct",
-    "profit_factor",
-    "sharpe_ratio",
-    "win_rate_pct",
-    "num_trades",
-    "equity_final",
-    "start",
-    "end",
-    "sortino_ratio",
-    "calmar_ratio",
-    "expectancy_pct",
-    "avg_trade_pct",
+# Explicit mapping: backtesting.py stat key → canonical BacktestMetrics key.
+# No string-munging; new metrics require an explicit entry here.
+_BT_KEY_MAP: dict[str, str] = {
+    "Return [%]": "return_pct",
+    "Max. Drawdown [%]": "max_drawdown_pct",
+    "Profit Factor": "profit_factor",
+    "Sharpe Ratio": "sharpe_ratio",
+    "Sortino Ratio": "sortino_ratio",
+    "Calmar Ratio": "calmar_ratio",
+    "Win Rate [%]": "win_rate_pct",
+    "Expectancy [%]": "expectancy_pct",
+    "Avg. Trade [%]": "avg_trade_pct",
+    "# Trades": "num_trades",
+    "Equity Final [$]": "equity_final",
+    "Start": "start",
+    "End": "end",
 }
 
 
 def _log_core_backtest_metrics(
-    metrics: dict[str, Any], initial_capital: float = _DEFAULT_INITIAL_CAPITAL
+    metrics: BacktestMetrics, initial_capital: float = _DEFAULT_INITIAL_CAPITAL
 ) -> None:
     """Log only the finance metrics that matter for CLI readability."""
     logger.info("=== BACKTEST CORE METRICS ===")
@@ -63,42 +66,26 @@ def _log_core_backtest_metrics(
         logger.info("  Final Equity: %s", f"${equity_final:,.0f}")
 
 
-def _normalize_stats(stats: pd.Series) -> dict:
-    """Convert backtesting.py statistics into the curated core metric dict.
+def _normalize_stats(stats: pd.Series) -> BacktestMetrics:
+    """Convert backtesting.py statistics into the canonical BacktestMetrics dict.
 
-    Only export metrics shown in dashboard/CLI to prevent downstream artifacts
-    from becoming a noisy dump of technical finance parameters.
+    Uses an explicit key mapping instead of string-munging to prevent
+    silent metric loss from unexpected label formats.
     """
     raw = stats.to_dict()
-    out: dict = {}
-    for k, v in raw.items():
-        if k.startswith("_"):
-            continue
-        key = (
-            k.lower()
-            .replace(" ", "_")
-            .replace(".", "")
-            .replace("[", "")
-            .replace("]", "")
-            .replace("(", "")
-            .replace(")", "")
-            .replace("$", "")
-            .replace("%", "pct")
-            .replace("#", "num")
-            .replace("__", "_")
-            .rstrip("_")
-        )
-        if key in CORE_BACKTEST_METRIC_KEYS:
-            out[key] = v
-
-    return out
+    out: dict[str, Any] = {}
+    for bt_key, canonical_key in _BT_KEY_MAP.items():
+        v = raw.get(bt_key)
+        if v is not None:
+            out[canonical_key] = v
+    return out  # type: ignore[return-value]
 
 
 def _trades_to_list(
     trades_df: pd.DataFrame,
     commission_per_lot: float = _DEFAULT_COMMISSION_PER_LOT,
     contract_size: float = _DEFAULT_CONTRACT_SIZE,
-) -> list[dict]:
+) -> list[TradeRecord]:
     """Convert a backtesting.py trades DataFrame to a JSON-serializable list.
 
     Each record contains entry/exit timestamps, direction, prices, lot size,
@@ -107,7 +94,7 @@ def _trades_to_list(
     if trades_df.empty:
         return []
     records = trades_df.reset_index(drop=True)
-    result: list[dict] = []
+    result: list[TradeRecord] = []
     for _, row in records.iterrows():
         size = float(row.get("Size", 0))
         lots = abs(size) / contract_size
@@ -130,8 +117,8 @@ def _trades_to_list(
 
 
 def _save_json_results(
-    metrics: dict,
-    trades: list[dict],
+    metrics: BacktestMetrics,
+    trades: list[TradeRecord],
     out_path: Path,
 ) -> None:
     """Save backtest results (metrics + trades) as JSON."""
@@ -141,7 +128,7 @@ def _save_json_results(
     logger.info("Backtest results saved: %s", out_path)
 
 
-def _save_trade_details_csv(trades: list[dict], out_dir: Path) -> None:
+def _save_trade_details_csv(trades: list[TradeRecord], out_dir: Path) -> None:
     """Save per-trade records as CSV."""
     if not trades:
         return
@@ -155,7 +142,7 @@ def _save_trade_details_csv(trades: list[dict], out_dir: Path) -> None:
 
 
 def _save_equity_curve_csv(
-    trades: list[dict],
+    trades: list[TradeRecord],
     out_dir: Path,
     initial_capital: float = _DEFAULT_INITIAL_CAPITAL,
 ) -> None:
@@ -190,13 +177,14 @@ def _save_equity_curve_csv(
 
 def _save_bokeh_chart(
     bt: FractionalBacktest,
-    stats: pd.Series,
+    metrics: BacktestMetrics,
     session_dir: Path | None,
 ) -> None:
     """Save Bokeh HTML chart for the backtest."""
     if not session_dir:
         return
-    if stats["_trades"].empty:
+    n_trades = int(metrics.get("num_trades", 0))
+    if n_trades == 0:
         logger.info("No trades — skipping Bokeh chart")
         return
     chart_dir = session_dir / "backtest"

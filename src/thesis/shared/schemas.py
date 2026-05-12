@@ -1,9 +1,123 @@
-"""Column contract validation for pipeline stage boundaries."""
+"""Column contract validation for pipeline stage boundaries.
+
+Also defines canonical TypedDict contracts for metric dictionaries
+passed between stages 5 (backtest) and 6 (reporting).
+"""
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 import pandera.polars as pa
 import polars as pl
+
+# ---------------------------------------------------------------------------
+# Canonical metric result contracts (stage 5 → stage 6 boundary)
+# ---------------------------------------------------------------------------
+
+
+class BacktestMetrics(TypedDict, total=False):
+    """Backtest result metrics — single source of truth.
+
+    Produced by ``stage_5_backtest.persistence._normalize_stats`` and
+    consumed by ``stage_6_reporting`` table/render logic.  All stages
+    must use these keys; new metrics go here first.
+    """
+
+    return_pct: float
+    max_drawdown_pct: float
+    profit_factor: float
+    sharpe_ratio: float
+    sortino_ratio: float
+    calmar_ratio: float
+    win_rate_pct: float
+    expectancy_pct: float
+    avg_trade_pct: float
+    num_trades: int
+    equity_final: float
+    start: str
+    end: str
+
+
+class PerClassMetrics(TypedDict, total=False):
+    """Per-class (Short / Hold / Long) classification metrics."""
+
+    true_count: int
+    pred_count: int
+    precision: float
+    recall: float
+    f1: float
+
+
+class HighConfidenceMetrics(TypedDict, total=False):
+    """Metrics filtered to high-confidence predictions only."""
+
+    threshold: float
+    count: int
+    pct_of_total: float  # 0–1 fraction
+    accuracy: float  # 0–1 fraction
+    directional_accuracy: float  # 0–1 fraction
+
+
+class RegressionAuxiliary(TypedDict, total=False):
+    """Regression auxiliary metrics for continuous-return prediction."""
+
+    mae: float
+    rmse: float
+    r_squared: float
+
+
+class PredictionStats(TypedDict, total=False):
+    """Prediction statistics — single source of truth.
+
+    Produced by ``stage_6_reporting.generation._load_prediction_stats``
+    and consumed by report renderers.  ``regression_auxiliary`` is nested
+    (not flattened) to avoid top-level key collisions.
+    """
+
+    total: int
+    accuracy: float
+    balanced_accuracy: float
+    directional_accuracy: float
+    directional_baseline: float
+    majority_baseline: float
+    macro_f1: float
+    weighted_f1: float
+    per_class: dict[str, PerClassMetrics]
+    confusion_matrix: dict[str, dict[str, int]]
+    direction_confusion_matrix: dict[str, dict[str, int]]
+    high_confidence: HighConfidenceMetrics
+    regression_auxiliary: RegressionAuxiliary
+
+
+class TradeRecord(TypedDict, total=False):
+    """Single trade record from backtest output."""
+
+    entry_time: str
+    exit_time: str
+    direction: str
+    entry_price: float
+    exit_price: float
+    lot_size: float
+    pnl: float
+    return_pct: float
+    commission: float
+    duration: str
+
+
+class ModelComparisonRow(TypedDict, total=False):
+    """Single row in the model comparison table."""
+
+    model: str
+    directional_accuracy: float | None
+    accuracy: float | None
+    macro_f1: float | None
+    long_f1: float | None
+    short_f1: float | None
+    mae_return: float | None
+    rmse_return: float | None
+    r2_return: float | None
+    source: str
 
 
 def _check_columns(df: pl.DataFrame, required: set[str], schema_name: str) -> None:

@@ -297,16 +297,33 @@ def _render_validation_methodology_section(L: list[str], config: Config) -> None
 
 
 def _render_auxiliary_regression_section(L: list[str], pred_stats: dict | None) -> None:
-    """Render auxiliary regression metrics section (MAE/RMSE/R²) if available."""
+    """Render auxiliary regression metrics section (MAE/RMSE/R²) if available.
+
+    Reads from the ``regression_auxiliary`` sub-dict produced by
+    :func:`thesis.stage_6_reporting.generation._load_prediction_stats`.
+    """
     L.append("## Auxiliary: Regression Metrics")
     L.append("")
-    if pred_stats and any(k in pred_stats for k in ("mae", "rmse", "r2")):
+
+    reg = pred_stats.get("regression_auxiliary") if pred_stats else None
+    metrics = (
+        [
+            ("mae", "MAE"),
+            ("rmse", "RMSE"),
+            ("r_squared", "R²"),
+        ]
+        if reg
+        else []
+    )
+    has_any = any(reg.get(key) is not None for key, _ in metrics) if reg else False
+
+    if has_any:
         L.append(_tbl_row("Metric", "Value"))
         L.append(_tbl_row("------", "-----"))
-        for key, label in [("mae", "MAE"), ("rmse", "RMSE"), ("r2", "R²")]:
-            val = pred_stats.get(key)
+        for key, label in metrics:
+            val = reg.get(key)
             if val is not None:
-                L.append(_tbl_row(label, f"{val:.4f}"))
+                L.append(_tbl_row(label, f"{val:.6f}"))
         L.append("")
     else:
         L.append(

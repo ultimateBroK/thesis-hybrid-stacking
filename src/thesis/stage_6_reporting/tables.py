@@ -23,9 +23,7 @@ from thesis.stage_6_reporting.benchmarks import (
 )
 from thesis.stage_6_reporting.md_format import _fmt_dollar, _fmt_f2, _fmt_pct, _tbl_row
 from thesis.stage_6_reporting.sections import (
-    _EDGE_PF_NEGATIVE,
-    _ISSUE_DD_CATASTROPHIC,
-    _QUALITY_DIR_ACC_FAIR,
+    _identify_primary_issue,
     _render_issues,
     _render_ml_quality_paragraph,
     _render_primary_issue,
@@ -41,8 +39,7 @@ logger = logging.getLogger("thesis.report")
 # Confidence & baseline
 _DIRECTIONAL_BASELINE: float = 0.5
 
-# Expected Calibration Error (ECE)
-_ECE_N_BINS: int = 10
+# Expected Calibration Error (ECE) thresholds
 _ECE_WELL_CALIBRATED: float = 0.05
 _ECE_MODERATELY_CALIBRATED: float = 0.15
 
@@ -76,35 +73,16 @@ def _zone(key: str, value: float) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _compute_ece_numpy(
-    proba: np.ndarray, labels: np.ndarray, n_bins: int = _ECE_N_BINS
-) -> float:
-    """Compute Expected Calibration Error (ECE) from NumPy arrays.
-
-    Delegates to
-    :func:`thesis.stage_6_reporting.calibration.expected_calibration_error`.
-
-    Args:
-        proba: Softmax probabilities with shape ``(N, C)``.
-        labels: Ground-truth class indices with shape ``(N,)``.
-        n_bins: Number of confidence bins (default matches ``_ECE_N_BINS``).
-
-    Returns:
-        ECE value (0.0 = perfectly calibrated).
-    """
-    n_classes = proba.shape[1]
-    y_onehot = np.zeros((len(labels), n_classes), dtype=np.float64)
-    for i, lbl in enumerate(labels):
-        y_onehot[i, lbl] = 1.0
-    return calibration.expected_calibration_error(y_onehot, proba, n_bins=n_bins)
+# ---------------------------------------------------------------------------
+# Table builders
 
 
 def _calibration_summary_text(config: Config) -> str | None:
     """Compute a one-paragraph calibration reliability note.
 
     Reads predicted probabilities and true labels from the predictions
-    parquet file, computes ECE, and returns a human-readable summary
-    of whether confidence scores appear calibrated.
+    parquet file, computes calibration metrics via the ``calibration``
+    module, and returns a human-readable summary.
 
     Args:
         config: Loaded runtime configuration.
@@ -141,22 +119,16 @@ def _calibration_summary_text(config: Config) -> str | None:
     true_labels = df["true_label"].to_numpy()
     pred_labels = df["pred_label"].to_numpy() if "pred_label" in df.columns else None
 
-    # Map label values (-1, 0, 1) → class indices (0, 1, 2)
-    class_indices = np.zeros(len(true_labels), dtype=np.int64)
-    class_indices[true_labels == 0] = 1
-    class_indices[true_labels == 1] = 2
-
-    ece = _compute_ece_numpy(proba, class_indices)
-
-    # Full calibration suite from _calibration module
-    calib_metrics = calibration.compute_all_calibration_metrics(
+    # Single call — all calibration metrics from the canonical module
+    calib = calibration.compute_all_calibration_metrics(
         true_labels,
         pred_labels if pred_labels is not None else np.argmax(proba, axis=1) - 1,
         proba,
         classes=[-1, 0, 1],
     )
-    brier = calib_metrics.get("brier_score", float("nan"))
-    logloss = calib_metrics.get("log_loss", float("nan"))
+    ece = calib["ece"]
+    brier = calib["brier_score"]
+    logloss = calib["log_loss"]
 
     if ece < _ECE_WELL_CALIBRATED:
         quality = "well-calibrated"
@@ -453,10 +425,9 @@ def _accuracy_table(
     # Confidence filtering
     hc = pred_stats.get("high_confidence")
     if hc:
-        hc_ratio = hc["count"] / total if total else 0.0
         L.append(
             f"High-confidence (≥{hc['threshold']:.0%}): "
-            f"{hc['count']:,} samples ({hc_ratio * 100:.2f}%), "
+            f"{hc['count']:,} samples ({hc['pct_of_total'] * 100:.2f}%), "
             f"accuracy {hc['accuracy'] * 100:.1f}%, "
             f"dir. acc. {hc['directional_accuracy'] * 100:.1f}%"
         )
@@ -605,7 +576,9 @@ def _issues_list(
 ) -> None:
     """High-signal issues and recommendations from report metrics.
 
-    Only the most critical checks are included to keep the report focused.
+    Delegates issue identification to :mod:`assess` to avoid threshold
+    duplication.  Only the most critical checks are rendered to keep
+    the report focused.
 
     Args:
         L: Output markdown lines.
@@ -622,71 +595,20 @@ def _issues_list(
         _render_issues(L, issues, recs)
         return
 
-    sharpe = metrics.get("sharpe_ratio", 0)
-    dd = abs(metrics.get("max_drawdown_pct", 0))
-    pf = metrics.get("profit_factor", 0)
-    n_trades = int(metrics.get("num_trades", 0))
-    dir_acc = pred_stats.get("directional_accuracy", 0) if pred_stats else 0
-
-    # — Core high-signal checks —
-
-    if n_trades == 0:
-        issues.append(
-            (
-                "critical",
-                "Zero trades executed — model produces no actionable"
-                " signals in test period.",
-            )
-        )
-
-    if sharpe < 0:
-        issues.append(
-            (
-                "critical",
-                f"Sharpe {sharpe:.2f} is negative"
-                " — strategy underperforms risk-free rate.",
-            )
-        )
-
-    if dd > _ISSUE_DD_CATASTROPHIC:
-        issues.append(
-            (
-                "critical",
-                f"Max drawdown {dd:.1f}% > {_ISSUE_DD_CATASTROPHIC:.0f}%"
-                " — catastrophic capital erosion.",
-            )
-        )
-
-    if pf < _EDGE_PF_NEGATIVE:
-        issues.append(
-            (
-                "critical",
-                f"Profit factor {pf:.2f} < {_EDGE_PF_NEGATIVE:.1f}"
-                " — strategy loses money on average.",
-            )
-        )
-
-    if dir_acc > 0 and dir_acc < _QUALITY_DIR_ACC_FAIR:
-        issues.append(
-            (
-                "critical",
-                f"Directional accuracy {dir_acc:.1%}"
-                f" < {_QUALITY_DIR_ACC_FAIR:.0%}"
-                " — model predicts worse than random.",
-            )
-        )
-
-    if not issues:
+    # Delegate to the canonical issue identification in assess.py
+    primary = _identify_primary_issue(metrics, pred_stats)
+    if primary:
+        issues.append(("critical", primary))
+    else:
         issues.append(("info", "No critical issues identified."))
 
     # — Single actionable recommendation —
-    if not recs:
-        recs.append(
-            (
-                "info",
-                "Consider walk-forward validation for production"
-                " readiness and robustness testing.",
-            )
+    recs.append(
+        (
+            "info",
+            "Consider walk-forward validation for production"
+            " readiness and robustness testing.",
         )
+    )
 
     _render_issues(L, issues, recs)

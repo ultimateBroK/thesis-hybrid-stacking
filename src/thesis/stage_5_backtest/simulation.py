@@ -10,9 +10,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import pandas as pd
 import polars as pl
 
 from thesis.shared.config import Config
+from thesis.shared.schemas import BacktestMetrics, TradeRecord
 from thesis.shared.ui import console
 from thesis.stage_5_backtest.persistence import (
     _log_core_backtest_metrics,
@@ -29,9 +31,139 @@ from thesis.stage_5_backtest.runners import (
     _prepare_df,
     _run_fractional_backtest,
 )
-from thesis.stage_5_backtest.strategy import _DEFAULT_INITIAL_CAPITAL
 
 logger = logging.getLogger("thesis.backtest")
+
+
+# ---------------------------------------------------------------------------
+# Data loading — separate I/O from computation
+# ---------------------------------------------------------------------------
+
+
+def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
+    """Load and join test/features + predictions based on config.
+
+    Returns:
+        Tuple of (merged pandas DataFrame ready for backtesting, source label).
+    """
+    preds_path = Path(config.paths.predictions)
+    if not preds_path.exists():
+        raise FileNotFoundError(f"Predictions not found: {preds_path}")
+    with console.status(f"[cyan]Loading predictions[/] {preds_path}"):
+        preds_df = pl.read_parquet(preds_path)
+
+    test_path = Path(config.paths.test_data)
+    is_static = config.validation.method == "static"
+    labels_path = Path(config.paths.labels)
+
+    if test_path.exists() and is_static:
+        source = str(test_path)
+        with console.status(f"[cyan]Loading static test data[/] {test_path}"):
+            test_df = pl.read_parquet(test_path)
+    else:
+        if test_path.exists() and not is_static:
+            logger.warning(
+                "Static test file found (%s) but workflow is walk-forward "
+                "(method='%s') — ignoring stale test_data in favor of OOF predictions",
+                test_path,
+                config.validation.method,
+            )
+        if not labels_path.exists():
+            raise FileNotFoundError(
+                f"Neither test data ({test_path}) nor labels ({labels_path}) found"
+            )
+        source = str(labels_path)
+        logger.info("Walk-forward mode: joining OOF predictions with labeled data")
+        with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
+            test_df = pl.read_parquet(labels_path)
+
+    pdf = _prepare_df(
+        test_df, preds_df, test_source=source, preds_source=str(preds_path)
+    )
+    return _apply_oos_date_filter(pdf, config), source
+
+
+def _apply_oos_date_filter(pdf: pd.DataFrame, config: Config) -> pd.DataFrame:
+    """Apply optional OOS date range filter to the merged DataFrame."""
+    bc = config.backtest
+    if bc.oob_start_date:
+        start_ts = pd.Timestamp(bc.oob_start_date)
+        pdf = pdf[pdf.index >= start_ts]
+        logger.info("OOS start filter: %s → %d bars", bc.oob_start_date, len(pdf))
+    if bc.oob_end_date:
+        end_ts = pd.Timestamp(bc.oob_end_date)
+        pdf = pdf[pdf.index <= end_ts]
+        logger.info("OOS end filter: %s → %d bars", bc.oob_end_date, len(pdf))
+    if bc.oob_start_date or bc.oob_end_date:
+        logger.info(
+            "OOS date range: %s to %s (%d bars)",
+            bc.oob_start_date or "start",
+            bc.oob_end_date or "end",
+            len(pdf),
+        )
+    return pdf
+
+
+# ---------------------------------------------------------------------------
+# Pure computation — no I/O side effects
+# ---------------------------------------------------------------------------
+
+
+BacktestResult = tuple[BacktestMetrics, list[TradeRecord], object]
+"""(metrics, trades, bt_engine) — bt_engine kept for optional chart rendering."""
+
+
+def compute_backtest(config: Config) -> BacktestResult:
+    """Run backtest computation, return structured results.
+
+    Loads data, runs the FractionalBacktest, and returns normalized metrics
+    with trade records. No files are written.
+
+    Returns:
+        Tuple of (metrics dict, trades list, backtest engine for chart).
+    """
+    pdf, _ = _load_backtest_data(config)
+    logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
+    with console.status("[cyan]Running CFD backtest[/]"):
+        stats, bt = _run_fractional_backtest(pdf, config)
+
+    metrics = _normalize_stats(stats)
+    trades = _trades_to_list(
+        stats["_trades"],
+        commission_per_lot=config.backtest.commission_per_lot,
+        contract_size=config.data.contract_size,
+    )
+    return metrics, trades, bt
+
+
+# ---------------------------------------------------------------------------
+# Persistence — write results to disk
+# ---------------------------------------------------------------------------
+
+
+def _persist_backtest_results(
+    metrics: BacktestMetrics,
+    trades: list[TradeRecord],
+    bt_engine: object,
+    config: Config,
+) -> None:
+    """Write backtest artifacts (JSON, CSV, Bokeh chart) to disk."""
+    out_path = Path(config.paths.backtest_results)
+    _save_json_results(metrics, trades, out_path)
+
+    if trades:
+        _save_trade_details_csv(trades, out_path.parent)
+        _save_equity_curve_csv(trades, out_path.parent, config.backtest.initial_capital)
+
+    _log_core_backtest_metrics(metrics, config.backtest.initial_capital)
+
+    session_dir = Path(config.paths.session_dir) if config.paths.session_dir else None
+    _save_bokeh_chart(bt_engine, metrics, session_dir)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline entry point (called by pipeline.py)
+# ---------------------------------------------------------------------------
 
 
 def run_backtest(config: Config) -> None:
@@ -44,105 +176,20 @@ def run_backtest(config: Config) -> None:
     Writes normalized metrics and trade records as JSON, optional trade-detail
     and equity-curve CSV files, and an optional Bokeh HTML chart.
     """
-    preds_path = Path(config.paths.predictions)
-    if not preds_path.exists():
-        raise FileNotFoundError(f"Predictions not found: {preds_path}")
-    with console.status(f"[cyan]Loading predictions[/] {preds_path}"):
-        preds_df = pl.read_parquet(preds_path)
+    metrics, trades, bt_engine = compute_backtest(config)
+    _persist_backtest_results(metrics, trades, bt_engine, config)
 
-    test_path = Path(config.paths.test_data)
-    is_static = config.validation.method == "static"
 
-    if test_path.exists() and is_static:
-        with console.status(f"[cyan]Loading static test data[/] {test_path}"):
-            test_df = pl.read_parquet(test_path)
-    elif test_path.exists() and not is_static:
-        logger.warning(
-            "Static test file found (%s) but workflow is walk-forward "
-            "(method='%s') — ignoring stale test_data in favor of OOF predictions",
-            test_path,
-            config.validation.method,
-        )
-        labels_path = Path(config.paths.labels)
-        if not labels_path.exists():
-            raise FileNotFoundError(
-                f"Labels file not found ({labels_path})"
-                " — needed for walk-forward backtest"
-            )
-        with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
-            test_df = pl.read_parquet(labels_path)
-    else:
-        labels_path = Path(config.paths.labels)
-        if not labels_path.exists():
-            raise FileNotFoundError(
-                f"Neither test data ({test_path}) nor labels ({labels_path}) found"
-            )
-        logger.info("Walk-forward mode: joining OOF predictions with labeled data")
-        with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
-            test_df = pl.read_parquet(labels_path)
-
-    pdf = _prepare_df(
-        test_df,
-        preds_df,
-        test_source=str(test_path if test_path.exists() and is_static else labels_path),
-        preds_source=str(preds_path),
-    )
-
-    bc = config.backtest
-    if bc.oob_start_date:
-        import pandas as pd
-
-        start_ts = pd.Timestamp(bc.oob_start_date)
-        pdf = pdf[pdf.index >= start_ts]
-        logger.info("OOS start filter: %s → %d bars", bc.oob_start_date, len(pdf))
-    if bc.oob_end_date:
-        import pandas as pd
-
-        end_ts = pd.Timestamp(bc.oob_end_date)
-        pdf = pdf[pdf.index <= end_ts]
-        logger.info("OOS end filter: %s → %d bars", bc.oob_end_date, len(pdf))
-    if bc.oob_start_date or bc.oob_end_date:
-        logger.info(
-            "OOS date range: %s to %s (%d bars)",
-            bc.oob_start_date or "start",
-            bc.oob_end_date or "end",
-            len(pdf),
-        )
-
-    logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
-    with console.status("[cyan]Running CFD backtest[/]"):
-        stats, bt = _run_fractional_backtest(pdf, config)
-
-    metrics = _normalize_stats(stats)
-    trades = _trades_to_list(
-        stats["_trades"],
-        commission_per_lot=config.backtest.commission_per_lot,
-        contract_size=config.data.contract_size,
-    )
-
-    out_path = Path(config.paths.backtest_results)
-    _save_json_results(metrics, trades, out_path)
-
-    if trades:
-        _save_trade_details_csv(trades, out_path.parent)
-        initial_capital = (
-            config.backtest.initial_capital
-            if hasattr(config.backtest, "initial_capital")
-            else _DEFAULT_INITIAL_CAPITAL
-        )
-        _save_equity_curve_csv(trades, out_path.parent, initial_capital)
-
-    _log_core_backtest_metrics(metrics, config.backtest.initial_capital)
-
-    session_dir = Path(config.paths.session_dir) if config.paths.session_dir else None
-    _save_bokeh_chart(bt, stats, session_dir)
+# ---------------------------------------------------------------------------
+# Alternative entry points (in-memory, manual)
+# ---------------------------------------------------------------------------
 
 
 def run_backtest_from_data(
     test_df: pl.DataFrame,
     preds_df: pl.DataFrame,
     config: Config,
-) -> dict:
+) -> BacktestMetrics:
     """Run the full backtest pipeline using in-memory Polars DataFrames.
 
     Args:
@@ -182,7 +229,7 @@ def run_backtest_manual(
     max_open_positions: int = 1,
     daily_loss_limit: float = 0.03,
     min_bars_between_trades: int = 6,
-) -> tuple[dict, list[dict]]:
+) -> tuple[BacktestMetrics, list[TradeRecord]]:
     """Run a backtest with manually specified parameters (no Config required).
 
     Designed for interactive use in dashboards where parameters can be tuned

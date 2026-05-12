@@ -41,6 +41,9 @@ _MAX_PER_WINDOW_DISPLAY: int = 10
 def _parse_date(date_str: str) -> datetime | None:
     """Parse a date string into a datetime, trying multiple formats.
 
+    Timezone-aware formats are tried on the **full** string first to avoid
+    silently dropping offset information.
+
     Args:
         date_str: Date string in one of the supported formats
             (``"%Y-%m-%d"``, ``"%Y-%m-%d %H:%M:%S"``, or ISO 8601
@@ -51,17 +54,28 @@ def _parse_date(date_str: str) -> datetime | None:
     """
     if not date_str:
         return None
-    for fmt in (
+
+    # Timezone-aware formats must see the full string.
+    tz_aware_formats = (
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S%z",
+    )
+    for fmt in tz_aware_formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+
+    # Timezone-naive formats — safe to truncate at 19 chars.
+    naive_formats = (
         "%Y-%m-%d",
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%S%z",
-    ):
+    )
+    truncated = date_str[:19]
+    for fmt in naive_formats:
         try:
-            return datetime.strptime(
-                date_str[:19] if len(date_str) > 19 else date_str, fmt
-            )
+            return datetime.strptime(truncated, fmt)
         except ValueError:
             continue
     return None

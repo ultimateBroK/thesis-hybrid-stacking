@@ -178,7 +178,7 @@ def high_confidence_accuracy(
     if count == 0:
         return {"accuracy": 0.0, "count": 0, "pct_of_total": 0.0}
     acc = float((y_true[mask] == y_pred[mask]).mean())
-    return {"accuracy": acc, "count": count, "pct_of_total": count / total * 100}
+    return {"accuracy": acc, "count": count, "pct_of_total": count / total}
 
 
 def mae(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:

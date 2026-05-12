@@ -118,7 +118,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
             result["high_confidence"] = {
                 "threshold": _HIGH_CONFIDENCE_THRESHOLD,
                 "count": hc_count,
-                "pct_of_total": (hc_count / len(true) * 100.0) if len(true) else 0.0,
+                "pct_of_total": (hc_count / len(true)) if len(true) else 0.0,
                 "accuracy": hc_acc,
                 "directional_accuracy": hc_dir_acc,
             }
@@ -309,8 +309,46 @@ def _build_model_evaluation_markdown(
     return "\n".join(lines)
 
 
-def generate_report(config: Config) -> None:
-    """Generate thesis report with static charts and markdown."""
+class ReportData:
+    """Structured report payload — all data needed to render & persist reports.
+
+    Computed once by :func:`compute_report_data`, then passed to rendering
+    and persistence functions.  Keeps I/O out of renderers.
+    """
+
+    __slots__ = (
+        "metrics",
+        "trades",
+        "feature_importance",
+        "pred_stats",
+        "model_comparison_rows",
+        "out_dir",
+        "report_path",
+    )
+
+    def __init__(
+        self,
+        *,
+        metrics: dict,
+        trades: list[dict],
+        feature_importance: dict,
+        pred_stats: dict | None,
+        model_comparison_rows: list[dict],
+        out_dir: Path,
+        report_path: Path,
+    ) -> None:
+        """Initialise report data payload."""
+        self.metrics = metrics
+        self.trades = trades
+        self.feature_importance = feature_importance
+        self.pred_stats = pred_stats
+        self.model_comparison_rows = model_comparison_rows
+        self.out_dir = out_dir
+        self.report_path = report_path
+
+
+def _setup_matplotlib() -> None:
+    """Configure matplotlib for headless report chart rendering."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -327,12 +365,24 @@ def generate_report(config: Config) -> None:
         }
     )
 
-    if config.paths.session_dir:
-        out_dir = Path(config.paths.session_dir) / "reports"
-    else:
-        out_dir = Path("results")
-    out_dir.mkdir(parents=True, exist_ok=True)
 
+def compute_report_data(config: Config) -> ReportData:
+    """Load data, compute metrics, render charts — return structured payload.
+
+    No report files are written.  Callers use the returned
+    :class:`ReportData` to build markdown and persist artifacts.
+    """
+    _setup_matplotlib()
+
+    out_dir = (
+        Path(config.paths.session_dir) / "reports"
+        if config.paths.session_dir
+        else Path("results")
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = Path(config.paths.report)
+
+    # Load backtest results
     bt_path = Path(config.paths.backtest_results)
     metrics: dict = {}
     trades: list[dict] = []
@@ -343,36 +393,56 @@ def generate_report(config: Config) -> None:
             metrics = bt.get("metrics", {})
             trades = bt.get("trades", [])
 
+    # Render charts
     with console.status("[cyan]Rendering report charts[/]"):
         _plot_equity_curve(trades, config, out_dir)
         feature_importance = _load_feature_importance(config, out_dir)
         _plot_feature_importance(feature_importance, out_dir)
 
+    # Compute prediction statistics and model comparisons
     with console.status("[cyan]Building thesis markdown[/]"):
         pred_stats = _load_prediction_stats(Path(config.paths.predictions))
         model_comparison_rows = _build_model_comparison_rows(config, pred_stats)
-        md = _build_markdown(config, metrics, trades, feature_importance, pred_stats)
-        model_eval_md = _build_model_evaluation_markdown(
-            config, pred_stats, model_comparison_rows
-        )
 
-    report_path = Path(config.paths.report)
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(report_path, "w") as f:
+    return ReportData(
+        metrics=metrics,
+        trades=trades,
+        feature_importance=feature_importance,
+        pred_stats=pred_stats,
+        model_comparison_rows=model_comparison_rows,
+        out_dir=out_dir,
+        report_path=report_path,
+    )
+
+
+def generate_report(config: Config) -> None:
+    """Generate thesis report with static charts and markdown."""
+    data = compute_report_data(config)
+
+    md = _build_markdown(
+        config, data.metrics, data.trades, data.feature_importance, data.pred_stats
+    )
+    model_eval_md = _build_model_evaluation_markdown(
+        config, data.pred_stats, data.model_comparison_rows
+    )
+
+    # Persist artifacts
+    data.report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(data.report_path, "w") as f:
         f.write(md)
-    logger.info("Report saved: %s", report_path)
+    logger.info("Report saved: %s", data.report_path)
 
-    model_eval_path = out_dir / "model_evaluation.md"
+    model_eval_path = data.out_dir / "model_evaluation.md"
     with model_eval_path.open("w") as f:
         f.write(model_eval_md)
     logger.info("Model evaluation saved: %s", model_eval_path)
 
-    model_metrics_path = out_dir / "model_metrics.json"
+    model_metrics_path = data.out_dir / "model_metrics.json"
     with model_metrics_path.open("w") as f:
-        json.dump(pred_stats or {}, f, indent=2)
+        json.dump(data.pred_stats or {}, f, indent=2)
     logger.info("Model metrics saved: %s", model_metrics_path)
 
     model_cmp_csv, model_cmp_md = _write_model_comparison_artifacts(
-        out_dir, model_comparison_rows
+        data.out_dir, data.model_comparison_rows
     )
     logger.info("Model comparison saved: %s, %s", model_cmp_csv, model_cmp_md)
