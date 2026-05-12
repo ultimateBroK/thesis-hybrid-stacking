@@ -16,34 +16,72 @@ import pandas_market_calendars as mcal
 import polars as pl
 
 
-def check_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
-    """Check that OHLC relationships hold for every row.
+def validate_ohlcv(df: pl.DataFrame) -> dict[str, Any]:
+    """Unified OHLCV integrity check — covers price, boundary, and volume invariants.
 
-    * high >= open, close, low
-    * low  <= open, close, high
-    * all prices > 0
+    Checks:
+    * all prices > 0 (open, high, low, close)
+    * high >= low, high >= open, high >= close
+    * low <= open, low <= close
+    * volume >= 0 (if present)
+
+    Returns:
+        Dictionary with keys: total_rows, invalid_count, ohlc_violations,
+        price_negative_count, volume_negative_count, is_valid.
     """
+    if df.is_empty():
+        return {
+            "total_rows": 0,
+            "invalid_count": 0,
+            "ohlc_violations": 0,
+            "price_negative_count": 0,
+            "volume_negative_count": 0,
+            "is_valid": True,
+        }
+
     total = len(df)
-    ohlc_violations = 0
+    conditions: list[pl.Expr] = []
     price_negative = 0
+    volume_negative = 0
 
     for col in ("open", "high", "low", "close"):
         if col in df.columns:
             price_negative += int((df[col] <= 0).sum())
 
+    if "volume" in df.columns:
+        volume_negative = int((df["volume"] < 0).sum())
+        conditions.append(pl.col("volume") >= 0)
+
     if all(c in df.columns for c in ("open", "high", "low", "close")):
-        ohlc_violations += int((df["high"] < df["open"]).sum())
-        ohlc_violations += int((df["high"] < df["close"]).sum())
-        ohlc_violations += int((df["high"] < df["low"]).sum())
-        ohlc_violations += int((df["low"] > df["open"]).sum())
-        ohlc_violations += int((df["low"] > df["close"]).sum())
-        ohlc_violations += int((df["low"] > df["high"]).sum())
+        conditions.extend(
+            [
+                pl.col("high") >= pl.col("low"),
+                pl.col("high") >= pl.col("open"),
+                pl.col("high") >= pl.col("close"),
+                pl.col("low") <= pl.col("open"),
+                pl.col("low") <= pl.col("close"),
+            ]
+        )
+
+    if conditions:
+        valid = df.filter(pl.all_horizontal(conditions))
+        invalid_count = total - len(valid)
+    else:
+        invalid_count = 0
+
+    ohlc_violations = (
+        invalid_count - volume_negative
+        if volume_negative <= invalid_count
+        else invalid_count
+    )
 
     return {
         "total_rows": total,
+        "invalid_count": invalid_count,
         "ohlc_violations": ohlc_violations,
         "price_negative_count": price_negative,
-        "is_consistent": ohlc_violations == 0 and price_negative == 0,
+        "volume_negative_count": volume_negative,
+        "is_valid": invalid_count == 0 and price_negative == 0,
     }
 
 
@@ -128,38 +166,6 @@ def check_outlier_returns(
     }
 
 
-def check_candle_quality(df: pl.DataFrame) -> dict[str, Any]:
-    """Check high >= low, open/close inside [low, high], volume >= 0."""
-    if df.is_empty():
-        return {"invalid_count": 0, "total_rows": 0, "is_valid": True}
-
-    conditions = [
-        pl.col("high") >= pl.col("low"),
-    ]
-
-    if "open" in df.columns:
-        conditions.append(pl.col("open") >= pl.col("low"))
-        conditions.append(pl.col("open") <= pl.col("high"))
-
-    if "close" in df.columns:
-        conditions.append(pl.col("close") >= pl.col("low"))
-        conditions.append(pl.col("close") <= pl.col("high"))
-
-    if "volume" in df.columns:
-        conditions.append(pl.col("volume") >= 0)
-
-    valid = df.filter(
-        pl.all_horizontal(conditions),
-    )
-    invalid_count = len(df) - len(valid)
-
-    return {
-        "invalid_count": invalid_count,
-        "total_rows": len(df),
-        "is_valid": invalid_count == 0,
-    }
-
-
 DEFAULT_GOLD_CALENDARS: tuple[str, ...] = (
     "CME Globex Gold and Silver Futures",
     "CME Globex Commodities",
@@ -194,91 +200,123 @@ def resolve_market_calendar(name: str | None = None):
     )
 
 
+def _classify_gaps_with_calendar(
+    df: pl.DataFrame,
+    timeframe_ms: int,
+    calendar_name: str | None,
+) -> GapClassification:
+    """Classify gaps using pandas_market_calendars for exchange-aware scheduling.
+
+    Raises:
+        Exception: If calendar resolution or date-range computation fails.
+    """
+    ts = df["timestamp"].sort().to_list()
+    actual_index = pd.DatetimeIndex(ts)
+    if actual_index.tz is None:
+        actual_index = actual_index.tz_localize("UTC")
+    else:
+        actual_index = actual_index.tz_convert("UTC")
+
+    cal = resolve_market_calendar(calendar_name)
+    start = actual_index.min().date()
+    end = actual_index.max().date()
+    schedule = cal.schedule(start_date=start, end_date=end)
+
+    captured_warnings: list[str] = []
+    with warnings.catch_warnings(record=True) as warns:
+        warnings.simplefilter("always")
+        expected_index = mcal.date_range(schedule, frequency=f"{timeframe_ms}ms")
+        for warn in warns:
+            captured_warnings.append(str(warn.message))
+
+    expected_set = set(expected_index)
+    calendar_gap_count = 0
+    real_gap_count = 0
+    estimated_missing_bars = 0
+    largest_gap_bars = 0
+
+    for prev_ts, curr_ts in zip(actual_index[:-1], actual_index[1:]):
+        delta_ms = int((curr_ts - prev_ts).total_seconds() * 1000)
+        if delta_ms <= timeframe_ms:
+            continue
+        gap_bars = delta_ms // timeframe_ms
+        largest_gap_bars = max(largest_gap_bars, gap_bars)
+        interior = pd.date_range(
+            start=prev_ts + pd.Timedelta(milliseconds=timeframe_ms),
+            end=curr_ts - pd.Timedelta(milliseconds=timeframe_ms),
+            freq=pd.Timedelta(milliseconds=timeframe_ms),
+            tz="UTC",
+        )
+        expected_missing = sum(1 for t in interior if t in expected_set)
+        if expected_missing > 0:
+            real_gap_count += 1
+            estimated_missing_bars += expected_missing
+        else:
+            calendar_gap_count += 1
+
+    return GapClassification(
+        calendar_gap_count=calendar_gap_count,
+        real_gap_count=real_gap_count,
+        estimated_missing_bars=estimated_missing_bars,
+        largest_gap_bars=largest_gap_bars,
+        warnings=captured_warnings,
+    )
+
+
+def _classify_gaps_with_heuristic(
+    df: pl.DataFrame,
+    timeframe_ms: int,
+    reason: str,
+) -> GapClassification:
+    """Weekday-only heuristic fallback when calendar library is unavailable.
+
+    Uses a simple weekend heuristic: gaps where either boundary falls on
+    Saturday/Sunday are classified as calendar gaps, otherwise as real gaps.
+    """
+    ts_col = df["timestamp"].sort()
+    deltas = ts_col.diff().drop_nulls().dt.total_milliseconds().to_list()
+    calendar_gap_count = 0
+    real_gap_count = 0
+    missing = 0
+    largest = 0
+    ts_values = ts_col.to_list()
+    for i, delta in enumerate(deltas):
+        if delta <= timeframe_ms:
+            continue
+        gap_bars = int(delta // timeframe_ms)
+        largest = max(largest, gap_bars)
+        start = ts_values[i]
+        end = ts_values[i + 1]
+        if start.weekday() >= 5 or end.weekday() >= 5:
+            calendar_gap_count += 1
+        else:
+            real_gap_count += 1
+            missing += max(0, gap_bars - 1)
+    return GapClassification(
+        calendar_gap_count=calendar_gap_count,
+        real_gap_count=real_gap_count,
+        estimated_missing_bars=missing,
+        largest_gap_bars=largest,
+        warnings=[f"calendar_fallback:{reason}"],
+    )
+
+
 def classify_calendar_gaps(
     df: pl.DataFrame,
     timeframe_ms: int,
     *,
     calendar_name: str | None = None,
 ) -> GapClassification:
-    """Classify gaps into calendar-expected closures and real missing bars."""
+    """Classify gaps into calendar-expected closures and real missing bars.
+
+    Attempts calendar-aware classification first. Falls back to a simple
+    weekend heuristic if the calendar library fails or is unavailable.
+    """
     if "timestamp" not in df.columns or len(df) < 2:
         return GapClassification(0, 0, 0, 0, [])
     try:
-        ts = df["timestamp"].sort().to_list()
-        actual_index = pd.DatetimeIndex(ts)
-        if actual_index.tz is None:
-            actual_index = actual_index.tz_localize("UTC")
-        else:
-            actual_index = actual_index.tz_convert("UTC")
-
-        cal = resolve_market_calendar(calendar_name)
-        start = actual_index.min().date()
-        end = actual_index.max().date()
-        schedule = cal.schedule(start_date=start, end_date=end)
-
-        captured_warnings: list[str] = []
-        with warnings.catch_warnings(record=True) as warns:
-            warnings.simplefilter("always")
-            expected_index = mcal.date_range(schedule, frequency=f"{timeframe_ms}ms")
-            for warn in warns:
-                captured_warnings.append(str(warn.message))
-
-        expected_set = set(expected_index)
-        calendar_gap_count = 0
-        real_gap_count = 0
-        estimated_missing_bars = 0
-        largest_gap_bars = 0
-
-        for prev_ts, curr_ts in zip(actual_index[:-1], actual_index[1:]):
-            delta_ms = int((curr_ts - prev_ts).total_seconds() * 1000)
-            if delta_ms <= timeframe_ms:
-                continue
-            gap_bars = delta_ms // timeframe_ms
-            largest_gap_bars = max(largest_gap_bars, gap_bars)
-            interior = pd.date_range(
-                start=prev_ts + pd.Timedelta(milliseconds=timeframe_ms),
-                end=curr_ts - pd.Timedelta(milliseconds=timeframe_ms),
-                freq=pd.Timedelta(milliseconds=timeframe_ms),
-                tz="UTC",
-            )
-            expected_missing = sum(1 for t in interior if t in expected_set)
-            if expected_missing > 0:
-                real_gap_count += 1
-                estimated_missing_bars += expected_missing
-            else:
-                calendar_gap_count += 1
-
-        return GapClassification(
-            calendar_gap_count=calendar_gap_count,
-            real_gap_count=real_gap_count,
-            estimated_missing_bars=estimated_missing_bars,
-            largest_gap_bars=largest_gap_bars,
-            warnings=captured_warnings,
-        )
-    except Exception as exc:  # pragma: no cover - fallback for calendar edge cases
-        ts_col = df["timestamp"].sort()
-        deltas = ts_col.diff().drop_nulls().dt.total_milliseconds().to_list()
-        calendar_gap_count = 0
-        real_gap_count = 0
-        missing = 0
-        largest = 0
-        ts_values = ts_col.to_list()
-        for i, delta in enumerate(deltas):
-            if delta <= timeframe_ms:
-                continue
-            gap_bars = int(delta // timeframe_ms)
-            largest = max(largest, gap_bars)
-            start = ts_values[i]
-            end = ts_values[i + 1]
-            if start.weekday() >= 5 or end.weekday() >= 5:
-                calendar_gap_count += 1
-            else:
-                real_gap_count += 1
-                missing += max(0, gap_bars - 1)
-        return GapClassification(
-            calendar_gap_count=calendar_gap_count,
-            real_gap_count=real_gap_count,
-            estimated_missing_bars=missing,
-            largest_gap_bars=largest,
-            warnings=[f"calendar_fallback:{type(exc).__name__}:{exc}"],
+        return _classify_gaps_with_calendar(df, timeframe_ms, calendar_name)
+    except (RuntimeError, ValueError, KeyError, AttributeError) as exc:
+        return _classify_gaps_with_heuristic(
+            df, timeframe_ms, f"{type(exc).__name__}:{exc}"
         )

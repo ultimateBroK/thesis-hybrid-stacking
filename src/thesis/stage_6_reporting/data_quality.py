@@ -19,9 +19,9 @@ import polars as pl
 from thesis.shared.constants import timeframe_to_ms
 from thesis.shared.data_quality import (
     check_gap_report,
-    check_ohlcv_consistency,
     check_outlier_returns,
     classify_calendar_gaps,
+    validate_ohlcv,
 )
 
 # ---------------------------------------------------------------------------
@@ -30,8 +30,14 @@ from thesis.shared.data_quality import (
 
 
 def compute_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
-    """Check OHLCV relationships via ``shared.data_quality``."""
-    return check_ohlcv_consistency(df)
+    """Check OHLCV relationships via :func:`validate_ohlcv`."""
+    result = validate_ohlcv(df)
+    return {
+        "total_rows": result["total_rows"],
+        "ohlc_violations": result["ohlc_violations"],
+        "price_negative_count": result["price_negative_count"],
+        "is_consistent": result["is_valid"],
+    }
 
 
 # ---------------------------------------------------------------------------

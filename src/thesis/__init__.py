@@ -6,7 +6,7 @@ This module re-exports the most commonly used symbols so that callers can use
 
 from thesis.pipeline import run_pipeline
 from thesis.shared.config import Config, get_config, load_config
-from thesis.stage_1_data import generate_data, prepare_data
+from thesis.stage_1_data import generate_data
 from thesis.stage_2_features import generate_features
 from thesis.stage_3_labels import generate_labels
 from thesis.stage_4_training import WalkForwardWindow, generate_windows, train_model
@@ -22,7 +22,6 @@ __all__ = [
     "generate_report",
     "generate_windows",
     "load_config",
-    "prepare_data",
     "run_backtest",
     "run_pipeline",
     "train_model",

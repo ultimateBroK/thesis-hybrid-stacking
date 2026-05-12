@@ -365,10 +365,9 @@ def test_new_stage_package_layout() -> None:
     import thesis.stage_6_reporting
 
     # Stage 1 — data generation
-    from thesis.stage_1_data import generate_data, prepare_data
+    from thesis.stage_1_data import generate_data
 
     assert callable(generate_data)
-    assert callable(prepare_data)
 
     # Stage 2 — feature engineering
     from thesis.stage_2_features import generate_features

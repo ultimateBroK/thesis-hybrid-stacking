@@ -27,9 +27,9 @@ from thesis.shared.config import Config
 from thesis.shared.constants import FEATURE_EPS
 from thesis.shared.constants import timeframe_to_ms as _timeframe_to_ms
 from thesis.shared.data_quality import (
-    check_candle_quality,
     check_gap_report,
     classify_calendar_gaps,
+    validate_ohlcv,
 )
 
 logger = logging.getLogger("thesis.prepare")
@@ -62,13 +62,37 @@ def _parse_datetime_bound(
     return pl.lit(normalized).str.to_datetime(time_unit="us", time_zone=tz).cast(dtype)
 
 
+def _compute_microprice(ticks: pl.DataFrame) -> pl.DataFrame:
+    """Add volume-weighted microprice and total volume columns to tick data.
+
+    Microprice weights the best bid/ask by opposing-side quote sizes,
+    giving a more accurate fair-price estimate than simple midpoint.
+
+    Args:
+        ticks: DataFrame with ``bid``, ``ask``, ``ask_volume``, ``bid_volume``
+            columns. A small epsilon (FEATURE_EPS) prevents division by zero.
+
+    Returns:
+        Input DataFrame with ``microprice`` and ``volume`` columns added.
+    """
+    return ticks.with_columns(
+        (
+            (
+                pl.col("ask") * pl.col("bid_volume")
+                + pl.col("bid") * pl.col("ask_volume")
+            )
+            / (pl.col("ask_volume") + pl.col("bid_volume") + FEATURE_EPS)
+        ).alias("microprice"),
+        (pl.col("ask_volume") + pl.col("bid_volume")).alias("volume"),
+    )
+
+
 def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
     """Aggregate one monthly tick parquet file into OHLCV bars.
 
     Args:
         file_path: Path to a single monthly ``.parquet`` tick file.
         group_every: Polars group-by-dynamic interval string (e.g. "1h").
-
 
     Returns:
         DataFrame with columns: timestamp, open, high, low, close, volume,
@@ -95,17 +119,7 @@ def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
             dropped_quotes,
         )
 
-    # Microprice: volume-weighted by opposing-side quote sizes (not midpoint).
-    ticks = ticks.with_columns(
-        (
-            (
-                pl.col("ask") * pl.col("bid_volume")
-                + pl.col("bid") * pl.col("ask_volume")
-            )
-            / (pl.col("ask_volume") + pl.col("bid_volume") + FEATURE_EPS)
-        ).alias("microprice"),
-        (pl.col("ask_volume") + pl.col("bid_volume")).alias("volume"),
-    )
+    ticks = _compute_microprice(ticks)
 
     ticks = ticks.sort("timestamp")
 
@@ -194,7 +208,7 @@ def _filter_date_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
     start = _parse_datetime_bound(
         config.data_range.start, "start_date", ts_dtype, market_tz
     )
-    end = _parse_datetime_bound(        config.data_range.end, "end_date", ts_dtype, market_tz)
+    end = _parse_datetime_bound(config.data_range.end, "end_date", ts_dtype, market_tz)
     ohlcv = ohlcv.filter((pl.col("timestamp") >= start) & (pl.col("timestamp") <= end))
     dropped = n_before - len(ohlcv)
     if dropped > 0:
@@ -255,7 +269,7 @@ def _log_candle_quality_report(ohlcv: pl.DataFrame) -> None:
     if ohlcv.is_empty():
         return
 
-    result = check_candle_quality(ohlcv)
+    result = validate_ohlcv(ohlcv)
     if result["invalid_count"] > 0:
         logger.warning(
             "OHLCV quality: %d invalid candles detected",
@@ -346,17 +360,115 @@ def _save_data_quality_json(stats: dict, config: Config) -> None:
     )
 
 
+def _discover_raw_files(raw_dir: Path, ohlcv_path: Path) -> list[Path]:
+    """Validate raw data directory and return sorted parquet file paths.
+
+    Args:
+        raw_dir: Path to directory containing monthly tick parquet files.
+        ohlcv_path: Path to existing OHLCV output (used for skip logic).
+
+    Returns:
+        Sorted list of ``.parquet`` file paths.
+
+    Raises:
+        FileNotFoundError: If raw directory or parquet files are missing and no
+            cached OHLCV output exists.
+    """
+    if not raw_dir.exists():
+        if ohlcv_path.exists():
+            logger.warning(
+                "Raw data dir missing (%s) but OHLCV exists (%s) — skipping prepare.",
+                raw_dir,
+                ohlcv_path,
+            )
+            return []
+        raise FileNotFoundError(f"Raw data directory not found: {raw_dir}")
+
+    parquet_files = sorted(raw_dir.glob("*.parquet"))
+    if not parquet_files:
+        if ohlcv_path.exists():
+            logger.warning(
+                "No parquet files found (%s) but OHLCV exists (%s) — skipping prepare.",
+                raw_dir,
+                ohlcv_path,
+            )
+            return []
+        raise FileNotFoundError(f"No parquet files in {raw_dir}")
+    return parquet_files
+
+
+def _aggregate_monthly_files(files: list[Path], group_every: str) -> pl.DataFrame:
+    """Aggregate a list of monthly tick files into OHLCV bars.
+
+    Args:
+        files: Monthly tick parquet files to aggregate.
+        group_every: Polars group-by-dynamic interval string (e.g. "1h").
+
+    Returns:
+        Concatenated and sorted OHLCV DataFrame from all files.
+    """
+    monthly_bars: list[pl.DataFrame] = []
+    total_files = len(files)
+    for idx, file_path in enumerate(files, start=1):
+        logger.info(
+            "Aggregating monthly file %d/%d: %s",
+            idx,
+            total_files,
+            file_path.name,
+        )
+        monthly_bars.append(_aggregate_file(file_path, group_every))
+    return pl.concat(monthly_bars, how="vertical").sort("timestamp")
+
+
+def _clean_ohlcv(ohlcv: pl.DataFrame, config: Config) -> tuple[pl.DataFrame, int]:
+    """Deduplicate, filter date range, and log quality diagnostics.
+
+    Args:
+        ohlcv: Raw concatenated OHLCV DataFrame.
+        config: Runtime configuration for date range bounds.
+
+    Returns:
+        Tuple of ``(cleaned_ohlcv, deduped_count)``.
+    """
+    ohlcv, _, deduped_count = _deduplicate_and_filter(ohlcv)
+    ohlcv = _filter_date_range(ohlcv, config)
+    return ohlcv, deduped_count
+
+
+def _persist_ohlcv(ohlcv: pl.DataFrame, config: Config, deduped_count: int) -> None:
+    """Log diagnostics, compute quality stats, and write outputs to disk.
+
+    Args:
+        ohlcv: Cleaned OHLCV DataFrame to persist.
+        config: Runtime configuration for output paths and timeframe.
+        deduped_count: Number of duplicate timestamps removed upstream.
+    """
+    group_ms = _timeframe_to_ms(config.data.timeframe)
+
+    _log_gap_report(ohlcv, group_ms)
+    _log_candle_quality_report(ohlcv)
+
+    dq_stats = _compute_data_quality_stats(ohlcv, group_ms, deduped_count)
+    _save_data_quality_json(dq_stats, config)
+
+    logger.info("OHLCV bars: %d (timeframe=%s)", len(ohlcv), config.data.timeframe)
+    logger.info(
+        "Date range: %s to %s",
+        ohlcv["timestamp"].min(),
+        ohlcv["timestamp"].max(),
+    )
+
+    ohlcv_path = Path(config.paths.ohlcv)
+    ohlcv_path.parent.mkdir(parents=True, exist_ok=True)
+    ohlcv.write_parquet(ohlcv_path)
+    logger.info("Saved OHLCV: %s", ohlcv_path)
+
+
 def generate_data(config: Config) -> None:
     """Build OHLCV bars from raw monthly tick files and persist parquet + JSON stats.
 
-    Pipeline overview:
-
-    1. Validate raw data directory and discover ``.parquet`` files.
-    2. Aggregate each monthly tick file into OHLCV bars using microprice.
-    3. Concatenate monthly results, deduplicate, and filter by date range.
-    4. Log gap and candle-quality diagnostics.
-    5. Persist ``ohlcv.parquet`` and ``data_quality.json``.
-
+    Orchestrates: discover → aggregate → clean → persist.
+    Each step is a separate function for testability.
 
     Args:
         config: Runtime configuration. Must contain ``data.raw_dir``,
@@ -374,63 +486,13 @@ def generate_data(config: Config) -> None:
         ohlcv_path.unlink()
         logger.info("force_rerun=True — removed existing OHLCV, will rebuild.")
 
-    if not raw_dir.exists():
-        if ohlcv_path.exists():
-            logger.warning(
-                "Raw data dir missing (%s) but OHLCV exists (%s) — skipping prepare.",
-                raw_dir,
-                ohlcv_path,
-            )
-            return
-        raise FileNotFoundError(f"Raw data directory not found: {raw_dir}")
-
-    parquet_files = sorted(raw_dir.glob("*.parquet"))
+    parquet_files = _discover_raw_files(raw_dir, ohlcv_path)
     if not parquet_files:
-        if ohlcv_path.exists():
-            logger.warning(
-                "No parquet files found (%s) but OHLCV exists (%s) — skipping prepare.",
-                raw_dir,
-                ohlcv_path,
-            )
-            return
-        raise FileNotFoundError(f"No parquet files in {raw_dir}")
+        return
 
     logger.info("Found %d tick files in %s", len(parquet_files), raw_dir)
-
-    group_ms = _timeframe_to_ms(config.data.timeframe)
     group_every = config.data.timeframe.lower()
 
-    monthly_bars: list[pl.DataFrame] = []
-    total_files = len(parquet_files)
-    for idx, file_path in enumerate(parquet_files, start=1):
-        logger.info(
-            "Aggregating monthly file %d/%d: %s",
-            idx,
-            total_files,
-            file_path.name,
-        )
-        monthly_bars.append(_aggregate_file(file_path, group_every))
-
-    ohlcv = pl.concat(monthly_bars, how="vertical").sort("timestamp")
-
-    ohlcv, _, deduped_count = _deduplicate_and_filter(ohlcv)
-    ohlcv = _filter_date_range(ohlcv, config)
-    _log_gap_report(ohlcv, group_ms)
-    _log_candle_quality_report(ohlcv)
-
-    dq_stats = _compute_data_quality_stats(ohlcv, group_ms, deduped_count)
-    _save_data_quality_json(dq_stats, config)
-
-    logger.info("OHLCV bars: %d (timeframe=%s)", len(ohlcv), config.data.timeframe)
-    logger.info(
-        "Date range: %s to %s",
-        ohlcv["timestamp"].min(),
-        ohlcv["timestamp"].max(),
-    )
-
-    ohlcv_path.parent.mkdir(parents=True, exist_ok=True)
-    ohlcv.write_parquet(ohlcv_path)
-    logger.info("Saved OHLCV: %s", ohlcv_path)
-
-
-prepare_data = generate_data
+    ohlcv = _aggregate_monthly_files(parquet_files, group_every)
+    ohlcv, deduped_count = _clean_ohlcv(ohlcv, config)
+    _persist_ohlcv(ohlcv, config, deduped_count)
