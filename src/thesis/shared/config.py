@@ -67,6 +67,9 @@ class MultiTimeframeConfig:
     atr_long_period: int = 20
     consecutive_bars_window: int = 5
     price_position_window: int = 20
+    atr_percentile_window: int = 50
+    ohlcv_norm_window: int = 20
+    ema_slope_shift: int = 5
 
 
 @dataclass

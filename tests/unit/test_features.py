@@ -4,8 +4,8 @@ Tests technical indicator helpers and validates the compact production feature
 set built from price-action and trend-focused transforms.
 """
 
-import sys
 from pathlib import Path
+import sys
 
 import numpy as np
 import polars as pl
@@ -15,12 +15,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helpers import create_synthetic_ohlcv
+
 from thesis.shared.config import Config
 from thesis.shared.constants import EXCLUDE_COLS
 from thesis.stage_2_features.indicators import (
     _add_adx,
     _add_atr,
-    _add_context_features,
+    _add_atr_percentile,
+    _add_atr_ratio,
     _add_ema_crossover,
     _add_ema_slope,
     _add_high_low_range,
@@ -29,9 +31,11 @@ from thesis.stage_2_features.indicators import (
     _add_ny_session_dummies,
     _add_pivot_position,
     _add_price_action_features,
+    _add_price_dist_ratio,
     _add_regime,
     _add_rsi,
     _add_volume_zscore,
+    _add_vwap,
 )
 
 
@@ -51,12 +55,14 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Apply the full feature pipeline to a DataFrame (mirrors generate_features)."""
     df = _add_rsi(df, config)
     df = _add_atr(df, config)
-    df = _add_macd(df, config)
-    df = _add_context_features(df, config)
+    df = _add_atr_ratio(df, config)
+    df = _add_price_dist_ratio(df, config)
+    df = _add_vwap(df)
     df = _add_pivot_position(df)
+    df = _add_ny_session_dummies(df)
+    df = _add_atr_percentile(df, config)
     df = _add_price_action_features(df, config)
     df = _add_ema_crossover(df, config)
-    df = _add_ny_session_dummies(df)
     df = _add_volume_zscore(df, config)
     df = _add_log_returns(df, config)
     df = _add_high_low_range(df, config)
@@ -65,7 +71,7 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     df = _add_regime(df)
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
-    # NaN from numpy → Polars null before forward-fill (production pipeline does this too)
+    # NaN → Polars null, then forward-fill (mirrors production pipeline)
     df = df.fill_nan(None)
     df = df.fill_null(strategy="forward").fill_null(0.0)
     keep_features = sorted(
@@ -333,7 +339,7 @@ def test_atr_ratio_positive(sample_config: Config) -> None:
     """Test atr_ratio > 0 (ratio of short to long ATR)."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_context_features(df, sample_config)
+    result = _add_atr_ratio(df, sample_config)
 
     assert "atr_ratio" in result.columns
     values = result["atr_ratio"].drop_nulls().to_numpy()
@@ -347,7 +353,7 @@ def test_price_dist_ratio_exists(sample_config: Config) -> None:
     """Test price_dist_ratio is computed."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_context_features(df, sample_config)
+    result = _add_price_dist_ratio(df, sample_config)
 
     assert "price_dist_ratio" in result.columns
 
@@ -358,7 +364,7 @@ def test_atr_percentile_bounded(sample_config: Config) -> None:
     """Test atr_percentile is within [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=200)
     df = _add_atr(df, sample_config)
-    result = _add_context_features(df, sample_config)
+    result = _add_atr_percentile(df, sample_config)
 
     assert "atr_percentile" in result.columns
     values = result["atr_percentile"].drop_nulls().to_numpy()
@@ -464,7 +470,12 @@ def test_all_features_together(sample_config: Config) -> None:
     df = _add_rsi(df, sample_config)
     df = _add_atr(df, sample_config)
     df = _add_macd(df, sample_config)
-    df = _add_context_features(df, sample_config)
+    df = _add_atr_ratio(df, sample_config)
+    df = _add_price_dist_ratio(df, sample_config)
+    df = _add_vwap(df)
+    df = _add_pivot_position(df)
+    df = _add_ny_session_dummies(df)
+    df = _add_atr_percentile(df, sample_config)
 
     # Fill nulls like the main function does
     df = df.fill_null(strategy="forward").fill_null(0.0)

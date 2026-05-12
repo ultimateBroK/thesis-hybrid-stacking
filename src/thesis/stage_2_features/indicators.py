@@ -8,16 +8,20 @@ from thesis.shared.config import Config
 from thesis.shared.constants import FEATURE_EPS, STD_EPS
 
 
-def _compute_atr_expr(period: int) -> pl.Expr:
-    """Compute Wilder-smoothed ATR expression."""
-    tr = pl.max_horizontal(
+def _true_range_expr() -> pl.Expr:
+    """True Range expression reused by ATR and ADX."""
+    return pl.max_horizontal(
         [
             (pl.col("high") - pl.col("low")),
             (pl.col("high") - pl.col("close").shift(1)).abs(),
             (pl.col("low") - pl.col("close").shift(1)).abs(),
         ]
     )
-    return tr.ewm_mean(alpha=1.0 / period, adjust=False)
+
+
+def _compute_atr_expr(period: int) -> pl.Expr:
+    """Compute Wilder-smoothed ATR expression."""
+    return _true_range_expr().ewm_mean(alpha=1.0 / period, adjust=False)
 
 
 def _add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -62,25 +66,35 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add ATR ratio, price distance, pivot/session, and ATR percentile."""
-    p = config.features.atr_period
+def _add_atr_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add short/long ATR ratio feature."""
     mt = config.features.multi_timeframe
     atr_short = _compute_atr_expr(mt.atr_short_period)
     atr_long = _compute_atr_expr(mt.atr_long_period)
-    df = df.with_columns((atr_short / (atr_long + FEATURE_EPS)).alias("atr_ratio"))
+    return df.with_columns((atr_short / (atr_long + FEATURE_EPS)).alias("atr_ratio"))
+
+
+def _add_price_dist_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add ATR-normalized distance from EMA89."""
+    p = config.features.atr_period
     ema_89 = pl.col("close").ewm_mean(span=89, adjust=False)
-    df = df.with_columns(
+    return df.with_columns(
         ((pl.col("close") - ema_89) / (pl.col(f"atr_{p}") + FEATURE_EPS)).alias(
             "price_dist_ratio"
         )
     )
-    df = _add_vwap(df)
-    df = _add_pivot_position(df)
-    df = _add_ny_session_dummies(df)
+
+
+def _add_atr_percentile(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add rolling ATR rank percentile."""
+    p = config.features.atr_period
     return df.with_columns(
         (
-            pl.col(f"atr_{p}").rolling_rank(window_size=50, method="average") / 50.0
+            pl.col(f"atr_{p}").rolling_rank(
+                window_size=config.features.multi_timeframe.atr_percentile_window,
+                method="average",
+            )
+            / config.features.multi_timeframe.atr_percentile_window
         ).alias("atr_percentile")
     )
 
@@ -120,11 +134,7 @@ def _add_vwap(df: pl.DataFrame) -> pl.DataFrame:
 
 def _to_ny_trading_day(df: pl.DataFrame) -> pl.Expr:
     """Convert timestamp to 7PM-anchored NY trading-day bucket."""
-    ts = pl.col("timestamp")
-    dtype = df["timestamp"].dtype
-    if dtype.time_zone is None:
-        ts = ts.dt.replace_time_zone("UTC")
-    ts_ny = ts.dt.convert_time_zone("America/New_York")
+    ts_ny = _ensure_utc_ts(df).dt.convert_time_zone("America/New_York")
     return (ts_ny + pl.duration(hours=7)).dt.truncate("1d")
 
 
@@ -171,12 +181,17 @@ def _compute_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
     ).drop(["prev_pivot", "prev_r1", "prev_s1"])
 
 
-def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
-    """Add NY session dummy columns."""
+def _ensure_utc_ts(df: pl.DataFrame) -> pl.Expr:
+    """Return timestamp expression guaranteed to have UTC timezone."""
     ts = pl.col("timestamp")
     if df["timestamp"].dtype.time_zone is None:
         ts = ts.dt.replace_time_zone("UTC")
-    ny_hour = ts.dt.convert_time_zone("America/New_York").dt.hour()
+    return ts
+
+
+def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
+    """Add NY session dummy columns."""
+    ny_hour = _ensure_utc_ts(df).dt.convert_time_zone("America/New_York").dt.hour()
     return df.with_columns(
         [
             (ny_hour.is_in(list(range(18, 24))) | ny_hour.is_in(list(range(0, 2))))
@@ -266,9 +281,9 @@ def _add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-def _add_ohlcv_norm(df: pl.DataFrame) -> pl.DataFrame:
+def _add_ohlcv_norm(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add rolling z-score normalized OHLC price columns."""
-    window = 20
+    window = config.features.multi_timeframe.ohlcv_norm_window
     return df.with_columns(
         [
             (
@@ -310,13 +325,7 @@ def _add_adx(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add Wilder ADX trend-strength feature."""
     period = config.features.adx_period
     alpha = 1.0 / period
-    tr = pl.max_horizontal(
-        [
-            (pl.col("high") - pl.col("low")),
-            (pl.col("high") - pl.col("close").shift(1)).abs(),
-            (pl.col("low") - pl.col("close").shift(1)).abs(),
-        ]
-    )
+    tr = _true_range_expr()
     up_move = pl.col("high") - pl.col("high").shift(1)
     down_move = pl.col("low").shift(1) - pl.col("low")
     plus_dm = (
@@ -337,10 +346,13 @@ def _add_adx(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def _add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add five-bar percent-change slope of EMA."""
+    """Add percent-change slope of EMA."""
     p = config.features.ema_slope_period
+    shift_n = config.features.multi_timeframe.ema_slope_shift
     ema_expr = pl.col("close").ewm_mean(span=p, adjust=False)
-    slope = (ema_expr - ema_expr.shift(5)) / (ema_expr.shift(5).abs() + FEATURE_EPS)
+    slope = (ema_expr - ema_expr.shift(shift_n)) / (
+        ema_expr.shift(shift_n).abs() + FEATURE_EPS
+    )
     return df.with_columns(slope.alias(f"ema_slope_{p}"))
 
 

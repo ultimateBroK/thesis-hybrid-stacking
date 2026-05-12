@@ -28,17 +28,22 @@ from thesis.shared.ui import console
 from thesis.stage_2_features.indicators import (
     _add_adx,
     _add_atr,
-    _add_context_features,
+    _add_atr_percentile,
+    _add_atr_ratio,
     _add_ema_crossover,
     _add_ema_slope,
     _add_high_low_range,
     _add_log_returns,
     _add_macd,
+    _add_ny_session_dummies,
     _add_ohlcv_norm,
+    _add_pivot_position,
     _add_price_action_features,
+    _add_price_dist_ratio,
     _add_regime,
     _add_rsi,
     _add_volume_zscore,
+    _add_vwap,
 )
 
 logger = logging.getLogger("thesis.stage_2_features")
@@ -61,7 +66,12 @@ def generate_features(config: Config) -> None:
     _validate_ohlcv_input(df, config)
 
     df = _add_atr(df, config)
-    df = _add_context_features(df, config)
+    df = _add_atr_ratio(df, config)
+    df = _add_price_dist_ratio(df, config)
+    df = _add_vwap(df)
+    df = _add_pivot_position(df)
+    df = _add_ny_session_dummies(df)
+    df = _add_atr_percentile(df, config)
     df = _add_price_action_features(df, config)
     df = _add_ema_crossover(df, config)
     df = _add_log_returns(df, config)
@@ -72,7 +82,7 @@ def generate_features(config: Config) -> None:
     df = _add_rsi(df, config)
     df = _add_macd(df, config)
     df = _add_volume_zscore(df, config)
-    df = _add_ohlcv_norm(df)
+    df = _add_ohlcv_norm(df, config)
 
     # Keep `log_returns` as a diagnostic/helper alias.
     if "return_1h" in df.columns and "log_returns" not in df.columns:
