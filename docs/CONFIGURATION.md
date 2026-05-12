@@ -9,7 +9,7 @@ This project keeps the public experiment surface in `config.toml`. Runtime datac
 | Setting | Value |
 |---|---|
 | Data | XAU/USD, H1 |
-| Data range | January 2018 – April 2026 |
+| Data range | January 2021 – April 2026 |
 | Timezone | America/New_York (exchange timezone) |
 | Validation | Sliding walk-forward with purge/embargo |
 | Model | Classic Hybrid Stacking |

@@ -118,7 +118,7 @@ The walk-forward split is time-safe: each train window is chronologically split 
 |---|---|
 | Asset | XAU/USD |
 | Timeframe | 1 hour |
-| Data range | January 2018 – April 2026 |
+| Data range | January 2021 – April 2026 |
 | Validation | Walk-forward sliding window with purge/embargo |
 | Model | Classic Hybrid Stacking |
 | Base learners | Logistic Regression, Random Forest, LightGBM |
