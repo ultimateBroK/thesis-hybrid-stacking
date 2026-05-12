@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from polars.exceptions import ComputeError, ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.stage_6_reporting import data_quality
@@ -43,7 +44,7 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
             dist[name] = (count, pct)
         dist["total"] = total
         return dist
-    except (pl.ComputeError, OSError):
+    except (ComputeError, OSError):
         logger.warning(
             "Failed to load label distribution: %s", labels_path, exc_info=True
         )
@@ -202,7 +203,7 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
                     )
                 )
                 L.append("")
-        except (pl.ComputeError, pl.ColumnNotFoundError, ValueError):
+        except (ComputeError, ColumnNotFoundError, ValueError):
             logger.warning("Failed to compute data quality from OHLCV", exc_info=True)
 
 
@@ -211,7 +212,6 @@ def _render_label_design_section(L: list[str], config: Config) -> None:
     L.append("## Label Design & Methodology")
     L.append("")
     labels_cfg = config.labels
-    split_cfg = config.splitting
     L.append(
         "Labels are generated using the **triple-barrier method**: for each "
         "bar, ATR-scaled take-profit and stop-loss barriers are placed "
@@ -230,15 +230,6 @@ def _render_label_design_section(L: list[str], config: Config) -> None:
             "Class mapping",
             "Short (-1) / Hold (0) / Long (+1)",
         )
-    )
-    L.append(
-        _tbl_row("Train period", f"{split_cfg.train_start} → {split_cfg.train_end}")
-    )
-    L.append(
-        _tbl_row("Validation period", f"{split_cfg.val_start} → {split_cfg.val_end}")
-    )
-    L.append(
-        _tbl_row("Test (OOS) period", f"{split_cfg.test_start} → {split_cfg.test_end}")
     )
     L.append("")
 
@@ -262,7 +253,6 @@ def _render_validation_methodology_section(L: list[str], config: Config) -> None
     L.append("## Validation Methodology")
     L.append("")
     val_cfg = config.validation
-    split_cfg = config.splitting
 
     method_label = (
         "Walk-forward (sliding window)"
@@ -295,12 +285,6 @@ def _render_validation_methodology_section(L: list[str], config: Config) -> None
     L.append(_tbl_row("Purge gap", f"{val_cfg.purge_bars} bars at train/test boundary"))
     L.append(_tbl_row("Embargo gap", f"{val_cfg.embargo_bars} bars after purge"))
     L.append(_tbl_row("Min train bars", f"{val_cfg.min_train_bars:,}"))
-    L.append(
-        _tbl_row(
-            "Split purge",
-            f"{split_cfg.purge_bars} bars / embargo {split_cfg.embargo_bars} bars",
-        )
-    )
     L.append("")
     L.append(
         "*The **purge** gap removes bars at the train/test boundary to prevent "

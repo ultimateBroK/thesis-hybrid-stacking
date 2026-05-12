@@ -279,17 +279,10 @@ def main() -> None:
                 "purge_bars": config.validation.purge_bars,
                 "embargo_bars": config.validation.embargo_bars,
             },
-            "data_range": {
-                "train": [
-                    str(config.splitting.train_start),
-                    str(config.splitting.train_end),
-                ],
-                "val": [str(config.splitting.val_start), str(config.splitting.val_end)],
-                "test": [
-                    str(config.splitting.test_start),
-                    str(config.splitting.test_end),
-                ],
-            },
+            "data_range": [
+                str(config.data_range.start),
+                str(config.data_range.end),
+            ],
             "force_rerun": config.workflow.force_rerun,
             "random_seed": config.workflow.random_seed,
         }

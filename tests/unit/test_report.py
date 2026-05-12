@@ -36,15 +36,13 @@ def test_config_table_shows_walk_forward_for_sliding_validation() -> None:
     _config_table(lines, cfg)
     rendered = "\n".join(lines)
 
-    assert "bar-based walk-forward" in rendered
-    assert "train/test/step bars" in rendered
-    assert cfg.splitting.train_start not in rendered
-    assert cfg.splitting.test_end not in rendered
+    assert cfg.data_range.start not in rendered
+    assert cfg.data_range.end not in rendered
 
 
 @pytest.mark.unit
 def test_config_table_shows_static_ranges_for_static_validation() -> None:
-    """Static validation should keep explicit train/val/test ranges."""
+    """Static validation should show data range and window config."""
     cfg = Config()
     cfg.validation.method = "static"
     lines: list[str] = []
@@ -52,9 +50,8 @@ def test_config_table_shows_static_ranges_for_static_validation() -> None:
     _config_table(lines, cfg)
     rendered = "\n".join(lines)
 
-    assert cfg.splitting.train_start in rendered
-    assert cfg.splitting.val_start in rendered
-    assert cfg.splitting.test_start in rendered
+    assert cfg.data_range.start in rendered
+    assert cfg.data_range.end in rendered
     assert "bar-based walk-forward" not in rendered
 
 

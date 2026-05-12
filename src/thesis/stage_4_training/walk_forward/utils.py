@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from feature_engine.selection import (
-    DropConstantFeatures,
     DropCorrelatedFeatures,
     DropDuplicateFeatures,
 )
@@ -50,13 +49,13 @@ def fit_static_feature_pipeline(
     if not static_cols:
         raise ValueError("No static feature columns available for selection")
     X_train = train_df.select(static_cols).to_pandas()
+    X_train.columns = static_cols
     if X_train.empty:
         raise ValueError("Training split is empty; cannot fit static pipeline")
 
     k_best = min(max(5, len(static_cols) // 2), len(static_cols))
     feature_pipeline = Pipeline(
         steps=[
-            ("drop_constant", DropConstantFeatures(tol=0.0, missing_values="ignore")),
             ("drop_duplicate", DropDuplicateFeatures(missing_values="ignore")),
             (
                 "drop_correlated",
@@ -73,6 +72,8 @@ def fit_static_feature_pipeline(
         feature_pipeline.fit(X_train, y_train)
         preselect = feature_pipeline[:-1].transform(X_train)
         preselect_cols = feature_pipeline[:-1].get_feature_names_out()
+        if not isinstance(preselect, pl.DataFrame):
+            preselect = pl.DataFrame(preselect, schema=preselect_cols)
         selected_mask = feature_pipeline.named_steps["select_k_best"].get_support()
         selected_cols = [
             str(col)
@@ -80,7 +81,7 @@ def fit_static_feature_pipeline(
             if keep
         ]
         if not selected_cols:
-            selected_cols = list(preselect.columns[: min(5, preselect.shape[1])])
+            selected_cols = list(preselect.columns[: min(5, preselect.width)])
         return feature_pipeline, selected_cols
     except ValueError as exc:
         # Some windows can be flat after purge/embargo filtering
@@ -88,6 +89,7 @@ def fit_static_feature_pipeline(
         fallback_cols = list(static_cols)
         fallback_pipeline = Pipeline(steps=[("scaler", RobustScaler())])
         fallback_pipeline.fit(X_train[fallback_cols], y_train)
+        X_train[fallback_cols] = fallback_pipeline.transform(X_train[fallback_cols])
         return fallback_pipeline, fallback_cols
 
 

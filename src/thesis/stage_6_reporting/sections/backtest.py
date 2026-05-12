@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from polars.exceptions import ComputeError, ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.stage_4_training import baselines as baselines_mod
@@ -150,7 +151,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
 
     try:
         df = pl.read_parquet(preds_path)
-    except (pl.ComputeError, OSError):
+    except (ComputeError, OSError):
         logger.warning("Failed to load predictions for baselines", exc_info=True)
         L.append("*Predictions file could not be read.*")
         L.append("")
@@ -175,7 +176,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
                 n = min(len(y_true), len(bar_returns))
                 y_returns = bar_returns[-n:]
                 y_true = y_true[-n:]
-        except (pl.ComputeError, pl.ColumnNotFoundError, ValueError):
+        except (ComputeError, ColumnNotFoundError, ValueError):
             logger.warning("Failed to load OHLCV for baseline returns", exc_info=True)
 
     if y_returns is None:

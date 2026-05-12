@@ -65,16 +65,11 @@ def pipeline_config(temp_pipeline_dir: Path) -> Config:
     # Point session_dir into temp directory so all report outputs go there
     config.paths.session_dir = str(temp_pipeline_dir / "session")
 
-    # Adjust date ranges for synthetic data (500 hours = ~21 days starting 2020-01-01)
-    # Split: 60% train, 20% val, 20% test
-    config.splitting.train_start = "2020-01-01"
-    config.splitting.train_end = "2020-01-13 23:59:59"  # ~300 hours
-    config.splitting.val_start = "2020-01-14"
-    config.splitting.val_end = "2020-01-18 23:59:59"  # ~100 hours
-    config.splitting.test_start = "2020-01-19"
-    config.splitting.test_end = "2020-01-31 23:59:59"  # ~100 hours
-    config.splitting.purge_bars = 5  # Small purge for testing
-    config.splitting.embargo_bars = 2
+    # Adjust data range for synthetic data (500 hours = ~21 days starting 2020-01-01)
+    config.data_range.start = "2020-01-01"
+    config.data_range.end = "2020-01-31 23:59:59"
+    config.validation.purge_bars = 5  # Small purge for testing
+    config.validation.embargo_bars = 2
 
     # Use smaller model for speed
     config.model.n_estimators = 5

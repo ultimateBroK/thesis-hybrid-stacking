@@ -17,15 +17,15 @@ import pytest
 def mock_config():
     """Create a mock config for testing."""
     from thesis.shared.config import (
+        BacktestConfig,
         Config,
         DataConfig,
-        PathsConfig,
-        SplittingConfig,
+        DataRangeConfig,
         FeaturesConfig,
         LabelsConfig,
         LGBMConfig,
+        PathsConfig,
         WorkflowConfig,
-        BacktestConfig,
     )
 
     cfg = Config(
@@ -33,8 +33,6 @@ def mock_config():
             symbol="XAUUSD",
             timeframe="1H",
             market_tz="America/New_York",
-            start_date="2018-01-01",
-            end_date="2026-04-30",
             tick_size=0.01,
             contract_size=100,
             symbol_download="XAUUSD",
@@ -44,7 +42,10 @@ def mock_config():
             download_force=False,
             download_skip_current_month=True,
         ),
-        splitting=SplittingConfig(),
+        data_range=DataRangeConfig(
+            start="2018-01-01",
+            end="2026-04-30",
+        ),
         features=FeaturesConfig(),
         labels=LabelsConfig(),
         model=LGBMConfig(),

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from polars.exceptions import ComputeError, ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.stage_6_reporting.comparison import _parse_date
@@ -110,8 +111,8 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
     preds_path = Path(config.paths.predictions)
     if preds_path.exists():
-        oos_start = config.backtest.oob_start_date or config.splitting.test_start
-        oos_end = config.backtest.oob_end_date or config.splitting.test_end
+        oos_start = config.backtest.oob_start_date or config.data_range.end
+        oos_end = config.backtest.oob_end_date or config.data_range.end
 
         if oos_start and oos_end:
             try:
@@ -129,7 +130,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                             timestamp_dtype = df.select(
                                 timestamp_expr.alias("timestamp")
                             ).schema["timestamp"]
-                        except (pl.ComputeError, ValueError):
+                        except (ComputeError, ValueError):
                             timestamp_expr = timestamp_expr.cast(pl.Datetime)
                             timestamp_dtype = df.select(
                                 timestamp_expr.alias("timestamp")
@@ -182,7 +183,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                             oos_class_f1 = {
                                 k: per_class_metrics[k]["f1"] for k in ("-1", "0", "1")
                             }
-            except (pl.ColumnNotFoundError, ValueError, pl.ComputeError):
+            except (ColumnNotFoundError, ValueError, ComputeError):
                 logger.warning(
                     "Failed to compute OOS prediction metrics", exc_info=True
                 )

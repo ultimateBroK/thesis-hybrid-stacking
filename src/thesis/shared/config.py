@@ -15,13 +15,11 @@ logger = logging.getLogger("thesis.config")
 
 @dataclass
 class DataConfig:
-    """Market data settings."""
+    """Market data settings (excluding data range)."""
 
     symbol: str = "XAUUSD"
     timeframe: str = "1H"
     market_tz: str = "America/New_York"
-    start_date: str = "2018-01-01"
-    end_date: str = "2026-04-30"
     tick_size: float = 0.01
     contract_size: int = 100
     symbol_download: str = "XAUUSD"
@@ -33,19 +31,11 @@ class DataConfig:
 
 
 @dataclass
-class SplittingConfig:
-    """Static train, validation, and test date ranges."""
+class DataRangeConfig:
+    """Data ingestion range (replaces former splitting dates)."""
 
-    train_start: str = "2021-01-01"
-    train_end: str = "2024-12-31 23:59:59"
-    val_start: str = "2025-01-01"
-    val_end: str = "2025-12-31 23:59:59"
-    test_start: str = "2026-01-01"
-    test_end: str = "2026-04-30 23:59:59"
-    purge_bars: int = 48
-    embargo_bars: int = 50
-    embargo_scale_by_timeframe: bool = True
-    embargo_reference_timeframe: str = "1H"
+    start: str = "2021-01-01"
+    end: str = "2026-04-30"
 
 
 @dataclass
@@ -207,7 +197,7 @@ class Config:
     """Runtime configuration grouped by TOML section."""
 
     data: DataConfig = field(default_factory=DataConfig)
-    splitting: SplittingConfig = field(default_factory=SplittingConfig)
+    data_range: DataRangeConfig = field(default_factory=DataRangeConfig)
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
     labels: LabelsConfig = field(default_factory=LabelsConfig)
@@ -219,7 +209,7 @@ class Config:
 
 _SECTION_MAP: dict[str, type] = {
     "data": DataConfig,
-    "splitting": SplittingConfig,
+    "data_range": DataRangeConfig,
     "validation": ValidationConfig,
     "features": FeaturesConfig,
     "labels": LabelsConfig,
@@ -293,6 +283,11 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     with open(config_path, "rb") as f:
         raw: dict[str, Any] = tomllib.load(f)
 
+    legacy_mt = raw.pop("multi_timeframe", None)
+    if legacy_mt is not None:
+        features = raw.setdefault("features", {})
+        features.setdefault("multi_timeframe", legacy_mt)
+
     unknown_sections = sorted(set(raw) - set(_SECTION_MAP))
     if unknown_sections:
         logger.warning(
@@ -303,21 +298,6 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     for section, cls in _SECTION_MAP.items():
         if section in raw:
             _apply_section(cfg, section, cls, raw[section])
-
-    if cfg.splitting.embargo_scale_by_timeframe:
-        base_bars = cfg.splitting.embargo_bars
-        cfg.splitting.embargo_bars = _scale_bars_by_timeframe(
-            base_bars,
-            cfg.splitting.embargo_reference_timeframe,
-            cfg.data.timeframe,
-        )
-        logger.info(
-            "Scaled embargo bars from %d @ %s to %d @ %s",
-            base_bars,
-            cfg.splitting.embargo_reference_timeframe,
-            cfg.splitting.embargo_bars,
-            cfg.data.timeframe,
-        )
 
     Path(cfg.paths.data_processed).mkdir(parents=True, exist_ok=True)
     Path(cfg.paths.data_raw).mkdir(parents=True, exist_ok=True)

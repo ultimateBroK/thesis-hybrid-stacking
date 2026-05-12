@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from thesis.pipeline import _cache_hash, _resolve_cache_path
 from thesis.shared.config import Config, load_config
 from thesis.shared.constants import CORE_STATIC_FEATURES
-from thesis.pipeline import _cache_hash, _resolve_cache_path
 
 
 @pytest.mark.unit
@@ -36,8 +36,8 @@ architecture = "stacking"
 
     cfg = load_config(config_path)
 
-    assert cfg.data.start_date == "2018-01-01"
-    assert cfg.splitting.test_end == "2026-04-30 23:59:59"
+    assert cfg.data_range.start == "2021-01-01"
+    assert cfg.data_range.end == "2026-04-30"
     assert cfg.features.static_feature_cols == list(CORE_STATIC_FEATURES)
     assert cfg.model.architecture == "stacking"
     assert cfg.model.stacking_meta_model == "logistic_regression"
@@ -59,6 +59,32 @@ timeframe_typo = "1H"
 
     with pytest.raises(ValueError, match=r"Unknown config key\(s\) in \[data\]"):
         load_config(config_path)
+
+
+@pytest.mark.unit
+def test_legacy_top_level_multi_timeframe_is_migrated_without_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Old session snapshots used top-level [multi_timeframe]; keep them readable."""
+    config_path = tmp_path / "legacy_config.toml"
+    config_path.write_text(
+        """
+[features]
+rsi_period = 14
+
+[multi_timeframe]
+atr_short_period = 7
+return_lookbacks = [1, 2]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with caplog.at_level("WARNING", logger="thesis.config"):
+        cfg = load_config(config_path)
+
+    assert cfg.features.multi_timeframe.atr_short_period == 7
+    assert cfg.features.multi_timeframe.return_lookbacks == [1, 2]
+    assert "Ignoring unknown config section" not in caplog.text
 
 
 @pytest.mark.unit

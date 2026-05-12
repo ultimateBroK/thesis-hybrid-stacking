@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from polars.exceptions import ComputeError, ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.shared.zones import get_metric_zone
@@ -123,7 +124,7 @@ def _calibration_summary_text(config: Config) -> str | None:
     ]
     try:
         df = pl.read_parquet(preds_path)
-    except (pl.ComputeError, OSError):
+    except (ComputeError, OSError):
         logger.warning(
             "Failed to load predictions for calibration check: %s",
             preds_path,
@@ -317,24 +318,24 @@ def _config_table(L: list[str], config: Config) -> None:
         rows.extend(
             [
                 (
-                    "Split",
-                    "train",
-                    f"{config.splitting.train_start} → {config.splitting.train_end}",
+                    "Data Range",
+                    "start → end",
+                    f"{config.data_range.start} → {config.data_range.end}",
                 ),
                 (
-                    "Split",
-                    "val",
-                    f"{config.splitting.val_start} → {config.splitting.val_end}",
+                    "Walk-Forward",
+                    "train_window",
+                    f"{config.validation.train_window_bars} bars",
                 ),
                 (
-                    "Split",
-                    "test",
-                    f"{config.splitting.test_start} → {config.splitting.test_end}",
+                    "Walk-Forward",
+                    "test_window",
+                    f"{config.validation.test_window_bars} bars",
                 ),
                 (
-                    "Split",
+                    "Walk-Forward",
                     "purge/embargo",
-                    f"{config.splitting.purge_bars}/{config.splitting.embargo_bars}",
+                    f"{config.validation.purge_bars}/{config.validation.embargo_bars}",
                 ),
             ]
         )

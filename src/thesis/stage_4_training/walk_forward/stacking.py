@@ -17,6 +17,7 @@ from thesis.stage_4_training.lgbm.utils import (
     _compute_class_weights,
     _save_feature_importance,
     _train_fixed,
+    _wrap_np,
 )
 from thesis.stage_4_training.walk_forward.artifacts import (
     _log_walk_forward_complete,
@@ -126,9 +127,26 @@ def _fit_meta_model(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> A
     )
 
 
-def _aligned_predict_proba(model: Any, X: np.ndarray) -> np.ndarray:
-    """Predict probabilities aligned to the canonical class order [-1, 0, 1]."""
-    proba = model.predict_proba(X)
+def _aligned_predict_proba(
+    model: Any,
+    X: np.ndarray,
+    feature_names: list[str] | None = None,
+) -> np.ndarray:
+    """Predict probabilities aligned to the canonical class order [-1, 0, 1].
+
+    LightGBM/scikit estimators fitted on pandas DataFrames store feature names and
+    warn when later called with a nameless NumPy array.  Preserve names at the
+    prediction boundary for those estimators while keeping NumPy inputs for models
+    that were fitted without names.
+    """
+    X_pred: Any = X
+    fitted_names = getattr(model, "feature_names_in_", None)
+    if fitted_names is not None:
+        names = [str(name) for name in fitted_names]
+        if feature_names is not None and len(feature_names) == X.shape[1]:
+            names = feature_names
+        X_pred = _wrap_np(X, names)
+    proba = model.predict_proba(X_pred)
     return _align_probability_matrix(proba, model.classes_)
 
 
@@ -245,8 +263,10 @@ def _train_and_predict_stacking_window(
                 _build_sklearn_base_model(configured_name, config), X_base, y_base
             )
         base_models[short_name] = model
-        meta_train_outputs[short_name] = _aligned_predict_proba(model, X_meta)
-        test_outputs[short_name] = _aligned_predict_proba(model, X_test)
+        meta_train_outputs[short_name] = _aligned_predict_proba(
+            model, X_meta, selected_cols
+        )
+        test_outputs[short_name] = _aligned_predict_proba(model, X_test, selected_cols)
         base_test_preds[short_name] = _CLASS_ORDER[
             np.argmax(test_outputs[short_name], axis=1)
         ]
@@ -254,7 +274,7 @@ def _train_and_predict_stacking_window(
     X_meta_stack, meta_feature_names = _stack_probability_features(meta_train_outputs)
     X_test_stack, _ = _stack_probability_features(test_outputs)
     meta_model = _fit_meta_model(config, X_meta_stack, y_meta)
-    final_proba = _aligned_predict_proba(meta_model, X_test_stack)
+    final_proba = _aligned_predict_proba(meta_model, X_test_stack, meta_feature_names)
     final_preds = _CLASS_ORDER[np.argmax(final_proba, axis=1)]
 
     diag = _window_diagnostics(

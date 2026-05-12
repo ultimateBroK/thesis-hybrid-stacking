@@ -60,113 +60,53 @@ def create_synthetic_labeled_data(
 def sample_config() -> Config:
     """Create a sample config for testing."""
     config = Config()
-    config.splitting.train_start = "2020-01-01"
-    config.splitting.train_end = "2020-03-31 23:59:59"
-    config.splitting.val_start = "2020-04-01"
-    config.splitting.val_end = "2020-05-31 23:59:59"
-    config.splitting.test_start = "2020-06-01"
-    config.splitting.test_end = "2020-07-31 23:59:59"
-    config.splitting.purge_bars = 24
-    config.splitting.embargo_bars = 12
+    config.data_range.start = "2020-01-01"
+    config.data_range.end = "2020-07-31 23:59:59"
+    config.validation.purge_bars = 24
+    config.validation.embargo_bars = 12
     config.features.correlation_threshold = 0.95
     return config
 
 
 @pytest.mark.unit
 @pytest.mark.data
-def test_chronological_ordering(sample_config: Config) -> None:
-    """Test that splits are chronologically ordered (train < val < test)."""
+def test_data_range_chronological_ordering(sample_config: Config) -> None:
+    """Test that data_range start is before end."""
     df = create_synthetic_labeled_data(n_rows=5000)
 
-    # Parse date boundaries
     ts_dtype = df["timestamp"].dtype
-    bounds = {}
-    for key in (
-        "train_start",
-        "train_end",
-        "val_start",
-        "val_end",
-        "test_start",
-        "test_end",
-    ):
-        bounds[key] = (
-            pl.lit(getattr(sample_config.splitting, key))
-            .str.to_datetime()
-            .cast(ts_dtype)
-        )
-
-    train_df = df.filter(
-        (pl.col("timestamp") >= bounds["train_start"])
-        & (pl.col("timestamp") <= bounds["train_end"])
+    start = (
+        pl.lit(sample_config.data_range.start)
+        .str.to_datetime()
+        .cast(ts_dtype)
     )
-    val_df = df.filter(
-        (pl.col("timestamp") >= bounds["val_start"])
-        & (pl.col("timestamp") <= bounds["val_end"])
+    end = (
+        pl.lit(sample_config.data_range.end)
+        .str.to_datetime()
+        .cast(ts_dtype)
     )
-    test_df = df.filter(
-        (pl.col("timestamp") >= bounds["test_start"])
-        & (pl.col("timestamp") <= bounds["test_end"])
+    assert start < end, "data_range start must be before end"
+
+    in_range = df.filter(
+        (pl.col("timestamp") >= start) & (pl.col("timestamp") <= end)
     )
-
-    if len(train_df) > 0 and len(val_df) > 0:
-        train_max = train_df["timestamp"].max()
-        val_min = val_df["timestamp"].min()
-        assert train_max < val_min, "Train must end before val starts"
-
-    if len(val_df) > 0 and len(test_df) > 0:
-        val_max = val_df["timestamp"].max()
-        test_min = test_df["timestamp"].min()
-        assert val_max < test_min, "Val must end before test starts"
+    assert len(in_range) > 0, "data should contain rows within data_range"
 
 
 @pytest.mark.unit
 @pytest.mark.data
-def test_split_ratios_approximate(sample_config: Config) -> None:
-    """Test that split ratios are approximately correct."""
-    df = create_synthetic_labeled_data(n_rows=5000)
+def test_walkforward_validation_params(sample_config: Config) -> None:
+    """Test that walk-forward validation parameters are valid."""
+    cfg = sample_config
 
-    # Parse date boundaries
-    ts_dtype = df["timestamp"].dtype
-    bounds = {}
-    for key in (
-        "train_start",
-        "train_end",
-        "val_start",
-        "val_end",
-        "test_start",
-        "test_end",
-    ):
-        bounds[key] = (
-            pl.lit(getattr(sample_config.splitting, key))
-            .str.to_datetime()
-            .cast(ts_dtype)
-        )
-
-    train_df = df.filter(
-        (pl.col("timestamp") >= bounds["train_start"])
-        & (pl.col("timestamp") <= bounds["train_end"])
-    )
-    val_df = df.filter(
-        (pl.col("timestamp") >= bounds["val_start"])
-        & (pl.col("timestamp") <= bounds["val_end"])
-    )
-    test_df = df.filter(
-        (pl.col("timestamp") >= bounds["test_start"])
-        & (pl.col("timestamp") <= bounds["test_end"])
-    )
-
-    total = len(train_df) + len(val_df) + len(test_df)
-    if total == 0:
-        pytest.skip("No data in splits")
-
-    train_ratio = len(train_df) / total
-    val_ratio = len(val_df) / total
-    test_ratio = len(test_df) / total
-
-    # Rough checks (allowing for purge effects)
-    assert train_ratio > 0.3, f"Train ratio {train_ratio} too low"
-    assert val_ratio > 0.1, f"Val ratio {val_ratio} too low"
-    assert test_ratio > 0.1, f"Test ratio {test_ratio} too low"
+    assert cfg.validation.train_window_bars > 0
+    assert cfg.validation.test_window_bars > 0
+    assert cfg.validation.step_bars > 0
+    assert cfg.validation.purge_bars >= 0
+    assert cfg.validation.embargo_bars >= 0
+    assert cfg.validation.min_train_bars > 0
+    assert cfg.validation.train_window_bars > cfg.validation.test_window_bars
+    assert cfg.validation.step_bars <= cfg.validation.test_window_bars
 
 
 @pytest.mark.unit

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from polars.exceptions import ComputeError, ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.shared.ui import console
@@ -122,7 +123,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
                 "directional_accuracy": hc_dir_acc,
             }
         return result
-    except (pl.ComputeError, pl.ColumnNotFoundError, OSError):
+    except (ComputeError, ColumnNotFoundError, OSError):
         logger.warning(
             "Failed to load prediction statistics: %s", preds_path, exc_info=True
         )

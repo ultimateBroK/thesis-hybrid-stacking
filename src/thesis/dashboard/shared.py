@@ -34,22 +34,10 @@ def trim_generated_visual_sections(content: str) -> str:
 
 def render_config_summary(config: object) -> None:
     """Render compact current experiment settings in the sidebar."""
-    train_span = (
-        f"{date_only(config.splitting.train_start)}→"
-        f"{date_only(config.splitting.train_end)}"
-    )
-    val_span = (
-        f"{date_only(config.splitting.val_start)}→{date_only(config.splitting.val_end)}"
-    )
-    test_span = (
-        f"{date_only(config.splitting.test_start)}→"
-        f"{date_only(config.splitting.test_end)}"
-    )
     st.markdown(
         f"**Data**: {config.data.symbol} {config.data.timeframe}  "
-        f"{date_only(config.data.start_date)}→{date_only(config.data.end_date)}"
+        f"{date_only(config.data_range.start)}→{date_only(config.data_range.end)}"
     )
-    st.markdown(f"**Split**: train {train_span}  \nval {val_span}  \ntest {test_span}")
     st.markdown(
         f"**Walk-forward**: {config.validation.method}, "
         f"train={config.validation.train_window_bars:,}, "

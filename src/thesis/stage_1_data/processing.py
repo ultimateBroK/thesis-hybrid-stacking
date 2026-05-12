@@ -125,7 +125,21 @@ def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
         pl.col("microprice").count().alias("tick_count"),
         (pl.col("ask") - pl.col("bid")).mean().alias("avg_spread"),
     )
-    return agg_df.drop_nulls()
+    agg_df = agg_df.drop_nulls()
+
+    # Clip to nominal month boundaries — last-day-of-prev-month ticks in each file
+    # produce bars that belong to the next month; drop them to avoid duplicates.
+    stem = file_path.stem  # e.g. "2021-01"
+    year, month = int(stem[:4]), int(stem[5:7])
+    month_start = pl.datetime(year, month, 1)
+    if month == 12:
+        month_end = pl.datetime(year + 1, 1, 1) - pl.duration(seconds=1)
+    else:
+        month_end = pl.datetime(year, month + 1, 1) - pl.duration(seconds=1)
+    agg_df = agg_df.filter(
+        (pl.col("timestamp") >= month_start) & (pl.col("timestamp") <= month_end)
+    )
+    return agg_df
 
 
 def _deduplicate_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int, int]:
@@ -178,17 +192,17 @@ def _filter_date_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
     ts_dtype = ohlcv["timestamp"].dtype
     market_tz = config.data.market_tz
     start = _parse_datetime_bound(
-        config.data.start_date, "start_date", ts_dtype, market_tz
+        config.data_range.start, "start_date", ts_dtype, market_tz
     )
-    end = _parse_datetime_bound(config.data.end_date, "end_date", ts_dtype, market_tz)
+    end = _parse_datetime_bound(        config.data_range.end, "end_date", ts_dtype, market_tz)
     ohlcv = ohlcv.filter((pl.col("timestamp") >= start) & (pl.col("timestamp") <= end))
     dropped = n_before - len(ohlcv)
     if dropped > 0:
         logger.info(
             "Dropped %d bars outside configured range [%s, %s]",
             dropped,
-            config.data.start_date,
-            config.data.end_date,
+            config.data_range.start,
+            config.data_range.end,
         )
     if ohlcv.is_empty():
         raise ValueError(

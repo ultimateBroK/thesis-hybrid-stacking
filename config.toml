@@ -6,34 +6,26 @@
 symbol = "XAUUSD"                    # Ticker to trade
 timeframe = "1H"                     # Bar granularity
 market_tz = "America/New_York"       # Exchange timezone
-start_date = "2021-01-01"            # Ingestion start (raw data)
-end_date = "2026-04-30"              # Ingestion end (raw data)
 tick_size = 0.01                     # Minimum price increment
 contract_size = 100                  # Ounce value per lot
 
-# ── Train / val / test split boundaries ──────────────────────────────────────
-[splitting]
-train_start = "2021-01-01"
-train_end = "2024-12-31 23:59:59"
-val_start = "2025-01-01"
-val_end = "2025-12-31 23:59:59"
-test_start = "2026-01-01"
-test_end = "2026-04-30 23:59:59"
+# ── Data range ──────────────────────────────────────────────────────────────
+[data_range]
+start = "2021-01-01"                # Ingestion start
+end = "2026-04-30"                   # Ingestion end
 
 # ── Walk-forward validation ─────────────────────────────────────────────────
 [validation]
-# Sliding walk-forward: 1-year train, 2-month test windows.
 method = "sliding"
-train_window_bars = 6240   # ~1 market year on 1H bars (24/5)
-test_window_bars = 1040    # ~2 market months on 1H bars (24/5)
-step_bars = 1040           # non-overlapping 2-month market windows
+train_window_bars = 6240   # ~1.2 year train on 1H bars (20 bars/day)
+test_window_bars = 1040    # ~52 day test window
+step_bars = 1040           # non-overlapping ~52 day step
 purge_bars = 48            # 2x 24h horizon; above typical trade hold time
-embargo_bars = 50
+embargo_bars = 50          # Gap to prevent information leakage
 min_train_bars = 6000
+oof_ensemble = true
 
 # ── Feature engineering ──────────────────────────────────────────────────────
-# static_feature_cols are the default LightGBM features.
-# See thesis.shared.feature_registry for the canonical column lists.
 [features]
 rsi_period = 14                   # RSI lookback
 atr_period = 14                   # ATR lookback
@@ -44,6 +36,20 @@ macd_slow = 26                    # MACD slow EMA
 macd_signal = 9                   # MACD signal line
 correlation_threshold = 0.75      # Drop features above this pairwise correlation
 
+# ── Multi-timeframe features ─────────────────────────────────────────────────
+[features.multi_timeframe]
+sma_periods = [50]                # SMA lookbacks for multi-timeframe
+ema_long = 200                    # Long EMA period
+bb_period = 20                    # Bollinger Bands period
+bb_std = 2.0                      # Bollinger Bands std dev
+return_lookbacks = [1, 4, 24]      # Return calculation lookbacks (1h, 4h, 1d)
+range_lookback = 20               # Range z-score lookback
+volume_zscore_period = 20         # Volume z-score lookback
+atr_short_period = 5               # Short ATR for multi-timeframe
+atr_long_period = 20               # Long ATR for multi-timeframe
+consecutive_bars_window = 5       # Consecutive bars window
+price_position_window = 20        # Price position lookback
+
 # ── Label generation ─────────────────────────────────────────────────────────
 [labels]
 atr_tp_multiplier = 2.0           # Take-profit = multiplier × ATR
@@ -51,7 +57,6 @@ atr_sl_multiplier = 2.0           # Stop-loss   = multiplier × ATR
 horizon_bars = 24                 # Forward-looking window (hours)
 
 # ── Model selection ──────────────────────────────────────────────────────────
-# Architecture options: "stacking" (classical hybrid stacking), "lgbm" (LightGBM only)
 [model]
 architecture = "stacking"
 objective = "multiclass"           # Classification target: buy / hold / sell
@@ -67,7 +72,6 @@ feature_fraction = 0.70           # Column subsample per tree
 reg_alpha = 0.05                  # L1 regularization
 reg_lambda = 10.0                  # L2 regularization
 early_stopping_rounds = 30        # Stop if no improvement for N rounds
-
 stacking_base_models = ["logistic_regression", "random_forest", "lightgbm"]
 stacking_meta_model = "logistic_regression"
 stacking_meta_fraction = 0.20
