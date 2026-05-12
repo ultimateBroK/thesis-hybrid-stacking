@@ -5,9 +5,9 @@ from __future__ import annotations
 import html
 
 from thesis.shared.zones import (
-    _ZONE_COLORS,
-    _get_metric_zone,
-    _is_extreme_value,
+    ZONE_COLORS,
+    get_metric_zone,
+    is_extreme_value,
 )
 
 # CSS style strings extracted to avoid embedding long inline attributes.
@@ -33,10 +33,10 @@ def render_zoned_metric(
     unit: str = "",
 ) -> None:
     """Render a metric card with colour-coded zone indicator."""
-    is_extreme, _ = _is_extreme_value(metric_key, value)
-    color, zone_label, recommendation = _get_metric_zone(metric_key, value)
+    is_extreme, _ = is_extreme_value(metric_key, value)
+    color, zone_label, recommendation = get_metric_zone(metric_key, value)
 
-    hex_color = _ZONE_COLORS.get(color, "#6b7280")
+    hex_color = ZONE_COLORS.get(color, "#6b7280")
     display_suffix = " ⚠️" if is_extreme else ""
     safe_label = html.escape(label)
     safe_value = html.escape(format_str.format(value))

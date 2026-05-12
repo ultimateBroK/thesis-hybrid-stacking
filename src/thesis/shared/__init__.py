@@ -52,7 +52,7 @@ from thesis.shared.ui import (
     stage_header,
     stage_skip,
 )
-from thesis.shared.zones import _ZONE_COLORS, _get_metric_zone, _is_extreme_value
+from thesis.shared.zones import ZONE_COLORS, get_metric_zone, is_extreme_value
 
 __all__ = [
     # config
@@ -99,7 +99,7 @@ __all__ = [
     "stage_header",
     "stage_skip",
     # zones
-    "_get_metric_zone",
-    "_is_extreme_value",
-    "_ZONE_COLORS",
+    "get_metric_zone",
+    "is_extreme_value",
+    "ZONE_COLORS",
 ]

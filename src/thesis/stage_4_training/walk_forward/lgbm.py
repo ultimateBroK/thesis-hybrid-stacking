@@ -122,8 +122,7 @@ def _train_and_predict_static_window(
         static_cols = [
             c
             for c in feature_cols
-            if c in train_df.columns
-            and c != "regression_target"
+            if c in train_df.columns and c != "regression_target"
         ]
         mode_tag = "expanded"
     else:

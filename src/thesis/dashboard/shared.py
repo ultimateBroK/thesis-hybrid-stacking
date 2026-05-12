@@ -56,8 +56,7 @@ def render_config_summary(config: object) -> None:
         f"test={config.validation.test_window_bars:,}, "
         f"purge={config.validation.purge_bars} bars"
     )
-    st.markdown(
-)
+    st.markdown()
     st.markdown(
         f"**LightGBM**: {config.model.architecture}, "
         f"objective={config.model.objective}, leaves={config.model.num_leaves}, "

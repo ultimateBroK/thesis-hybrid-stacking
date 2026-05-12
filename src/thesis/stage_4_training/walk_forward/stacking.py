@@ -229,9 +229,7 @@ def _train_and_predict_stacking_window(
         short_name = _BASE_MODEL_ALIASES.get(configured_name, configured_name)
         if configured_name == "lightgbm":
             class_weights = (
-                _compute_class_weights(y_base)
-                if len(np.unique(y_base)) > 1
-                else None
+                _compute_class_weights(y_base) if len(np.unique(y_base)) > 1 else None
             )
             model = _train_fixed(
                 X_base,

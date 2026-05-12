@@ -14,7 +14,7 @@ import numpy as np
 import polars as pl
 
 from thesis.shared.config import Config
-from thesis.shared.zones import _get_metric_zone
+from thesis.shared.zones import get_metric_zone
 from thesis.stage_6_reporting import calibration
 from thesis.stage_6_reporting.benchmarks import (
     _model_label,
@@ -66,7 +66,7 @@ def _zone(key: str, value: float) -> str:
         and (math.isnan(value) if isinstance(value, float) else False)
     ):
         return "⚪"
-    color, _, _ = _get_metric_zone(key, value)
+    color, _, _ = get_metric_zone(key, value)
     return _ZONE_EMOJI.get(color, "⚪")
 
 

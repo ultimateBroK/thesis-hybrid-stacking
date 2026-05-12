@@ -160,7 +160,7 @@ def check_candle_quality(df: pl.DataFrame) -> dict[str, Any]:
     }
 
 
-_DEFAULT_GOLD_CALENDARS: tuple[str, ...] = (
+DEFAULT_GOLD_CALENDARS: tuple[str, ...] = (
     "CME Globex Gold and Silver Futures",
     "CME Globex Commodities",
     "CME_FX",
@@ -178,9 +178,9 @@ class GapClassification:
     warnings: list[str]
 
 
-def _resolve_market_calendar(name: str | None = None):
+def resolve_market_calendar(name: str | None = None):
     """Resolve configured market calendar, defaulting to a gold session."""
-    candidates = [name] if name else list(_DEFAULT_GOLD_CALENDARS)
+    candidates = [name] if name else list(DEFAULT_GOLD_CALENDARS)
     for candidate in candidates:
         if not candidate:
             continue
@@ -190,7 +190,7 @@ def _resolve_market_calendar(name: str | None = None):
             continue
     raise RuntimeError(
         "Could not resolve market calendar for gold bars. "
-        f"Tried: {candidates or list(_DEFAULT_GOLD_CALENDARS)}"
+        f"Tried: {candidates or list(DEFAULT_GOLD_CALENDARS)}"
     )
 
 
@@ -211,7 +211,7 @@ def classify_calendar_gaps(
         else:
             actual_index = actual_index.tz_convert("UTC")
 
-        cal = _resolve_market_calendar(calendar_name)
+        cal = resolve_market_calendar(calendar_name)
         start = actual_index.min().date()
         end = actual_index.max().date()
         schedule = cal.schedule(start_date=start, end_date=end)

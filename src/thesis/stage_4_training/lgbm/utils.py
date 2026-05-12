@@ -335,4 +335,3 @@ def _save_feature_importance(
         )
     except (OSError, ValueError) as e:
         logger.warning("Feature importance save failed: %s", e)
-

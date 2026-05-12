@@ -68,7 +68,7 @@ def generate_features(config: Config) -> None:
     df = _add_high_low_range(df, config)
     df = _add_adx(df, config)
     df = _add_ema_slope(df, config)
-    df = _add_regime(df)
+    df = _add_regime(df, config)
     df = _add_rsi(df, config)
     df = _add_macd(df, config)
     df = _add_volume_zscore(df, config)

@@ -38,7 +38,6 @@ def get_static_feature_cols(config) -> list[str]:
     return list(config.features.static_feature_cols)
 
 
-
 def get_label_helper_cols(config) -> list[str]:
     """Return helper columns used during label construction (e.g. ATR)."""
     return [f"atr_{config.features.atr_period}"]

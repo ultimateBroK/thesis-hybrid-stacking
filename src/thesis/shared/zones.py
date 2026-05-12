@@ -10,7 +10,7 @@ and can be unit-tested independently.
 import math
 
 
-def _is_extreme_value(metric_name: str, value: float) -> tuple[bool, float]:
+def is_extreme_value(metric_name: str, value: float) -> tuple[bool, float]:
     """Check if a metric value is extreme and return threshold info.
 
     Args:
@@ -39,7 +39,7 @@ def _is_extreme_value(metric_name: str, value: float) -> tuple[bool, float]:
     return is_extreme, threshold
 
 
-def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
+def get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     """Return (color_name, zone_label, recommendation) for a given metric.
 
     Zone labels range from excellent, good, and moderate to poor and
@@ -55,7 +55,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return ("moderate", "N/A", "No data available")
 
-    is_extreme, threshold = _is_extreme_value(metric_name, value)
+    is_extreme, threshold = is_extreme_value(metric_name, value)
 
     if is_extreme:
         return (
@@ -380,7 +380,7 @@ def _get_metric_zone(metric_name: str, value: float) -> tuple[str, str, str]:
     return ("moderate", "Neutral", "No benchmark available")
 
 
-_ZONE_COLORS = {
+ZONE_COLORS = {
     "excellent": "#22c55e",
     "good": "#84cc16",
     "moderate": "#eab308",

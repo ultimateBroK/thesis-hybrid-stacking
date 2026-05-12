@@ -73,6 +73,10 @@ class MultiTimeframeConfig:
     return_lookbacks: list[int] = field(default_factory=lambda: [1, 4, 24])
     range_lookback: int = 20
     volume_zscore_period: int = 20
+    atr_short_period: int = 5
+    atr_long_period: int = 20
+    consecutive_bars_window: int = 5
+    price_position_window: int = 20
 
 
 @dataclass
@@ -83,9 +87,13 @@ class FeaturesConfig:
     atr_period: int = 14
     adx_period: int = 14
     ema_slope_period: int = 20
+    adx_regime_threshold: float = 20.0
+    adx_regime_clip_max: float = 3.0
     macd_fast: int = 12
     macd_slow: int = 26
     macd_signal: int = 9
+    ema_fast_span: int = 34
+    ema_slow_span: int = 89
     correlation_threshold: float = 0.75
     static_feature_cols: list[str] = field(
         default_factory=lambda: list(CORE_STATIC_FEATURES)
@@ -131,7 +139,6 @@ class LGBMConfig:
     random_forest_n_estimators: int = 300
     random_forest_max_depth: int = 6
     random_forest_min_samples_leaf: int = 80
-
 
 
 @dataclass

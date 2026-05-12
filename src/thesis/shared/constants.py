@@ -48,7 +48,7 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
     ]
 )
 
-# Private alias used by internal modules.
+# Private alias kept for safe backwards compatibility only.
 _EXCLUDE_COLS = EXCLUDE_COLS
 
 # Annualization constant for hourly XAU/USD-style markets.

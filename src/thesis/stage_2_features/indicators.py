@@ -65,9 +65,10 @@ def _add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 def _add_context_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add ATR ratio, price distance, pivot/session, and ATR percentile."""
     p = config.features.atr_period
-    atr_5 = _compute_atr_expr(5)
-    atr_20 = _compute_atr_expr(20)
-    df = df.with_columns((atr_5 / (atr_20 + FEATURE_EPS)).alias("atr_ratio"))
+    mt = config.features.multi_timeframe
+    atr_short = _compute_atr_expr(mt.atr_short_period)
+    atr_long = _compute_atr_expr(mt.atr_long_period)
+    df = df.with_columns((atr_short / (atr_long + FEATURE_EPS)).alias("atr_ratio"))
     ema_89 = pl.col("close").ewm_mean(span=89, adjust=False)
     df = df.with_columns(
         ((pl.col("close") - ema_89) / (pl.col(f"atr_{p}") + FEATURE_EPS)).alias(
@@ -120,7 +121,8 @@ def _add_vwap(df: pl.DataFrame) -> pl.DataFrame:
 def _to_ny_trading_day(df: pl.DataFrame) -> pl.Expr:
     """Convert timestamp to 7PM-anchored NY trading-day bucket."""
     ts = pl.col("timestamp")
-    if df["timestamp"].dtype.time_zone is None:
+    dtype = df["timestamp"].dtype
+    if dtype.time_zone is None:
         ts = ts.dt.replace_time_zone("UTC")
     ts_ny = ts.dt.convert_time_zone("America/New_York")
     return (ts_ny + pl.duration(hours=7)).dt.truncate("1d")
@@ -190,6 +192,7 @@ def _add_ny_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
 def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add candle structure and short-run price action features."""
     p = config.features.atr_period
+    mt = config.features.multi_timeframe
     atr_col = pl.col(f"atr_{p}")
     hl_range = pl.col("high") - pl.col("low") + FEATURE_EPS
     return df.with_columns(
@@ -214,13 +217,16 @@ def _add_price_action_features(df: pl.DataFrame, config: Config) -> pl.DataFrame
                 .when(pl.col("close") < pl.col("open"))
                 .then(-1)
                 .otherwise(0)
-                .rolling_sum(window_size=5)
+                .rolling_sum(window_size=mt.consecutive_bars_window)
             ).alias("consecutive_bars"),
             (
-                (pl.col("close") - pl.col("low").rolling_min(window_size=20))
+                (
+                    pl.col("close")
+                    - pl.col("low").rolling_min(window_size=mt.price_position_window)
+                )
                 / (
-                    pl.col("high").rolling_max(window_size=20)
-                    - pl.col("low").rolling_min(window_size=20)
+                    pl.col("high").rolling_max(window_size=mt.price_position_window)
+                    - pl.col("low").rolling_min(window_size=mt.price_position_window)
                     + FEATURE_EPS
                 )
             ).alias("price_position_20"),
@@ -232,14 +238,16 @@ def _add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Add ATR-normalized EMA34/EMA89 distance features."""
     p = config.features.atr_period
     atr_col = pl.col(f"atr_{p}")
-    ema_34_expr = pl.col("close").ewm_mean(span=34, adjust=False)
-    ema_89_expr = pl.col("close").ewm_mean(span=89, adjust=False)
+    fc = config.features.ema_fast_span
+    sc = config.features.ema_slow_span
+    ema_fast_expr = pl.col("close").ewm_mean(span=fc, adjust=False)
+    ema_slow_expr = pl.col("close").ewm_mean(span=sc, adjust=False)
     return df.with_columns(
         [
-            ((pl.col("close") - ema_34_expr) / (atr_col + FEATURE_EPS)).alias(
+            ((pl.col("close") - ema_fast_expr) / (atr_col + FEATURE_EPS)).alias(
                 "close_vs_ema_34"
             ),
-            ((ema_34_expr - ema_89_expr) / (atr_col + FEATURE_EPS)).alias(
+            ((ema_fast_expr - ema_slow_expr) / (atr_col + FEATURE_EPS)).alias(
                 "ema34_vs_ema89"
             ),
         ]
@@ -336,12 +344,14 @@ def _add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df.with_columns(slope.alias(f"ema_slope_{p}"))
 
 
-def _add_regime(df: pl.DataFrame) -> pl.DataFrame:
+def _add_regime(df: pl.DataFrame, config: Config | None = None) -> pl.DataFrame:
     """Add composite regime strength from ADX and EMA slope."""
     adx_cols = [c for c in df.columns if c.startswith("adx_")]
     slope_cols = [c for c in df.columns if c.startswith("ema_slope_")]
     if not adx_cols or not slope_cols:
         return df.with_columns(pl.lit(0.0).alias("regime_strength"))
-    adx_signal = ((pl.col(adx_cols[0]) - 20) / 20).clip(0, 3)
+    threshold = config.features.adx_regime_threshold if config else 20.0
+    clip_max = config.features.adx_regime_clip_max if config else 3.0
+    adx_signal = ((pl.col(adx_cols[0]) - threshold) / threshold).clip(0, clip_max)
     slope_sign = pl.col(slope_cols[0]).sign()
     return df.with_columns((adx_signal * slope_sign).alias("regime_strength"))
