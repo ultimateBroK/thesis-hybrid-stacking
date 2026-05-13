@@ -81,7 +81,7 @@ def _calibration_summary_text(config: Config) -> str | None:
     """Compute a one-paragraph calibration reliability note.
 
     Reads predicted probabilities and true labels from the predictions
-    parquet file, computes calibration metrics via the ``calibration``
+    CSV file, computes calibration metrics via the ``calibration``
     module, and returns a human-readable summary.
 
     Args:
@@ -101,7 +101,7 @@ def _calibration_summary_text(config: Config) -> str | None:
         "pred_proba_class_1",
     ]
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
     except (ComputeError, OSError):
         logger.warning(
             "Failed to load predictions for calibration check: %s",

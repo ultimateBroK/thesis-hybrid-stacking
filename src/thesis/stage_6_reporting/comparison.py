@@ -228,7 +228,7 @@ def _build_model_comparison_rows(
     preds_path = Path(config.paths.predictions)
     if preds_path.exists():
         try:
-            df = pl.read_parquet(preds_path)
+            df = pl.read_csv(preds_path)
             y_true = df["true_label"].to_numpy()
             close_path = Path(config.paths.ohlcv)
             y_returns = y_true.astype(np.float64)
@@ -336,38 +336,9 @@ def _build_model_comparison_rows(
 
 def _write_model_comparison_artifacts(
     out_dir: Path, rows: list[dict[str, Any]]
-) -> tuple[Path, Path]:
-    """Write model comparison table to CSV and Markdown."""
+) -> Path:
+    """Write model comparison table to CSV."""
     csv_path = out_dir / "model_comparison.csv"
-    md_path = out_dir / "model_comparison.md"
     frame = pd.DataFrame(rows)
     frame.to_csv(csv_path, index=False)
-
-    display_cols = [
-        "model",
-        "directional_accuracy",
-        "accuracy",
-        "macro_f1",
-        "long_f1",
-        "short_f1",
-        "mae_return",
-        "rmse_return",
-        "r2_return",
-        "source",
-    ]
-    with md_path.open("w") as f:
-        f.write("# Model Comparison\n\n")
-        f.write(
-            "Primary focus: Directional Accuracy, Accuracy, Macro F1,"
-            " and per-class F1.  Rows with empty values require"
-            " additional experiment runs.\n\n"
-        )
-        f.write("| " + " | ".join(display_cols) + " |\n")
-        f.write("|" + "|".join(["---"] * len(display_cols)) + "|\n")
-        for row in rows:
-            vals = []
-            for col in display_cols:
-                val = row.get(col)
-                vals.append("" if val is None else str(val))
-            f.write("| " + " | ".join(vals) + " |\n")
-    return csv_path, md_path
+    return csv_path

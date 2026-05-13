@@ -1,8 +1,7 @@
 """Data-quality and methodology section renderers.
 
-Renderers for data quality, label design, validation methodology, and
-auxiliary regression metrics.  Each function appends markdown lines to a
-caller-provided list ``L``.
+Renderers for data quality, label design, and validation methodology.
+Each function appends markdown lines to a caller-provided list ``L``.
 """
 
 from __future__ import annotations
@@ -56,8 +55,18 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
-def _render_data_quality_section(L: list[str], config: Config) -> None:
+def _render_data_quality_section(
+    L: list[str], config: Config, heading: str | None = None
+) -> None:
     """Render the Data Quality analysis section from the JSON sidecar."""
+    if heading is None:
+        heading = "## Data Quality"
+    if heading:
+        L.append(heading)
+        L.append("")
+    else:
+        L.append("")
+
     dq_path = Path(config.paths.data_quality_json)
     if not dq_path.exists():
         L.append("*Data quality JSON not found — stage 1 may not have run.*")
@@ -73,8 +82,6 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
         L.append("")
         return
 
-    L.append("## Data Quality")
-    L.append("")
     L.append(
         'This section addresses the thesis question: *"Is that because of data, '
         'the result awful?"*'
@@ -207,10 +214,15 @@ def _render_data_quality_section(L: list[str], config: Config) -> None:
             logger.warning("Failed to compute data quality from OHLCV", exc_info=True)
 
 
-def _render_label_design_section(L: list[str], config: Config) -> None:
+def _render_label_design_section(
+    L: list[str], config: Config, heading: str | None = None
+) -> None:
     """Render the Label Design & Methodology explanation section."""
-    L.append("## Label Design & Methodology")
-    L.append("")
+    if heading is None:
+        heading = "## Label Design & Methodology"
+    if heading:
+        L.append(heading)
+        L.append("")
     labels_cfg = config.labels
     L.append(
         "Labels are generated using the **triple-barrier method**: for each "
@@ -248,10 +260,15 @@ def _render_label_design_section(L: list[str], config: Config) -> None:
         L.append("")
 
 
-def _render_validation_methodology_section(L: list[str], config: Config) -> None:
+def _render_validation_methodology_section(
+    L: list[str], config: Config, heading: str | None = None
+) -> None:
     """Render the Validation Methodology section (walk-forward, purge/embargo)."""
-    L.append("## Validation Methodology")
-    L.append("")
+    if heading is None:
+        heading = "## Validation Methodology"
+    if heading:
+        L.append(heading)
+        L.append("")
     val_cfg = config.validation
 
     method_label = (
@@ -294,42 +311,3 @@ def _render_validation_methodology_section(L: list[str], config: Config) -> None
         "and evaluation data.*"
     )
     L.append("")
-
-
-def _render_auxiliary_regression_section(L: list[str], pred_stats: dict | None) -> None:
-    """Render auxiliary regression metrics section (MAE/RMSE/R²) if available.
-
-    Reads from the ``regression_auxiliary`` sub-dict produced by
-    :func:`thesis.stage_6_reporting.generation._load_prediction_stats`.
-    """
-    L.append("## Auxiliary: Regression Metrics")
-    L.append("")
-
-    reg = pred_stats.get("regression_auxiliary") if pred_stats else None
-    metrics = (
-        [
-            ("mae", "MAE"),
-            ("rmse", "RMSE"),
-            ("r_squared", "R²"),
-        ]
-        if reg
-        else []
-    )
-    has_any = any(reg.get(key) is not None for key, _ in metrics) if reg else False
-
-    if has_any:
-        L.append(_tbl_row("Metric", "Value"))
-        L.append(_tbl_row("------", "-----"))
-        for key, label in metrics:
-            val = reg.get(key)
-            if val is not None:
-                L.append(_tbl_row(label, f"{val:.6f}"))
-        L.append("")
-    else:
-        L.append(
-            "*Regression metrics (MAE, RMSE, R²) are not available for the "
-            "current multiclass classification objective. When the model is "
-            'configured with `objective = "regression"`, this section will '
-            "show continuous-return prediction quality.*"
-        )
-        L.append("")

@@ -99,8 +99,7 @@ def _save_oof_predictions(
     preds_path = Path(config.paths.predictions)
     preds_path.parent.mkdir(parents=True, exist_ok=True)
     _validate_predictions(oof_df, preds_path)
-    oof_df.write_parquet(preds_path)
-    oof_df.write_csv(preds_path.with_suffix(".csv"))
+    oof_df.write_csv(preds_path)
     _write_prediction_manifest(
         oof_df,
         preds_path,
@@ -167,6 +166,6 @@ def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> Non
     session_dir = Path(config.paths.session_dir)
     preds_dir = session_dir / "predictions"
     preds_dir.mkdir(parents=True, exist_ok=True)
-    arch_path = preds_dir / f"preds_{arch_name}.parquet"
-    oof_df.write_parquet(arch_path)
+    arch_path = preds_dir / f"preds_{arch_name}.csv"
+    oof_df.write_csv(arch_path)
     logger.info("Per-arch predictions saved: %s", arch_path)

@@ -64,7 +64,7 @@ def _write_prediction_manifest(
     *,
     windows_count: int,
 ) -> None:
-    """Write compact diagnostics beside final_predictions.parquet."""
+    """Write compact diagnostics beside final_predictions.csv."""
     from thesis.stage_4_training.walk_forward.diagnostics import _counts_dict
 
     mean_confidence = (

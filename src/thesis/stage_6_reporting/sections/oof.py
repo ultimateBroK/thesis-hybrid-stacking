@@ -21,23 +21,20 @@ from thesis.stage_6_reporting.sections.data import _tbl_row
 logger = logging.getLogger("thesis.report")
 
 
-def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
+def _render_oof_vs_oos_section(
+    L: list[str], config: Config, heading: str | None = None
+) -> None:
     """Render OOF vs OOS comparison section with side-by-side metrics table."""
+    if heading is None:
+        heading = "## OOF vs OOS Generalization Check"
+
     # ── Load walk-forward history ──
     session_dir = config.paths.session_dir
     if not session_dir:
-        L.append("## OOF vs OOS Generalization Check")
-        L.append("")
-        L.append("*Comparison unavailable — no session directory configured.*")
-        L.append("")
         return
 
     wf_path = Path(session_dir) / "reports" / "walk_forward_history.json"
     if not wf_path.exists():
-        L.append("## OOF vs OOS Generalization Check")
-        L.append("")
-        L.append("*Comparison unavailable — walk-forward history not found.*")
-        L.append("")
         return
 
     try:
@@ -46,20 +43,10 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
         logger.warning(
             "Failed to load walk-forward history: %s", wf_path, exc_info=True
         )
-        L.append("## OOF vs OOS Generalization Check")
-        L.append("")
-        L.append("*Comparison unavailable — failed to load walk-forward history.*")
-        L.append("")
         return
 
     window_details = wf.get("window_details", [])
     if not window_details:
-        L.append("## OOF vs OOS Generalization Check")
-        L.append("")
-        L.append(
-            "*Comparison unavailable — no window details in walk-forward history.*"
-        )
-        L.append("")
         return
 
     # ── Aggregate OOF metrics across windows (weighted by test_rows) ──
@@ -116,7 +103,7 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
 
         if oos_start and oos_end:
             try:
-                df = pl.read_parquet(preds_path)
+                df = pl.read_csv(preds_path)
                 if "true_label" not in df.columns or "pred_label" not in df.columns:
                     logger.warning(
                         "Predictions parquet missing true_label/pred_label columns"
@@ -189,8 +176,18 @@ def _render_oof_vs_oos_section(L: list[str], config: Config) -> None:
                 )
 
     # ── Render table ──
-    L.append("## OOF vs OOS Generalization Check")
-    L.append("")
+    # Skip if OOS data is entirely unavailable (all None)
+    oos_all_none = (
+        oos_accuracy is None
+        and oos_macro_f1 is None
+        and all(v is None for v in oos_class_f1.values())
+    )
+    if oos_all_none and oof_accuracy is None and oof_macro_f1 is None:
+        return
+
+    if heading:
+        L.append(heading)
+        L.append("")
     L.append(
         "*OOF (Out-Of-Fold) metrics are aggregated across all walk-forward "
         "cross-validation windows. OOS (Out-Of-Sample) metrics are computed "

@@ -27,7 +27,6 @@ from thesis.stage_6_reporting.comparison import (
     _write_model_comparison_artifacts,
 )
 from thesis.stage_6_reporting.sections import (
-    _render_auxiliary_regression_section,
     _render_baseline_comparison_section,
     _render_data_quality_section,
     _render_label_design_section,
@@ -58,7 +57,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
     if not preds_path.exists():
         return None
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
         true = df["true_label"].to_numpy()
         pred = df["pred_label"].to_numpy()
 
@@ -162,27 +161,34 @@ def _build_markdown(
     session = config.paths.session_dir or "N/A"
     L: list[str] = []
 
+    # Title & metadata
     L.append(f"# Thesis Report: {_model_label(config)} — XAU/USD")
     L.append("")
     L.append(f"> Generated: {now} | Session: `{session}`")
     L.append("")
 
+    # 1. Executive Summary
     L.append("## Executive Summary")
     L.append("")
     _exec_table(L, metrics, pred_stats)
     _exec_verdict(L, metrics, pred_stats)
     L.append("")
 
-    L.append("## Configuration")
+    # 2. Methodology
+    L.append("## Methodology")
     L.append("")
-    _config_table(L, config)
+    _render_data_quality_section(L, config, heading="### Data & Quality")
+    _render_label_design_section(L, config, heading="### Label Design")
+    _render_validation_methodology_section(L, config, heading="### Validation Scheme")
+
+    # Model Architecture subsection
+    L.append("### Model Architecture")
+    L.append("")
+    _feature_importance_table(L, feature_importance)
     L.append("")
 
-    _render_data_quality_section(L, config)
-    _render_label_design_section(L, config)
-    _render_validation_methodology_section(L, config)
-
-    L.append("## Classification Metrics")
+    # 3. Classification Results ★
+    L.append("## Classification Results ★")
     L.append("")
     L.append(
         "*Classification metrics are the primary evaluation criterion for "
@@ -193,15 +199,10 @@ def _build_markdown(
     _accuracy_table(L, pred_stats, config)
     L.append("")
 
-    L.append("## Model Architecture & Features")
-    L.append("")
-    _feature_importance_table(L, feature_importance)
-    L.append("")
+    _render_baseline_comparison_section(L, config, heading="### Baseline Comparison")
 
-    _render_baseline_comparison_section(L, config)
-    _render_auxiliary_regression_section(L, pred_stats)
-
-    L.append("## Application Demo: Backtest Results")
+    # 4. Application Demo: Backtest
+    L.append("## Application Demo: Backtest")
     L.append("")
     L.append(
         "*Backtest results are presented as an application demo to illustrate "
@@ -211,18 +212,26 @@ def _build_markdown(
     L.append("")
     _backtest_params_table(L, config)
     _backtest_metrics_table(L, metrics, config)
-    _render_metric_zones_section(L, metrics, trades)
+    _render_metric_zones_section(L, metrics, trades, heading="")
     L.append("")
 
-    L.append("## Application Demo: Benchmark Comparison")
+    L.append("### Benchmark Comparison")
     L.append("")
     _benchmark_comparison_table(L, metrics, config)
 
-    _render_oof_vs_oos_section(L, config)
+    # 5. Generalization Assessment
+    _render_oof_vs_oos_section(L, config, heading="## Generalization Assessment")
 
+    # 6. Issues & Recommendations
     L.append("## Issues & Recommendations")
     L.append("")
     _issues_list(L, metrics, trades, config, pred_stats)
+    L.append("")
+
+    # 7. Appendix: Full Configuration
+    L.append("## Appendix: Full Configuration")
+    L.append("")
+    _config_table(L, config)
     L.append("")
 
     return "\n".join(L)
@@ -442,7 +451,7 @@ def generate_report(config: Config) -> None:
         json.dump(data.pred_stats or {}, f, indent=2)
     logger.info("Model metrics saved: %s", model_metrics_path)
 
-    model_cmp_csv, model_cmp_md = _write_model_comparison_artifacts(
+    model_cmp_csv = _write_model_comparison_artifacts(
         data.out_dir, data.model_comparison_rows
     )
-    logger.info("Model comparison saved: %s, %s", model_cmp_csv, model_cmp_md)
+    logger.info("Model comparison saved: %s", model_cmp_csv)

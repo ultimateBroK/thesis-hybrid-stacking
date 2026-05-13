@@ -47,11 +47,11 @@ def load_session_data(config: Config) -> dict[str, Any]:
     # Predictions
     if config.paths.session_dir:
         preds_path = (
-            Path(config.paths.session_dir) / "predictions" / "final_predictions.parquet"
+            Path(config.paths.session_dir) / "predictions" / "final_predictions.csv"
         )
     else:
         preds_path = Path(config.paths.predictions)
-    data["predictions"] = pl.read_parquet(preds_path) if preds_path.exists() else None
+    data["predictions"] = pl.read_csv(preds_path) if preds_path.exists() else None
 
     # Backtest results (JSON)
     if config.paths.session_dir:

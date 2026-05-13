@@ -25,7 +25,7 @@ def configure_session_paths(config: Config, session_dir: str | Path) -> None:
     sd = Path(session_dir)
     config.paths.session_dir = str(sd)
     config.paths.model = str(sd / "models" / "lightgbm_model.pkl")
-    config.paths.predictions = str(sd / "predictions" / "final_predictions.parquet")
+    config.paths.predictions = str(sd / "predictions" / "final_predictions.csv")
     config.paths.backtest_results = str(sd / "backtest" / "backtest_results.json")
     config.paths.report = str(sd / "reports" / "thesis_report.md")
 

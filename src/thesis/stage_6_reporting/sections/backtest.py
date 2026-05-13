@@ -64,10 +64,14 @@ def _render_metric_zones_section(
     L: list[str],
     metrics: dict,
     trades: list[dict] | None = None,
+    heading: str | None = None,
 ) -> None:
     """Render backtest metric quality zones with emoji indicators."""
-    L.append("## Metric Quality Zones")
-    L.append("")
+    if heading is None:
+        heading = "## Metric Quality Zones"
+    if heading:
+        L.append(heading)
+        L.append("")
     L.append(
         "*Each metric is classified into three quality zones based on "
         "industry-standard thresholds (see "
@@ -138,10 +142,15 @@ def _render_metric_zones_section(
     L.append("")
 
 
-def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
+def _render_baseline_comparison_section(
+    L: list[str], config: Config, heading: str | None = None
+) -> None:
     """Render baseline strategy comparison using the _baselines module."""
-    L.append("## Baseline Comparison")
-    L.append("")
+    if heading is None:
+        heading = "## Baseline Comparison"
+    if heading:
+        L.append(heading)
+        L.append("")
 
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
@@ -150,7 +159,7 @@ def _render_baseline_comparison_section(L: list[str], config: Config) -> None:
         return
 
     try:
-        df = pl.read_parquet(preds_path)
+        df = pl.read_csv(preds_path)
     except (ComputeError, OSError):
         logger.warning("Failed to load predictions for baselines", exc_info=True)
         L.append("*Predictions file could not be read.*")

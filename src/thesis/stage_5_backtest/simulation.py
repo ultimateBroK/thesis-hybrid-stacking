@@ -50,7 +50,7 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
     if not preds_path.exists():
         raise FileNotFoundError(f"Predictions not found: {preds_path}")
     with console.status(f"[cyan]Loading predictions[/] {preds_path}"):
-        preds_df = pl.read_parquet(preds_path)
+        preds_df = pl.read_csv(preds_path)
 
     test_path = Path(config.paths.test_data)
     is_static = config.validation.method == "static"
