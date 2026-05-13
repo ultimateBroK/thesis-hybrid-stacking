@@ -60,7 +60,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 <div class="container">
 
 <h1>thesis — Complete Call Flow &amp; Architecture Documentation</h1>
-<p class="subtitle">Generated from graphify knowledge graph: 3131 nodes, 4665 edges, 218 communities. Commit: 26f8bf2</p>
+<p class="subtitle">Generated from graphify knowledge graph: 3133 nodes, 4671 edges, 215 communities. Commit: 6901102</p>
 
 <div class="nav">
     <a href="#overview">Architecture Overview</a>
@@ -71,12 +71,12 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
     <a href="#cli-skills">CLI &amp; Skill Installers</a>
     <a href="#ingest-cache-update">Ingestion &amp; Updates</a>
     <a href="#tests-fixtures">Tests &amp; Fixtures</a>
-    <a href="#report-data-sections">Report Data Sections</a>
-    <a href="#markdown-formatting">Markdown Formatting</a>
-    <a href="#stage-4-init">Stage 4 Init</a>
-    <a href="#charts-shared">Charts Shared</a>
-    <a href="#schemas-rationale">Schemas Rationale</a>
+    <a href="#chart-data-layer">Chart Data Layer</a>
+    <a href="#dashboard-ui">Dashboard UI</a>
+    <a href="#lgbm-init">LGBM Init</a>
     <a href="#schemas-rationale-2">Schemas Rationale 2</a>
+    <a href="#schemas-rationale-3">Schemas Rationale 3</a>
+    <a href="#evaluationmd-docs-codetext">Evaluationmd Docs Codetext</a>
     <a href="#schemaspy-shared-thesis">Schemaspy Shared Thesis</a>
     <a href="#other">Other</a>
 </div>
@@ -88,48 +88,48 @@ hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
 
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    EXTRACT_PIPELINE_5F350230("Extraction Pipeline<br/><small>92 nodes</small>")
+    EXTRACT_PIPELINE_5F350230("Extraction Pipeline<br/><small>51 nodes</small>")
     class EXTRACT_PIPELINE_5F350230 module;
-    BUILD_GRAPH_321CBB04("Graph Build<br/><small>391 nodes</small>")
+    BUILD_GRAPH_321CBB04("Graph Build<br/><small>388 nodes</small>")
     class BUILD_GRAPH_321CBB04 module;
     ANALYSIS_CLUSTERING_C79796DA("Analysis &amp; Clustering<br/><small>20 nodes</small>")
     class ANALYSIS_CLUSTERING_C79796DA module;
-    OUTPUTS_DOCS_ED82387C("Outputs &amp; Docs<br/><small>175 nodes</small>")
+    OUTPUTS_DOCS_ED82387C("Outputs &amp; Docs<br/><small>249 nodes</small>")
     class OUTPUTS_DOCS_ED82387C module;
-    CLI_SKILLS_9964CBB8("CLI &amp; Skill Installers<br/><small>52 nodes</small>")
+    CLI_SKILLS_9964CBB8("CLI &amp; Skill Installers<br/><small>38 nodes</small>")
     class CLI_SKILLS_9964CBB8 module;
-    INGEST_CACHE_UPDATE_FF457338("Ingestion &amp; Updates<br/><small>46 nodes</small>")
+    INGEST_CACHE_UPDATE_FF457338("Ingestion &amp; Updates<br/><small>31 nodes</small>")
     class INGEST_CACHE_UPDATE_FF457338 module;
-    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>1854 nodes</small>")
+    TESTS_FIXTURES_B84B1DCC("Tests &amp; Fixtures<br/><small>1893 nodes</small>")
     class TESTS_FIXTURES_B84B1DCC module;
-    REPORT_DATA_SECTIONS_82864BE9("Report Data Sections<br/><small>40 nodes</small>")
-    class REPORT_DATA_SECTIONS_82864BE9 module;
-    MARKDOWN_FORMATTING_D8AE2AD0("Markdown Formatting<br/><small>31 nodes</small>")
-    class MARKDOWN_FORMATTING_D8AE2AD0 module;
-    STAGE_4_INIT_BC733E5E("Stage 4 Init<br/><small>29 nodes</small>")
-    class STAGE_4_INIT_BC733E5E module;
-    CHARTS_SHARED_505C3DB1("Charts Shared<br/><small>25 nodes</small>")
-    class CHARTS_SHARED_505C3DB1 module;
-    SCHEMAS_RATIONALE_3FFEDDE1("Schemas Rationale<br/><small>24 nodes</small>")
-    class SCHEMAS_RATIONALE_3FFEDDE1 module;
+    CHART_DATA_LAYER_863BDDF8("Chart Data Layer<br/><small>40 nodes</small>")
+    class CHART_DATA_LAYER_863BDDF8 module;
+    DASHBOARD_UI_A92744EE("Dashboard UI<br/><small>32 nodes</small>")
+    class DASHBOARD_UI_A92744EE module;
+    LGBM_INIT_04FF00E6("LGBM Init<br/><small>29 nodes</small>")
+    class LGBM_INIT_04FF00E6 module;
     SCHEMAS_RATIONALE_2_247F8735("Schemas Rationale 2<br/><small>24 nodes</small>")
     class SCHEMAS_RATIONALE_2_247F8735 module;
+    SCHEMAS_RATIONALE_3_82B033B0("Schemas Rationale 3<br/><small>24 nodes</small>")
+    class SCHEMAS_RATIONALE_3_82B033B0 module;
+    EVALUATIONMD_DOCS_CODETEXT_BFF44205("Evaluationmd Docs Codetext<br/><small>22 nodes</small>")
+    class EVALUATIONMD_DOCS_CODETEXT_BFF44205 module;
     SCHEMASPY_SHARED_THESIS_6A5D1924("Schemaspy Shared Thesis<br/><small>21 nodes</small>")
     class SCHEMASPY_SHARED_THESIS_6A5D1924 module;
-    OTHER_D0941E68("Other<br/><small>307 nodes</small>")
+    OTHER_D0941E68("Other<br/><small>271 nodes</small>")
     class OTHER_D0941E68 module;
-    TESTS_FIXTURES_B84B1DCC -->|contains x36| BUILD_GRAPH_321CBB04
+    TESTS_FIXTURES_B84B1DCC -->|contains x40| BUILD_GRAPH_321CBB04
     TESTS_FIXTURES_B84B1DCC -->|contains x32| OTHER_D0941E68
-    BUILD_GRAPH_321CBB04 -->|contains x21| TESTS_FIXTURES_B84B1DCC
+    BUILD_GRAPH_321CBB04 -->|contains x22| TESTS_FIXTURES_B84B1DCC
     TESTS_FIXTURES_B84B1DCC -->|contains x11| ANALYSIS_CLUSTERING_C79796DA
     ANALYSIS_CLUSTERING_C79796DA -->|contains x8| TESTS_FIXTURES_B84B1DCC
-    OTHER_D0941E68 -->|contains x7| TESTS_FIXTURES_B84B1DCC
+    OTHER_D0941E68 -->|contains x6| TESTS_FIXTURES_B84B1DCC
     BUILD_GRAPH_321CBB04 -->|contains x5| OTHER_D0941E68
     OTHER_D0941E68 -->|contains x4| BUILD_GRAPH_321CBB04
-    CHARTS_SHARED_505C3DB1 -->|contains x3| TESTS_FIXTURES_B84B1DCC
-    CHARTS_SHARED_505C3DB1 -->|contains x3| INGEST_CACHE_UPDATE_FF457338
-    TESTS_FIXTURES_B84B1DCC -->|contains x3| CHARTS_SHARED_505C3DB1
-    INGEST_CACHE_UPDATE_FF457338 -->|contains x3| CHARTS_SHARED_505C3DB1
+    OUTPUTS_DOCS_ED82387C -->|contains x3| TESTS_FIXTURES_B84B1DCC
+    TESTS_FIXTURES_B84B1DCC -->|contains x3| OUTPUTS_DOCS_ED82387C
+    TESTS_FIXTURES_B84B1DCC -->|contains x3| INGEST_CACHE_UPDATE_FF457338
+    SCHEMASPY_SHARED_THESIS_6A5D1924 -->|contains x3| TESTS_FIXTURES_B84B1DCC
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -146,19 +146,19 @@ flowchart LR
     <h4>Architecture Layers</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>Layer</th><th>Nodes</th><th>Communities</th></tr>
-      <tr><td>Extraction Pipeline</td><td>92</td><td><code>5, 11, 175, 203</code></td></tr><tr><td>Graph Build</td><td>391</td><td><code>3, 13, 22, 28, 30, 35, 38, 44, 64, 68, 70, 74, 84, 94, 106, 112, 155, 156, 177, 178, 202, 204</code></td></tr><tr><td>Analysis &amp; Clustering</td><td>20</td><td><code>56</code></td></tr><tr><td>Outputs &amp; Docs</td><td>175</td><td><code>6, 9, 16, 26, 78, 176</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>52</td><td><code>34, 89, 108, 179</code></td></tr><tr><td>Ingestion &amp; Updates</td><td>46</td><td><code>54, 82, 109</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>1854</td><td><code>0, 1, 2, 4, 7, 8, 10, 14, 15, 17, 18, 19, 20, 21, 23, 25, 27, 29, 31, 33, 36, 39, 40, 43, 45, 46, 47, 48, 49, 50, 52, 53, 57, 59, 60, 61, 62, 63, 65, 66, 67, 71, 72, 73, 76, 77, 79, 80, 81, 86, 87, 88, 90, 91, 93, 96, 97, 99, 100, 101, 102, 105, 107, 110, 111, 114, 115, 116, 117, 118, 120, 121, 122, 123, 124, 125, 127, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 145, 146, 147, 148, 151, 152, 154, 157, 169, 170, 171, 172, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217</code></td></tr><tr><td>Report Data Sections</td><td>40</td><td><code>12</code></td></tr><tr><td>Markdown Formatting</td><td>31</td><td><code>24</code></td></tr><tr><td>Stage 4 Init</td><td>29</td><td><code>32</code></td></tr><tr><td>Charts Shared</td><td>25</td><td><code>37</code></td></tr><tr><td>Schemas Rationale</td><td>24</td><td><code>41</code></td></tr><tr><td>Schemas Rationale 2</td><td>24</td><td><code>42</code></td></tr><tr><td>Schemaspy Shared Thesis</td><td>21</td><td><code>51</code></td></tr><tr><td>Other</td><td>307</td><td><code>55, 58, 69, 75, 83, 85, 92, 95, 98, 103, 104, 113, 119, 126, 128, 129, 142, 143, 144, 149, 150, 153, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 173, 174, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 205, 206, 207</code></td></tr>
+      <tr><td>Extraction Pipeline</td><td>51</td><td><code>4, 172, 200</code></td></tr><tr><td>Graph Build</td><td>388</td><td><code>3, 9, 24, 32, 35, 40, 49, 50, 55, 67, 70, 72, 74, 92, 109, 125, 157, 158, 174, 175, 199, 201</code></td></tr><tr><td>Analysis &amp; Clustering</td><td>20</td><td><code>57</code></td></tr><tr><td>Outputs &amp; Docs</td><td>249</td><td><code>5, 10, 12, 15, 23, 29, 79, 173</code></td></tr><tr><td>CLI &amp; Skill Installers</td><td>38</td><td><code>36, 105, 176</code></td></tr><tr><td>Ingestion &amp; Updates</td><td>31</td><td><code>52, 106</code></td></tr><tr><td>Tests &amp; Fixtures</td><td>1893</td><td><code>0, 1, 2, 6, 7, 8, 11, 14, 16, 17, 18, 19, 20, 21, 22, 25, 27, 28, 30, 31, 33, 37, 38, 39, 41, 44, 45, 46, 47, 51, 53, 56, 58, 59, 60, 63, 64, 65, 66, 68, 71, 73, 75, 76, 77, 78, 80, 81, 82, 83, 84, 85, 86, 88, 89, 91, 94, 96, 100, 102, 103, 97, 99, 104, 107, 108, 111, 112, 113, 114, 115, 116, 118, 119, 120, 121, 123, 124, 126, 127, 129, 130, 131, 132, 133, 134, 135, 136, 138, 139, 140, 141, 145, 146, 147, 148, 149, 152, 153, 154, 156, 159, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214</code></td></tr><tr><td>Chart Data Layer</td><td>40</td><td><code>13</code></td></tr><tr><td>Dashboard UI</td><td>32</td><td><code>26</code></td></tr><tr><td>LGBM Init</td><td>29</td><td><code>34</code></td></tr><tr><td>Schemas Rationale 2</td><td>24</td><td><code>42</code></td></tr><tr><td>Schemas Rationale 3</td><td>24</td><td><code>43</code></td></tr><tr><td>Evaluationmd Docs Codetext</td><td>22</td><td><code>48</code></td></tr><tr><td>Schemaspy Shared Thesis</td><td>21</td><td><code>54</code></td></tr><tr><td>Other</td><td>271</td><td><code>61, 62, 69, 87, 90, 93, 95, 101, 98, 110, 117, 122, 128, 137, 142, 143, 144, 150, 151, 155, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 202, 203, 204</code></td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Core Flow</h4>
-    <div class="arrow-chain">Extraction Pipeline -&gt; Graph Build -&gt; Tests &amp; Fixtures -&gt; Other -&gt; Ingestion &amp; Updates -&gt; Charts Shared -&gt; Analysis &amp; Clustering</div>
+    <div class="arrow-chain">Extraction Pipeline -&gt; Graph Build -&gt; Tests &amp; Fixtures -&gt; Other -&gt; Outputs &amp; Docs -&gt; Analysis &amp; Clustering -&gt; CLI &amp; Skill Installers</div>
   </div>
 </div>
 <div class="grid">
   <div class="card">
     <h4>Graph Report Highlights</h4>
     <ul>
-      <li>3131 nodes · 4665 edges · 218 communities (167 shown, 51 thin omitted)</li>
+      <li>3133 nodes · 4671 edges · 215 communities (164 shown, 51 thin omitted)</li>
       <li>Extraction: 80% EXTRACTED · 20% INFERRED · 0% AMBIGUOUS · INFERRED: 925 edges (avg confidence: 0.77)</li>
       <li>Token cost: 0 input · 0 output</li>
       <li>1. `Config` - 66 edges</li>
@@ -170,12 +170,12 @@ flowchart LR
 <hr>
 <!-- ====== 2. Extraction Pipeline ====== -->
 <h2 id="extract-pipeline">2. Extraction Pipeline</h2>
-<p>Extraction Pipeline groups implementation around refactormd, docs, tuningmd, stage, mostly in REFACTOR.md, docs/TUNING.md, html/_static/_sphinx_javascript_frameworks_compat.js. This section covers 92 nodes and 95 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Extraction Pipeline groups implementation around refactormd, stage, codetext, sửa, mostly in REFACTOR.md, html/_static/_sphinx_javascript_frameworks_compat.js, html/_static/language_data.js. This section covers 51 nodes and 48 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Extraction Pipeline (92 nodes, 95 edges)
+    %% Section: Extraction Pipeline (51 nodes, 48 edges)
     subgraph extract_pipeline_REFACTOR_md_a88d4f26["REFACTOR.md"]
         thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c("REFACTOR — hiện trạng src/thesis và h...<br/><small>REFACTOR.md</small>")
         thesis_refactor_5_checklist_s_a_i_an_to_n_theo_s_c092e59c("5. Checklist sửa đổi an toàn theo stage<br/><small>REFACTOR.md</small>")
@@ -187,13 +187,11 @@ flowchart LR
         thesis_refactor_u_ti_n_2_ki_m_tra_label_distribu_cf3b7289("Ưu tiên 2 — Kiểm tra label distribution...<br/><small>REFACTOR.md</small>")
         thesis_refactor_u_ti_n_3_gi_m_feature_b_ng_white_1113c22a("Ưu tiên 3 — Giảm feature bằng whitelist...<br/><small>REFACTOR.md</small>")
         thesis_refactor_u_ti_n_4_ch_tinh_ch_nh_model_sau_c122dc90("Ưu tiên 4 — Chỉ tinh chỉnh model sau kh...<br/><small>REFACTOR.md</small>")
-    end
-    subgraph extract_pipeline_docs_TUNING_md_79c70d20["docs/TUNING.md"]
-        docs_tuning_1_labels_first_761a2086("1. Labels First<br/><small>docs/TUNING.md</small>")
-        docs_tuning_tuning_guide_d35de770("Tuning Guide<br/><small>docs/TUNING.md</small>")
-        docs_tuning_2_features_second_7650cf14("2. Features Second<br/><small>docs/TUNING.md</small>")
-        docs_tuning_3_model_third_21127483("3. Model Third<br/><small>docs/TUNING.md</small>")
-        docs_tuning_check_label_distribution_efe2a3ca("Check Label Distribution<br/><small>docs/TUNING.md</small>")
+        thesis_refactor_1_k_t_lu_n_ng_n_a908f1bd("1. Kết luận ngắn<br/><small>REFACTOR.md</small>")
+        thesis_refactor_8_file_map_nhanh_141f260a("8. File map nhanh<br/><small>REFACTOR.md</small>")
+        thesis_refactor_khi_s_a_stage_2_feature_806c286b("Khi sửa Stage 2 feature<br/><small>REFACTOR.md</small>")
+        thesis_refactor_khi_s_a_stage_3_label_19b2b271("Khi sửa Stage 3 label<br/><small>REFACTOR.md</small>")
+        thesis_refactor_khi_s_a_stage_4_model_d7782816("Khi sửa Stage 4 model<br/><small>REFACTOR.md</small>")
     end
     subgraph extract_pipeline_html_static_sphinx_javascript_f_7a6faf2e["html/_static/_sphinx_javascript_frameworks_compat.js"]
         docs_build_html_static_sphinx_javascript_framewo_dcb9c225("_sphinx_javascript_frameworks_compat.js")
@@ -201,20 +199,21 @@ flowchart LR
     end
     docs_build_html_static_language_data_js_7dbee664("language_data.js")
     docs_build_html_static_sphinx_javascript_framewo_dcb9c225 -->|contains| static_sphinx_javascript_frameworks_compat_highl_52a39d95
+    thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_1_k_t_lu_n_ng_n_a908f1bd
     thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_3_r_ng_bu_c_gi_a_c_c_stage_trong_5f70a5a9
     thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_4_h_ng_s_a_file_theo_m_c_u_ti_n_16cd40bb
     thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_5_checklist_s_a_i_an_to_n_theo_s_c092e59c
     thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_6_c_u_chuy_n_b_o_v_n_n_d_ng_8560f488
+    thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_8_file_map_nhanh_141f260a
     thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c -->|contains| thesis_refactor_9_k_t_qu_th_c_hi_n_smoke_test_20_438c74b4
     thesis_refactor_3_r_ng_bu_c_gi_a_c_c_stage_trong_5f70a5a9 -->|contains| thesis_refactor_r_ng_bu_c_quan_tr_ng_nh_t_528ef264
     thesis_refactor_4_h_ng_s_a_file_theo_m_c_u_ti_n_16cd40bb -->|contains| thesis_refactor_u_ti_n_2_ki_m_tra_label_distribu_cf3b7289
     thesis_refactor_4_h_ng_s_a_file_theo_m_c_u_ti_n_16cd40bb -->|contains| thesis_refactor_u_ti_n_3_gi_m_feature_b_ng_white_1113c22a
     thesis_refactor_4_h_ng_s_a_file_theo_m_c_u_ti_n_16cd40bb -->|contains| thesis_refactor_u_ti_n_4_ch_tinh_ch_nh_model_sau_c122dc90
-    docs_tuning_tuning_guide_d35de770 -->|contains| docs_tuning_1_labels_first_761a2086
-    docs_tuning_tuning_guide_d35de770 -->|contains| docs_tuning_2_features_second_7650cf14
-    docs_tuning_tuning_guide_d35de770 -->|contains| docs_tuning_3_model_third_21127483
-    docs_tuning_1_labels_first_761a2086 -->|contains| docs_tuning_check_label_distribution_efe2a3ca
-    %% Omitted for readability: 74 nodes, 0 edges
+    thesis_refactor_5_checklist_s_a_i_an_to_n_theo_s_c092e59c -->|contains| thesis_refactor_khi_s_a_stage_2_feature_806c286b
+    thesis_refactor_5_checklist_s_a_i_an_to_n_theo_s_c092e59c -->|contains| thesis_refactor_khi_s_a_stage_3_label_19b2b271
+    thesis_refactor_5_checklist_s_a_i_an_to_n_theo_s_c092e59c -->|contains| thesis_refactor_khi_s_a_stage_4_model_d7782816
+    %% Omitted for readability: 33 nodes, 0 edges
     class thesis_refactor_refactor_hi_n_tr_ng_src_thesis_v_3b14080c concept;
     class thesis_refactor_5_checklist_s_a_i_an_to_n_theo_s_c092e59c concept;
     class thesis_refactor_r_ng_bu_c_quan_tr_ng_nh_t_528ef264 concept;
@@ -225,11 +224,11 @@ flowchart LR
     class thesis_refactor_u_ti_n_2_ki_m_tra_label_distribu_cf3b7289 concept;
     class thesis_refactor_u_ti_n_3_gi_m_feature_b_ng_white_1113c22a concept;
     class thesis_refactor_u_ti_n_4_ch_tinh_ch_nh_model_sau_c122dc90 concept;
-    class docs_tuning_1_labels_first_761a2086 concept;
-    class docs_tuning_tuning_guide_d35de770 concept;
-    class docs_tuning_2_features_second_7650cf14 concept;
-    class docs_tuning_3_model_third_21127483 concept;
-    class docs_tuning_check_label_distribution_efe2a3ca concept;
+    class thesis_refactor_1_k_t_lu_n_ng_n_a908f1bd concept;
+    class thesis_refactor_8_file_map_nhanh_141f260a concept;
+    class thesis_refactor_khi_s_a_stage_2_feature_806c286b concept;
+    class thesis_refactor_khi_s_a_stage_3_label_19b2b271 concept;
+    class thesis_refactor_khi_s_a_stage_4_model_d7782816 concept;
     class docs_build_html_static_sphinx_javascript_framewo_dcb9c225 module;
     class static_sphinx_javascript_frameworks_compat_highl_52a39d95 function;
     class docs_build_html_static_language_data_js_7dbee664 module;
@@ -502,26 +501,25 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>REFACTOR.md</code></td><td>48 nodes</td></tr>
-<tr><td><code>docs/TUNING.md</code></td><td>41 nodes</td></tr>
 <tr><td><code>html/_static/_sphinx_javascript_frameworks_compat.js</code></td><td>2 nodes</td></tr>
 <tr><td><code>html/_static/language_data.js</code></td><td>1 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x95. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x48. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
 <!-- ====== 3. Graph Build ====== -->
 <h2 id="build-graph">3. Graph Build</h2>
-<p>Graph Build groups implementation around thesis, stage, build, static, mostly in html/_static/jquery.js, stage_4_training/walk_forward/stacking.py, bao_cao/chuong5_thuc_nghiem.md. This section covers 391 nodes and 559 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Graph Build groups implementation around thesis, stage, build, static, mostly in html/_static/jquery.js, stage_4_training/walk_forward/stacking.py, bao_cao/chuong5_thuc_nghiem.md. This section covers 388 nodes and 545 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Graph Build (391 nodes, 559 edges)
+    %% Section: Graph Build (388 nodes, 545 edges)
     subgraph build_graph_thesis_stage_1_data_processing_py_1703d95b["thesis/stage_1_data/processing.py"]
         stage_1_data_processing_compute_microprice_c8ec5615("_compute_microprice()<br/><small>thesis/stage_1_data/processing.py</small>")
         stage_1_data_processing_aggregate_file_f56b24bf("_aggregate_file()<br/><small>thesis/stage_1_data/processing.py</small>")
@@ -560,7 +558,7 @@ flowchart LR
     stage_2_features_engineering_generate_features_d2205ddd -->|calls| stage_2_features_engineering_validate_feature_qu_ddd37a45
     stage_2_features_engineering_generate_features_d2205ddd -->|calls| stage_2_features_engineering_save_feature_list_b4e811a5
     static_jquery_w_df82c377 -->|calls| static_jquery_p_8e05dbd1
-    %% Omitted for readability: 373 nodes, 0 edges
+    %% Omitted for readability: 370 nodes, 0 edges
     class stage_1_data_processing_compute_microprice_c8ec5615 function;
     class stage_1_data_processing_aggregate_file_f56b24bf function;
     class stage_1_data_processing_aggregate_monthly_files_d3db1834 function;
@@ -848,18 +846,18 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>html/_static/jquery.js</code></td><td>50 nodes</td></tr>
-<tr><td><code>stage_4_training/walk_forward/stacking.py</code></td><td>39 nodes</td></tr>
+<tr><td><code>stage_4_training/walk_forward/stacking.py</code></td><td>43 nodes</td></tr>
 <tr><td><code>bao_cao/chuong5_thuc_nghiem.md</code></td><td>33 nodes</td></tr>
-<tr><td><code>stage_4_training/walk_forward/utils.py</code></td><td>29 nodes</td></tr>
 <tr><td><code>thesis/stage_1_data/processing.py</code></td><td>27 nodes</td></tr>
 <tr><td><code>thesis/stage_5_backtest/persistence.py</code></td><td>23 nodes</td></tr>
+<tr><td><code>stage_4_training/walk_forward/utils.py</code></td><td>20 nodes</td></tr>
 <tr><td><code>bao_cao/chuong6_minh_hoa.md</code></td><td>19 nodes</td></tr>
 <tr><td><code>thesis/stage_2_features/engineering.py</code></td><td>17 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x263, explains x150, calls x95, method x5. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x259, explains x147, calls x88, method x5. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
@@ -1115,37 +1113,37 @@ flowchart LR
 
 <!-- ====== 5. Outputs & Docs ====== -->
 <h2 id="outputs-docs">5. Outputs &amp; Docs</h2>
-<p>Outputs &amp; Docs groups implementation around thesis, reportmd, results, xauusd, mostly in docs/ARCHITECTURE.md, htmlcov/coverage_html_cb_dd2e7eb5.js, thesis/stage_6_reporting/generation.py. This section covers 175 nodes and 223 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Outputs &amp; Docs groups implementation around thesis, docs, stage, reportmd, mostly in docs/ARCHITECTURE.md, docs/TUNING.md, thesis/stage_6_reporting/tables.py. This section covers 249 nodes and 316 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Outputs &amp; Docs (175 nodes, 223 edges)
+    %% Section: Outputs &amp; Docs (249 nodes, 316 edges)
     subgraph outputs_docs_thesis_stage_6_reporting_generation_cc160edc["thesis/stage_6_reporting/generation.py"]
         stage_6_reporting_generation_load_prediction_sta_2461d06a("_load_prediction_stats()<br/><small>thesis/stage_6_reporting/generation.py</small>")
         stage_6_reporting_generation_reportdata_3e2a3924("ReportData<br/><small>thesis/stage_6_reporting/generation.py</small>")
-        stage_6_reporting_generation_build_model_evaluat_479b0282("model evaluation markdown()<br/><small>thesis/stage_6_reporting/generation.py</small>")
         stage_6_reporting_generation_compute_report_data_2b7a8b7d("compute_report_data()<br/><small>thesis/stage_6_reporting/generation.py</small>")
         stage_6_reporting_generation_generate_report_fd487746("generate_report()<br/><small>thesis/stage_6_reporting/generation.py</small>")
+        stage_6_reporting_generation_build_model_evaluat_479b0282("model evaluation markdown()<br/><small>thesis/stage_6_reporting/generation.py</small>")
         stage_6_reporting_generation_reportdata_init_9fc5cd0f("__init__()<br/><small>thesis/stage_6_reporting/generation.py</small>")
         stage_6_reporting_generation_setup_matplotlib_146def27("_setup_matplotlib()<br/><small>thesis/stage_6_reporting/generation.py</small>")
-        src_thesis_stage_6_reporting_generation_py_8d7d57e4("generation.py")
+    end
+    subgraph outputs_docs_thesis_stage_6_reporting_tables_py_768b189c["thesis/stage_6_reporting/tables.py"]
+        stage_6_reporting_tables_zone_40c233a8("_zone()<br/><small>thesis/stage_6_reporting/tables.py</small>")
+        stage_6_reporting_tables_calibration_summary_tex_2114b8c8("_calibration_summary_text()<br/><small>thesis/stage_6_reporting/tables.py</small>")
+        stage_6_reporting_tables_exec_table_3a81d004("_exec_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
+        stage_6_reporting_tables_accuracy_table_609459c3("_accuracy_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
+        stage_6_reporting_tables_backtest_metrics_table_20bd9ca9("_backtest_metrics_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
+        stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6("_compute_ece_numpy()<br/><small>thesis/stage_6_reporting/tables.py</small>")
     end
     subgraph outputs_docs_htmlcov_coverage_html_cb_dd2e7eb5_j_78079d07["htmlcov/coverage_html_cb_dd2e7eb5.js"]
         htmlcov_coverage_html_cb_dd2e7eb5_getcellvalue_a1b7aee6("getCellValue()<br/><small>htmlcov/coverage_html_cb_dd2e7eb5.js</small>")
         htmlcov_coverage_html_cb_dd2e7eb5_rowcomparator_1b4dda94("rowComparator()<br/><small>htmlcov/coverage_html_cb_dd2e7eb5.js</small>")
-        htmlcov_coverage_html_cb_dd2e7eb5_numer_denom_1db62aa6("[numer, denom]<br/><small>htmlcov/coverage_html_cb_dd2e7eb5.js</small>")
-    end
-    subgraph outputs_docs_html_static_documentation_options_j_ed62eb24["html/_static/documentation_options.js"]
-        static_documentation_options_documentation_optio_d15ce544("DOCUMENTATION_OPTIONS<br/><small>html/_static/documentation_options.js</small>")
-        docs_build_html_static_documentation_options_js_0e1ec80a("documentation_options.js")
     end
     subgraph outputs_docs_thesis_stage_6_reporting_charts_py_885b9026["thesis/stage_6_reporting/charts.py"]
         stage_6_reporting_charts_equity_series_from_clos_7ebc9181("from closed trades()<br/><small>thesis/stage_6_reporting/charts.py</small>")
         stage_6_reporting_charts_plot_equity_curve_9a05fa56("_plot_equity_curve()<br/><small>thesis/stage_6_reporting/charts.py</small>")
     end
-    stage_6_reporting_init_py_dfb9c780("__init__.py")
-    stage_6_reporting_generation_py_251d5c7f("generation.py")
     src_thesis_stage_6_reporting_init_py_ee4e10e3("__init__.py")
     stage_6_reporting_charts_equity_series_from_clos_7ebc9181 -->|calls| stage_6_reporting_charts_plot_equity_curve_9a05fa56
     stage_6_reporting_generation_load_prediction_sta_2461d06a -->|calls| stage_6_reporting_generation_compute_report_data_2b7a8b7d
@@ -1155,27 +1153,30 @@ flowchart LR
     stage_6_reporting_generation_reportdata_3e2a3924 -->|calls| stage_6_reporting_generation_compute_report_data_2b7a8b7d
     stage_6_reporting_generation_setup_matplotlib_146def27 -->|calls| stage_6_reporting_generation_compute_report_data_2b7a8b7d
     stage_6_reporting_generation_compute_report_data_2b7a8b7d -->|calls| stage_6_reporting_generation_generate_report_fd487746
+    stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_exec_table_3a81d004
+    stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_accuracy_table_609459c3
+    stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_backtest_metrics_table_20bd9ca9
+    stage_6_reporting_tables_calibration_summary_tex_2114b8c8 -->|calls| stage_6_reporting_tables_accuracy_table_609459c3
+    stage_6_reporting_tables_calibration_summary_tex_2114b8c8 -->|calls| stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6
     htmlcov_coverage_html_cb_dd2e7eb5_getcellvalue_a1b7aee6 -->|calls| htmlcov_coverage_html_cb_dd2e7eb5_rowcomparator_1b4dda94
-    src_thesis_stage_6_reporting_init_py_ee4e10e3 -->|imports| src_thesis_stage_6_reporting_generation_py_8d7d57e4
-    stage_6_reporting_init_py_dfb9c780 -->|imports| stage_6_reporting_generation_py_251d5c7f
-    %% Omitted for readability: 157 nodes, 0 edges
+    %% Omitted for readability: 231 nodes, 0 edges
     class stage_6_reporting_generation_load_prediction_sta_2461d06a function;
     class stage_6_reporting_generation_reportdata_3e2a3924 klass;
-    class stage_6_reporting_generation_build_model_evaluat_479b0282 function;
     class stage_6_reporting_generation_compute_report_data_2b7a8b7d function;
     class stage_6_reporting_generation_generate_report_fd487746 function;
+    class stage_6_reporting_generation_build_model_evaluat_479b0282 function;
     class stage_6_reporting_generation_reportdata_init_9fc5cd0f function;
     class stage_6_reporting_generation_setup_matplotlib_146def27 function;
-    class src_thesis_stage_6_reporting_generation_py_8d7d57e4 module;
+    class stage_6_reporting_tables_zone_40c233a8 function;
+    class stage_6_reporting_tables_calibration_summary_tex_2114b8c8 function;
+    class stage_6_reporting_tables_exec_table_3a81d004 function;
+    class stage_6_reporting_tables_accuracy_table_609459c3 function;
+    class stage_6_reporting_tables_backtest_metrics_table_20bd9ca9 function;
+    class stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6 function;
     class htmlcov_coverage_html_cb_dd2e7eb5_getcellvalue_a1b7aee6 function;
     class htmlcov_coverage_html_cb_dd2e7eb5_rowcomparator_1b4dda94 function;
-    class htmlcov_coverage_html_cb_dd2e7eb5_numer_denom_1db62aa6 function;
-    class static_documentation_options_documentation_optio_d15ce544 klass;
-    class docs_build_html_static_documentation_options_js_0e1ec80a module;
     class stage_6_reporting_charts_equity_series_from_clos_7ebc9181 function;
     class stage_6_reporting_charts_plot_equity_curve_9a05fa56 function;
-    class stage_6_reporting_init_py_dfb9c780 module;
-    class stage_6_reporting_generation_py_251d5c7f module;
     class src_thesis_stage_6_reporting_init_py_ee4e10e3 module;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
@@ -1446,82 +1447,88 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>docs/ARCHITECTURE.md</code></td><td>42 nodes</td></tr>
+<tr><td><code>docs/TUNING.md</code></td><td>41 nodes</td></tr>
+<tr><td><code>thesis/stage_6_reporting/tables.py</code></td><td>32 nodes</td></tr>
 <tr><td><code>htmlcov/coverage_html_cb_dd2e7eb5.js</code></td><td>30 nodes</td></tr>
 <tr><td><code>thesis/stage_6_reporting/generation.py</code></td><td>22 nodes</td></tr>
 <tr><td><code>XAUUSD_1H_20260513_023811/reports/thesis_report.md</code></td><td>21 nodes</td></tr>
 <tr><td><code>README.md</code></td><td>16 nodes</td></tr>
 <tr><td><code>thesis/stage_6_reporting/charts.py</code></td><td>10 nodes</td></tr>
-<tr><td><code>XAUUSD_1H_20260510_124643/reports/thesis_report.md</code></td><td>3 nodes</td></tr>
-<tr><td><code>html/_static/documentation_options.js</code></td><td>2 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x183, explains x23, calls x8, imports x2. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x246, explains x48, calls x13, imports x2. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
 <!-- ====== 6. CLI & Skill Installers ====== -->
 <h2 id="cli-skills">6. CLI &amp; Skill Installers</h2>
-<p>CLI &amp; Skill Installers groups implementation around quickstartmd, docs, mainpy, dashboard, mostly in docs/QUICKSTART.md, main.py, thesis/dashboard/main.py. This section covers 52 nodes and 59 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>CLI &amp; Skill Installers groups implementation around quickstartmd, docs, dashboard, mainpy, mostly in docs/QUICKSTART.md, thesis/dashboard/main.py, thesis/dashboard/training.py. This section covers 38 nodes and 42 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: CLI &amp; Skill Installers (52 nodes, 59 edges)
-    subgraph cli_skills_main_py_9040bb1f["main.py"]
-        thesis_main_stripansiformatter_fb6d7998("_StripAnsiFormatter<br/><small>main.py</small>")
-        thesis_main_apply_force_flag_0a1370d5("_apply_force_flag()<br/><small>main.py</small>")
-        thesis_main_find_session_4bc63959("_find_session()<br/><small>main.py</small>")
-        thesis_main_load_session_config_69cb94b1("_load_session_config()<br/><small>main.py</small>")
-        thesis_main_stripansiformatter_format_682ce248("format()<br/><small>main.py</small>")
-        thesis_main_main_a3f0efc6("main()<br/><small>main.py</small>")
-        main_py_e2921a88("main.py")
-    end
-    subgraph cli_skills_CLAUDE_md_27387765["CLAUDE.md"]
-        claude_md_c26df1fa("CLAUDE.md")
-        thesis_claude_graphify_0231e7e4("graphify<br/><small>CLAUDE.md</small>")
-    end
+    %% Section: CLI &amp; Skill Installers (38 nodes, 42 edges)
     subgraph cli_skills_docs_QUICKSTART_md_3a7e6bfe["docs/QUICKSTART.md"]
-        docs_quickstart_cli_options_60b6b0b7("CLI Options<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_quickstart_d88e1cae("Quickstart<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_run_the_pipeline_9a8d7f62("Run the Pipeline<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_inspect_results_da3aac4a("Inspect Results<br/><small>docs/QUICKSTART.md</small>")
         docs_quickstart_current_runtime_reminder_5da0c1aa("Current Runtime Reminder<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_data_artifacts_ed4fc4b0("Data Artifacts<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_fast_validation_26aeed69("Fast Validation<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_full_run_3a63dc28("Full Run<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_install_9e47e2fa("Install<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_interactive_dashboard_78cb69da("Interactive Dashboard<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_key_files_dc48ed81("Key Files<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_resume_an_existing_session_572abd49("Resume an Existing Session<br/><small>docs/QUICKSTART.md</small>")
+        docs_quickstart_run_from_a_specific_stage_9d88b42f("Run from a Specific Stage<br/><small>docs/QUICKSTART.md</small>")
     end
     subgraph cli_skills_thesis_dashboard_main_py_bf1632fe["thesis/dashboard/main.py"]
-        dashboard_main_main_24e8c7aa("main()<br/><small>thesis/dashboard/main.py</small>")
         src_thesis_dashboard_main_py_6a1aa10c("main.py")
+        dashboard_main_main_24e8c7aa("main()<br/><small>thesis/dashboard/main.py</small>")
     end
     subgraph cli_skills_thesis_dashboard_training_py_a3f42422["thesis/dashboard/training.py"]
-        dashboard_training_render_training_section_0d73b199("render_training_section()<br/><small>thesis/dashboard/training.py</small>")
         src_thesis_dashboard_training_py_e6040776("training.py")
+        dashboard_training_render_training_section_0d73b199("render_training_section()<br/><small>thesis/dashboard/training.py</small>")
     end
     dashboard_main_py_bfe038c5("main.py")
     dashboard_training_py_0a0d12d1("training.py")
-    unit_test_main_test_force_flag_reapplied_after_s_a3bdff04("session config load()<br/><small>tests/unit/test_main.py</small>")
-    thesis_main_stripansiformatter_fb6d7998 -->|method| thesis_main_stripansiformatter_format_682ce248
-    thesis_main_stripansiformatter_fb6d7998 -->|calls| thesis_main_main_a3f0efc6
-    thesis_main_find_session_4bc63959 -->|calls| thesis_main_main_a3f0efc6
-    thesis_main_load_session_config_69cb94b1 -->|calls| thesis_main_main_a3f0efc6
-    thesis_main_apply_force_flag_0a1370d5 -->|calls| thesis_main_main_a3f0efc6
-    %% Omitted for readability: 34 nodes, 0 edges
-    class thesis_main_stripansiformatter_fb6d7998 function;
-    class thesis_main_apply_force_flag_0a1370d5 function;
-    class thesis_main_find_session_4bc63959 function;
-    class thesis_main_load_session_config_69cb94b1 function;
-    class thesis_main_stripansiformatter_format_682ce248 function;
-    class thesis_main_main_a3f0efc6 function;
-    class main_py_e2921a88 module;
-    class claude_md_c26df1fa concept;
-    class thesis_claude_graphify_0231e7e4 concept;
-    class docs_quickstart_cli_options_60b6b0b7 concept;
+    src_thesis_dashboard_main_py_6a1aa10c -->|contains| dashboard_main_main_24e8c7aa
+    dashboard_main_main_24e8c7aa -->|contains| dashboard_main_py_bfe038c5
+    src_thesis_dashboard_training_py_e6040776 -->|contains| dashboard_training_render_training_section_0d73b199
+    dashboard_training_render_training_section_0d73b199 -->|contains| dashboard_training_py_0a0d12d1
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_install_9e47e2fa
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_run_the_pipeline_9a8d7f62
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_inspect_results_da3aac4a
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_data_artifacts_ed4fc4b0
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_interactive_dashboard_78cb69da
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_current_runtime_reminder_5da0c1aa
+    docs_quickstart_quickstart_d88e1cae -->|contains| docs_quickstart_fast_validation_26aeed69
+    docs_quickstart_run_the_pipeline_9a8d7f62 -->|contains| docs_quickstart_full_run_3a63dc28
+    docs_quickstart_run_the_pipeline_9a8d7f62 -->|contains| docs_quickstart_run_from_a_specific_stage_9d88b42f
+    docs_quickstart_run_the_pipeline_9a8d7f62 -->|contains| docs_quickstart_resume_an_existing_session_572abd49
+    docs_quickstart_inspect_results_da3aac4a -->|contains| docs_quickstart_key_files_dc48ed81
+    %% Omitted for readability: 20 nodes, 0 edges
+    class docs_quickstart_quickstart_d88e1cae concept;
+    class docs_quickstart_run_the_pipeline_9a8d7f62 concept;
+    class docs_quickstart_inspect_results_da3aac4a concept;
     class docs_quickstart_current_runtime_reminder_5da0c1aa concept;
-    class dashboard_main_main_24e8c7aa function;
+    class docs_quickstart_data_artifacts_ed4fc4b0 concept;
+    class docs_quickstart_fast_validation_26aeed69 concept;
+    class docs_quickstart_full_run_3a63dc28 concept;
+    class docs_quickstart_install_9e47e2fa concept;
+    class docs_quickstart_interactive_dashboard_78cb69da concept;
+    class docs_quickstart_key_files_dc48ed81 concept;
+    class docs_quickstart_resume_an_existing_session_572abd49 concept;
+    class docs_quickstart_run_from_a_specific_stage_9d88b42f concept;
     class src_thesis_dashboard_main_py_6a1aa10c module;
-    class dashboard_training_render_training_section_0d73b199 function;
+    class dashboard_main_main_24e8c7aa function;
     class src_thesis_dashboard_training_py_e6040776 module;
+    class dashboard_training_render_training_section_0d73b199 function;
     class dashboard_main_py_bfe038c5 module;
     class dashboard_training_py_0a0d12d1 module;
-    class unit_test_main_test_force_flag_reapplied_after_s_a3bdff04 test;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -1633,11 +1640,11 @@ flowchart LR
 </tr>
 <tr>
   <td>12</td>
-  <td><code>code:bash (pixi run python main.py --session XAUUSD_1H_20260511_231114 )</code><br><small style="color:var(--muted)">docs/QUICKSTART.md</small></td>
+  <td><code>code:bash (pixi run python main.py --session XAUUSD_1H_20260513_023811 )</code><br><small style="color:var(--muted)">docs/QUICKSTART.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Documentation node describing code:bash (pixi run python main.py --session XAUUSD_1H_20260511_231114 ).</td>
+  <td>Documentation node describing code:bash (pixi run python main.py --session XAUUSD_1H_20260513_023811 ).</td>
 </tr>
 <tr>
   <td>13</td>
@@ -1753,35 +1760,35 @@ flowchart LR
 </tr>
 <tr>
   <td>27</td>
-  <td><code>main.py</code><br><small style="color:var(--muted)">main.py</small></td>
+  <td><code>main.py</code><br><small style="color:var(--muted)">thesis/dashboard/main.py</small></td>
   <td><span class="tag tag-class">Module</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Module file in main.py.</td>
+  <td>Module file in thesis/dashboard/main.py.</td>
 </tr>
 <tr>
   <td>28</td>
-  <td><code>_StripAnsiFormatter</code><br><small style="color:var(--muted)">main.py</small></td>
+  <td><code>main()</code><br><small style="color:var(--muted)">thesis/dashboard/main.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>format()</code><br><small style="color:var(--muted)">main.py</small><br><code>main()</code><br><small style="color:var(--muted)">main.py</small></td>
-  <td>_StripAnsiFormatter node in main.py.</td>
+  <td><code>render_training_section()</code><br><small style="color:var(--muted)">thesis/dashboard/training.py</small></td>
+  <td>main() node in thesis/dashboard/main.py.</td>
 </tr>
 <tr>
   <td>29</td>
-  <td><code>.format()</code><br><small style="color:var(--muted)">main.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_StripAnsiFormatter</code><br><small style="color:var(--muted)">main.py</small></td>
+  <td><code>Dashboard entry point — sidebar, navigation, and section dispatch.</code><br><small style="color:var(--muted)">thesis/dashboard/main.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>.format() node in main.py.</td>
+  <td>Design note for Dashboard entry point — sidebar, navigation, and section dispatch..</td>
 </tr>
 <tr>
   <td>30</td>
-  <td><code>_find_session()</code><br><small style="color:var(--muted)">main.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
+  <td><code>Render the Streamlit dashboard with session selection and navigation.</code><br><small style="color:var(--muted)">thesis/dashboard/main.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>main()</code><br><small style="color:var(--muted)">main.py</small></td>
-  <td>_find_session() node in main.py.</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Render the Streamlit dashboard with session selection and navigation..</td>
 </tr>
 </table>
 
@@ -1791,30 +1798,28 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>docs/QUICKSTART.md</code></td><td>26 nodes</td></tr>
-<tr><td><code>main.py</code></td><td>13 nodes</td></tr>
 <tr><td><code>thesis/dashboard/main.py</code></td><td>4 nodes</td></tr>
 <tr><td><code>thesis/dashboard/training.py</code></td><td>4 nodes</td></tr>
 <tr><td><code>CLAUDE.md</code></td><td>2 nodes</td></tr>
 <tr><td><code>dashboard/main.py</code></td><td>1 nodes</td></tr>
 <tr><td><code>dashboard/training.py</code></td><td>1 nodes</td></tr>
-<tr><td><code>tests/unit/test_main.py</code></td><td>1 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x40, explains x12, calls x4, method x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x35, explains x6. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
 <!-- ====== 7. Ingestion & Updates ====== -->
 <h2 id="ingest-cache-update">7. Ingestion &amp; Updates</h2>
-<p>Ingestion &amp; Updates groups implementation around thesis, stage, reporting, backtestpy, mostly in stage_6_reporting/sections/backtest.py, thesis/stage_6_reporting/tables.py, thesis/shared/config.py. This section covers 46 nodes and 51 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Ingestion &amp; Updates groups implementation around thesis, backtestpy, stage, reporting, mostly in stage_6_reporting/sections/backtest.py, thesis/shared/config.py, stage_6_reporting/sections/backtest.py. This section covers 31 nodes and 35 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Ingestion &amp; Updates (46 nodes, 51 edges)
+    %% Section: Ingestion &amp; Updates (31 nodes, 35 edges)
     subgraph ingest_cache_update_stage_6_reporting_sections_b_5e023621["stage_6_reporting/sections/backtest.py"]
         sections_backtest_render_issues_c645d0ef("_render_issues()<br/><small>stage_6_reporting/sections/backtest.py</small>")
         sections_backtest_render_primary_issue_006cc0d4("_render_primary_issue()<br/><small>stage_6_reporting/sections/backtest.py</small>")
@@ -1828,19 +1833,17 @@ flowchart LR
         sections_backtest_rationale_245_d0de78f5("Append one-paragraph ML quality assessm...<br/><small>stage_6_reporting/sections/backtest.py</small>")
         sections_backtest_rationale_297_8aa94786("Append primary issue identification and...<br/><small>stage_6_reporting/sections/backtest.py</small>")
         sections_backtest_rationale_296_06126f25("Append primary issue identification and...<br/><small>stage_6_reporting/sections/backtest.py</small>")
-    end
-    subgraph ingest_cache_update_thesis_stage_6_reporting_tab_8e0176c3["thesis/stage_6_reporting/tables.py"]
-        stage_6_reporting_tables_config_table_3855b9e9("_config_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_feature_importance_tabl_37fd5b9c("_feature_importance_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_issues_list_414de765("_issues_list()<br/><small>thesis/stage_6_reporting/tables.py</small>")
+        sections_backtest_rationale_279_3aee044a("Append synthesized verdict (model quali...<br/><small>stage_6_reporting/sections/backtest.py</small>")
+        sections_backtest_rationale_278_2ef64015("Append synthesized verdict (model quali...<br/><small>stage_6_reporting/sections/backtest.py</small>")
+        sections_backtest_rationale_1_e40db69a("Backtest metric zones, baseline compari...<br/><small>stage_6_reporting/sections/backtest.py</small>")
+        sections_backtest_rationale_46_e384b358("Compute average win / average loss rati...<br/><small>stage_6_reporting/sections/backtest.py</small>")
     end
     subgraph ingest_cache_update_thesis_shared_config_py_687a41be["thesis/shared/config.py"]
         shared_config_get_config_6a444855("get_config()<br/><small>thesis/shared/config.py</small>")
         shared_config_reload_config_5b0d56a0("reload_config()<br/><small>thesis/shared/config.py</small>")
     end
-    stage_6_reporting_generation_build_markdown_91b8f8e6("_build_markdown()<br/><small>thesis/stage_6_reporting/generation.py</small>")
     shared_config_get_config_6a444855 -->|calls| shared_config_reload_config_5b0d56a0
-    %% Omitted for readability: 28 nodes, 0 edges
+    %% Omitted for readability: 13 nodes, 0 edges
     class sections_backtest_render_issues_c645d0ef test;
     class sections_backtest_render_primary_issue_006cc0d4 test;
     class src_thesis_stage_6_reporting_sections_backtest_p_6d6f9b0a test;
@@ -1853,12 +1856,12 @@ flowchart LR
     class sections_backtest_rationale_245_d0de78f5 concept;
     class sections_backtest_rationale_297_8aa94786 concept;
     class sections_backtest_rationale_296_06126f25 concept;
-    class stage_6_reporting_tables_config_table_3855b9e9 function;
-    class stage_6_reporting_tables_feature_importance_tabl_37fd5b9c function;
-    class stage_6_reporting_tables_issues_list_414de765 function;
+    class sections_backtest_rationale_279_3aee044a concept;
+    class sections_backtest_rationale_278_2ef64015 concept;
+    class sections_backtest_rationale_1_e40db69a concept;
+    class sections_backtest_rationale_46_e384b358 concept;
     class shared_config_get_config_6a444855 function;
     class shared_config_reload_config_5b0d56a0 function;
-    class stage_6_reporting_generation_build_markdown_91b8f8e6 function;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -1900,7 +1903,7 @@ flowchart LR
   <td>3</td>
   <td><code>_render_baseline_comparison_section()</code><br><small style="color:var(--muted)">stage_6_reporting/sections/backtest.py</small></td>
   <td><span class="tag tag-func">Test</span></td>
-  <td><code>_build_markdown()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/generation.py</small></td>
+  <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
   <td>_render_baseline_comparison_section() node in stage_6_reporting/sections/backtest.py.</td>
 </tr>
@@ -1908,7 +1911,7 @@ flowchart LR
   <td>4</td>
   <td><code>_render_issues()</code><br><small style="color:var(--muted)">stage_6_reporting/sections/backtest.py</small></td>
   <td><span class="tag tag-func">Test</span></td>
-  <td><code>_issues_list()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
+  <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
   <td>_render_issues() node in stage_6_reporting/sections/backtest.py.</td>
 </tr>
@@ -2050,75 +2053,75 @@ flowchart LR
 </tr>
 <tr>
   <td>22</td>
-  <td><code>_build_markdown()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/generation.py</small></td>
+  <td><code>get_config()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
-  <td><code>_config_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br><code>_feature_importance_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br><code>_issues_list()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br>+1 more</td>
-  <td>Exports documentation data to a target format.</td>
+  <td><code>reload_config()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td>Reads, resolves, or persists project configuration.</td>
 </tr>
 <tr>
   <td>23</td>
-  <td><code>Build concise metrics-first markdown report.</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/generation.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Build concise metrics-first markdown report..</td>
-</tr>
-<tr>
-  <td>24</td>
-  <td><code>_config_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
+  <td><code>reload_config()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
-  <td><code>_build_markdown()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/generation.py</small></td>
+  <td><code>get_config()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td>No direct outbound edge</td>
   <td>Reads, resolves, or persists project configuration.</td>
 </tr>
 <tr>
-  <td>25</td>
-  <td><code>_feature_importance_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_build_markdown()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/generation.py</small></td>
+  <td>24</td>
+  <td><code>Return a cached config for scripts, dashboards, and reports.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>_feature_importance_table() node in thesis/stage_6_reporting/tables.py.</td>
+  <td>Design note for Return a cached config for scripts, dashboards, and reports..</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>Clear the config cache, then load a fresh config.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Clear the config cache, then load a fresh config..</td>
 </tr>
 <tr>
   <td>26</td>
-  <td><code>_issues_list()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_build_markdown()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/generation.py</small></td>
-  <td><code>_render_issues()</code><br><small style="color:var(--muted)">stage_6_reporting/sections/backtest.py</small></td>
-  <td>_issues_list() node in thesis/stage_6_reporting/tables.py.</td>
+  <td><code>Return a cached config for scripts, dashboards, and reports.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Return a cached config for scripts, dashboards, and reports..</td>
 </tr>
 <tr>
   <td>27</td>
-  <td><code>Key hyperparameters in one table.      Args:         L: Output markdown lines li</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
+  <td><code>Clear the config cache, then load a fresh config.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Design note for Key hyperparameters in one table.      Args:         L: Output markdown lines li.</td>
+  <td>Design note for Clear the config cache, then load a fresh config..</td>
 </tr>
 <tr>
   <td>28</td>
-  <td><code>Top-10 feature importance.</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
+  <td><code>Return a cached config for scripts, dashboards, and reports.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Design note for Top-10 feature importance..</td>
+  <td>Design note for Return a cached config for scripts, dashboards, and reports..</td>
 </tr>
 <tr>
   <td>29</td>
-  <td><code>High-signal issues and recommendations from report metrics.      Delegates issue</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
+  <td><code>Clear the config cache, then load a fresh config.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Design note for High-signal issues and recommendations from report metrics.      Delegates issue.</td>
+  <td>Design note for Clear the config cache, then load a fresh config..</td>
 </tr>
 <tr>
   <td>30</td>
-  <td><code>Key hyperparameters in one table.      Args:         L: Output markdown lines li</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
+  <td><code>Return a cached config for scripts, dashboards, and reports.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Design note for Key hyperparameters in one table.      Args:         L: Output markdown lines li.</td>
+  <td>Design note for Return a cached config for scripts, dashboards, and reports..</td>
 </tr>
 </table>
 
@@ -2128,36 +2131,33 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>stage_6_reporting/sections/backtest.py</code></td><td>20 nodes</td></tr>
-<tr><td><code>thesis/stage_6_reporting/tables.py</code></td><td>12 nodes</td></tr>
 <tr><td><code>thesis/shared/config.py</code></td><td>10 nodes</td></tr>
-<tr><td><code>thesis/stage_6_reporting/generation.py</code></td><td>3 nodes</td></tr>
 <tr><td><code>stage_6_reporting/sections/backtest.py</code></td><td>1 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: explains x33, contains x12, calls x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: explains x22, contains x12, calls x1. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
 <!-- ====== 8. Tests & Fixtures ====== -->
 <h2 id="tests-fixtures">8. Tests &amp; Fixtures</h2>
-<p>Tests &amp; Fixtures groups implementation around test, tests, unit, thesis, mostly in tests/unit/test_features.py, tests/unit/test_report.py, tests/unit/test_backtest.py. This section covers 1854 nodes and 2772 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Tests &amp; Fixtures groups implementation around test, tests, unit, thesis, mostly in tests/unit/test_features.py, tests/unit/test_report.py, tests/unit/test_backtest.py. This section covers 1893 nodes and 2895 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Tests &amp; Fixtures (1854 nodes, 2772 edges)
-    subgraph tests_fixtures_thesis_stage_2_features_indicator_9574e858["thesis/stage_2_features/indicators.py"]
-        stage_2_features_indicators_true_range_expr_647cdc31("_true_range_expr()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_compute_atr_expr_9857cef1("_compute_atr_expr()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_add_adx_a2f71f6a("_add_adx()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_add_atr_f6081485("_add_atr()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_add_atr_ratio_30f41b25("_add_atr_ratio()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_add_context_features_56583dbc("_add_context_features()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_add_pivot_position_b43578a9("_add_pivot_position()<br/><small>thesis/stage_2_features/indicators.py</small>")
-        stage_2_features_indicators_to_ny_trading_day_ce9e7cf2("_to_ny_trading_day()<br/><small>thesis/stage_2_features/indicators.py</small>")
+    %% Section: Tests &amp; Fixtures (1893 nodes, 2895 edges)
+    subgraph tests_fixtures_main_py_2143e86d["main.py"]
+        thesis_main_stripansiformatter_fb6d7998("_StripAnsiFormatter<br/><small>main.py</small>")
+        thesis_main_stripansiformatter_format_682ce248("format()<br/><small>main.py</small>")
+        thesis_main_main_a3f0efc6("main()<br/><small>main.py</small>")
+        thesis_main_find_session_4bc63959("_find_session()<br/><small>main.py</small>")
+        thesis_main_load_session_config_69cb94b1("_load_session_config()<br/><small>main.py</small>")
+        thesis_main_apply_force_flag_0a1370d5("_apply_force_flag()<br/><small>main.py</small>")
+        thesis_main_apply_stage_flags_b79b3269("_apply_stage_flags()<br/><small>main.py</small>")
     end
     subgraph tests_fixtures_tests_unit_test_backtest_py_b26b6f40["tests/unit/test_backtest.py"]
         unit_test_backtest_create_synthetic_backtest_dat_b8bb17be("synthetic backtest data()<br/><small>tests/unit/test_backtest.py</small>")
@@ -2175,24 +2175,23 @@ flowchart LR
     integration_test_pipeline_setup_ohlcv_data_9e32f56b("setup_ohlcv_data()<br/><small>tests/integration/test_pipeline.py</small>")
     unit_test_constants_testtimeframetoms_9e6951c1("TestTimeframeToMs<br/><small>tests/unit/test_constants.py</small>")
     unit_test_labels_testregressiontailcensoring_62d2d0ce("TestRegressionTailCensoring<br/><small>tests/unit/test_labels.py</small>")
+    stage_2_features_indicators_true_range_expr_647cdc31("_true_range_expr()<br/><small>thesis/stage_2_features/indicators.py</small>")
+    thesis_main_stripansiformatter_fb6d7998 -->|method| thesis_main_stripansiformatter_format_682ce248
+    thesis_main_stripansiformatter_fb6d7998 -->|calls| thesis_main_main_a3f0efc6
+    thesis_main_find_session_4bc63959 -->|calls| thesis_main_main_a3f0efc6
+    thesis_main_load_session_config_69cb94b1 -->|calls| thesis_main_main_a3f0efc6
+    thesis_main_apply_force_flag_0a1370d5 -->|calls| thesis_main_main_a3f0efc6
+    thesis_main_apply_stage_flags_b79b3269 -->|calls| thesis_main_main_a3f0efc6
     thesis_pipeline_cache_hash_27de27ac -->|calls| thesis_pipeline_resolve_cache_path_5d3cff29
     stage_1_data_processing_parse_datetime_bound_0d704dcb -->|calls| stage_1_data_processing_filter_date_range_5806753e
-    stage_2_features_indicators_true_range_expr_647cdc31 -->|calls| stage_2_features_indicators_compute_atr_expr_9857cef1
-    stage_2_features_indicators_true_range_expr_647cdc31 -->|calls| stage_2_features_indicators_add_adx_a2f71f6a
-    stage_2_features_indicators_compute_atr_expr_9857cef1 -->|calls| stage_2_features_indicators_add_atr_f6081485
-    stage_2_features_indicators_compute_atr_expr_9857cef1 -->|calls| stage_2_features_indicators_add_atr_ratio_30f41b25
-    stage_2_features_indicators_compute_atr_expr_9857cef1 -->|calls| stage_2_features_indicators_add_context_features_56583dbc
-    stage_2_features_indicators_add_pivot_position_b43578a9 -->|calls| stage_2_features_indicators_to_ny_trading_day_ce9e7cf2
-    stage_2_features_indicators_add_pivot_position_b43578a9 -->|calls| stage_2_features_indicators_add_context_features_56583dbc
-    %% Omitted for readability: 1836 nodes, 0 edges
-    class stage_2_features_indicators_true_range_expr_647cdc31 function;
-    class stage_2_features_indicators_compute_atr_expr_9857cef1 function;
-    class stage_2_features_indicators_add_adx_a2f71f6a function;
-    class stage_2_features_indicators_add_atr_f6081485 function;
-    class stage_2_features_indicators_add_atr_ratio_30f41b25 function;
-    class stage_2_features_indicators_add_context_features_56583dbc function;
-    class stage_2_features_indicators_add_pivot_position_b43578a9 function;
-    class stage_2_features_indicators_to_ny_trading_day_ce9e7cf2 function;
+    %% Omitted for readability: 1875 nodes, 0 edges
+    class thesis_main_stripansiformatter_fb6d7998 function;
+    class thesis_main_stripansiformatter_format_682ce248 function;
+    class thesis_main_main_a3f0efc6 function;
+    class thesis_main_find_session_4bc63959 function;
+    class thesis_main_load_session_config_69cb94b1 function;
+    class thesis_main_apply_force_flag_0a1370d5 function;
+    class thesis_main_apply_stage_flags_b79b3269 function;
     class unit_test_backtest_create_synthetic_backtest_dat_b8bb17be test;
     class unit_test_backtest_apply_oos_filter_74854348 test;
     class unit_test_backtest_testoosfiltering_6740c53d test;
@@ -2203,6 +2202,7 @@ flowchart LR
     class integration_test_pipeline_setup_ohlcv_data_9e32f56b test;
     class unit_test_constants_testtimeframetoms_9e6951c1 test;
     class unit_test_labels_testregressiontailcensoring_62d2d0ce test;
+    class stage_2_features_indicators_true_range_expr_647cdc31 function;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -2474,7 +2474,7 @@ flowchart LR
       <tr><td><code>tests/unit/test_features.py</code></td><td>142 nodes</td></tr>
 <tr><td><code>tests/unit/test_report.py</code></td><td>111 nodes</td></tr>
 <tr><td><code>tests/unit/test_backtest.py</code></td><td>84 nodes</td></tr>
-<tr><td><code>thesis/stage_2_features/indicators.py</code></td><td>77 nodes</td></tr>
+<tr><td><code>thesis/stage_2_features/indicators.py</code></td><td>81 nodes</td></tr>
 <tr><td><code>tests/unit/test_labels.py</code></td><td>77 nodes</td></tr>
 <tr><td><code>tests/unit/test_model.py</code></td><td>75 nodes</td></tr>
 <tr><td><code>tests/unit/test_walk_forward.py</code></td><td>72 nodes</td></tr>
@@ -2483,19 +2483,19 @@ flowchart LR
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: explains x886, contains x684, method x313, calls x215. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: explains x910, contains x701, method x315, calls x227. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
-<!-- ====== 9. Report Data Sections ====== -->
-<h2 id="report-data-sections">9. Report Data Sections</h2>
-<p>Report Data Sections groups implementation around chuong2, thuyetmd, bao, cao, mostly in bao_cao/chuong2_co_so_ly_thuyet.md. This section covers 40 nodes and 40 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 9. Chart Data Layer ====== -->
+<h2 id="chart-data-layer">9. Chart Data Layer</h2>
+<p>Chart Data Layer groups implementation around chuong2, thuyetmd, bao, cao, mostly in bao_cao/chuong2_co_so_ly_thuyet.md. This section covers 40 nodes and 40 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Report Data Sections (40 nodes, 40 edges)
+    %% Section: Chart Data Layer (40 nodes, 40 edges)
     bao_cao_chuong2_co_so_ly_thuyet_ch_ng_2_c_s_l_th_6a11e199("Chương 2. Cơ sở lý thuyết<br/><small>bao_cao/chuong2_co_so_ly_thuyet.md</small>")
     bao_cao_chuong2_co_so_ly_thuyet_2_7_c_c_m_h_nh_h_31deb70c("2.7. Các mô hình học máy sử dụng<br/><small>bao_cao/chuong2_co_so_ly_thuyet.md</small>")
     bao_cao_chuong2_co_so_ly_thuyet_md_78033244("chuong2_co_so_ly_thuyet.md")
@@ -2829,22 +2829,24 @@ flowchart LR
 </div>
 <hr>
 
-<!-- ====== 10. Markdown Formatting ====== -->
-<h2 id="markdown-formatting">10. Markdown Formatting</h2>
-<p>Markdown Formatting groups implementation around configurationmd, docs, codetoml, validation, mostly in docs/CONFIGURATION.md. This section covers 31 nodes and 34 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 10. Dashboard UI ====== -->
+<h2 id="dashboard-ui">10. Dashboard UI</h2>
+<p>Dashboard UI groups implementation around configurationmd, docs, codetoml, data, mostly in docs/CONFIGURATION.md. This section covers 32 nodes and 36 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Markdown Formatting (31 nodes, 34 edges)
+    %% Section: Dashboard UI (32 nodes, 36 edges)
     docs_configuration_config_sections_0e6523d7("Config Sections<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_configuration_fe5c146a("Configuration<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_important_sections_5ee312f1("Important Sections<br/><small>docs/CONFIGURATION.md</small>")
+    docs_configuration_codeblock_2_9d0cff1c("code:toml ([data_range])<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_md_0d2de714("CONFIGURATION.md")
     docs_configuration_feature_set_b4b2e3c8("Feature Set<br/><small>docs/CONFIGURATION.md</small>")
-    docs_configuration_backtest_trading_simulation_72a404a0("[backtest] — Trading Simulation<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_backtest_b42cd6b3("[backtest]<br/><small>docs/CONFIGURATION.md</small>")
+    docs_configuration_backtest_trading_simulation_72a404a0("[backtest] — Trading Simulation<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_data_market_data_settings_d3a59ba3("[data] — Market Data Settings<br/><small>docs/CONFIGURATION.md</small>")
+    docs_configuration_data_range_data_ingestion_bou_eb027148("[data_range] — Data Ingestion Boundaries<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_features_feature_engineering_071f67f7("[features] — Feature Engineering<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_labels_639569c7("[labels]<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_labels_triple_barrier_labelin_7bb101a2("[labels] — Triple-Barrier Labeling<br/><small>docs/CONFIGURATION.md</small>")
@@ -2853,36 +2855,36 @@ flowchart LR
     docs_configuration_splitting_static_train_val_te_0dbef2fc("[splitting] — Static Train/Val/Test B...<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_validation_walk_forward_valid_79258fe2("[validation] — Walk-Forward Validation<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_workflow_pipeline_controls_45365b0c("[workflow] — Pipeline Controls<br/><small>docs/CONFIGURATION.md</small>")
-    docs_configuration_codeblock_1_ebfe65bf("code:toml ([data])<br/><small>docs/CONFIGURATION.md</small>")
-    docs_configuration_codeblock_4_6cd5beb6("code:toml ([features])<br/><small>docs/CONFIGURATION.md</small>")
     docs_configuration_md_0d2de714 -->|contains| docs_configuration_configuration_fe5c146a
     docs_configuration_configuration_fe5c146a -->|contains| docs_configuration_config_sections_0e6523d7
     docs_configuration_configuration_fe5c146a -->|contains| docs_configuration_feature_set_b4b2e3c8
     docs_configuration_configuration_fe5c146a -->|contains| docs_configuration_important_sections_5ee312f1
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_data_market_data_settings_d3a59ba3
-    docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_splitting_static_train_val_te_0dbef2fc
+    docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_data_range_data_ingestion_bou_eb027148
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_validation_walk_forward_valid_79258fe2
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_features_feature_engineering_071f67f7
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_labels_triple_barrier_labelin_7bb101a2
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_model_model_training_2d63a947
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_backtest_trading_simulation_72a404a0
     docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_workflow_pipeline_controls_45365b0c
-    docs_configuration_data_market_data_settings_d3a59ba3 -->|contains| docs_configuration_codeblock_1_ebfe65bf
-    docs_configuration_codeblock_1_ebfe65bf -->|contains| docs_configuration_labels_639569c7
-    docs_configuration_features_feature_engineering_071f67f7 -->|contains| docs_configuration_codeblock_4_6cd5beb6
-    docs_configuration_codeblock_4_6cd5beb6 -->|contains| docs_configuration_feature_set_b4b2e3c8
+    docs_configuration_config_sections_0e6523d7 -->|contains| docs_configuration_splitting_static_train_val_te_0dbef2fc
+    docs_configuration_data_range_data_ingestion_bou_eb027148 -->|contains| docs_configuration_codeblock_2_9d0cff1c
+    docs_configuration_codeblock_2_9d0cff1c -->|contains| docs_configuration_splitting_static_train_val_te_0dbef2fc
+    docs_configuration_codeblock_2_9d0cff1c -->|contains| docs_configuration_model_1d9a6adc
     docs_configuration_important_sections_5ee312f1 -->|contains| docs_configuration_labels_639569c7
     docs_configuration_important_sections_5ee312f1 -->|contains| docs_configuration_model_1d9a6adc
     docs_configuration_important_sections_5ee312f1 -->|contains| docs_configuration_backtest_b42cd6b3
-    %% Omitted for readability: 13 nodes, 0 edges
+    %% Omitted for readability: 14 nodes, 0 edges
     class docs_configuration_config_sections_0e6523d7 concept;
     class docs_configuration_configuration_fe5c146a concept;
     class docs_configuration_important_sections_5ee312f1 concept;
+    class docs_configuration_codeblock_2_9d0cff1c concept;
     class docs_configuration_md_0d2de714 concept;
     class docs_configuration_feature_set_b4b2e3c8 concept;
-    class docs_configuration_backtest_trading_simulation_72a404a0 concept;
     class docs_configuration_backtest_b42cd6b3 concept;
+    class docs_configuration_backtest_trading_simulation_72a404a0 concept;
     class docs_configuration_data_market_data_settings_d3a59ba3 concept;
+    class docs_configuration_data_range_data_ingestion_bou_eb027148 concept;
     class docs_configuration_features_feature_engineering_071f67f7 concept;
     class docs_configuration_labels_639569c7 concept;
     class docs_configuration_labels_triple_barrier_labelin_7bb101a2 concept;
@@ -2891,8 +2893,6 @@ flowchart LR
     class docs_configuration_splitting_static_train_val_te_0dbef2fc concept;
     class docs_configuration_validation_walk_forward_valid_79258fe2 concept;
     class docs_configuration_workflow_pipeline_controls_45365b0c concept;
-    class docs_configuration_codeblock_1_ebfe65bf concept;
-    class docs_configuration_codeblock_4_6cd5beb6 concept;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -2964,19 +2964,19 @@ flowchart LR
 </tr>
 <tr>
   <td>7</td>
-  <td><code>`[splitting]` — Static Train/Val/Test Boundaries</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
+  <td><code>`[data_range]` — Data Ingestion Boundaries</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Documentation node describing `[splitting]` — Static Train/Val/Test Boundaries.</td>
+  <td>Documentation node describing `[data_range]` — Data Ingestion Boundaries.</td>
 </tr>
 <tr>
   <td>8</td>
-  <td><code>code:toml ([splitting])</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
+  <td><code>code:toml ([data_range])</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Documentation node describing code:toml ([splitting]).</td>
+  <td>Documentation node describing code:toml ([data_range]).</td>
 </tr>
 <tr>
   <td>9</td>
@@ -3124,6 +3124,14 @@ flowchart LR
 </tr>
 <tr>
   <td>27</td>
+  <td><code>`[splitting]` — Static Train/Val/Test Boundaries</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing `[splitting]` — Static Train/Val/Test Boundaries.</td>
+</tr>
+<tr>
+  <td>28</td>
   <td><code>Important Sections</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -3131,7 +3139,7 @@ flowchart LR
   <td>Documentation node describing Important Sections.</td>
 </tr>
 <tr>
-  <td>28</td>
+  <td>29</td>
   <td><code>`[labels]`</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -3139,20 +3147,12 @@ flowchart LR
   <td>Documentation node describing `[labels]`.</td>
 </tr>
 <tr>
-  <td>29</td>
+  <td>30</td>
   <td><code>`[model]`</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
   <td>Documentation node describing `[model]`.</td>
-</tr>
-<tr>
-  <td>30</td>
-  <td><code>`[backtest]`</code><br><small style="color:var(--muted)">docs/CONFIGURATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing `[backtest]`.</td>
 </tr>
 </table>
 
@@ -3161,25 +3161,25 @@ flowchart LR
     <h4>Key Files</h4>
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
-      <tr><td><code>docs/CONFIGURATION.md</code></td><td>31 nodes</td></tr>
+      <tr><td><code>docs/CONFIGURATION.md</code></td><td>32 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x34. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x36. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
 
-<!-- ====== 11. Stage 4 Init ====== -->
-<h2 id="stage-4-init">11. Stage 4 Init</h2>
-<p>Stage 4 Init groups implementation around model, evaluationmd, results, xauusd, mostly in XAUUSD_1H_20260513_023811/reports/model_evaluation.md, XAUUSD_1H_20260512_131405/reports/model_evaluation.md, XAUUSD_1H_20260513_003804/reports/model_evaluation.md. This section covers 29 nodes and 28 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 11. LGBM Init ====== -->
+<h2 id="lgbm-init">11. LGBM Init</h2>
+<p>LGBM Init groups implementation around model, evaluationmd, results, xauusd, mostly in XAUUSD_1H_20260513_023811/reports/model_evaluation.md, XAUUSD_1H_20260512_131405/reports/model_evaluation.md, XAUUSD_1H_20260513_003804/reports/model_evaluation.md. This section covers 29 nodes and 28 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Stage 4 Init (29 nodes, 28 edges)
-    subgraph stage_4_init_XAUUSD_1H_20260513_023811_reports_m_deba8154["XAUUSD_1H_20260513_023811/reports/model_evaluation.md"]
+    %% Section: LGBM Init (29 nodes, 28 edges)
+    subgraph lgbm_init_XAUUSD_1H_20260513_023811_reports_mode_9c0baac7["XAUUSD_1H_20260513_023811/reports/model_evaluation.md"]
         reports_model_evaluation_model_evaluation_ff660f14("Model Evaluation<br/><small>XAUUSD_1H_20260513_023811/reports/model_evaluation.md</small>")
         reports_model_evaluation_classification_metrics_85c83219("Classification Metrics (Primary)<br/><small>XAUUSD_1H_20260513_023811/reports/model_evaluation.md</small>")
         reports_model_evaluation_per_class_metrics_b9e9e25f("Per-Class Metrics<br/><small>XAUUSD_1H_20260513_023811/reports/model_evaluation.md</small>")
@@ -3512,305 +3512,14 @@ flowchart LR
 </div>
 <hr>
 
-<!-- ====== 12. Charts Shared ====== -->
-<h2 id="charts-shared">12. Charts Shared</h2>
-<p>Charts Shared groups implementation around tablespy, thesis, stage, reporting, mostly in thesis/stage_6_reporting/tables.py, stage_6_reporting/tables.py. This section covers 25 nodes and 36 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 12. Schemas Rationale 2 ====== -->
+<h2 id="schemas-rationale-2">12. Schemas Rationale 2</h2>
+<p>Schemas Rationale 2 groups implementation around model, comparisonmd, results, xauusd, mostly in XAUUSD_1H_20260513_023811/reports/model_comparison.md, XAUUSD_1H_20260512_131405/reports/model_comparison.md, XAUUSD_1H_20260513_003804/reports/model_comparison.md. This section covers 24 nodes and 23 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Charts Shared (25 nodes, 36 edges)
-    subgraph charts_shared_thesis_stage_6_reporting_tables_py_5622f53e["thesis/stage_6_reporting/tables.py"]
-        stage_6_reporting_tables_zone_40c233a8("_zone()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_calibration_summary_tex_2114b8c8("_calibration_summary_text()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_exec_table_3a81d004("_exec_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_accuracy_table_609459c3("_accuracy_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_backtest_metrics_table_20bd9ca9("_backtest_metrics_table()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6("_compute_ece_numpy()<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        src_thesis_stage_6_reporting_tables_py_70097006("tables.py")
-        stage_6_reporting_tables_rationale_82_f5e28956("Compute Expected Calibration Error (ECE...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_81_248cf279("Compute a one-paragraph calibration rel...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_103_acb84574("Compute a one-paragraph calibration rel...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_102_f78bde52("Compute a one-paragraph calibration rel...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_485_5648479c("Core backtest metrics with zone indicat...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_514_8d9a5d1d("Core backtest metrics with zone indicat...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_513_2eb7766f("Core backtest metrics with zone indicat...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_176_ff6d1614("Key ML-first metrics with application-d...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_204_71641631("Key ML-first metrics with application-d...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-        stage_6_reporting_tables_rationale_203_04e6807d("Key ML-first metrics with application-d...<br/><small>thesis/stage_6_reporting/tables.py</small>")
-    end
-    stage_6_reporting_tables_py_68ad2cb4("tables.py")
-    stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_exec_table_3a81d004
-    stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_accuracy_table_609459c3
-    stage_6_reporting_tables_zone_40c233a8 -->|calls| stage_6_reporting_tables_backtest_metrics_table_20bd9ca9
-    stage_6_reporting_tables_calibration_summary_tex_2114b8c8 -->|calls| stage_6_reporting_tables_accuracy_table_609459c3
-    stage_6_reporting_tables_calibration_summary_tex_2114b8c8 -->|calls| stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6
-    %% Omitted for readability: 7 nodes, 0 edges
-    class stage_6_reporting_tables_zone_40c233a8 function;
-    class stage_6_reporting_tables_calibration_summary_tex_2114b8c8 function;
-    class stage_6_reporting_tables_exec_table_3a81d004 function;
-    class stage_6_reporting_tables_accuracy_table_609459c3 function;
-    class stage_6_reporting_tables_backtest_metrics_table_20bd9ca9 function;
-    class stage_6_reporting_tables_compute_ece_numpy_c1c2ffd6 function;
-    class src_thesis_stage_6_reporting_tables_py_70097006 module;
-    class stage_6_reporting_tables_rationale_82_f5e28956 concept;
-    class stage_6_reporting_tables_rationale_81_248cf279 concept;
-    class stage_6_reporting_tables_rationale_103_acb84574 concept;
-    class stage_6_reporting_tables_rationale_102_f78bde52 concept;
-    class stage_6_reporting_tables_rationale_485_5648479c concept;
-    class stage_6_reporting_tables_rationale_514_8d9a5d1d concept;
-    class stage_6_reporting_tables_rationale_513_2eb7766f concept;
-    class stage_6_reporting_tables_rationale_176_ff6d1614 concept;
-    class stage_6_reporting_tables_rationale_204_71641631 concept;
-    class stage_6_reporting_tables_rationale_203_04e6807d concept;
-    class stage_6_reporting_tables_py_68ad2cb4 module;
-    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
-    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
-    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
-    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
-    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
-    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
-    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
-    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
-    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
-</div>
-
-<h3>Call Details</h3>
-<table class="call-table">
-<tr>
-  <th style="width:5%">#</th>
-  <th style="width:28%">Node</th>
-  <th style="width:10%">Type</th>
-  <th style="width:17%">Caller</th>
-  <th style="width:20%">Callees</th>
-  <th style="width:20%">Description</th>
-</tr>
-<tr>
-  <td>1</td>
-  <td><code>tables.py</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-class">Module</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Module file in thesis/stage_6_reporting/tables.py.</td>
-</tr>
-<tr>
-  <td>2</td>
-  <td><code>_zone()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>_accuracy_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br><code>_backtest_metrics_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br><code>_exec_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td>_zone() node in thesis/stage_6_reporting/tables.py.</td>
-</tr>
-<tr>
-  <td>3</td>
-  <td><code>_calibration_summary_text()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td>External entry / no inbound edge</td>
-  <td><code>_accuracy_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br><code>_compute_ece_numpy()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td>_calibration_summary_text() node in thesis/stage_6_reporting/tables.py.</td>
-</tr>
-<tr>
-  <td>4</td>
-  <td><code>_exec_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_zone()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_exec_table() node in thesis/stage_6_reporting/tables.py.</td>
-</tr>
-<tr>
-  <td>5</td>
-  <td><code>_accuracy_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_calibration_summary_text()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small><br><code>_zone()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_accuracy_table() node in thesis/stage_6_reporting/tables.py.</td>
-</tr>
-<tr>
-  <td>6</td>
-  <td><code>_backtest_metrics_table()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_zone()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>Verifies imports, entry points, or version behavior.</td>
-</tr>
-<tr>
-  <td>7</td>
-  <td><code>Markdown table builders and verdict logic for the thesis report.  Each function</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Markdown table builders and verdict logic for the thesis report.  Each function.</td>
-</tr>
-<tr>
-  <td>8</td>
-  <td><code>Zone emoji for a metric value.</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Zone emoji for a metric value..</td>
-</tr>
-<tr>
-  <td>9</td>
-  <td><code>Compute a one-paragraph calibration reliability note.      Reads predicted proba</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Compute a one-paragraph calibration reliability note.      Reads predicted proba.</td>
-</tr>
-<tr>
-  <td>10</td>
-  <td><code>Key ML-first metrics with application-demo metrics second.      Args:         L:</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Key ML-first metrics with application-demo metrics second.      Args:         L:.</td>
-</tr>
-<tr>
-  <td>11</td>
-  <td><code>Model accuracy: exact + directional + per-class + calibration.      Args:</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Model accuracy: exact + directional + per-class + calibration.      Args:.</td>
-</tr>
-<tr>
-  <td>12</td>
-  <td><code>Core backtest metrics with zone indicators.      Args:         L: Output markdow</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Core backtest metrics with zone indicators.      Args:         L: Output markdow.</td>
-</tr>
-<tr>
-  <td>13</td>
-  <td><code>_compute_ece_numpy()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Function</span></td>
-  <td><code>_calibration_summary_text()</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td>No direct outbound edge</td>
-  <td>_compute_ece_numpy() node in thesis/stage_6_reporting/tables.py.</td>
-</tr>
-<tr>
-  <td>14</td>
-  <td><code>Zone emoji for a metric value.</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Zone emoji for a metric value..</td>
-</tr>
-<tr>
-  <td>15</td>
-  <td><code>Compute Expected Calibration Error (ECE) from NumPy arrays.      Delegates to</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Compute Expected Calibration Error (ECE) from NumPy arrays.      Delegates to.</td>
-</tr>
-<tr>
-  <td>16</td>
-  <td><code>Compute a one-paragraph calibration reliability note.      Reads predicted proba</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Compute a one-paragraph calibration reliability note.      Reads predicted proba.</td>
-</tr>
-<tr>
-  <td>17</td>
-  <td><code>Key ML-first metrics with application-demo metrics second.      Args:         L:</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Key ML-first metrics with application-demo metrics second.      Args:         L:.</td>
-</tr>
-<tr>
-  <td>18</td>
-  <td><code>Model accuracy: exact + directional + per-class + calibration.      Args:</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Model accuracy: exact + directional + per-class + calibration.      Args:.</td>
-</tr>
-<tr>
-  <td>19</td>
-  <td><code>Core backtest metrics with zone indicators.      Args:         L: Output markdow</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Core backtest metrics with zone indicators.      Args:         L: Output markdow.</td>
-</tr>
-<tr>
-  <td>20</td>
-  <td><code>Zone emoji for a metric value.</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Zone emoji for a metric value..</td>
-</tr>
-<tr>
-  <td>21</td>
-  <td><code>Compute a one-paragraph calibration reliability note.      Reads predicted proba</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Compute a one-paragraph calibration reliability note.      Reads predicted proba.</td>
-</tr>
-<tr>
-  <td>22</td>
-  <td><code>Key ML-first metrics with application-demo metrics second.      Args:         L:</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Key ML-first metrics with application-demo metrics second.      Args:         L:.</td>
-</tr>
-<tr>
-  <td>23</td>
-  <td><code>Model accuracy: exact + directional + per-class + calibration.      Args:</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Model accuracy: exact + directional + per-class + calibration.      Args:.</td>
-</tr>
-<tr>
-  <td>24</td>
-  <td><code>Core backtest metrics with zone indicators.      Args:         L: Output markdow</code><br><small style="color:var(--muted)">thesis/stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Design note for Core backtest metrics with zone indicators.      Args:         L: Output markdow.</td>
-</tr>
-<tr>
-  <td>25</td>
-  <td><code>tables.py</code><br><small style="color:var(--muted)">stage_6_reporting/tables.py</small></td>
-  <td><span class="tag tag-class">Module</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Module file in stage_6_reporting/tables.py.</td>
-</tr>
-</table>
-
-<div class="grid">
-  <div class="card">
-    <h4>Key Files</h4>
-    <table style="width:100%;font-size:0.85rem;">
-      <tr><th>File</th><th>Coverage</th></tr>
-      <tr><td><code>thesis/stage_6_reporting/tables.py</code></td><td>24 nodes</td></tr>
-<tr><td><code>stage_6_reporting/tables.py</code></td><td>1 nodes</td></tr>
-    </table>
-  </div>
-  <div class="card">
-    <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: explains x19, contains x12, calls x5. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
-  </div>
-</div>
-<hr>
-
-<!-- ====== 13. Schemas Rationale ====== -->
-<h2 id="schemas-rationale">13. Schemas Rationale</h2>
-<p>Schemas Rationale groups implementation around model, comparisonmd, results, xauusd, mostly in XAUUSD_1H_20260513_023811/reports/model_comparison.md, XAUUSD_1H_20260512_131405/reports/model_comparison.md, XAUUSD_1H_20260513_003804/reports/model_comparison.md. This section covers 24 nodes and 23 internal edges; the diagram shows only representative relationships to stay readable.</p>
-
-<div class="mermaid">
-%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
-flowchart LR
-    %% Section: Schemas Rationale (24 nodes, 23 edges)
+    %% Section: Schemas Rationale 2 (24 nodes, 23 edges)
     results_xauusd_1h_20260507_223024_reports_model_dd530201("model_comparison.md")
     results_xauusd_1h_20260508_135654_reports_model_b5e43c76("model_comparison.md")
     results_xauusd_1h_20260510_104839_reports_model_2e167c8a("model_comparison.md")
@@ -4102,14 +3811,14 @@ flowchart LR
 </div>
 <hr>
 
-<!-- ====== 14. Schemas Rationale 2 ====== -->
-<h2 id="schemas-rationale-2">14. Schemas Rationale 2</h2>
-<p>Schemas Rationale 2 groups implementation around chuong7, ket, luanmd, bao, mostly in bao_cao/chuong7_ket_luan.md. This section covers 24 nodes and 24 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<!-- ====== 13. Schemas Rationale 3 ====== -->
+<h2 id="schemas-rationale-3">13. Schemas Rationale 3</h2>
+<p>Schemas Rationale 3 groups implementation around chuong7, ket, luanmd, bao, mostly in bao_cao/chuong7_ket_luan.md. This section covers 24 nodes and 24 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Schemas Rationale 2 (24 nodes, 24 edges)
+    %% Section: Schemas Rationale 3 (24 nodes, 24 edges)
     bao_cao_chuong7_ket_luan_ch_ng_7_k_t_lu_n_d1f3b39f("Chương 7. Kết luận<br/><small>bao_cao/chuong7_ket_luan.md</small>")
     bao_cao_chuong7_ket_luan_7_8_tr_l_i_c_u_h_i_nghi_75ce14c3("7.8. Trả lời câu hỏi nghiên cứu<br/><small>bao_cao/chuong7_ket_luan.md</small>")
     bao_cao_chuong7_ket_luan_md_8a0338a5("chuong7_ket_luan.md")
@@ -4228,11 +3937,11 @@ flowchart LR
 </tr>
 <tr>
   <td>6</td>
-  <td><code>code:text (Hybrid Stacking Accuracy  0.3397)</code><br><small style="color:var(--muted)">bao_cao/chuong7_ket_luan.md</small></td>
+  <td><code>code:text (Hybrid Stacking Accuracy  0.3416)</code><br><small style="color:var(--muted)">bao_cao/chuong7_ket_luan.md</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
   <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (Hybrid Stacking Accuracy  0.3397).</td>
+  <td>Documentation node describing code:text (Hybrid Stacking Accuracy  0.3416).</td>
 </tr>
 <tr>
   <td>7</td>
@@ -4391,6 +4100,288 @@ flowchart LR
   <div class="card">
     <h4>Design Notes</h4>
     <p>This section comes from graphify community clustering. Relationship summary: contains x24. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+  </div>
+</div>
+<hr>
+
+<!-- ====== 14. Evaluationmd Docs Codetext ====== -->
+<h2 id="evaluationmd-docs-codetext">14. Evaluationmd Docs Codetext</h2>
+<p>Evaluationmd Docs Codetext groups implementation around evaluationmd, docs, codetext, metrics, mostly in docs/EVALUATION.md. This section covers 22 nodes and 27 internal edges; the diagram shows only representative relationships to stay readable.</p>
+
+<div class="mermaid">
+%%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
+flowchart LR
+    %% Section: Evaluationmd Docs Codetext (22 nodes, 27 edges)
+    docs_evaluation_evaluation_1c2d4454("Evaluation<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_latest_verified_run_153976e4("Latest Verified Run<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_classification_results_b70aded3("Classification Results<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_primary_metrics_a5945c70("Primary Metrics<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_md_4515511c("EVALUATION.md")
+    docs_evaluation_backtest_interpretation_b113e8ae("Backtest Interpretation<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_label_distribution_c9009867("Label Distribution<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_model_comparison_2825df3c("Model Comparison<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_codeblock_4_30edfe48("code:text (Samples 182 (0.76% of total))<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_codeblock_2_a8c01180("code:text (Accuracy 0.3416)<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_codeblock_5_6260c60e("code:text (Hybrid Stacking accuracy 0.3...<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_codeblock_3_0ffede98("code:text (Short 0.3640)<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_codeblock_6_254ab178("code:text (Short 43.6%)<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_auxiliary_regression_metrics_if_97111866("Auxiliary Regression Metrics (If Availa...<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_backtest_metric_quality_zones_6a8e852c("Backtest Metric Quality Zones<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_calibration_metrics_secondary_a7d2d2c4("Calibration Metrics (Secondary)<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_deployment_recommendation_c63f7e01("Deployment Recommendation<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_metric_computation_a031fb19("Metric Computation<br/><small>docs/EVALUATION.md</small>")
+    docs_evaluation_md_4515511c -->|contains| docs_evaluation_evaluation_1c2d4454
+    docs_evaluation_evaluation_1c2d4454 -->|contains| docs_evaluation_primary_metrics_a5945c70
+    docs_evaluation_evaluation_1c2d4454 -->|contains| docs_evaluation_metric_computation_a031fb19
+    docs_evaluation_evaluation_1c2d4454 -->|contains| docs_evaluation_latest_verified_run_153976e4
+    docs_evaluation_evaluation_1c2d4454 -->|contains| docs_evaluation_label_distribution_c9009867
+    docs_evaluation_evaluation_1c2d4454 -->|contains| docs_evaluation_backtest_interpretation_b113e8ae
+    docs_evaluation_evaluation_1c2d4454 -->|contains| docs_evaluation_deployment_recommendation_c63f7e01
+    docs_evaluation_primary_metrics_a5945c70 -->|contains| docs_evaluation_calibration_metrics_secondary_a7d2d2c4
+    docs_evaluation_primary_metrics_a5945c70 -->|contains| docs_evaluation_auxiliary_regression_metrics_if_97111866
+    docs_evaluation_latest_verified_run_153976e4 -->|contains| docs_evaluation_classification_results_b70aded3
+    docs_evaluation_latest_verified_run_153976e4 -->|contains| docs_evaluation_model_comparison_2825df3c
+    docs_evaluation_latest_verified_run_153976e4 -->|contains| docs_evaluation_codeblock_2_a8c01180
+    docs_evaluation_latest_verified_run_153976e4 -->|contains| docs_evaluation_codeblock_3_0ffede98
+    docs_evaluation_latest_verified_run_153976e4 -->|contains| docs_evaluation_codeblock_4_30edfe48
+    docs_evaluation_classification_results_b70aded3 -->|contains| docs_evaluation_codeblock_2_a8c01180
+    docs_evaluation_classification_results_b70aded3 -->|contains| docs_evaluation_codeblock_3_0ffede98
+    docs_evaluation_classification_results_b70aded3 -->|contains| docs_evaluation_codeblock_4_30edfe48
+    docs_evaluation_codeblock_4_30edfe48 -->|contains| docs_evaluation_model_comparison_2825df3c
+    docs_evaluation_model_comparison_2825df3c -->|contains| docs_evaluation_codeblock_5_6260c60e
+    docs_evaluation_codeblock_5_6260c60e -->|contains| docs_evaluation_label_distribution_c9009867
+    docs_evaluation_label_distribution_c9009867 -->|contains| docs_evaluation_codeblock_6_254ab178
+    docs_evaluation_codeblock_6_254ab178 -->|contains| docs_evaluation_backtest_interpretation_b113e8ae
+    docs_evaluation_backtest_interpretation_b113e8ae -->|contains| docs_evaluation_backtest_metric_quality_zones_6a8e852c
+    %% Omitted for readability: 4 nodes, 0 edges
+    class docs_evaluation_evaluation_1c2d4454 concept;
+    class docs_evaluation_latest_verified_run_153976e4 concept;
+    class docs_evaluation_classification_results_b70aded3 concept;
+    class docs_evaluation_primary_metrics_a5945c70 concept;
+    class docs_evaluation_md_4515511c concept;
+    class docs_evaluation_backtest_interpretation_b113e8ae concept;
+    class docs_evaluation_label_distribution_c9009867 concept;
+    class docs_evaluation_model_comparison_2825df3c concept;
+    class docs_evaluation_codeblock_4_30edfe48 concept;
+    class docs_evaluation_codeblock_2_a8c01180 concept;
+    class docs_evaluation_codeblock_5_6260c60e concept;
+    class docs_evaluation_codeblock_3_0ffede98 concept;
+    class docs_evaluation_codeblock_6_254ab178 concept;
+    class docs_evaluation_auxiliary_regression_metrics_if_97111866 concept;
+    class docs_evaluation_backtest_metric_quality_zones_6a8e852c concept;
+    class docs_evaluation_calibration_metrics_secondary_a7d2d2c4 concept;
+    class docs_evaluation_deployment_recommendation_c63f7e01 concept;
+    class docs_evaluation_metric_computation_a031fb19 concept;
+    classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
+    classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
+    classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
+    classDef klass fill:#064e3b,stroke:#34d399,color:#d1fae5,stroke-width:1px;
+    classDef ui fill:#831843,stroke:#f472b6,color:#fce7f3,stroke-width:1px;
+    classDef module fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:1px;
+    classDef test fill:#3f3f46,stroke:#a1a1aa,color:#f4f4f5,stroke-width:1px;
+    classDef concept fill:#292524,stroke:#a8a29e,color:#fafaf9,stroke-dasharray:4 3;
+    classDef function fill:#0f172a,stroke:#38bdf8,color:#e0f2fe,stroke-width:1px;
+</div>
+
+<h3>Call Details</h3>
+<table class="call-table">
+<tr>
+  <th style="width:5%">#</th>
+  <th style="width:28%">Node</th>
+  <th style="width:10%">Type</th>
+  <th style="width:17%">Caller</th>
+  <th style="width:20%">Callees</th>
+  <th style="width:20%">Description</th>
+</tr>
+<tr>
+  <td>1</td>
+  <td><code>EVALUATION.md</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing EVALUATION.md.</td>
+</tr>
+<tr>
+  <td>2</td>
+  <td><code>Evaluation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Evaluation.</td>
+</tr>
+<tr>
+  <td>3</td>
+  <td><code>Primary Metrics</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Primary Metrics.</td>
+</tr>
+<tr>
+  <td>4</td>
+  <td><code>Calibration Metrics (Secondary)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Calibration Metrics (Secondary).</td>
+</tr>
+<tr>
+  <td>5</td>
+  <td><code>Auxiliary Regression Metrics (If Available)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Auxiliary Regression Metrics (If Available).</td>
+</tr>
+<tr>
+  <td>6</td>
+  <td><code>Metric Computation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Metric Computation.</td>
+</tr>
+<tr>
+  <td>7</td>
+  <td><code>Latest Verified Run</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Latest Verified Run.</td>
+</tr>
+<tr>
+  <td>8</td>
+  <td><code>code:text (results/XAUUSD_1H_20260513_023811/)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (results/XAUUSD_1H_20260513_023811/).</td>
+</tr>
+<tr>
+  <td>9</td>
+  <td><code>Classification Results</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Classification Results.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>code:text (Accuracy              0.3416)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (Accuracy              0.3416).</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>code:text (Short  0.3640)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (Short  0.3640).</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>code:text (Samples    182 (0.76% of total))</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (Samples    182 (0.76% of total)).</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>Model Comparison</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Model Comparison.</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>code:text (Hybrid Stacking     accuracy 0.3416, macro F1 0.3152)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (Hybrid Stacking     accuracy 0.3416, macro F1 0.3152).</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>Why Stacking May Underperform</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Why Stacking May Underperform.</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>Label Distribution</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Label Distribution.</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>code:text (Short 43.6%)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (Short 43.6%).</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>Backtest Interpretation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Backtest Interpretation.</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>code:text (Period:        2022-01-27 to 2026-04-29)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing code:text (Period:        2022-01-27 to 2026-04-29).</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>Backtest Metric Quality Zones</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Backtest Metric Quality Zones.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>Reading the Report</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Reading the Report.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>Deployment Recommendation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Documentation node describing Deployment Recommendation.</td>
+</tr>
+</table>
+
+<div class="grid">
+  <div class="card">
+    <h4>Key Files</h4>
+    <table style="width:100%;font-size:0.85rem;">
+      <tr><th>File</th><th>Coverage</th></tr>
+      <tr><td><code>docs/EVALUATION.md</code></td><td>22 nodes</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h4>Design Notes</h4>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x27. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
@@ -4653,19 +4644,20 @@ flowchart LR
 
 <!-- ====== 16. Other ====== -->
 <h2 id="other">16. Other</h2>
-<p>Other groups implementation around thesis, cao, bao, shared, mostly in bao_cao/chuong3_du_lieu.md, thesis/shared/config.py, docs/EVALUATION.md. This section covers 307 nodes and 314 internal edges; the diagram shows only representative relationships to stay readable.</p>
+<p>Other groups implementation around thesis, cao, bao, chuong3, mostly in bao_cao/chuong3_du_lieu.md, thesis/shared/config.py, bao_cao/chuong1_gioi_thieu.md. This section covers 271 nodes and 270 internal edges; the diagram shows only representative relationships to stay readable.</p>
 
 <div class="mermaid">
 %%{init: {"theme": "dark", "themeVariables": {"fontSize": "15.0px", "fontFamily": "Segoe UI, system-ui, sans-serif", "primaryColor": "#1e293b", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#38bdf8", "secondaryColor": "#0f172a", "tertiaryColor": "#334155", "lineColor": "#64748b", "textColor": "#e2e8f0"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 48, "rankSpacing": 64, "padding": 14, "diagramPadding": 10, "useMaxWidth": true}}}%%
 flowchart LR
-    %% Section: Other (307 nodes, 314 edges)
+    %% Section: Other (271 nodes, 270 edges)
     subgraph other_thesis_shared_config_py_077040ff["thesis/shared/config.py"]
         shared_config_multitimeframeconfig_5a6e85c5("MultiTimeframeConfig<br/><small>thesis/shared/config.py</small>")
         shared_config_apply_section_4a81d46d("_apply_section()<br/><small>thesis/shared/config.py</small>")
         shared_config_featuresconfig_70e02634("FeaturesConfig<br/><small>thesis/shared/config.py</small>")
-        shared_config_config_f1256afb("Config<br/><small>thesis/shared/config.py</small>")
-        shared_config_load_config_c2d4b350("load_config()<br/><small>thesis/shared/config.py</small>")
         shared_config_timeframe_to_minutes_3b3bcbc9("_timeframe_to_minutes()<br/><small>thesis/shared/config.py</small>")
+        shared_config_scale_bars_by_timeframe_8ce2cf6b("_scale_bars_by_timeframe()<br/><small>thesis/shared/config.py</small>")
+        shared_config_load_config_c2d4b350("load_config()<br/><small>thesis/shared/config.py</small>")
+        shared_config_section_kwargs_d17fc260("_section_kwargs()<br/><small>thesis/shared/config.py</small>")
     end
     subgraph other_thesis_dashboard_session_py_6431f897["thesis/dashboard/session.py"]
         dashboard_session_find_sessions_7fff5099("find_sessions()<br/><small>thesis/dashboard/session.py</small>")
@@ -4677,45 +4669,46 @@ flowchart LR
         stage_5_backtest_simulation_apply_oos_date_filte_74c4d1b7("_apply_oos_date_filter()<br/><small>thesis/stage_5_backtest/simulation.py</small>")
         stage_5_backtest_simulation_compute_backtest_09237aa1("compute_backtest()<br/><small>thesis/stage_5_backtest/simulation.py</small>")
     end
-    subgraph other_stage_6_reporting_sections_data_py_9b50781b["stage_6_reporting/sections/data.py"]
-        sections_data_load_label_distribution_de5b52e6("_load_label_distribution()<br/><small>stage_6_reporting/sections/data.py</small>")
-        sections_data_render_label_design_section_4450996c("label design section()<br/><small>stage_6_reporting/sections/data.py</small>")
-    end
     subgraph other_thesis_dashboard_shared_py_850d187e["thesis/dashboard/shared.py"]
         dashboard_shared_date_only_24697927("date_only()<br/><small>thesis/dashboard/shared.py</small>")
         dashboard_shared_render_config_summary_0ef3e7dc("render_config_summary()<br/><small>thesis/dashboard/shared.py</small>")
     end
+    subgraph other_thesis_shared_ui_py_2f9592ab["thesis/shared/ui.py"]
+        shared_ui_simpleconsole_ba77e64a("SimpleConsole<br/><small>thesis/shared/ui.py</small>")
+        shared_ui_simpleconsole_print_977ca282("print()<br/><small>thesis/shared/ui.py</small>")
+    end
     ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9("SameDocumentDuplicateFilter<br/><small>source/_ext/suppress_same_doc_duplicates.py</small>")
-    shared_ui_simpleconsole_ba77e64a("SimpleConsole<br/><small>thesis/shared/ui.py</small>")
     stage_5_backtest_simulation_load_backtest_data_c5c8acd6 -->|calls| stage_5_backtest_simulation_apply_oos_date_filte_74c4d1b7
     stage_5_backtest_simulation_load_backtest_data_c5c8acd6 -->|calls| stage_5_backtest_simulation_compute_backtest_09237aa1
-    sections_data_load_label_distribution_de5b52e6 -->|calls| sections_data_render_label_design_section_4450996c
     dashboard_session_find_sessions_7fff5099 -->|calls| dashboard_session_session_selector_fragment_0c6e00ef
     dashboard_session_parse_session_meta_6616bb82 -->|calls| dashboard_session_session_selector_fragment_0c6e00ef
     dashboard_shared_date_only_24697927 -->|calls| dashboard_shared_render_config_summary_0ef3e7dc
     shared_config_multitimeframeconfig_5a6e85c5 -->|calls| shared_config_apply_section_4a81d46d
     shared_config_featuresconfig_70e02634 -->|calls| shared_config_apply_section_4a81d46d
-    shared_config_config_f1256afb -->|calls| shared_config_load_config_c2d4b350
+    shared_config_timeframe_to_minutes_3b3bcbc9 -->|calls| shared_config_scale_bars_by_timeframe_8ce2cf6b
+    shared_config_scale_bars_by_timeframe_8ce2cf6b -->|calls| shared_config_load_config_c2d4b350
+    shared_config_section_kwargs_d17fc260 -->|calls| shared_config_apply_section_4a81d46d
     shared_config_apply_section_4a81d46d -->|calls| shared_config_load_config_c2d4b350
-    %% Omitted for readability: 289 nodes, 0 edges
+    shared_ui_simpleconsole_ba77e64a -->|method| shared_ui_simpleconsole_print_977ca282
+    %% Omitted for readability: 253 nodes, 0 edges
     class shared_config_multitimeframeconfig_5a6e85c5 klass;
     class shared_config_apply_section_4a81d46d function;
     class shared_config_featuresconfig_70e02634 klass;
-    class shared_config_config_f1256afb klass;
-    class shared_config_load_config_c2d4b350 function;
     class shared_config_timeframe_to_minutes_3b3bcbc9 function;
+    class shared_config_scale_bars_by_timeframe_8ce2cf6b function;
+    class shared_config_load_config_c2d4b350 function;
+    class shared_config_section_kwargs_d17fc260 function;
     class dashboard_session_find_sessions_7fff5099 function;
     class dashboard_session_parse_session_meta_6616bb82 function;
     class dashboard_session_session_selector_fragment_0c6e00ef function;
     class stage_5_backtest_simulation_load_backtest_data_c5c8acd6 test;
     class stage_5_backtest_simulation_apply_oos_date_filte_74c4d1b7 test;
     class stage_5_backtest_simulation_compute_backtest_09237aa1 test;
-    class sections_data_load_label_distribution_de5b52e6 function;
-    class sections_data_render_label_design_section_4450996c function;
     class dashboard_shared_date_only_24697927 function;
     class dashboard_shared_render_config_summary_0ef3e7dc function;
-    class ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 klass;
     class shared_ui_simpleconsole_ba77e64a klass;
+    class shared_ui_simpleconsole_print_977ca282 function;
+    class ext_suppress_same_doc_duplicates_samedocumentdup_faa089b9 klass;
     classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:1px;
     classDef api fill:#450a0a,stroke:#f87171,color:#fee2e2,stroke-width:1px;
     classDef async fill:#2e1065,stroke:#a78bfa,color:#ede9fe,stroke-width:1px;
@@ -4739,174 +4732,6 @@ flowchart LR
 </tr>
 <tr>
   <td>1</td>
-  <td><code>EVALUATION.md</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing EVALUATION.md.</td>
-</tr>
-<tr>
-  <td>2</td>
-  <td><code>Evaluation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Evaluation.</td>
-</tr>
-<tr>
-  <td>3</td>
-  <td><code>Primary Metrics</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Primary Metrics.</td>
-</tr>
-<tr>
-  <td>4</td>
-  <td><code>Calibration Metrics (Secondary)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Calibration Metrics (Secondary).</td>
-</tr>
-<tr>
-  <td>5</td>
-  <td><code>Auxiliary Regression Metrics (If Available)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Auxiliary Regression Metrics (If Available).</td>
-</tr>
-<tr>
-  <td>6</td>
-  <td><code>Metric Computation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Metric Computation.</td>
-</tr>
-<tr>
-  <td>7</td>
-  <td><code>Latest Verified Run</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Latest Verified Run.</td>
-</tr>
-<tr>
-  <td>8</td>
-  <td><code>code:text (results/XAUUSD_1H_20260511_231114/)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (results/XAUUSD_1H_20260511_231114/).</td>
-</tr>
-<tr>
-  <td>9</td>
-  <td><code>Classification Results</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Classification Results.</td>
-</tr>
-<tr>
-  <td>10</td>
-  <td><code>code:text (Accuracy              0.3397)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (Accuracy              0.3397).</td>
-</tr>
-<tr>
-  <td>11</td>
-  <td><code>code:text (Short  0.3684)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (Short  0.3684).</td>
-</tr>
-<tr>
-  <td>12</td>
-  <td><code>Model Comparison</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Model Comparison.</td>
-</tr>
-<tr>
-  <td>13</td>
-  <td><code>code:text (Hybrid Stacking     accuracy 0.3397, macro F1 0.3162)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (Hybrid Stacking     accuracy 0.3397, macro F1 0.3162).</td>
-</tr>
-<tr>
-  <td>14</td>
-  <td><code>Why Stacking May Underperform</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Why Stacking May Underperform.</td>
-</tr>
-<tr>
-  <td>15</td>
-  <td><code>Label Distribution</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Label Distribution.</td>
-</tr>
-<tr>
-  <td>16</td>
-  <td><code>code:text (Short 43.6%)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (Short 43.6%).</td>
-</tr>
-<tr>
-  <td>17</td>
-  <td><code>Backtest Interpretation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Backtest Interpretation.</td>
-</tr>
-<tr>
-  <td>18</td>
-  <td><code>code:text (Total return   0.04%)</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing code:text (Total return   0.04%).</td>
-</tr>
-<tr>
-  <td>19</td>
-  <td><code>Backtest Metric Quality Zones</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Backtest Metric Quality Zones.</td>
-</tr>
-<tr>
-  <td>20</td>
-  <td><code>Reading the Report</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Reading the Report.</td>
-</tr>
-<tr>
-  <td>21</td>
-  <td><code>Deployment Recommendation</code><br><small style="color:var(--muted)">docs/EVALUATION.md</small></td>
-  <td><span class="tag tag-func">Concept</span></td>
-  <td>External entry / no inbound edge</td>
-  <td>No direct outbound edge</td>
-  <td>Documentation node describing Deployment Recommendation.</td>
-</tr>
-<tr>
-  <td>22</td>
   <td><code>reports.py</code><br><small style="color:var(--muted)">thesis/dashboard/reports.py</small></td>
   <td><span class="tag tag-class">Module</span></td>
   <td>External entry / no inbound edge</td>
@@ -4914,7 +4739,7 @@ flowchart LR
   <td>Module file in thesis/dashboard/reports.py.</td>
 </tr>
 <tr>
-  <td>23</td>
+  <td>2</td>
   <td><code>render_reports_section()</code><br><small style="color:var(--muted)">thesis/dashboard/reports.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -4922,7 +4747,7 @@ flowchart LR
   <td>render_reports_section() node in thesis/dashboard/reports.py.</td>
 </tr>
 <tr>
-  <td>24</td>
+  <td>3</td>
   <td><code>Reports section renderer.</code><br><small style="color:var(--muted)">thesis/dashboard/reports.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4930,7 +4755,7 @@ flowchart LR
   <td>Design note for Reports section renderer..</td>
 </tr>
 <tr>
-  <td>25</td>
+  <td>4</td>
   <td><code>Render the reports page with thesis markdown and artifact visuals.</code><br><small style="color:var(--muted)">thesis/dashboard/reports.py</small></td>
   <td><span class="tag tag-func">Concept</span></td>
   <td>External entry / no inbound edge</td>
@@ -4938,7 +4763,7 @@ flowchart LR
   <td>Design note for Render the reports page with thesis markdown and artifact visuals..</td>
 </tr>
 <tr>
-  <td>26</td>
+  <td>5</td>
   <td><code>shared.py</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
   <td><span class="tag tag-class">Module</span></td>
   <td>External entry / no inbound edge</td>
@@ -4946,7 +4771,7 @@ flowchart LR
   <td>Module file in thesis/dashboard/shared.py.</td>
 </tr>
 <tr>
-  <td>27</td>
+  <td>6</td>
   <td><code>render_chart()</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>render_reports_section()</code><br><small style="color:var(--muted)">thesis/dashboard/reports.py</small></td>
@@ -4954,7 +4779,7 @@ flowchart LR
   <td>render_chart() node in thesis/dashboard/shared.py.</td>
 </tr>
 <tr>
-  <td>28</td>
+  <td>7</td>
   <td><code>date_only()</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td>External entry / no inbound edge</td>
@@ -4962,7 +4787,7 @@ flowchart LR
   <td>date_only() node in thesis/dashboard/shared.py.</td>
 </tr>
 <tr>
-  <td>29</td>
+  <td>8</td>
   <td><code>trim_generated_visual_sections()</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>render_reports_section()</code><br><small style="color:var(--muted)">thesis/dashboard/reports.py</small></td>
@@ -4970,12 +4795,180 @@ flowchart LR
   <td>trim_generated_visual_sections() node in thesis/dashboard/shared.py.</td>
 </tr>
 <tr>
-  <td>30</td>
+  <td>9</td>
   <td><code>render_config_summary()</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
   <td><span class="tag tag-func">Function</span></td>
   <td><code>date_only()</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
   <td>No direct outbound edge</td>
   <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>10</td>
+  <td><code>render_trade_direction_summary()</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>render_trade_direction_summary() node in thesis/dashboard/shared.py.</td>
+</tr>
+<tr>
+  <td>11</td>
+  <td><code>Shared chart renderer and config/trade summary helpers.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Shared chart renderer and config/trade summary helpers..</td>
+</tr>
+<tr>
+  <td>12</td>
+  <td><code>Render a pyecharts chart into the Streamlit app.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Render a pyecharts chart into the Streamlit app..</td>
+</tr>
+<tr>
+  <td>13</td>
+  <td><code>Return the date part of a config timestamp string.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Return the date part of a config timestamp string..</td>
+</tr>
+<tr>
+  <td>14</td>
+  <td><code>Hide report sections duplicated by dashboard-native charts.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Hide report sections duplicated by dashboard-native charts..</td>
+</tr>
+<tr>
+  <td>15</td>
+  <td><code>Render compact current experiment settings in the sidebar.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Render compact current experiment settings in the sidebar..</td>
+</tr>
+<tr>
+  <td>16</td>
+  <td><code>Render compact direction counts and PnL without low-value charts.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Render compact direction counts and PnL without low-value charts..</td>
+</tr>
+<tr>
+  <td>17</td>
+  <td><code>Render compact direction counts and PnL without low-value charts.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Render compact direction counts and PnL without low-value charts..</td>
+</tr>
+<tr>
+  <td>18</td>
+  <td><code>Render compact direction counts and PnL without low-value charts.</code><br><small style="color:var(--muted)">thesis/dashboard/shared.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Render compact direction counts and PnL without low-value charts..</td>
+</tr>
+<tr>
+  <td>19</td>
+  <td><code>reports.py</code><br><small style="color:var(--muted)">dashboard/reports.py</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Module file in dashboard/reports.py.</td>
+</tr>
+<tr>
+  <td>20</td>
+  <td><code>shared.py</code><br><small style="color:var(--muted)">dashboard/shared.py</small></td>
+  <td><span class="tag tag-class">Module</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Module file in dashboard/shared.py.</td>
+</tr>
+<tr>
+  <td>21</td>
+  <td><code>ValidationConfig</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>22</td>
+  <td><code>MultiTimeframeConfig</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>_apply_section()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>23</td>
+  <td><code>FeaturesConfig</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-class">Class</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>_apply_section()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td>Reads, resolves, or persists project configuration.</td>
+</tr>
+<tr>
+  <td>24</td>
+  <td><code>_section_kwargs()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td>External entry / no inbound edge</td>
+  <td><code>_apply_section()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td>_section_kwargs() node in thesis/shared/config.py.</td>
+</tr>
+<tr>
+  <td>25</td>
+  <td><code>_apply_section()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Function</span></td>
+  <td><code>_section_kwargs()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small><br><code>FeaturesConfig</code><br><small style="color:var(--muted)">thesis/shared/config.py</small><br><code>MultiTimeframeConfig</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><code>load_config()</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td>_apply_section() node in thesis/shared/config.py.</td>
+</tr>
+<tr>
+  <td>26</td>
+  <td><code>Load and validate pipeline configuration.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Load and validate pipeline configuration..</td>
+</tr>
+<tr>
+  <td>27</td>
+  <td><code>Walk-forward validation window sizes.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Walk-forward validation window sizes..</td>
+</tr>
+<tr>
+  <td>28</td>
+  <td><code>Hidden defaults for derived multi-timeframe features.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Hidden defaults for derived multi-timeframe features..</td>
+</tr>
+<tr>
+  <td>29</td>
+  <td><code>Indicator and tabular feature settings.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Indicator and tabular feature settings..</td>
+</tr>
+<tr>
+  <td>30</td>
+  <td><code>Keep known keys and fail fast on misspelled config keys.</code><br><small style="color:var(--muted)">thesis/shared/config.py</small></td>
+  <td><span class="tag tag-func">Concept</span></td>
+  <td>External entry / no inbound edge</td>
+  <td>No direct outbound edge</td>
+  <td>Design note for Keep known keys and fail fast on misspelled config keys..</td>
 </tr>
 </table>
 
@@ -4985,18 +4978,18 @@ flowchart LR
     <table style="width:100%;font-size:0.85rem;">
       <tr><th>File</th><th>Coverage</th></tr>
       <tr><td><code>bao_cao/chuong3_du_lieu.md</code></td><td>61 nodes</td></tr>
-<tr><td><code>thesis/shared/config.py</code></td><td>35 nodes</td></tr>
-<tr><td><code>docs/EVALUATION.md</code></td><td>21 nodes</td></tr>
+<tr><td><code>thesis/shared/config.py</code></td><td>31 nodes</td></tr>
 <tr><td><code>bao_cao/chuong1_gioi_thieu.md</code></td><td>19 nodes</td></tr>
 <tr><td><code>thesis/dashboard/shared.py</code></td><td>14 nodes</td></tr>
 <tr><td><code>thesis/shared/ui.py</code></td><td>14 nodes</td></tr>
-<tr><td><code>stage_6_reporting/sections/data.py</code></td><td>14 nodes</td></tr>
 <tr><td><code>docs/ROADMAP.md</code></td><td>13 nodes</td></tr>
+<tr><td><code>thesis/dashboard/session.py</code></td><td>10 nodes</td></tr>
+<tr><td><code>thesis/stage_5_backtest/simulation.py</code></td><td>8 nodes</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Design Notes</h4>
-    <p>This section comes from graphify community clustering. Relationship summary: contains x193, explains x97, calls x16, method x3. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
+    <p>This section comes from graphify community clustering. Relationship summary: contains x161, explains x87, calls x14, method x3. The diagram prioritizes high-confidence calls or usage relationships; the table keeps the broader node inventory.</p>
   </div>
 </div>
 <hr>
@@ -5007,17 +5000,17 @@ flowchart LR
   <div class="card">
     <h4>Graph</h4>
     <table style="width:100%;font-size:0.85rem;">
-      <tr><td>Nodes</td><td>3131</td></tr>
-      <tr><td>Edges</td><td>4665</td></tr>
+      <tr><td>Nodes</td><td>3133</td></tr>
+      <tr><td>Edges</td><td>4671</td></tr>
       <tr><td>Hyperedges</td><td>0</td></tr>
-      <tr><td>Communities</td><td>218</td></tr>
+      <tr><td>Communities</td><td>215</td></tr>
       <tr><td>Documented Sections</td><td>15</td></tr>
     </table>
   </div>
   <div class="card">
     <h4>Edge Confidence</h4>
     <table style="width:100%;font-size:0.85rem;">
-      <tr><td>EXTRACTED</td><td>3740</td></tr>
+      <tr><td>EXTRACTED</td><td>3746</td></tr>
       <tr><td>INFERRED</td><td>925</td></tr>
       <tr><td>AMBIGUOUS</td><td>0</td></tr>
     </table>
@@ -5026,7 +5019,7 @@ flowchart LR
 
 <div style="text-align:center; padding:40px 0; color: var(--muted); font-size:0.9rem;">
   <p>thesis — Architecture Documentation</p>
-  <p>Generated: 2026-05-12 19:48 UTC · graphify callflow-html</p>
+  <p>Generated: 2026-05-13 05:06 UTC · graphify callflow-html</p>
 </div>
 
 </div><!-- .container -->
