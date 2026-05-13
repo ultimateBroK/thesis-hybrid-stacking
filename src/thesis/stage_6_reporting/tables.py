@@ -447,11 +447,22 @@ def _feature_importance_table(L: list[str], feature_importance: dict) -> None:
         return
     items = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
     model_count = sum(1 for n, _ in items if n.startswith("model_"))
+
+    # Auto-format: if max importance < 1, show 3 decimals; if < 100, show 1
+    max_imp = max(imp for _, imp in items) if items else 0
+
+    def _fmt_imp(v: float) -> str:
+        if max_imp < 1:
+            return f"{v:.3f}"
+        if max_imp < 100:
+            return f"{v:.1f}"
+        return f"{v:.0f}"
+
     L.append(_tbl_row("Rank", "Feature", "Source", "Score"))
     L.append(_tbl_row("----", "-------", "------", "-----"))
     for i, (name, imp) in enumerate(items, 1):
         src = "Model" if name.startswith("model_") else "Technical"
-        L.append(_tbl_row(str(i), f"`{name}`", src, f"{imp:.0f}"))
+        L.append(_tbl_row(str(i), f"`{name}`", src, _fmt_imp(imp)))
     L.append(
         f"Top-10: {model_count}/{len(items)} model-derived features"
         f" ({model_count / len(items) * 100:.0f}%)"

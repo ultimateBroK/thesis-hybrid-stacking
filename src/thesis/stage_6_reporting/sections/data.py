@@ -276,6 +276,18 @@ def _render_validation_methodology_section(
         if val_cfg.method == "sliding"
         else "Static train/val/test split"
     )
+
+    def _bars_human(bars: int, bars_per_year: int = 8760) -> str:
+        """Convert bar count to human-readable duration."""
+        if bars >= bars_per_year:
+            years = bars / bars_per_year
+            return f"{years:.1f}y" if years != int(years) else f"{int(years)}y"
+        months = bars / (bars_per_year / 12)
+        if months >= 1:
+            return f"{months:.1f}mo" if months != int(months) else f"{int(months)}mo"
+        weeks = bars / (bars_per_year / 52)
+        return f"{weeks:.1f}w" if weeks != int(weeks) else f"{int(weeks)}w"
+
     L.append(
         "Model evaluation uses a **walk-forward (anchored sliding-window)** "
         "cross-validation scheme to prevent look-ahead bias and simulate "
@@ -289,13 +301,14 @@ def _render_validation_methodology_section(
         _tbl_row(
             "Train window",
             f"{val_cfg.train_window_bars:,} bars"
-            f" (~{val_cfg.train_window_bars // 8760}y)",
+            f" (~{_bars_human(val_cfg.train_window_bars)})",
         )
     )
     L.append(
         _tbl_row(
             "Test window",
-            f"{val_cfg.test_window_bars:,} bars (~{val_cfg.test_window_bars // 730}mo)",
+            f"{val_cfg.test_window_bars:,} bars"
+            f" (~{_bars_human(val_cfg.test_window_bars)})",
         )
     )
     L.append(_tbl_row("Step", f"{val_cfg.step_bars:,} bars"))

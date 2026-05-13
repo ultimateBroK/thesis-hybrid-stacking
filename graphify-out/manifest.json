@@ -56,8 +56,8 @@
     "hash": "0930ececdd6d9586730ef88797c0ba21"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_4_training/walk_forward/artifacts.py": {
-    "mtime": 1778612351.6462564,
-    "hash": "dfab87a872050b09739e8ee8ca96c4ca"
+    "mtime": 1778690459.373892,
+    "hash": "e36d2d23dc24a849680c2ad51cc9ff5a"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_4_training/walk_forward/dispatcher.py": {
     "mtime": 1778562513.8375359,
@@ -76,12 +76,12 @@
     "hash": "9cd4e54d83966f2c98150583ea4f7dc2"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_4_training/walk_forward/feature_pipeline.py": {
-    "mtime": 1778612659.1707625,
-    "hash": "bc99fbcc41435b962d8bc8614bb7de80"
+    "mtime": 1778694308.2584474,
+    "hash": "87f7fe72151433e8bea820924ac3466d"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_4_training/walk_forward/predictions.py": {
-    "mtime": 1778612659.1717627,
-    "hash": "22f9693d48eae4eccb51631808a7da1e"
+    "mtime": 1778690496.8127675,
+    "hash": "5fcb227af7b2a9dc58b8f488f7269456"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_4_training/walk_forward/diagnostics.py": {
     "mtime": 1778612194.5276995,
@@ -112,8 +112,8 @@
     "hash": "2990e3deca7928d945459c9f1b0108d9"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_5_backtest/simulation.py": {
-    "mtime": 1778614185.2899253,
-    "hash": "94ccf661cfe1c6bcb701ee7e2fe259a6"
+    "mtime": 1778691997.6435199,
+    "hash": "8dec3be93e80e52068c6752e5174f2a9"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_5_backtest/strategy.py": {
     "mtime": 1778562513.8375359,
@@ -124,8 +124,8 @@
     "hash": "22a7e5edea934a9d47df7e4c9810a654"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/benchmarks.py": {
-    "mtime": 1778562513.8375359,
-    "hash": "77d6d03b70bd90e1cfafa304f57ee359"
+    "mtime": 1778693039.4766011,
+    "hash": "196609bb03d382a8d33945db079cf4c6"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/calibration.py": {
     "mtime": 1778562513.8375359,
@@ -136,12 +136,12 @@
     "hash": "e894205b8265110b69ae8825fc8d7d8a"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/comparison.py": {
-    "mtime": 1778613708.0966213,
-    "hash": "8cd32e4f9f5f3f2d41f1664740007ce7"
+    "mtime": 1778690476.9396405,
+    "hash": "4e09d71d0d7ec355ce3a0ae667953cf2"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/generation.py": {
-    "mtime": 1778614412.3633204,
-    "hash": "643a21f9ed69aab48ece550b2f021d42"
+    "mtime": 1778691018.9994044,
+    "hash": "3e443a9f81d572e16f00fa1a0de23f86"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/md_format.py": {
     "mtime": 1778562513.8385358,
@@ -152,32 +152,32 @@
     "hash": "275ed1671511bbc8d50760d8a5cee0d8"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/tables.py": {
-    "mtime": 1778614646.3025167,
-    "hash": "083655c0c1b8eecd134c6a817e411f1b"
+    "mtime": 1778693176.8092835,
+    "hash": "bfc5547335f865a10d998c416d035967"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/data_quality.py": {
     "mtime": 1778607414.1736245,
     "hash": "adac4be08a76d08843d1fdd9882d7ed2"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/sections/__init__.py": {
-    "mtime": 1778562513.8385358,
-    "hash": "ffd4ce20be28807b08a6268db0001b76"
+    "mtime": 1778690993.8095093,
+    "hash": "872160737b4fb580c1c060e2286d50fd"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/sections/assess.py": {
     "mtime": 1778562513.8385358,
     "hash": "c6a2b3cb1c03667c988f4f1d36475631"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/sections/backtest.py": {
-    "mtime": 1778612886.2361012,
-    "hash": "73385deac9b1df7ad0563a4e6cb9bb6f"
+    "mtime": 1778690921.8664174,
+    "hash": "d282687d01dda10631ef954cac9192a4"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/sections/data.py": {
-    "mtime": 1778613743.1858995,
-    "hash": "37edf420265853e0e06484552b0483b4"
+    "mtime": 1778693181.8922346,
+    "hash": "2dcada1d41d1fa6bf8872de4a2d9f539"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/stage_6_reporting/sections/oof.py": {
-    "mtime": 1778612886.237101,
-    "hash": "5eb28086498d6debc8dafaad1ae34bee"
+    "mtime": 1778693471.7590172,
+    "hash": "f3285541dcbf7ec0073fd4bf6686fb10"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/charts/__init__.py": {
     "mtime": 1778562513.8355358,
@@ -192,8 +192,8 @@
     "hash": "bbc90eca15d3a0cec3db216077448e05"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/charts/loader.py": {
-    "mtime": 1778562513.8355358,
-    "hash": "6fa43ab5b39583adc6ab5b3d2a7b0bd4"
+    "mtime": 1778690468.9147432,
+    "hash": "b7487822f5304ba74e7e8065b7486774"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/charts/model.py": {
     "mtime": 1778562513.8355358,
@@ -248,8 +248,8 @@
     "hash": "6ca09e44207e7e992aeed26ec72f388e"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/shared/config.py": {
-    "mtime": 1778614986.3071542,
-    "hash": "0f80af593b78567595e69d8011aa920d"
+    "mtime": 1778690456.8818986,
+    "hash": "c5f4e8461046ada67e8d459dd14d10c5"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/shared/constants.py": {
     "mtime": 1778614986.314941,
@@ -264,8 +264,8 @@
     "hash": "92f6ba270e3c8f241b4c43591de77cb3"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/shared/session_paths.py": {
-    "mtime": 1778562513.8365357,
-    "hash": "28ba62594a728fdc668795dfb9fd0d1c"
+    "mtime": 1778690457.5705445,
+    "hash": "95a66a9764d9aede81bd9651563fa238"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/shared/ui.py": {
     "mtime": 1778562513.8365357,
@@ -372,8 +372,8 @@
     "hash": "543625eef67d2d71c50592ddf855d1f0"
   },
   "/home/ultimatebrok/Downloads/thesis/tests/unit/test_report.py": {
-    "mtime": 1778562513.8395357,
-    "hash": "168347a6744504a9ebc5a2753e5baf42"
+    "mtime": 1778693503.7634094,
+    "hash": "1ea9508466c206a4f672dd749fe099a6"
   },
   "/home/ultimatebrok/Downloads/thesis/tests/unit/test_schemas.py": {
     "mtime": 1778612659.1697626,
@@ -460,7 +460,7 @@
     "hash": "5c067cafc33a6740d786f24e9d7f793d"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/coverage_html_cb_dd2e7eb5.js": {
-    "mtime": 1778612977.4368682,
+    "mtime": 1778693520.416532,
     "hash": "47d6ea8f87058d0cea6b52102adf1b13"
   },
   "/home/ultimatebrok/Downloads/thesis/CLAUDE.md": {
@@ -594,6 +594,30 @@
   "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260513_023811/backtest/backtest_chart.html": {
     "mtime": 1778614766.2453153,
     "hash": "1b8f43dcc21a5f59581ddd2ddb32d206"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_000644/reports/thesis_report.md": {
+    "mtime": 1778692412.7853203,
+    "hash": "cafc9178545b5eab86d7e9c6391ae1ca"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_000644/reports/model_evaluation.md": {
+    "mtime": 1778692068.383104,
+    "hash": "38c1478c6ae7290088f7dae46853e836"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_000644/backtest/backtest_chart.html": {
+    "mtime": 1778692067.7352662,
+    "hash": "4dc9bdf1314d1afe71b1e085cbdbf056"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_003350/reports/thesis_report.md": {
+    "mtime": 1778693694.4497528,
+    "hash": "1643e3c09edc393158b5f09dd409f161"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_003350/reports/model_evaluation.md": {
+    "mtime": 1778693694.4499035,
+    "hash": "f34ea41ee41a9e63a638c0caa8aae839"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_003350/backtest/backtest_chart.html": {
+    "mtime": 1778693693.7020502,
+    "hash": "8493a8e4d8d6aa74e4627ff6d7a2507a"
   },
   "/home/ultimatebrok/Downloads/thesis/docs/ARCHITECTURE.md": {
     "mtime": 1778615923.4675117,
@@ -952,16 +976,16 @@
     "hash": "9607d83e9da38978b1596c28f3c97a84"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/index.html": {
-    "mtime": 1778612977.5474603,
-    "hash": "918c7c38fa2c58f9c05b0d00057ae9ad"
+    "mtime": 1778693520.4337425,
+    "hash": "c76df67cf08e781b103f348aa0c315dd"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/function_index.html": {
-    "mtime": 1778612977.5947053,
-    "hash": "88541fce324461539d5e8aedb7553d13"
+    "mtime": 1778693520.5077226,
+    "hash": "817f2a7e3932447c1e27211697d4ff76"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/class_index.html": {
-    "mtime": 1778612977.597301,
-    "hash": "4a369b1227e87f6630ce4c4424fc762f"
+    "mtime": 1778693520.5105574,
+    "hash": "4b6bfcaea3de88a13f19662d39d79095"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_ae5f758b69ce24d3___init___py.html": {
     "mtime": 1778612818.0278723,
@@ -1036,16 +1060,16 @@
     "hash": "3a325b0e60b2fd5eaf49b90a3a279b6b"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_85a190c68ffe4ce1___init___py.html": {
-    "mtime": 1778565645.4422822,
-    "hash": "8c9e3a0a35901b7618eb2d2604ec3412"
+    "mtime": 1778693486.7452912,
+    "hash": "eff7be6be5d5dd483fc603594d4cd24b"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_85a190c68ffe4ce1__impl_py.html": {
     "mtime": 1778066010.8469913,
     "hash": "c9e5baa52a114efd2812b76703f6f69c"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b___init___py.html": {
-    "mtime": 1778565645.4786515,
-    "hash": "7037f91033f708a218a76d8845ef3ed8"
+    "mtime": 1778693486.7649999,
+    "hash": "30861619a3514e8cb6319b6182d3b643"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b__impl_py.html": {
     "mtime": 1778066011.005888,
@@ -1236,36 +1260,36 @@
     "hash": "1bfca0ab83c402fe28cee342054232f6"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_008bc6006c65a58c___init___py.html": {
-    "mtime": 1778565645.5510237,
-    "hash": "a273d601549e81132c7444f7965d68ca"
+    "mtime": 1778693486.830462,
+    "hash": "c6983b1fed49ad534545d50cc4f65c77"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_008bc6006c65a58c_assess_py.html": {
-    "mtime": 1778612818.7046463,
-    "hash": "afb75c07991bfa41786b35dd0ca2898c"
+    "mtime": 1778693486.8420455,
+    "hash": "1c8be0ba263f5db09811ce51d690ada7"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_008bc6006c65a58c_backtest_py.html": {
-    "mtime": 1778612957.3585665,
-    "hash": "7f4e9e5bc51a393a5435a78c22d03dd5"
+    "mtime": 1778693486.8566523,
+    "hash": "f3d80115d65c6c01bc0997d67a04bd93"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_008bc6006c65a58c_data_py.html": {
-    "mtime": 1778612957.3705506,
-    "hash": "bb2c344109913b10bedf1d1516b40586"
+    "mtime": 1778693486.8812954,
+    "hash": "d9fa350a1e450c8db60570fabcde0099"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_008bc6006c65a58c_oof_py.html": {
-    "mtime": 1778612957.381656,
-    "hash": "6adc6c919330b0cceb85cfc9ab1440d7"
+    "mtime": 1778693486.9065547,
+    "hash": "c88d1567c0836a3627721b514188b976"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db___init___py.html": {
     "mtime": 1778612818.2738485,
     "hash": "a4c75ab64ef07ac78b7cc94521dc9375"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_artifacts_py.html": {
-    "mtime": 1778612977.4857557,
-    "hash": "91eb158e1a987383bd87472c42570d4a"
+    "mtime": 1778693486.7034218,
+    "hash": "dc395373830543f04a46fb36aab10fe6"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_dispatcher_py.html": {
-    "mtime": 1778612977.4949028,
-    "hash": "bd994a1d5d81736feff26c810f1c1d3a"
+    "mtime": 1778693486.712933,
+    "hash": "6081d0397462adf74c698c78d8c14640"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_hybrid_py.html": {
     "mtime": 1778483313.9075646,
@@ -1312,8 +1336,8 @@
     "hash": "cff455659f2f19e487a41261603eeb2a"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_3dde26c5bf1a118f_loader_py.html": {
-    "mtime": 1778612818.072848,
-    "hash": "5950a7e61e115c33c307862e8c124663"
+    "mtime": 1778693486.6325285,
+    "hash": "18f98e8b1a9b38ba25fefcdc06f70803"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_6dce48d5359873d8___init___py.html": {
     "mtime": 1778122823.9207788,
@@ -1336,8 +1360,8 @@
     "hash": "c3aacee0b133f0cd8acccaf1ca46248e"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_06d9a47b8b41e419_utils_py.html": {
-    "mtime": 1778612977.468148,
-    "hash": "137f267f6a07ac31251a300382e9f892"
+    "mtime": 1778693486.691356,
+    "hash": "f7e3fc6d2d6d8214ee03c5cf64286a00"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_ad5f605828d00ba2_impl_py.html": {
     "mtime": 1778067220.9938447,
@@ -1352,20 +1376,20 @@
     "hash": "ea9f15055be42f15142e4f2110a87e77"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_29e7ab7b00495022_baselines_py.html": {
-    "mtime": 1778612977.4524941,
-    "hash": "6a5e5266d2a4d2f1c42ca2f76322351c"
+    "mtime": 1778693486.6816185,
+    "hash": "ca0dbfe9eca7bd96fd3dab3045174267"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_29e7ab7b00495022_validation_py.html": {
-    "mtime": 1778612977.4783947,
-    "hash": "7dbf1001d7e83baf0cc151a55cdade2f"
+    "mtime": 1778693486.697703,
+    "hash": "addb5e64efaf3853aa922439fc375198"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_85a190c68ffe4ce1_impl_py.html": {
     "mtime": 1778067221.267369,
     "hash": "f4382d2a1ad9774f88dbb3f91a69b5dd"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_85a190c68ffe4ce1_persistence_py.html": {
-    "mtime": 1778612818.5344825,
-    "hash": "b21a0e9174c5bb146450133b36668721"
+    "mtime": 1778693486.7559214,
+    "hash": "d9987c459180add8a60e4284adc5db18"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_85a190c68ffe4ce1_runners_py.html": {
     "mtime": 1778612818.542195,
@@ -1376,8 +1400,8 @@
     "hash": "08ffa82193d7e0fb02fe379ac62adcef"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_benchmarks_py.html": {
-    "mtime": 1778612818.5807712,
-    "hash": "402e2a0efddcf1ff404cf26cd1ad1164"
+    "mtime": 1778693486.773924,
+    "hash": "dc5f8004e24b5ba423630f34cc172659"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_calibration_py.html": {
     "mtime": 1778612818.5929358,
@@ -1388,24 +1412,24 @@
     "hash": "82f1b6d97714ba235bfb65004328833e"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_comparison_py.html": {
-    "mtime": 1778612818.6281028,
-    "hash": "ca0352c544661e937162721a7afe6496"
+    "mtime": 1778693486.7856748,
+    "hash": "23e81b36b452bbf81e04eb60425e91b6"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_data_quality_py.html": {
-    "mtime": 1778612818.648323,
-    "hash": "5f351a3bb838f8e8ebdb98da40edac70"
+    "mtime": 1778693486.797411,
+    "hash": "3e751498e67f4e1c898d69688a3ad210"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_impl_py.html": {
     "mtime": 1778067221.3877752,
     "hash": "6c9a09a46b51199510853b0e86944801"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_model_metrics_py.html": {
-    "mtime": 1778612977.5427058,
-    "hash": "ebc8155f5eaf41ba7f8a9e7b4fb845e5"
+    "mtime": 1778693486.8282976,
+    "hash": "3af46fbc9cc6d661659cac96c76e34e9"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_tables_py.html": {
-    "mtime": 1778612957.4054594,
-    "hash": "3b70f191facb2f0b5562ca4941f470f4"
+    "mtime": 1778693486.947703,
+    "hash": "738d159f1dd1e0647cee80d94b069107"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_3dde26c5bf1a118f_shared_py.html": {
     "mtime": 1778612818.0837507,
@@ -1416,16 +1440,16 @@
     "hash": "83fc943c75515b0943e3030648fe8177"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_config_py.html": {
-    "mtime": 1778612818.101161,
-    "hash": "7fdde61a195469881a483d2e4c1b4e04"
+    "mtime": 1778693486.6457453,
+    "hash": "ea01696acbb8fdf3563f535326527054"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_constants_py.html": {
-    "mtime": 1778612818.1067426,
-    "hash": "37416f34e39c485dee279248640b2c23"
+    "mtime": 1778693486.6503978,
+    "hash": "48b9d50864a2419d21cd2931283ee49c"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_session_paths_py.html": {
-    "mtime": 1778612818.1373217,
-    "hash": "2bf8c6286749c197bad0da64f14cf926"
+    "mtime": 1778693486.6763318,
+    "hash": "6d25bb4216f48c4d9b4db2575354a891"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_ui_py.html": {
     "mtime": 1778612818.142667,
@@ -1452,28 +1476,28 @@
     "hash": "2d0d704b0d1bafd3d6c6c08570130e5e"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_85a190c68ffe4ce1_simulation_py.html": {
-    "mtime": 1778612818.5504744,
-    "hash": "dd0c8361da4c59dacae7cab83418a53d"
+    "mtime": 1778693486.7632058,
+    "hash": "4b34d0857e371483a8f80e33742cb80f"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_generation_py.html": {
-    "mtime": 1778612957.3321059,
-    "hash": "143f7efc5cd87051a2caf4319f6ed70f"
+    "mtime": 1778693486.8141484,
+    "hash": "2e6ceb67d990f276eb7b79708f4af8c1"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_gru_only_py.html": {
     "mtime": 1778132937.6749678,
     "hash": "4e620a0603feb47e628ce66edd290f32"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_data_quality_py.html": {
-    "mtime": 1778612818.120094,
-    "hash": "396e092eaa253240bed5c2f155c42945"
+    "mtime": 1778693486.661347,
+    "hash": "c7d934fc0173c29de043fa014114e14b"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_feature_registry_py.html": {
     "mtime": 1778612818.123456,
     "hash": "554547d70378a1bb263f301725c92441"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_schemas_py.html": {
-    "mtime": 1778612818.1344597,
-    "hash": "036d610efb124aa2f7e865aeeb52005e"
+    "mtime": 1778693486.674365,
+    "hash": "352bb595875f10fc872be0721ce50430"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_gru_py.html": {
     "mtime": 1778229315.4037752,
@@ -1492,8 +1516,8 @@
     "hash": "8156a1ec8b37c1a86437bbae11f4de3a"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_md_format_py.html": {
-    "mtime": 1778612818.6806595,
-    "hash": "3ba1f7d309dea2db4f11b28dc2557c17"
+    "mtime": 1778693486.8165922,
+    "hash": "c739a67d5a22e9adba7e061460be8277"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_a89bcc72e2cc631b_improvement_py.html": {
     "mtime": 1778161553.5329773,
@@ -1504,64 +1528,64 @@
     "hash": "820b599d1f42488ae2f651564d4cbddf"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_stacking_py.html": {
-    "mtime": 1778612977.5276058,
-    "hash": "f48f551336724526a04d8afa84c4a33b"
+    "mtime": 1778693486.7413821,
+    "hash": "0d8db2272b0387fd72278c75123676a5"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_targets_py.html": {
     "mtime": 1778612818.5226705,
     "hash": "d6ddb63d6dc38afae8a3e069082eca79"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_metrics_py.html": {
-    "mtime": 1778612977.4426558,
-    "hash": "676c21129e043a6533fb5cef40ed12b0"
+    "mtime": 1778693486.6648028,
+    "hash": "82000c56ce310720d9cab1ae5040cf64"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_diagnostics_py.html": {
-    "mtime": 1778612977.4930148,
-    "hash": "72ddcec87675ded81c8c1c121ef260a4"
+    "mtime": 1778693486.7112732,
+    "hash": "ee4985ba859e83ae60a97e0022eddd83"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_feature_pipeline_py.html": {
-    "mtime": 1778612977.4986029,
-    "hash": "c3e09f25ba2292ac07b2c3bd4a1d097f"
+    "mtime": 1778693486.7164352,
+    "hash": "fb38cdd4ce9057a9d0de8307b7dd9915"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_loop_py.html": {
     "mtime": 1778612818.314487,
     "hash": "99f32f1fd1f828c31c8f0fd08f475c5a"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/z_43b788ad402264db_predictions_py.html": {
-    "mtime": 1778612977.5052483,
-    "hash": "5c0dd2ce41d044516610b4aae83a4550"
+    "mtime": 1778693486.7233841,
+    "hash": "7bc2dac9a2f10e16b3414333b05d591f"
   },
   "/home/ultimatebrok/Downloads/thesis/bao_cao/README.md": {
-    "mtime": 1778616183.7163897,
-    "hash": "ff45e69f5603a0599b1f507b01710fac"
+    "mtime": 1778657867.5720272,
+    "hash": "691e1ebc0b401fbde536c3efd44bfa20"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong1_gioi_thieu.md": {
-    "mtime": 1778562513.8093734,
-    "hash": "f00144942aaa62dc3aa7ec70086f2187"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/mo_dau.md": {
+    "mtime": 1778689284.2188249,
+    "hash": "6af274adb0c644ee0b8b05a4c78c3f2c"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong2_co_so_ly_thuyet.md": {
-    "mtime": 1778562513.8093734,
-    "hash": "5848f9ca4cf0145cc282dc2162c522c8"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong1_tong_quan.md": {
+    "mtime": 1778688877.1787946,
+    "hash": "c1294d2c9a48e0cb4fb686b4c3e7ddc5"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong3_du_lieu.md": {
-    "mtime": 1778562513.8093734,
-    "hash": "09b01e534f9645bd80e2cb38fe161c86"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong2_co_so_li_luan_va_cong_nghe.md": {
+    "mtime": 1778688903.7967231,
+    "hash": "477527372b4b86958bbbde63a4e58742"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong4_phuong_phap.md": {
-    "mtime": 1778616191.8012555,
-    "hash": "832b38ae35860fc72951d0fd3445b30f"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong3_du_lieu_va_phuong_phap.md": {
+    "mtime": 1778689134.1211085,
+    "hash": "ea5575bb5064003ca66f248e71bc21e7"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong5_thuc_nghiem.md": {
-    "mtime": 1778616259.9181128,
-    "hash": "3bd6aa5f54c21c0e8ca3a6271c17a27c"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong5_minh_hoa_ung_dung.md": {
+    "mtime": 1778689192.587059,
+    "hash": "b1215904f74b95a4140350fcfffc87bd"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong6_minh_hoa.md": {
-    "mtime": 1778616296.2274954,
-    "hash": "c488c2662ad1aa37ee71ae60e183f338"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong4_thuc_nghiem_va_ket_qua.md": {
+    "mtime": 1778689235.7578385,
+    "hash": "eaf5f3b8a039c38606853ec6f04e9f10"
   },
-  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong7_ket_luan.md": {
-    "mtime": 1778616332.014882,
-    "hash": "a8209f4f7e3a7a486a9bcd04e698db24"
+  "/home/ultimatebrok/Downloads/thesis/bao_cao/chuong6_ket_luan_va_kien_nghi.md": {
+    "mtime": 1778655863.8263826,
+    "hash": "1f8330f0c9ec8e119525c1989bc82eab"
   },
   "/home/ultimatebrok/Downloads/thesis/docs/_build/latex/mermaid-a38c9adb499e449662cc361a737db1d3887654ab.pdf": {
     "mtime": 1778523947.1341565,
@@ -1572,7 +1596,7 @@
     "hash": "5ece4aef42ee7160ee4c4640c196494f"
   },
   "/home/ultimatebrok/Downloads/thesis/bao_cao/tai_lieu_tham_khao.md": {
-    "mtime": 1778562513.8093734,
+    "mtime": 1778652890.6073365,
     "hash": "8ae04a60d9975ce28a962c0740205cb9"
   },
   "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260512_131405/reports/equity_curve.png": {
@@ -1631,6 +1655,22 @@
     "mtime": 1778614766.6143079,
     "hash": "d48340f0635fcf3a1541569bb88926f6"
   },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_000644/reports/equity_curve.png": {
+    "mtime": 1778692068.0150356,
+    "hash": "0b24ccfa5ba0b4ab9be5c6d3cf93065c"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_000644/reports/feature_importance.png": {
+    "mtime": 1778692068.099035,
+    "hash": "d48340f0635fcf3a1541569bb88926f6"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_003350/reports/equity_curve.png": {
+    "mtime": 1778693694.019052,
+    "hash": "0b24ccfa5ba0b4ab9be5c6d3cf93065c"
+  },
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260514_003350/reports/feature_importance.png": {
+    "mtime": 1778693694.1210527,
+    "hash": "d48340f0635fcf3a1541569bb88926f6"
+  },
   "/home/ultimatebrok/Downloads/thesis/docs/_build/html/_static/file.png": {
     "mtime": 1740956636.0,
     "hash": "ba0c95766a77a6c598a7ca542f1db738"
@@ -1648,11 +1688,11 @@
     "hash": "912ec66d7572ff821749319396470bde"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/keybd_closed_cb_900cfef5.png": {
-    "mtime": 1778612977.4370863,
+    "mtime": 1778693520.416703,
     "hash": "8285ae9f3a2652fbb7ffb8575590d91f"
   },
   "/home/ultimatebrok/Downloads/thesis/htmlcov/favicon_32_cb_c827f16f.png": {
-    "mtime": 1778612977.4372282,
+    "mtime": 1778693520.41678,
     "hash": "fe1c45ede5eaa2eaa3aff71f210afb26"
   }
 }

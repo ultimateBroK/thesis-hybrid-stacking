@@ -63,12 +63,14 @@ def fit_static_feature_pipeline(
     try:
         feature_pipeline.fit(X_train, y_train)
         preselect = feature_pipeline[:-1].transform(X_train)
-        preselect_cols = feature_pipeline[:-1].get_feature_names_out()
+        preselect_cols = [
+            str(col) for col in feature_pipeline[:-1].get_feature_names_out()
+        ]
         if not isinstance(preselect, pl.DataFrame):
             preselect = pl.DataFrame(preselect, schema=preselect_cols)
         selected_mask = feature_pipeline.named_steps["select_k_best"].get_support()
         selected_cols = [
-            str(col)
+            col
             for col, keep in zip(preselect_cols, selected_mask, strict=False)
             if keep
         ]

@@ -363,6 +363,12 @@ def _make_predictions_parquet(path: Path, rows: list[dict]) -> None:
     pl.DataFrame(rows).write_parquet(path)
 
 
+def _make_predictions_csv(path: Path, rows: list[dict]) -> None:
+    """Write a synthetic predictions CSV file (matches production format)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame(rows).write_csv(path)
+
+
 @pytest.mark.unit
 class TestOofVsOosSection:
     """Tests for _render_oof_vs_oos_section."""
@@ -374,8 +380,7 @@ class TestOofVsOosSection:
         L: list[str] = []
         _render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
-        assert "unavailable" in rendered.lower()
-        assert "session directory" in rendered.lower()
+        assert "session directory unavailable" in rendered.lower()
 
     def test_missing_wf_history_shows_unavailable(self, tmp_path: Path) -> None:
         """Graceful message when walk_forward_history.json is missing."""
@@ -384,8 +389,7 @@ class TestOofVsOosSection:
         L: list[str] = []
         _render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
-        assert "unavailable" in rendered.lower()
-        assert "walk-forward history" in rendered.lower()
+        assert "walk-forward history unavailable" in rendered.lower()
 
     def test_empty_window_details_shows_unavailable(self, tmp_path: Path) -> None:
         """Graceful message when window_details is empty."""
@@ -396,8 +400,7 @@ class TestOofVsOosSection:
         L: list[str] = []
         _render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
-        assert "unavailable" in rendered.lower()
-        assert "no window details" in rendered.lower()
+        assert "no window details available" in rendered.lower()
 
     def test_oof_only_with_no_oos_predictions(self, tmp_path: Path) -> None:
         """Renders OOF metrics with N/A for OOS when predictions missing."""
@@ -439,7 +442,7 @@ class TestOofVsOosSection:
 
         assert "OOF vs OOS Generalization Check" in rendered
         assert "OOF (Walk-Forward)" in rendered
-        assert "OOS (2024-2026)" in rendered
+        assert "OOS" in rendered
         # OOF accuracy: (0.55*100 + 0.57*100) / 200 = 0.56 = 56.0%
         assert "56.0%" in rendered
         # OOS should be N/A
@@ -471,10 +474,10 @@ class TestOofVsOosSection:
             ],
         )
 
-        # Create predictions parquet with OOS date range rows
-        preds_path = tmp_path / "predictions" / "final_predictions.parquet"
+        # Create predictions CSV with OOS date range rows (code reads CSV)
+        preds_path = tmp_path / "predictions" / "final_predictions.csv"
         cfg.paths.predictions = str(preds_path)
-        _make_predictions_parquet(
+        _make_predictions_csv(
             preds_path,
             [
                 {
@@ -517,12 +520,12 @@ class TestOofVsOosSection:
 
         assert "OOF vs OOS Generalization Check" in rendered
         assert "OOF (Walk-Forward)" in rendered
-        assert "OOS (2024-2026)" in rendered
+        assert "OOS" in rendered
         assert "Delta" in rendered
         # OOF accuracy: 55.0%
         assert "55.0%" in rendered
-        # OOS: 5 rows in range, 4 correct (first 5 rows, last 4 correct)
-        # true vs pred: row0 (-1==-1)✓, row1 (0!=-1)✗, row2 (1==1)✓, row3 (0==0)✓, row4 (0==0)✓
+        # OOS: 5 rows in range, 4 correct
+        # true vs pred: -1==✓, 0!=-1✗, 1==1✓, 0==0✓, 0==0✓
         # accuracy = 4/5 = 0.80 = 80.0%
         assert "80.0%" in rendered
         assert "Short" in rendered
@@ -534,7 +537,7 @@ class TestOofVsOosSection:
     def test_no_windows_with_positive_test_rows_returns_none(
         self, tmp_path: Path
     ) -> None:
-        """All windows have test_rows=0, returns N/A for OOF."""
+        """All windows have test_rows=0, shows insufficient data message."""
         cfg = Config()
         cfg.paths.session_dir = str(tmp_path)
 
@@ -549,8 +552,7 @@ class TestOofVsOosSection:
         rendered = "\n".join(L)
 
         assert "OOF vs OOS Generalization Check" in rendered
-        # All metric values should be N/A since total_test_rows == 0
-        assert rendered.count("N/A") >= 5  # Accuracy + Macro F1 + 3 class F1s
+        assert "insufficient data" in rendered.lower()
 
 
 # ---------------------------------------------------------------------------

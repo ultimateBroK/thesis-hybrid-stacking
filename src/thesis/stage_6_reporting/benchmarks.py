@@ -269,7 +269,9 @@ def compute_benchmark_comparison(
             "return_pct": bh_return,
             "sharpe": _annualized_sharpe(bar_returns),
             "max_dd_pct": _max_drawdown_pct(bh_equity),
-            "win_rate_pct": float("nan"),
+            "win_rate_pct": float((bar_returns > 0).sum() / len(bar_returns) * 100)
+            if len(bar_returns) > 0
+            else 0.0,
             "num_trades": 1,
         },
         {
@@ -277,7 +279,9 @@ def compute_benchmark_comparison(
             "return_pct": al_return,
             "sharpe": _annualized_sharpe(al_returns),
             "max_dd_pct": _max_drawdown_pct(al_equity),
-            "win_rate_pct": float("nan"),
+            "win_rate_pct": float((al_returns > 0).sum() / len(al_returns) * 100)
+            if len(al_returns) > 0
+            else 0.0,
             "num_trades": 1,
         },
         {

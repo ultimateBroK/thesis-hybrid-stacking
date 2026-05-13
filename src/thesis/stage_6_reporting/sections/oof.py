@@ -31,10 +31,22 @@ def _render_oof_vs_oos_section(
     # ── Load walk-forward history ──
     session_dir = config.paths.session_dir
     if not session_dir:
+        if heading:
+            L.append(heading)
+            L.append("")
+        L.append("*Session directory unavailable — OOF/OOS comparison skipped.*")
+        L.append("")
         return
 
     wf_path = Path(session_dir) / "reports" / "walk_forward_history.json"
     if not wf_path.exists():
+        if heading:
+            L.append(heading)
+            L.append("")
+        L.append(
+            "*Walk-forward history unavailable — OOF/OOS comparison skipped.*"
+        )
+        L.append("")
         return
 
     try:
@@ -47,6 +59,11 @@ def _render_oof_vs_oos_section(
 
     window_details = wf.get("window_details", [])
     if not window_details:
+        if heading:
+            L.append(heading)
+            L.append("")
+        L.append("*No window details available — OOF/OOS comparison skipped.*")
+        L.append("")
         return
 
     # ── Aggregate OOF metrics across windows (weighted by test_rows) ──
@@ -95,11 +112,51 @@ def _render_oof_vs_oos_section(
     oos_accuracy: float | None = None
     oos_macro_f1: float | None = None
     oos_class_f1: dict[str, float | None] = {"-1": None, "0": None, "1": None}
+    oos_start: str = ""
+    oos_end: str = ""
 
     preds_path = Path(config.paths.predictions)
     if preds_path.exists():
-        oos_start = config.backtest.oob_start_date or config.data_range.end
-        oos_end = config.backtest.oob_end_date or config.data_range.end
+        # Determine OOS date range:
+        # 1. Explicit oob_start_date/oob_end_date from config
+        # 2. Fallback: use data_range.end as boundary (everything after is OOS)
+        # 3. Walk-forward: load backtest results to find actual test period
+        oos_start = config.backtest.oob_start_date or ""
+        oos_end = config.backtest.oob_end_date or ""
+
+        # Walk-forward fallback: use backtest period from metrics
+        if not oos_start:
+            bt_path = (
+                Path(config.paths.session_dir) / "backtest" / "backtest_results.json"
+                if config.paths.session_dir
+                else None
+            )
+            if bt_path and bt_path.exists():
+                try:
+                    bt_data = json.loads(bt_path.read_text())
+                    bt_metrics = bt_data.get("metrics", {})
+                    bt_start = bt_metrics.get("start")
+                    if bt_start:
+                        # Use second half of backtest period as "OOS proxy"
+                        # This gives a more recent, harder test
+                        bt_end = bt_metrics.get("end")
+                        if bt_end:
+                            from datetime import timedelta
+
+                            start_s = _parse_date(str(bt_start)[:19])
+                            end_s = _parse_date(str(bt_end)[:19])
+                            if start_s and end_s:
+                                total_span = end_s - start_s
+                                mid_point = start_s + timedelta(
+                                    days=total_span.days // 2
+                                )
+                                oos_start = mid_point.strftime("%Y-%m-%d %H:%M:%S")
+                                oos_end = str(bt_end)[:19]
+                except (OSError, json.JSONDecodeError):
+                    logger.warning(
+                        "Failed to load backtest results for OOS range",
+                        exc_info=True,
+                    )
 
         if oos_start and oos_end:
             try:
@@ -183,6 +240,14 @@ def _render_oof_vs_oos_section(
         and all(v is None for v in oos_class_f1.values())
     )
     if oos_all_none and oof_accuracy is None and oof_macro_f1 is None:
+        if heading:
+            L.append(heading)
+            L.append("")
+        L.append(
+            "*Insufficient data for OOF/OOS comparison"
+            " — no test predictions available.*"
+        )
+        L.append("")
         return
 
     if heading:
@@ -191,12 +256,16 @@ def _render_oof_vs_oos_section(
     L.append(
         "*OOF (Out-Of-Fold) metrics are aggregated across all walk-forward "
         "cross-validation windows. OOS (Out-Of-Sample) metrics are computed "
-        "from the held-out test period (2024-01 to 2026-03). A meaningful gap "
-        "between OOF and OOS suggests overfitting; close alignment suggests "
-        "the model generalizes well.*"
+        f"from the later half of the backtest period"
+        f"{' (' + oos_start[:10] + ' to ' + oos_end[:10] + ')' if oos_start else ''}. "
+        "A meaningful gap between OOF and OOS suggests overfitting; close "
+        "alignment suggests the model generalizes well.*"
     )
     L.append("")
-    L.append(_tbl_row("Metric", "OOF (Walk-Forward)", "OOS (2024-2026)", "Delta"))
+    oos_col_label = (
+        f"OOS ({oos_start[:4]}–{oos_end[:4]})" if oos_start and oos_end else "OOS"
+    )
+    L.append(_tbl_row("Metric", "OOF (Walk-Forward)", oos_col_label, "Delta"))
     L.append(_tbl_row("------", "-------------------", "----------------", "-----"))
 
     def _metric_row(name: str, oof_val: float | None, oos_val: float | None) -> None:
