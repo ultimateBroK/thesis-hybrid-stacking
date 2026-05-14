@@ -19,9 +19,7 @@ from thesis.shared.data_quality import (
 
 logger = logging.getLogger("thesis.prepare")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# STEP 1: DISCOVER
-# ──────────────────────────────────────────────────────────────────────────────
+# DISCOVER
 
 
 def _discover_files(raw_dir: Path, ohlcv_path: Path) -> list[Path]:
@@ -40,9 +38,7 @@ def _discover_files(raw_dir: Path, ohlcv_path: Path) -> list[Path]:
     return files
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# STEP 2: AGGREGATE
-# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATE
 
 
 def _parse_dt(value: str, tz: str) -> pl.Expr:
@@ -133,9 +129,7 @@ def _aggregate_all(files: list[Path], group_every: str) -> pl.DataFrame:
     return pl.concat(bars, how="vertical").sort("timestamp")
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# STEP 3: CLEAN
-# ──────────────────────────────────────────────────────────────────────────────
+# CLEAN
 
 
 def _dedupe_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
@@ -177,9 +171,7 @@ def _filter_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
     return ohlcv
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# STEP 4: PERSIST
-# ──────────────────────────────────────────────────────────────────────────────
+# PERSIST
 
 
 def _log_gap(ohlcv: pl.DataFrame, group_ms: int) -> None:

@@ -61,38 +61,38 @@ def generate_features(config: Config) -> None:
     OhlcvSchema.validate(df)
     _validate_ohlcv_input(df, config)
 
-    # Stage 1: core indicators — ATR must come first (many divide by it)
+    # core indicators — ATR must come first (many divide by it)
     df = add_atr(df, config)
     df = add_rsi(df, config)
     df = add_adx(df, config)
 
-    # Stage 2: multi-timeframe ATR ratio + percentile
+    # multi-timeframe ATR ratio + percentile
     df = add_atr_ratio(df, config)
     df = add_atr_percentile(df, config)
 
-    # Stage 3: EMA features — depend on ATR
+    # EMA features — depend on ATR
     df = add_ema_slope(df, config)
     df = add_ema_crossover(df, config)
 
-    # Stage 4: price-action + VWAP/pivot (session-anchored)
+    # price-action + VWAP/pivot (session-anchored)
     df = add_price_action(df, config)
     df = add_price_dist_ratio(df, config)
     df = add_vwap(df)
     df = add_pivot_position(df)
     df = add_session_dummies(df)
 
-    # Stage 5: volume + returns — rolling, no cross-feature dependencies
+    # volume + returns — rolling, no cross-feature dependencies
     df = add_volume_zscore(df, config)
     df = add_log_returns(df, config)
     df = add_high_low_range(df, config)
 
-    # Stage 6: MACD — uses ATR column
+    # MACD — uses ATR column
     df = add_macd(df, config)
 
-    # Stage 7: OHLCV z-score normalization
+    # OHLCV z-score normalization
     df = add_ohlcv_norm(df, config)
 
-    # Stage 8: regime features — gated behind config flag
+    # regime features — gated behind config flag
     if config.features.enable_regime_features:
         df = add_volatility_regime(df, config)
         df = add_trend_regime(df, config)
