@@ -1,7 +1,7 @@
 """Stage 3: asymmetric direction-barrier labeling.
 
-Encodes labels as ``+1`` (long), ``0`` (hold), ``-1`` (short), with ``-2`` as
-censored (insufficient forward horizon).
+Labels: +1 long / 0 hold / -1 short / -2 censored.
+Triple-barrier: upper (TP), lower (SL), horizon (time).
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from numba import njit
 import numpy as np
 import polars as pl
 
@@ -20,21 +19,23 @@ from thesis.shared.constants import (
     CENSORED_LABEL,
     LABEL_PROFITABILITY_WARN_PCT,
     ROUNDTRIP_MULT,
-    SAMPLE_WEIGHT_MIN,
 )
-from thesis.shared.schemas import FeaturesSchema, LabelsSchema
+from thesis.shared.schemas import LabelsSchema
 from thesis.shared.ui import console
+from thesis.stage_3_labels._label_numba import (
+    compute_average_uniqueness,
+    compute_event_end,
+)
 
 logger = logging.getLogger("thesis.labels")
 
 
 def generate_labels(config: Config) -> None:
-    """Compute direction-barrier labels and write parquet output."""
-    df, atr_col = _load_inputs(config)
-    logger.info("Rows for labeling: %d", len(df))
+    """Load → compute barriers → attach columns → filter → validate → write."""
+    df, atr_col = _load_features_and_ohlcv(config)
     _log_atr_stats(df, atr_col, config.labels.min_atr)
 
-    labels, upper, lower, touched_bars, ambiguous_count = _compute_labels(
+    labels, upper, lower, touched = _compute_triple_barrier(
         close=df["close"].to_numpy(),
         high=df["high"].to_numpy(),
         low=df["low"].to_numpy(),
@@ -46,43 +47,71 @@ def generate_labels(config: Config) -> None:
     )
 
     logger.info(
-        "Direction-barrier params: tp_mult=%.2f, sl_mult=%.2f,"
-        " horizon=%d, min_atr=%.6f",
+        "tp_mult=%.2f sl_mult=%.2f horizon=%d min_atr=%.6f",
         config.labels.atr_tp_multiplier,
         config.labels.atr_sl_multiplier,
         config.labels.horizon_bars,
         config.labels.min_atr,
     )
-    logger.info(
-        "Ambiguous same-bar both-hit labels: %d (treated as Hold)",
-        ambiguous_count,
-    )
 
-    event_end = compute_event_end(touched_bars, config.labels.horizon_bars)
-    sample_weight = compute_average_uniqueness(event_end)
+    event_end = compute_event_end(touched, config.labels.horizon_bars)
+    weights = compute_average_uniqueness(event_end)
 
-    df = _merge_label_columns(
-        df, labels, upper, lower, touched_bars, event_end, sample_weight
-    )
+    df = _attach_label_columns(df, labels, upper, lower, touched, event_end, weights)
     _log_label_profitability(df, config)
-    df = _filter_censored(df)
+    df = _drop_censored_and_nan(df)
     _log_distribution(df)
     _log_weight_stats(df)
 
+    _validate_no_join_artifacts(df)
+    LabelsSchema.validate(df, config=config)
+
     out_path = Path(config.paths.labels)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    right_cols = [c for c in df.columns if c.endswith("_right")]
-    if right_cols:
-        raise ValueError(f"labels.parquet contains join artifacts: {right_cols}")
-
-    LabelsSchema.validate(df, config=config)
     df.write_parquet(out_path)
     logger.info("Labels saved: %s (%d rows)", out_path, len(df))
 
 
-@njit
-def _compute_labels(
+def _load_features_and_ohlcv(config: Config) -> tuple[pl.DataFrame, str]:
+    """Load features parquet. Join OHLCV if OHLC missing from features."""
+    features_path = Path(config.paths.features)
+    ohlcv_path = Path(config.paths.ohlcv)
+
+    if not features_path.exists():
+        raise FileNotFoundError(f"Features not found: {features_path}")
+    if not ohlcv_path.exists():
+        raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
+
+    logger.info("Loading features: %s", features_path)
+    with console.status(f"[cyan]Loading features[/] {features_path}"):
+        df_features = pl.read_parquet(features_path)
+    _check_unique_timestamps(df_features, "features")
+
+    ohlc_cols = {"open", "high", "low", "close"}
+    if ohlc_cols.issubset(set(df_features.columns)):
+        logger.info("Features already contain OHLC — skipping OHLCV join")
+        atr_col = f"atr_{config.features.atr_period}"
+        if atr_col not in df_features.columns:
+            raise ValueError(f"{atr_col} missing. Run feature engineering first.")
+        return df_features, atr_col
+
+    logger.info("Loading OHLCV: %s", ohlcv_path)
+    with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
+        df_ohlcv = pl.read_parquet(ohlcv_path).select(
+            ["timestamp", "open", "high", "low", "close"]
+        )
+    _check_unique_timestamps(df_ohlcv, "OHLCV")
+
+    df = df_features.join(df_ohlcv, on="timestamp", how="inner")
+    df = _drop_join_artifacts(df)
+
+    atr_col = f"atr_{config.features.atr_period}"
+    if atr_col not in df.columns:
+        raise ValueError(f"{atr_col} missing. Run feature engineering first.")
+    return df, atr_col
+
+
+def _compute_triple_barrier(
     close: np.ndarray,
     high: np.ndarray,
     low: np.ndarray,
@@ -92,214 +121,68 @@ def _compute_labels(
     horizon: int,
     min_atr: float,
 ) -> tuple:
-    """Compute direction-barrier outcomes and touched offsets."""
-    n = len(close)
-    labels = np.zeros(n, dtype=np.int32)
-    upper_barriers = np.zeros(n, dtype=np.float64)
-    lower_barriers = np.zeros(n, dtype=np.float64)
-    touched_bars = np.full(n, -1, dtype=np.int32)
-    ambiguous_count = 0
+    """Call numba compute_labels. Returns (labels, upper, lower, touched)."""
+    from thesis.stage_3_labels._label_numba import compute_labels as _numba_labels
 
-    for i in range(n):
-        effective_atr = max(atr[i], min_atr)
-        upper = close[i] + tp_mult * effective_atr
-        lower = close[i] - sl_mult * effective_atr
-        upper_barriers[i] = upper
-        lower_barriers[i] = lower
-
-        if i + horizon >= n:
-            labels[i] = CENSORED_LABEL
-            touched_bars[i] = CENSORED_LABEL
-            continue
-
-        label = 0
-        for j in range(i + 1, min(i + 1 + horizon, n)):
-            upper_hit = high[j] >= upper
-            lower_hit = low[j] <= lower
-            if upper_hit and lower_hit:
-                ambiguous_count += 1
-                touched_bars[i] = j - i
-                break
-            if upper_hit:
-                label = 1
-                touched_bars[i] = j - i
-                break
-            if lower_hit:
-                label = -1
-                touched_bars[i] = j - i
-                break
-        labels[i] = label
-
-    return labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count
+    return _numba_labels(close, high, low, atr, tp_mult, sl_mult, horizon, min_atr)
 
 
-@njit
-def compute_event_end(touched_bars: np.ndarray, horizon: int) -> np.ndarray:
-    """Convert touched offsets into absolute end indices."""
-    n = len(touched_bars)
-    event_end = np.empty(n, dtype=np.int32)
-    for i in range(n):
-        offset = touched_bars[i]
-        if offset < 0:
-            offset = horizon
-        event_end[i] = i + offset
-    return event_end
-
-
-@njit
-def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
-    """Compute López de Prado average-uniqueness sample weights."""
-    n = len(event_end)
-    diff = np.zeros(n + 1, dtype=np.float64)
-    for i in range(n):
-        end = event_end[i]
-        if end < i:
-            end = i
-        if end >= n:
-            end = n - 1
-        diff[i] += 1.0
-        diff[end + 1] -= 1.0
-
-    concurrency = np.empty(n, dtype=np.float64)
-    running = 0.0
-    for i in range(n):
-        running += diff[i]
-        concurrency[i] = max(running, 1.0)
-
-    inv_prefix = np.zeros(n + 1, dtype=np.float64)
-    for i in range(n):
-        inv_prefix[i + 1] = inv_prefix[i] + 1.0 / concurrency[i]
-
-    weights = np.empty(n, dtype=np.float64)
-    total = 0.0
-    for i in range(n):
-        end = event_end[i]
-        if end < i:
-            end = i
-        if end >= n:
-            end = n - 1
-        span = end - i + 1
-        weight = (inv_prefix[end + 1] - inv_prefix[i]) / span
-        weight = max(weight, SAMPLE_WEIGHT_MIN)
-        weights[i] = weight
-        total += weight
-
-    mean = total / n if n > 0 else 1.0
-    if mean <= 0.0:
-        mean = 1.0
-    for i in range(n):
-        weights[i] /= mean
-    return weights
-
-
-def _validate_paths(features_path: Path, ohlcv_path: Path) -> None:
-    """Raise if features or OHLCV path is missing."""
-    if not features_path.exists():
-        raise FileNotFoundError(f"Features not found: {features_path}")
-    if not ohlcv_path.exists():
-        raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
-
-
-def _validate_unique_timestamps(df: pl.DataFrame, name: str) -> None:
-    """Raise ValueError on duplicate `timestamp` values."""
-    if "timestamp" not in df.columns:
-        return
-    duplicate_count = len(df) - df["timestamp"].n_unique()
-    if duplicate_count > 0:
-        raise ValueError(
-            f"{name} data contains {duplicate_count} duplicate timestamps; "
-            "deduplicate before label generation."
-        )
-
-
-def _load_inputs(config: Config) -> tuple[pl.DataFrame, str]:
-    """Load and join features with OHLCV; return (df, atr_col)."""
-    features_path = Path(config.paths.features)
-    ohlcv_path = Path(config.paths.ohlcv)
-    _validate_paths(features_path, ohlcv_path)
-
-    logger.info("Loading features: %s", features_path)
-    with console.status(f"[cyan]Loading features[/] {features_path}"):
-        df_features = pl.read_parquet(features_path)
-    _validate_unique_timestamps(df_features, "features")
-    FeaturesSchema.validate(df_features, config=config)
-
-    ohlc_required = {"open", "high", "low", "close"}
-    if ohlc_required.issubset(set(df_features.columns)):
-        logger.info("Features already contain OHLC columns — skipping OHLCV join")
-        atr_col = f"atr_{config.features.atr_period}"
-        if atr_col not in df_features.columns:
-            raise ValueError(
-                f"{atr_col} not in features. Run feature engineering first."
-            )
-        return df_features, atr_col
-
-    logger.info("Loading OHLCV for missing OHLC columns: %s", ohlcv_path)
-    with console.status(f"[cyan]Loading OHLCV[/] {ohlcv_path}"):
-        df_ohlcv = pl.read_parquet(ohlcv_path).select(
-            ["timestamp", "open", "high", "low", "close"]
-        )
-    _validate_unique_timestamps(df_ohlcv, "OHLCV")
-    df = df_features.join(df_ohlcv, on="timestamp", how="inner")
-    right_cols = [c for c in df.columns if c.endswith("_right")]
-    if right_cols:
-        logger.warning(
-            "Dropping %d join-artifact columns: %s", len(right_cols), right_cols
-        )
-        df = df.drop(right_cols)
-    _validate_unique_timestamps(df, "joined feature/OHLCV")
-
-    atr_col = f"atr_{config.features.atr_period}"
-    if atr_col not in df.columns:
-        raise ValueError(f"{atr_col} not in features. Run feature engineering first.")
-    return df, atr_col
-
-
-def _merge_label_columns(
+def _attach_label_columns(
     df: pl.DataFrame,
-    labels_arr: np.ndarray,
-    upper_arr: np.ndarray,
-    lower_arr: np.ndarray,
-    touched_bars_arr: np.ndarray,
-    event_end_arr: np.ndarray,
-    sample_weight_arr: np.ndarray,
+    labels: np.ndarray,
+    upper: np.ndarray,
+    lower: np.ndarray,
+    touched: np.ndarray,
+    event_end: np.ndarray,
+    weights: np.ndarray,
 ) -> pl.DataFrame:
-    """Attach label-related arrays as columns to `df`."""
+    """Add label, barrier, touched, event_end, sample_weight columns."""
     return df.with_columns(
         [
-            pl.Series("label", labels_arr),
-            pl.Series("upper_barrier", upper_arr),
-            pl.Series("lower_barrier", lower_arr),
-            pl.Series("touched_bar", touched_bars_arr),
-            pl.Series("event_end", event_end_arr),
-            pl.Series("sample_weight", sample_weight_arr),
+            pl.Series("label", labels),
+            pl.Series("upper_barrier", upper),
+            pl.Series("lower_barrier", lower),
+            pl.Series("touched_bar", touched),
+            pl.Series("event_end", event_end),
+            pl.Series("sample_weight", weights),
         ]
     )
 
 
-def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
-    """Log a compact ATR distribution snapshot."""
-    s = df.select(
-        pl.col(atr_col).min().alias("min"),
-        pl.col(atr_col).median().alias("median"),
-        pl.col(atr_col).quantile(ATR_LOW_QUANTILE).alias("p5"),
-        pl.col(atr_col).quantile(ATR_HIGH_QUANTILE).alias("p95"),
-        (pl.col(atr_col) < min_atr).mean().alias("floor_rate"),
-    ).row(0, named=True)
-    logger.info(
-        "ATR stats (%s): min=%.6f, median=%.6f, p5=%.6f,"
-        " p95=%.6f, below_min_atr=%.2f%%",
-        atr_col,
-        s["min"] or 0.0,
-        s["median"] or 0.0,
-        s["p5"] or 0.0,
-        s["p95"] or 0.0,
-        (s["floor_rate"] or 0.0) * 100.0,
-    )
+def _drop_join_artifacts(df: pl.DataFrame) -> pl.DataFrame:
+    """Drop _right suffix columns from inner join. Check timestamp uniqueness."""
+    right_cols = [c for c in df.columns if c.endswith("_right")]
+    if right_cols:
+        logger.warning(
+            "Dropping %d join-artifact columns: %s",
+            len(right_cols),
+            right_cols,
+        )
+        df = df.drop(right_cols)
+    _check_unique_timestamps(df, "joined feature/OHLCV")
+    return df
 
 
-def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
-    """Drop censored rows and regression NaNs."""
+def _check_unique_timestamps(df: pl.DataFrame, name: str) -> None:
+    """Raise if duplicate timestamps found."""
+    if "timestamp" not in df.columns:
+        return
+    dup_count = len(df) - df["timestamp"].n_unique()
+    if dup_count > 0:
+        raise ValueError(
+            f"{name} has {dup_count} duplicate timestamps — deduplicate first."
+        )
+
+
+def _validate_no_join_artifacts(df: pl.DataFrame) -> None:
+    """Fail if output would contain join artifacts (_right suffix columns)."""
+    right_cols = [c for c in df.columns if c.endswith("_right")]
+    if right_cols:
+        raise ValueError(f"labels.parquet contains join artifacts: {right_cols}")
+
+
+def _drop_censored_and_nan(df: pl.DataFrame) -> pl.DataFrame:
+    """Drop censored (label=-2) and regression_target NaN rows."""
     n_before = len(df)
     n_censored = int((df["label"] == CENSORED_LABEL).sum())
     if n_censored > 0:
@@ -314,8 +197,7 @@ def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
     n_dropped = n_before - len(df)
     if n_dropped > 0:
         logger.info(
-            "Dropped %d censored rows (label=%d, regression_nan=%d)"
-            " — insufficient forward horizon",
+            "Dropped %d rows (censored=%d regression_nan=%d) — insufficient horizon",
             n_dropped,
             n_censored,
             n_nan,
@@ -323,8 +205,28 @@ def _filter_censored(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
+def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
+    """Log ATR min/median/p5/p95 and % below min_atr floor."""
+    s = df.select(
+        pl.col(atr_col).min().alias("min"),
+        pl.col(atr_col).median().alias("median"),
+        pl.col(atr_col).quantile(ATR_LOW_QUANTILE).alias("p5"),
+        pl.col(atr_col).quantile(ATR_HIGH_QUANTILE).alias("p95"),
+        (pl.col(atr_col) < min_atr).mean().alias("floor_rate"),
+    ).row(0, named=True)
+    logger.info(
+        "ATR (%s): min=%.6f median=%.6f p5=%.6f p95=%.6f below_min=%.2f%%",
+        atr_col,
+        s["min"] or 0.0,
+        s["median"] or 0.0,
+        s["p5"] or 0.0,
+        s["p95"] or 0.0,
+        (s["floor_rate"] or 0.0) * 100.0,
+    )
+
+
 def _log_distribution(df: pl.DataFrame) -> None:
-    """Log counts and percentages for the `label` column."""
+    """Log label class counts and percentages."""
     if "label" not in df.columns:
         return
     total = len(df)
@@ -333,7 +235,7 @@ def _log_distribution(df: pl.DataFrame) -> None:
 
 
 def _log_weight_stats(df: pl.DataFrame) -> None:
-    """Log sample-weight diagnostics."""
+    """Log sample weight min/median/max/mean."""
     if "sample_weight" not in df.columns:
         return
     s = df.select(
@@ -343,7 +245,7 @@ def _log_weight_stats(df: pl.DataFrame) -> None:
         pl.col("sample_weight").mean().alias("mean"),
     ).row(0, named=True)
     logger.info(
-        "Average-uniqueness sample weights: min=%.4f median=%.4f max=%.4f mean=%.4f",
+        "Sample weights: min=%.4f median=%.4f max=%.4f mean=%.4f",
         s["min"] or 0.0,
         s["median"] or 0.0,
         s["max"] or 0.0,
@@ -351,24 +253,11 @@ def _log_weight_stats(df: pl.DataFrame) -> None:
     )
 
 
-def _roundtrip_cost_price_units(config: Config) -> float:
-    """Per-bar round-trip cost in price units (spread + slippage + commission).
-
-    Unlike ``_compute_spread_rate`` in the backtest module (which normalises
-    by a per-trade median price), this returns an *absolute* price-unit cost
-    suitable for per-bar label diagnostics.
-    """
-    return (
-        (config.backtest.spread_ticks + config.backtest.slippage_ticks)
-        * config.data.tick_size
-        + config.backtest.commission_per_lot
-        * ROUNDTRIP_MULT
-        / config.data.contract_size
-    )
-
-
 def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
-    """Log label profitability diagnostics after trading costs."""
+    """Log % of long/short labels profitable after trading costs.
+
+    Net return = (close[t+h] - close[t+1]) / close[t] * leverage - cost / close[t].
+    """
     if not {"close", "label", "timestamp"}.issubset(df.columns):
         return
 
@@ -392,25 +281,24 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
     )
 
     if result.is_empty():
-        logger.warning("Label profitability: no valid samples after filtering.")
+        logger.warning("Label profitability: no valid samples.")
         return
 
-    pct: dict[int, float] = {1: 0.0, -1: 0.0}
-    for label_val, label_name, profit_expr in (
+    for label_val, name, profit_expr in (
         (1, "Long", pl.col("_net_return") > 0),
         (-1, "Short", pl.col("_net_return") < 0),
     ):
         class_df = result.filter(pl.col("label") == label_val)
         total = class_df.height
         if total == 0:
-            logger.info("  Class %d (%s): no samples", label_val, label_name)
+            logger.info("  Class %d (%s): no samples", label_val, name)
             continue
         profitable = class_df.filter(profit_expr).height
-        pct[label_val] = profitable / total * 100.0
+        pct = profitable / total * 100.0
         logger.info(
-            "%% of %s labels that are profitable after costs: %.1f%% (%d/%d)",
-            label_name,
-            pct[label_val],
+            "  %s labels profitable after costs: %.1f%% (%d/%d)",
+            name,
+            pct,
             profitable,
             total,
         )
@@ -419,10 +307,24 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
     if hold_total:
         logger.info("  Class 0 (Hold): %d samples", hold_total)
 
-    if pct[1] < LABEL_PROFITABILITY_WARN_PCT and pct[-1] < LABEL_PROFITABILITY_WARN_PCT:
+    long_total = result.filter(pl.col("label") == 1).height
+    short_total = result.filter(pl.col("label") == -1).height
+    warn_thresh = LABEL_PROFITABILITY_WARN_PCT
+    if long_total < warn_thresh and short_total < warn_thresh:
         logger.warning(
-            "LABEL PROFITABILITY LOW: Long %.1f%%, Short %.1f%% -- "
+            "LABEL PROFITABILITY LOW: Long %.1f%% Short %.1f%% — "
             "labels may not be economically useful after trading costs",
-            pct[1],
-            pct[-1],
+            long_total,
+            short_total,
         )
+
+
+def _roundtrip_cost_price_units(config: Config) -> float:
+    """Spread + slippage + commission per round-trip in price units."""
+    return (
+        (config.backtest.spread_ticks + config.backtest.slippage_ticks)
+        * config.data.tick_size
+        + config.backtest.commission_per_lot
+        * ROUNDTRIP_MULT
+        / config.data.contract_size
+    )

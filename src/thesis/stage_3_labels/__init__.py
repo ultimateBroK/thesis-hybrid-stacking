@@ -1,13 +1,13 @@
 """Triple-barrier label generation package."""
 
-from thesis.stage_3_labels.labeling import (
+from thesis.stage_3_labels._label_numba import (
     compute_average_uniqueness,
     compute_event_end,
-    generate_labels,
 )
+from thesis.stage_3_labels.labeling import generate_labels
 
 __all__ = [
-    "compute_average_uniqueness",
-    "compute_event_end",
     "generate_labels",
+    "compute_event_end",
+    "compute_average_uniqueness",
 ]
