@@ -7,7 +7,6 @@ Used by ``generation.py``.
 from __future__ import annotations
 
 import logging
-import math
 from pathlib import Path
 
 import numpy as np
@@ -15,13 +14,18 @@ import polars as pl
 from polars.exceptions import ComputeError
 
 from thesis.shared.config import Config
-from thesis.shared.zones import get_metric_zone
 from thesis.stage_6_reporting import calibration
 from thesis.stage_6_reporting.benchmarks import (
     _model_label,
     compute_benchmark_comparison,
 )
-from thesis.stage_6_reporting.md_format import _fmt_dollar, _fmt_f2, _fmt_pct, _tbl_row
+from thesis.stage_6_reporting.md_format import (
+    _fmt_dollar,
+    _fmt_f2,
+    _fmt_pct,
+    _tbl_row,
+    _zone,
+)
 from thesis.stage_6_reporting.sections import (
     _identify_primary_issue,
     _render_issues,
@@ -42,30 +46,6 @@ _DIRECTIONAL_BASELINE: float = 0.5
 # Expected Calibration Error (ECE) thresholds
 _ECE_WELL_CALIBRATED: float = 0.05
 _ECE_MODERATELY_CALIBRATED: float = 0.15
-
-# Zone emoji mapping
-_ZONE_EMOJI = {
-    "excellent": "✅",
-    "good": "🟢",
-    "moderate": "🟡",
-    "poor": "🟠",
-    "dangerous": "🔴",
-}
-
-# ---------------------------------------------------------------------------
-# Zone helper
-# ---------------------------------------------------------------------------
-
-
-def _zone(key: str, value: float) -> str:
-    """Zone emoji for a metric value."""
-    if value is None or (
-        isinstance(value, float)
-        and (math.isnan(value) if isinstance(value, float) else False)
-    ):
-        return "⚪"
-    color, _, _ = get_metric_zone(key, value)
-    return _ZONE_EMOJI.get(color, "⚪")
 
 
 # ---------------------------------------------------------------------------

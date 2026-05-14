@@ -14,6 +14,58 @@ from thesis.dashboard.session import load_config, session_selector_fragment
 from thesis.dashboard.shared import render_config_summary
 from thesis.dashboard.training import render_training_section
 
+_CSS = """
+<style>
+    /* AMOLED glass effect for metric cards */
+    .stMetric {
+        background: linear-gradient(135deg,
+            rgba(255,255,255,0.05) 0%,
+            rgba(255,255,255,0.02) 100%);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 14px 16px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.3),
+                    inset 0 1px 0 rgba(255,255,255,0.06);
+    }
+    .stMetric label {
+        font-size: 0.8rem;
+        color: rgba(255,255,255,0.6);
+        letter-spacing: 0.02em;
+    }
+    .stMetric div[data-testid="stMetricValue"] {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #e2e8f0;
+    }
+    .stMetric div[data-testid="stMetricDelta"] {
+        font-size: 0.85rem;
+    }
+    /* Subtle glow on hover */
+    .stMetric:hover {
+        border-color: rgba(255,255,255,0.15);
+        box-shadow: 0 4px 30px rgba(0,0,0,0.4),
+                    inset 0 1px 0 rgba(255,255,255,0.1),
+                    0 0 20px rgba(37,99,235,0.05);
+        transition: all 0.2s ease;
+    }
+    /* Compact sidebar spacing */
+    .stSidebar .stExpander details summary {
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+</style>
+"""
+
+_SECTION_RENDERERS: dict[str, tuple[str, object]] = {
+    "📊 Data": ("Data Exploration", lambda d, c, s: render_data_section(d, c)),
+    "🧠 Model": ("Model Performance", lambda d, c, s: render_model_section(d, s)),
+    "🏃 Training": ("Training", lambda d, c, s: render_training_section(d, s)),
+    "💰 Backtest": ("Backtest Results", lambda d, c, s: render_backtest_section(d, c)),
+    "📝 Reports": ("Reports", lambda d, c, s: render_reports_section(s)),
+}
+
 
 def main() -> None:
     """Render the Streamlit dashboard with session selection and navigation."""
@@ -24,52 +76,7 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
-    st.markdown(
-        """
-    <style>
-        /* AMOLED glass effect for metric cards */
-        .stMetric {
-            background: linear-gradient(135deg,
-                rgba(255,255,255,0.05) 0%,
-                rgba(255,255,255,0.02) 100%);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 12px;
-            padding: 14px 16px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.3),
-                        inset 0 1px 0 rgba(255,255,255,0.06);
-        }
-        .stMetric label {
-            font-size: 0.8rem;
-            color: rgba(255,255,255,0.6);
-            letter-spacing: 0.02em;
-        }
-        .stMetric div[data-testid="stMetricValue"] {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #e2e8f0;
-        }
-        .stMetric div[data-testid="stMetricDelta"] {
-            font-size: 0.85rem;
-        }
-        /* Subtle glow on hover */
-        .stMetric:hover {
-            border-color: rgba(255,255,255,0.15);
-            box-shadow: 0 4px 30px rgba(0,0,0,0.4),
-                        inset 0 1px 0 rgba(255,255,255,0.1),
-                        0 0 20px rgba(37,99,235,0.05);
-            transition: all 0.2s ease;
-        }
-        /* Compact sidebar spacing */
-        .stSidebar .stExpander details summary {
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-    </style>
-    """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(_CSS, unsafe_allow_html=True)
 
     # ── Sidebar Header ──
     st.sidebar.markdown("### 📈 Thesis Dashboard")
@@ -84,15 +91,7 @@ def main() -> None:
         return
 
     # ── Navigation ──
-    sections = ["📊 Data", "🧠 Model", "🏃 Training", "💰 Backtest", "📝 Reports"]
-    section_map = {
-        "📊 Data": "Data Exploration",
-        "🧠 Model": "Model Performance",
-        "🏃 Training": "Training",
-        "💰 Backtest": "Backtest Results",
-        "📝 Reports": "Reports",
-    }
-
+    sections = list(_SECTION_RENDERERS)
     current_section = st.session_state.get("nav_section", "📊 Data")
 
     left_spacer, nav_center, right_spacer = st.columns([0.2, 0.6, 0.2])
@@ -128,17 +127,8 @@ def main() -> None:
             c2.metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
 
     # ── Render selected section ──
-    section_name = section_map[section]
-    if section_name == "Data Exploration":
-        render_data_section(data, config)
-    elif section_name == "Model Performance":
-        render_model_section(data, session_path)
-    elif section_name == "Training":
-        render_training_section(data, session_path)
-    elif section_name == "Reports":
-        render_reports_section(session_path)
-    else:
-        render_backtest_section(data, config)
+    _name, renderer = _SECTION_RENDERERS[section]
+    renderer(data, config, session_path)
 
 
 main()

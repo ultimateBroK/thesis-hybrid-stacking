@@ -192,23 +192,19 @@ def run_pipeline(config: Config) -> None:
     # Stage 3: Labels
     _run_stage(3, config, "run_label_generation", config.paths.labels, generate_labels)
 
-    # Stage 4: Training (walk-forward or static)
-    if config.validation.method == "sliding":
+    # Stage 4: Training
+    logger.info(
+        "Using %s (%s architecture)",
+        "walk-forward sliding window"
+        if config.validation.method == "sliding"
+        else "fixed train/val/test split",
+        config.model.architecture,
+    )
+    if config.workflow.run_model_training:
         stage_header(4)
-        logger.info(
-            "Using walk-forward sliding window validation (%s architecture)",
-            config.model.architecture,
-        )
-        if config.workflow.run_model_training:
-            train_walk_forward(config)
-        else:
-            stage_skip(4, "disabled")
+        train_walk_forward(config)
     else:
-        logger.info("Using fixed train/val/test split")
-        if config.workflow.run_model_training:
-            train_walk_forward(config)
-        else:
-            stage_skip(4, "disabled")
+        stage_skip(4, "disabled")
 
     # Stage 5: Backtest (Optional Application Demo)
     _run_stage(

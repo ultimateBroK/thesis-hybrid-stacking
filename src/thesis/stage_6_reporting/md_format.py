@@ -7,6 +7,30 @@ sections rely on their exact output.
 
 from __future__ import annotations
 
+import math
+
+from thesis.shared.zones import get_metric_zone
+
+# Zone emoji mapping
+_ZONE_EMOJI = {
+    "excellent": "✅",
+    "good": "🟢",
+    "moderate": "🟡",
+    "poor": "🟠",
+    "dangerous": "🔴",
+}
+
+
+def _zone(key: str, value: float) -> str:
+    """Zone emoji for a metric value."""
+    if value is None or (
+        isinstance(value, float)
+        and (math.isnan(value) if isinstance(value, float) else False)
+    ):
+        return "⚪"
+    color, _, _ = get_metric_zone(key, value)
+    return _ZONE_EMOJI.get(color, "⚪")
+
 
 def _tbl_row(*cells: str) -> str:
     """Format cells as a markdown table row."""
@@ -25,4 +49,4 @@ def _fmt_dollar(v: float) -> str:
     return f"${v:,.0f}"
 
 
-__all__ = ["_tbl_row", "_fmt_pct", "_fmt_f2", "_fmt_dollar"]
+__all__ = ["_ZONE_EMOJI", "_zone", "_tbl_row", "_fmt_pct", "_fmt_f2", "_fmt_dollar"]

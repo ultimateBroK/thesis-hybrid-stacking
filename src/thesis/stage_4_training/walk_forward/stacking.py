@@ -53,21 +53,10 @@ _MIN_SPLIT_ROWS = 4
 _MIN_CALIBRATION_ROWS = 50
 
 # ---------------------------------------------------------------------------
-# Base model registry (Step 5)
+# Base model registry
 # ---------------------------------------------------------------------------
 
-_BASE_MODEL_REGISTRY: dict[str, Callable[..., Any]] = {}
 
-
-def _register_base_model(name: str):
-    def decorator(fn):
-        _BASE_MODEL_REGISTRY[name] = fn
-        return fn
-
-    return decorator
-
-
-@_register_base_model("logistic_regression")
 def _build_logistic_regression(config: Config) -> Any:
     from sklearn.linear_model import LogisticRegression
 
@@ -79,7 +68,6 @@ def _build_logistic_regression(config: Config) -> Any:
     )
 
 
-@_register_base_model("random_forest")
 def _build_random_forest(config: Config) -> Any:
     from sklearn.ensemble import RandomForestClassifier
 
@@ -93,6 +81,12 @@ def _build_random_forest(config: Config) -> Any:
     )
 
 
+_BASE_MODEL_REGISTRY: dict[str, Callable[..., Any]] = {
+    "logistic_regression": _build_logistic_regression,
+    "random_forest": _build_random_forest,
+}
+
+
 def _build_base_model(name: str, config: Config) -> Any:
     if name not in _BASE_MODEL_REGISTRY:
         raise ValueError(f"Unsupported sklearn base model: {name!r}")
@@ -100,18 +94,8 @@ def _build_base_model(name: str, config: Config) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Meta model registry (Step 5)
+# Meta model registry
 # ---------------------------------------------------------------------------
-
-_META_MODEL_REGISTRY: dict[str, Callable[..., Any]] = {}
-
-
-def _register_meta_model(name: str):
-    def decorator(fn):
-        _META_MODEL_REGISTRY[name] = fn
-        return fn
-
-    return decorator
 
 
 def _fit_predictable_classifier(model: Any, X: np.ndarray, y: np.ndarray) -> Any:
@@ -124,7 +108,6 @@ def _fit_predictable_classifier(model: Any, X: np.ndarray, y: np.ndarray) -> Any
     return model
 
 
-@_register_meta_model("logistic_regression")
 def _build_meta_logreg(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
     if len(np.unique(y_meta)) < 2:
         from sklearn.dummy import DummyClassifier
@@ -140,7 +123,6 @@ def _build_meta_logreg(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -
     ).fit(X_meta, y_meta)
 
 
-@_register_meta_model("lightgbm")
 def _build_meta_lgbm(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
     if len(np.unique(y_meta)) < 2:
         from sklearn.dummy import DummyClassifier
@@ -155,6 +137,12 @@ def _build_meta_lgbm(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> 
         config,
         [f"meta_{i}" for i in range(X_meta.shape[1])],
     )
+
+
+_META_MODEL_REGISTRY: dict[str, Callable[..., Any]] = {
+    "logistic_regression": _build_meta_logreg,
+    "lightgbm": _build_meta_lgbm,
+}
 
 
 def _fit_meta_model(config: Config, X_meta: np.ndarray, y_meta: np.ndarray) -> Any:
@@ -270,6 +258,104 @@ def _calibrate_base_models(
         calibrated[name] = cal
         logger.info("  %s: calibrated (Platt scaling on %d rows)", name, len(y_cal))
     return calibrated
+
+
+def _train_base_models_and_predict(
+    config: Config,
+    X_base: np.ndarray,
+    y_base: np.ndarray,
+    X_test: np.ndarray,
+    y_test: np.ndarray,
+    selected_cols: list[str],
+    *,
+    do_calibrate: bool = False,
+    X_cal: np.ndarray | None = None,
+    y_cal: np.ndarray | None = None,
+    X_meta: np.ndarray | None = None,
+    eval_X: np.ndarray | None = None,
+    eval_y: np.ndarray | None = None,
+) -> tuple[
+    dict[str, Any],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, float],
+    dict[str, Any],
+]:
+    """Train all base models, optionally calibrate, and generate predictions.
+
+    Returns (base_models, meta_train_outputs, test_outputs, base_test_preds,
+             brier_log, calibration_info).
+    ``meta_train_outputs`` is populated only when *X_meta* is provided (legacy
+    holdout path).  The *eval_X* / *eval_y* pair controls the LightGBM early-
+    stopping evaluation set; it defaults to *X_test* / *y_test*.
+    """
+    base_models: dict[str, Any] = {}
+    meta_train_outputs: dict[str, np.ndarray] = {}
+    test_outputs: dict[str, np.ndarray] = {}
+    base_test_preds: dict[str, np.ndarray] = {}
+    brier_log: dict[str, float] = {}
+    calibration_info: dict[str, Any] = {}
+
+    if eval_X is None:
+        eval_X = X_test
+    if eval_y is None:
+        eval_y = y_test
+
+    for configured_name in config.model.stacking_base_models:
+        short_name = _BASE_MODEL_ALIASES.get(configured_name, configured_name)
+        if configured_name == "lightgbm":
+            class_weights = (
+                _compute_class_weights(y_base) if len(np.unique(y_base)) > 1 else None
+            )
+            model = _train_fixed(
+                X_base, y_base, eval_X, eval_y, class_weights, config, selected_cols
+            )
+        else:
+            model = _fit_predictable_classifier(
+                _build_base_model(configured_name, config), X_base, y_base
+            )
+        base_models[short_name] = model
+
+    # ---- Calibration ----
+    if do_calibrate and X_cal is not None and y_cal is not None:
+        for name, model in base_models.items():
+            raw_proba_cal = _aligned_predict_proba(model, X_cal, selected_cols)
+            brier_before = _compute_brier_scores(y_cal, raw_proba_cal, f"{name}_before")
+            brier_log.update(brier_before)
+
+        base_models = _calibrate_base_models(
+            base_models,
+            X_cal,
+            y_cal,
+            selected_cols,
+            len(config.model.stacking_base_models),
+        )
+        calibration_info["calibrated"] = True
+        calibration_info["n_calibration"] = len(y_cal)
+
+        for name, model in base_models.items():
+            cal_proba_cal = _aligned_predict_proba(model, X_cal, selected_cols)
+            brier_after = _compute_brier_scores(y_cal, cal_proba_cal, f"{name}_after")
+            brier_log.update(brier_after)
+
+    # Generate predictions
+    for name, model in base_models.items():
+        if X_meta is not None:
+            meta_train_outputs[name] = _aligned_predict_proba(
+                model, X_meta, selected_cols
+            )
+        test_outputs[name] = _aligned_predict_proba(model, X_test, selected_cols)
+        base_test_preds[name] = _CLASS_ORDER[np.argmax(test_outputs[name], axis=1)]
+
+    return (
+        base_models,
+        meta_train_outputs,
+        test_outputs,
+        base_test_preds,
+        brier_log,
+        calibration_info,
+    )
 
 
 def _generate_internal_folds(
@@ -562,63 +648,21 @@ def _train_and_predict_stacking_window(
 
         X_test = feature_pipeline.transform(test_df.select(static_cols).to_pandas())
 
-        base_models: dict[str, Any] = {}
-        test_outputs: dict[str, np.ndarray] = {}
-        base_test_preds: dict[str, np.ndarray] = {}
-
-        for configured_name in config.model.stacking_base_models:
-            short_name = _BASE_MODEL_ALIASES.get(configured_name, configured_name)
-            if configured_name == "lightgbm":
-                class_weights = (
-                    _compute_class_weights(y_base)
-                    if len(np.unique(y_base)) > 1
-                    else None
-                )
-                model = _train_fixed(
-                    X_base,
-                    y_base,
-                    X_test,
-                    y_test,
-                    class_weights,
-                    config,
-                    selected_cols,
-                )
-            else:
-                model = _fit_predictable_classifier(
-                    _build_base_model(configured_name, config), X_base, y_base
-                )
-            base_models[short_name] = model
-
-        # ---- Calibration ----
-        if do_calibrate and X_cal is not None and y_cal is not None:
-            for name, model in base_models.items():
-                raw_proba_cal = _aligned_predict_proba(model, X_cal, selected_cols)
-                brier_before = _compute_brier_scores(
-                    y_cal, raw_proba_cal, f"{name}_before"
-                )
-                brier_log.update(brier_before)
-
-            base_models = _calibrate_base_models(
-                base_models,
-                X_cal,
-                y_cal,
+        (base_models, _, test_outputs, base_test_preds, brier_log, calibration_info) = (
+            _train_base_models_and_predict(
+                config,
+                X_base,
+                y_base,
+                X_test,
+                y_test,
                 selected_cols,
-                len(config.model.stacking_base_models),
+                do_calibrate=do_calibrate,
+                X_cal=X_cal,
+                y_cal=y_cal,
+                eval_X=X_test,
+                eval_y=y_test,
             )
-            calibration_info["calibrated"] = True
-            calibration_info["n_calibration"] = len(y_cal)
-
-            for name, model in base_models.items():
-                cal_proba_cal = _aligned_predict_proba(model, X_cal, selected_cols)
-                brier_after = _compute_brier_scores(
-                    y_cal, cal_proba_cal, f"{name}_after"
-                )
-                brier_log.update(brier_after)
-
-        # Generate test predictions from (possibly calibrated) models
-        for name, model in base_models.items():
-            test_outputs[name] = _aligned_predict_proba(model, X_test, selected_cols)
-            base_test_preds[name] = _CLASS_ORDER[np.argmax(test_outputs[name], axis=1)]
+        )
 
         diag_extra = {
             "stacking_mode": "expanding_origin_oof",
@@ -666,67 +710,27 @@ def _train_and_predict_stacking_window(
         else:
             X_cal = None
 
-        base_models = {}
-        meta_train_outputs = {}
-        test_outputs = {}
-        base_test_preds = {}
-
-        for configured_name in config.model.stacking_base_models:
-            short_name = _BASE_MODEL_ALIASES.get(configured_name, configured_name)
-            if configured_name == "lightgbm":
-                class_weights = (
-                    _compute_class_weights(y_base)
-                    if len(np.unique(y_base)) > 1
-                    else None
-                )
-                model = _train_fixed(
-                    X_base,
-                    y_base,
-                    X_meta,
-                    y_meta,
-                    class_weights,
-                    config,
-                    selected_cols,
-                )
-            else:
-                model = _fit_predictable_classifier(
-                    _build_base_model(configured_name, config), X_base, y_base
-                )
-            base_models[short_name] = model
-
-        # ---- Calibration ----
-        if do_calibrate and X_cal is not None and y_cal is not None:
-            for name, model in base_models.items():
-                raw_proba_cal = _aligned_predict_proba(model, X_cal, selected_cols)
-                brier_before = _compute_brier_scores(
-                    y_cal, raw_proba_cal, f"{name}_before"
-                )
-                brier_log.update(brier_before)
-
-            base_models = _calibrate_base_models(
-                base_models,
-                X_cal,
-                y_cal,
-                selected_cols,
-                len(config.model.stacking_base_models),
-            )
-            calibration_info["calibrated"] = True
-            calibration_info["n_calibration"] = len(y_cal)
-
-            for name, model in base_models.items():
-                cal_proba_cal = _aligned_predict_proba(model, X_cal, selected_cols)
-                brier_after = _compute_brier_scores(
-                    y_cal, cal_proba_cal, f"{name}_after"
-                )
-                brier_log.update(brier_after)
-
-        # Generate meta and test predictions from (possibly calibrated) models
-        for name, model in base_models.items():
-            meta_train_outputs[name] = _aligned_predict_proba(
-                model, X_meta, selected_cols
-            )
-            test_outputs[name] = _aligned_predict_proba(model, X_test, selected_cols)
-            base_test_preds[name] = _CLASS_ORDER[np.argmax(test_outputs[name], axis=1)]
+        (
+            base_models,
+            meta_train_outputs,
+            test_outputs,
+            base_test_preds,
+            brier_log,
+            calibration_info,
+        ) = _train_base_models_and_predict(
+            config,
+            X_base,
+            y_base,
+            X_test,
+            y_test,
+            selected_cols,
+            do_calibrate=do_calibrate,
+            X_cal=X_cal,
+            y_cal=y_cal,
+            X_meta=X_meta,
+            eval_X=X_meta,
+            eval_y=y_meta,
+        )
 
         diag_extra = {
             "stacking_mode": "single_holdout",

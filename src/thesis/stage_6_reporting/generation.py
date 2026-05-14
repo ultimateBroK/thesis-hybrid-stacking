@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import logging
-import math
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +13,6 @@ from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
 from thesis.shared.ui import console
-from thesis.shared.zones import get_metric_zone
 from thesis.stage_6_reporting import model_metrics
 from thesis.stage_6_reporting.benchmarks import _model_label
 from thesis.stage_6_reporting.charts import (
@@ -127,26 +125,6 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
             "Failed to load prediction statistics: %s", preds_path, exc_info=True
         )
         return None
-
-
-_ZONE_EMOJI = {
-    "excellent": "✅",
-    "good": "🟢",
-    "moderate": "🟡",
-    "poor": "🟠",
-    "dangerous": "🔴",
-}
-
-
-def _zone(key: str, value: float) -> str:
-    """Zone emoji for a metric value."""
-    if value is None or (
-        isinstance(value, float)
-        and (math.isnan(value) if isinstance(value, float) else False)
-    ):
-        return "⚪"
-    color, _, _ = get_metric_zone(key, value)
-    return _ZONE_EMOJI.get(color, "⚪")
 
 
 def _build_markdown(
