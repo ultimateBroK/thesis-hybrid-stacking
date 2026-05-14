@@ -1,13 +1,10 @@
-"""Feature pipeline helpers for walk-forward training."""
+"""Feature pipeline: select + scale static features for tabular models."""
 
 from __future__ import annotations
 
 import logging
 
-from feature_engine.selection import (
-    DropCorrelatedFeatures,
-    DropDuplicateFeatures,
-)
+from feature_engine.selection import DropCorrelatedFeatures, DropDuplicateFeatures
 import numpy as np
 import polars as pl
 from sklearn.feature_selection import SelectKBest, f_classif
@@ -17,25 +14,22 @@ from sklearn.preprocessing import RobustScaler
 from thesis.shared.config import Config
 from thesis.shared.feature_registry import REGIME_FEATURES
 
-logger = logging.getLogger("thesis.pipeline")
+logger = logging.getLogger("thesis")
 
 
-def _select_static_feature_cols(
+def select_static_cols(
     config: Config,
     df: pl.DataFrame,
-    candidate_cols: list[str],
+    candidates: list[str],
 ) -> list[str]:
-    """Return static features for LightGBM, preferring the config whitelist.
+    """Pick static feature columns. Prefer config whitelist, fallback to candidates.
 
-    When ``enable_regime_features`` is True, dynamically adds any regime
-    feature columns present in *df* (including label-prior features that
-    were computed in stage 4's data preparation step).
+    If enable_regime_features is True, add any regime columns present in df.
     """
     available = [c for c in config.features.static_feature_cols if c in df.columns]
     if not available:
-        available = [c for c in candidate_cols if c in df.columns]
+        available = [c for c in candidates if c in df.columns]
 
-    # Add regime features dynamically when enabled and present in the dataframe
     if getattr(config.features, "enable_regime_features", False):
         for c in REGIME_FEATURES:
             if c in df.columns and c not in available:
@@ -45,20 +39,16 @@ def _select_static_feature_cols(
 
 
 def _add_label_prior_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Compute leakage-safe label prior regime features.
+    """Add leakage-safe label prior regime features.
 
-    Adds ``label_prior_long_lag1`` and ``label_prior_short_lag1`` — rolling
-    100-bar fraction of LONG/SHORT labels from **past** bars only.
-
-    The shift by ``horizon_bars + 1`` ensures that at bar T we only use labels
-    whose event-end is strictly before T, preventing any lookahead leakage
-    from the triple-barrier labeling process.
+    Rolling 100-bar fraction of LONG/SHORT labels from past bars only.
+    Shift by horizon_bars + 1 prevents label lookahead.
     """
     if "label" not in df.columns:
         return df
 
-    horizon = config.labels.horizon_bars
-    shift_n = horizon + 1
+    h = config.labels.horizon_bars
+    shift_n = h + 1
 
     is_long = (pl.col("label") == 1).cast(pl.Float64)
     is_short = (pl.col("label") == -1).cast(pl.Float64)
@@ -66,11 +56,11 @@ def _add_label_prior_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df.with_columns(
         [
             is_long.shift(shift_n)
-            .rolling_mean(window_size=100)
+            .rolling_mean(100)
             .fill_null(0.0)
             .alias("label_prior_long_lag1"),
             is_short.shift(shift_n)
-            .rolling_mean(window_size=100)
+            .rolling_mean(100)
             .fill_null(0.0)
             .alias("label_prior_short_lag1"),
         ]
@@ -80,64 +70,59 @@ def _add_label_prior_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 def fit_static_feature_pipeline(
     config: Config,
     train_df: pl.DataFrame,
-    static_cols: list[str],
+    cols: list[str],
     y_train: np.ndarray,
 ) -> tuple[Pipeline, list[str]]:
-    """Fit train-only scaler/selector pipeline for static features."""
-    if not static_cols:
-        raise ValueError("No static feature columns available for selection")
-    X_train = train_df.select(static_cols).to_pandas()
-    X_train.columns = static_cols
-    if X_train.empty:
-        raise ValueError("Training split is empty; cannot fit static pipeline")
+    """Fit scaler + selector pipeline on static features.
 
-    k_best = min(max(5, len(static_cols) // 2), len(static_cols))
-    logger.info(
-        "Feature pipeline: %d static cols → k_best=%d (SelectKBest)",
-        len(static_cols),
-        k_best,
-    )
-    feature_pipeline = Pipeline(
-        steps=[
-            ("drop_duplicate", DropDuplicateFeatures(missing_values="ignore")),
+    Steps:
+        1. DropDuplicateFeatures — remove constant/duplicate columns
+        2. DropCorrelatedFeatures — remove highly correlated pairs
+        3. RobustScaler — median/mad normalisation, robust to outliers
+        4. SelectKBest — univariate feature selection (f_classif)
+
+    Falls back to scaler-only if selection fails.
+    """
+    X = train_df.select(cols).to_pandas()
+    X.columns = cols
+
+    k_best = min(max(5, len(cols) // 2), len(cols))
+    logger.info("  Feature pipeline: %d cols → k_best=%d", len(cols), k_best)
+
+    pipe = Pipeline(
+        [
+            ("dedup", DropDuplicateFeatures(missing_values="ignore")),
             (
-                "drop_correlated",
+                "decorr",
                 DropCorrelatedFeatures(
                     threshold=config.features.correlation_threshold,
                     method="pearson",
                 ),
             ),
             ("scaler", RobustScaler()),
-            ("select_k_best", SelectKBest(score_func=f_classif, k=k_best)),
+            ("select", SelectKBest(score_func=f_classif, k=k_best)),
         ]
     )
+
     try:
-        feature_pipeline.fit(X_train, y_train)
-        preselect = feature_pipeline[:-1].transform(X_train)
-        preselect_cols = [
-            str(col) for col in feature_pipeline[:-1].get_feature_names_out()
-        ]
-        if not isinstance(preselect, pl.DataFrame):
-            preselect = pl.DataFrame(preselect, schema=preselect_cols)
-        selected_mask = feature_pipeline.named_steps["select_k_best"].get_support()
-        selected_cols = [
-            col
-            for col, keep in zip(preselect_cols, selected_mask, strict=False)
-            if keep
-        ]
-        if not selected_cols:
-            selected_cols = list(preselect.columns[: min(5, preselect.width)])
+        pipe.fit(X, y_train)
+
+        # Get selected column names after pipeline transform
+        pre_select = pipe[:-1].get_feature_names_out()
+        pre_cols = [str(c) for c in pre_select]
+        mask = pipe.named_steps["select"].get_support()
+        selected = [c for c, m in zip(pre_cols, mask, strict=False) if m]
+
+        if not selected:
+            selected = list(pre_cols[: min(5, len(pre_cols))])
+
         logger.info(
-            "Selected %d/%d features: %s",
-            len(selected_cols),
-            len(preselect_cols),
-            selected_cols,
+            "  Selected %d/%d features: %s", len(selected), len(pre_cols), selected
         )
-        return feature_pipeline, selected_cols
+        return pipe, selected
+
     except ValueError as exc:
-        logger.warning("Static feature selection fallback activated: %s", str(exc))
-        fallback_cols = list(static_cols)
-        fallback_pipeline = Pipeline(steps=[("scaler", RobustScaler())])
-        fallback_pipeline.fit(X_train[fallback_cols], y_train)
-        X_train[fallback_cols] = fallback_pipeline.transform(X_train[fallback_cols])
-        return fallback_pipeline, fallback_cols
+        logger.warning("  Feature selection fallback (all cols scaled): %s", exc)
+        fallback = Pipeline([("scaler", RobustScaler())])
+        fallback.fit(X[cols], y_train)
+        return fallback, list(cols)

@@ -1,4 +1,4 @@
-"""LightGBM training entry points (walk-forward only)."""
+"""LightGBM walk-forward training. Tabular only, no sequences."""
 
 from __future__ import annotations
 
@@ -11,11 +11,15 @@ import polars as pl
 
 from thesis.shared.config import Config
 from thesis.shared.constants import EXCLUDE_COLS
-from thesis.shared.ui import console
-from thesis.stage_4_training.validation import generate_windows, log_windows
+from thesis.stage_4_training.lgbm.utils import (
+    _compute_class_weights,
+    _train_lgbm,
+    _wrap_np,
+)
+from thesis.stage_4_training.validation import WalkForwardWindow, generate_windows
 from thesis.stage_4_training.walk_forward.artifacts import (
-    _log_walk_forward_complete,
     _save_arch_copy,
+    _save_feature_importance,
     _save_oof_predictions,
     _save_training_history,
     _save_walk_forward_history,
@@ -26,60 +30,62 @@ from thesis.stage_4_training.walk_forward.diagnostics import (
 )
 from thesis.stage_4_training.walk_forward.feature_pipeline import (
     _add_label_prior_features,
-    _select_static_feature_cols,
     fit_static_feature_pipeline,
+    select_static_cols,
 )
-from thesis.stage_4_training.walk_forward.loop import run_walk_forward
 from thesis.stage_4_training.walk_forward.predictions import (
-    _align_probability_matrix,
+    _align_proba,
     _apply_confidence_threshold,
-    _one_hot_proba_columns,
-    _probability_columns,
+    proba_columns,
 )
-from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
 
-logger = logging.getLogger("thesis.pipeline")
-
-# --- Minimum Sample Thresholds ---
-_STATIC_MIN_TRAIN_ROWS = 2  # Minimum training rows for static walk-forward
-
-# --- Validation Split ---
-_VALIDATION_SPLIT_FRACTION = 0.2  # Tail validation split for tabular LightGBM
+logger = logging.getLogger("thesis")
 
 
-def _prepare_static_wf_data(
-    config: Config,
-) -> tuple[pl.DataFrame, list[Any], list[str], dict[str, Any]]:
-    """Load labeled data, pre-compute regression target, and generate windows.
+# ── Data loading ────────────────────────────────────────────────────
 
-    Returns:
-        ``(df, windows, feature_cols, extra_data)`` — the full labeled
-        DataFrame, walk-forward window objects, sorted feature column
-        names, and extra keyword data for *window_fn*.
-    """
-    labels_path = Path(config.paths.labels)
-    if not labels_path.exists():
-        raise FileNotFoundError(f"Labels not found: {labels_path}")
 
-    with console.status(f"[cyan]Loading labels[/] {labels_path}"):
-        df = pl.read_parquet(labels_path)
-    logger.info("Loaded labeled data for static baseline: %d rows", len(df))
-    df, is_regression_static = _compute_regression_target(df, config)
+def _load_labeled_data(config: Config) -> tuple[pl.DataFrame, bool]:
+    """Load labels parquet. Pre-compute regression target if needed."""
+    path = Path(config.paths.labels)
+    if not path.exists():
+        raise FileNotFoundError(f"Labels not found: {path}")
 
-    # Regime label-prior features — gated behind config flag
+    df = pl.read_parquet(path)
+    logger.info("Loaded labels: %d rows", len(df))
+
+    # Regression: sign of forward return as target
+    is_regression = config.model.objective == "regression"
+    if is_regression:
+        if "close" not in df.columns:
+            raise ValueError("Regression objective requires 'close' column")
+        h = config.labels.horizon_bars
+        close = df["close"].to_numpy()
+        n = len(close)
+        reg = np.full(n, np.nan, dtype=np.float64)
+        future = np.roll(close, -h)[: n - h]
+        reg[: n - h] = (future - close[: n - h]) / close[: n - h]
+        df = df.with_columns(pl.Series("regression_target", reg))
+        df = df.filter(pl.col("regression_target").is_not_nan())
+        logger.info("Regression target: horizon=%d", h)
+
+    # Regime label-prior features
     if getattr(config.features, "enable_regime_features", False):
         df = _add_label_prior_features(df, config)
-        logger.info(
-            "Added label prior regime features (shift=%d)",
-            config.labels.horizon_bars + 1,
-        )
+
+    return df, is_regression
+
+
+# ── Prepare ─────────────────────────────────────────────────────────
+
+
+def _prepare(
+    config: Config,
+) -> tuple[pl.DataFrame, list[WalkForwardWindow], list[str], dict[str, Any]]:
+    """Load data and generate walk-forward windows."""
+    df, is_regression = _load_labeled_data(config)
 
     event_end = df["event_end"].to_numpy() if "event_end" in df.columns else None
-    if event_end is None:
-        logger.warning(
-            "Labels lack event_end column — falling back to fixed-bar purge. "
-            "Regenerate labels to enable event-time purging."
-        )
 
     windows = generate_windows(
         total_bars=len(df),
@@ -92,191 +98,151 @@ def _prepare_static_wf_data(
         event_end=event_end,
     )
     if not windows:
-        raise RuntimeError("No valid walk-forward windows generated")
+        raise RuntimeError("No valid walk-forward windows")
 
-    log_windows(windows, df, "timestamp")
     feature_cols = sorted(c for c in df.columns if c not in EXCLUDE_COLS)
-    return df, windows, feature_cols, {"is_regression_static": is_regression_static}
+    return df, windows, feature_cols, {"is_regression": is_regression}
 
 
-def _train_and_predict_static_window(
+# ── Train one window ────────────────────────────────────────────────
+
+
+def _train_lgbm_window(
     config: Config,
     w_idx: int,
-    window: Any,
+    window: WalkForwardWindow,
     df: pl.DataFrame,
     feature_cols: list[str],
     *,
-    is_regression_static: bool,
+    is_regression: bool,
     expanded_features: bool = False,
 ) -> dict[str, Any] | None:
-    """Train LightGBM and generate predictions for a single static window."""
-    from thesis.stage_4_training.lgbm.utils import (
-        _compute_class_weights,
-        _train_fixed,
-        _wrap_np,
-    )
+    """Train LightGBM and predict for one window."""
+    train_df = df.slice(window.train_start_idx, window.train_len)
+    test_df = df.slice(window.test_start_idx, window.test_len)
 
-    train_df = df.slice(
-        window.train_start_idx, window.train_end_idx - window.train_start_idx
-    )
-    test_df = df.slice(
-        window.test_start_idx, window.test_end_idx - window.test_start_idx
-    )
-    if len(train_df) < _STATIC_MIN_TRAIN_ROWS or test_df.is_empty():
-        logger.warning("Static window %d too small; skipping", w_idx + 1)
+    if train_df.is_empty() or test_df.is_empty():
+        logger.warning("Window %d: empty split, skipping", w_idx + 1)
         return None
+
+    y_train_cls = train_df["label"].to_numpy().astype(np.int32)
+    y_test_cls = test_df["label"].to_numpy().astype(np.int32)
+
+    diag = _window_diagnostics(w_idx + 1, train_df, test_df, y_train_cls, y_test_cls)
+
+    # Feature columns
     if expanded_features:
         static_cols = [
             c
             for c in feature_cols
             if c in train_df.columns and c != "regression_target"
         ]
-        mode_tag = "expanded"
     else:
-        static_cols = _select_static_feature_cols(config, train_df, feature_cols)
-        mode_tag = "whitelist"
-    logger.info(
-        "Static baseline using %d features (%s mode)", len(static_cols), mode_tag
+        static_cols = select_static_cols(config, train_df, feature_cols)
+
+    # Tail 20% of training for LightGBM's internal validation
+    val_split = max(1, int(len(train_df) * 0.2))
+    train_head_df = train_df.slice(0, len(train_df) - val_split)
+    pipeline, selected = fit_static_feature_pipeline(
+        config, train_head_df, static_cols, y_train_cls[:-val_split]
     )
-    if is_regression_static:
-        y_train = train_df["regression_target"].to_numpy().astype(np.float64)
-        y_test = test_df["regression_target"].to_numpy().astype(np.float64)
-        y_train_cls = train_df["label"].to_numpy().astype(np.int32)
-        y_test_cls = test_df["label"].to_numpy().astype(np.int32)
-    else:
-        y_train = train_df["label"].to_numpy().astype(np.int32)
-        y_test = test_df["label"].to_numpy().astype(np.int32)
-        y_train_cls, y_test_cls = y_train, y_test
+
+    X_train = pipeline.transform(train_df.select(static_cols).to_pandas())
+    X_test = pipeline.transform(test_df.select(static_cols).to_pandas())
+
+    X_tr, y_tr = X_train[:-val_split], y_train_cls[:-val_split]
+    X_val, y_val = X_train[-val_split:], y_train_cls[-val_split:]
+
+    # Sample weights
     sw = (
         train_df["sample_weight"].to_numpy().astype(np.float64)
         if "sample_weight" in train_df.columns
         else None
     )
-    diag = _window_diagnostics(w_idx + 1, train_df, test_df, y_train_cls, y_test_cls)
-    val_split_idx = max(1, int(len(train_df) * _VALIDATION_SPLIT_FRACTION))
-    pipeline_fit_df = train_df.slice(0, len(train_df) - val_split_idx)
-    pipeline_fit_y = y_train_cls[:-val_split_idx]
-    static_pipeline, selected_static_cols = fit_static_feature_pipeline(
-        config,
-        pipeline_fit_df,
-        static_cols,
-        pipeline_fit_y,
+    w_tr = sw[:-val_split] if sw is not None else None
+
+    # Class weights (regression has no class weights)
+    class_weights = None if is_regression else _compute_class_weights(y_tr)
+    if class_weights:
+        diag["class_weights"] = {str(k): v for k, v in class_weights.items()}
+
+    # Train
+    model = _train_lgbm(
+        X_tr, y_tr, X_val, y_val, class_weights, config, selected, sample_weight=w_tr
     )
-    X_train = static_pipeline.transform(train_df.select(static_cols).to_pandas())
-    X_test = static_pipeline.transform(test_df.select(static_cols).to_pandas())
-    X_tr, y_tr = X_train[:-val_split_idx], y_train[:-val_split_idx]
-    X_val, y_val = X_train[-val_split_idx:], y_train[-val_split_idx:]
-    w_tr = sw[:-val_split_idx] if sw is not None else None
-    class_weights = None if is_regression_static else _compute_class_weights(y_tr)
-    diag["class_weights"] = (
-        {str(k): v for k, v in class_weights.items()} if class_weights else None
-    )
-    diag["shift_weights_per_class"] = None  # static baseline: no shift weights
-    model = _train_fixed(
-        X_tr,
-        y_tr,
-        X_val,
-        y_val,
-        class_weights,
-        config,
-        selected_static_cols,
-        sample_weight=w_tr,
-    )
-    if is_regression_static:
-        raw_preds = model.predict(_wrap_np(X_test, selected_static_cols))
-        preds = np.sign(raw_preds).astype(np.int32)  # threshold=0
-        aligned_proba = np.zeros((len(raw_preds), 3), dtype=np.float64)
-        aligned_proba[np.arange(len(preds)), preds + 1] = 1.0
-        oof_chunk = pl.DataFrame(
-            {
-                "timestamp": test_df["timestamp"],
-                "true_label": y_test_cls,
-                "pred_label": preds,
-                "pred_raw": raw_preds.astype(np.float64),
-                **_one_hot_proba_columns(preds),
-            }
-        )
+
+    # Predict
+    if is_regression:
+        raw = model.predict(_wrap_np(X_test, selected))
+        preds = np.sign(raw).astype(np.int32)
+        proba = np.zeros((len(preds), 3), dtype=np.float64)
+        proba[np.arange(len(preds)), preds + 1] = 1.0
     else:
-        proba = model.predict_proba(_wrap_np(X_test, selected_static_cols))
-        aligned_proba = _align_probability_matrix(proba, model.classes_)
+        proba = model.predict_proba(_wrap_np(X_test, selected))
+        proba = _align_proba(proba, model.classes_)
         threshold = config.model.prediction_confidence_threshold
-        preds = _apply_confidence_threshold(aligned_proba, threshold)
-        oof_chunk = pl.DataFrame(
-            {
-                "timestamp": test_df["timestamp"],
-                "true_label": y_test_cls,
-                "pred_label": preds.astype(np.int32),
-                **_probability_columns(proba, model.classes_),
-            }
-        )
+        preds = _apply_confidence_threshold(proba, threshold)
+
     _add_prediction_diagnostics(
         diag,
         preds,
         y_test_cls,
-        aligned_proba,
+        proba,
         confidence_threshold=config.model.prediction_confidence_threshold,
     )
+
     acc = float((preds == y_test_cls).mean())
-    logger.info(
-        "Static window %d: accuracy=%.4f, test_samples=%d",
-        w_idx + 1,
-        acc,
-        len(y_test_cls),
+    logger.info("  LGBM window %d: acc=%.4f, test=%d", w_idx + 1, acc, len(y_test_cls))
+
+    oof_chunk = pl.DataFrame(
+        {
+            "timestamp": test_df["timestamp"],
+            "true_label": y_test_cls,
+            "pred_label": preds.astype(np.int32),
+            **proba_columns(proba, np.array([-1, 0, 1])),
+        }
     )
+
     return {
         "oof_chunk": oof_chunk,
         "model": model,
-        "static_cols": selected_static_cols,
+        "static_cols": selected,
         "accuracy": acc,
         "diag": diag,
     }
 
 
-def _save_lgbm_wf_results(
+# ── Save ────────────────────────────────────────────────────────────
+
+
+def _save_results(
     config: Config,
     results: list[dict[str, Any]],
-    windows: list[Any],
-    stage_start: float,
+    windows: list[WalkForwardWindow],
+    _elapsed: float,
 ) -> None:
-    """Validate OOF predictions and persist static walk-forward artifacts."""
+    """Validate OOF, persist artifacts."""
     import joblib
 
-    from thesis.stage_4_training.lgbm.utils import _save_feature_importance
-
     if not results:
-        raise RuntimeError("No static OOF predictions generated")
+        raise RuntimeError("No LGBM OOF predictions generated")
 
-    all_oof_preds = [r["oof_chunk"] for r in results]
-    window_diagnostics = [r["diag"] for r in results]
-    last_result = results[-1]
-    last_lgbm_model = last_result["model"]
-    last_feature_cols = last_result["static_cols"]
-    last_window_accuracy = last_result["accuracy"]
-    last_window_index = len(results)
+    last = results[-1]
+
+    all_oof = [r["oof_chunk"] for r in results]
+    diags = [r["diag"] for r in results]
 
     oof_df = _save_oof_predictions(
-        config,
-        all_oof_preds=all_oof_preds,
-        window_diagnostics=window_diagnostics,
+        config, all_oof_preds=all_oof, window_diagnostics=diags
     )
 
     model_path = Path(config.paths.model)
     model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(last_lgbm_model, model_path)
-    _save_feature_importance(last_lgbm_model, last_feature_cols, config)
+    joblib.dump(last["model"], model_path)
+    _save_feature_importance(last["model"], last["static_cols"], config)
 
     if config.paths.session_dir:
-        per_window_accuracies: dict[str, float | None] = {}
-        for d in window_diagnostics:
-            key = str(d.get("window", ""))
-            if key:
-                per_window_accuracies[key] = d.get("accuracy")
-
-        deployment_note = (
-            f"Model saved from window {last_window_index}/{len(windows)} "
-            "(the last chronological walk-forward window). "
-            "This model has NOT seen any future data beyond its training window."
-        )
+        per_window_acc = {str(d.get("window")): d.get("accuracy") for d in diags}
 
         _save_training_history(
             config,
@@ -288,45 +254,51 @@ def _save_lgbm_wf_results(
                         "outer_windows": "bar_based_walk_forward_with_purge_embargo",
                         "lgbm_validation": "tail_20_percent_of_outer_train",
                     },
-                    "last_window_accuracy": last_window_accuracy,
-                    "best_iteration": int(last_lgbm_model.best_iteration_)
-                    if hasattr(last_lgbm_model, "best_iteration_")
+                    "last_window_accuracy": last["accuracy"],
+                    "best_iteration": int(last["model"].best_iteration_)
+                    if hasattr(last["model"], "best_iteration_")
                     else None,
-                    "n_features": len(last_feature_cols),
-                    "n_classes": len(last_lgbm_model.classes_)
-                    if hasattr(last_lgbm_model, "classes_")
+                    "n_features": len(last["static_cols"]),
+                    "n_classes": len(last["model"].classes_)
+                    if hasattr(last["model"], "classes_")
                     else None,
                 },
-                "deployment_note": deployment_note,
-                "per_window_accuracies": per_window_accuracies,
+                "deployment_note": (
+                    f"Model from window {len(results)}/{len(windows)} "
+                    "(last chronological window, no future data seen)"
+                ),
+                "per_window_accuracies": per_window_acc,
             },
         )
+
         _save_walk_forward_history(
             config,
             windows=windows,
-            window_diagnostics=window_diagnostics,
+            window_diagnostics=diags,
             oof_len=len(oof_df),
             architecture="lgbm",
         )
 
-    _log_walk_forward_complete(
-        arch_name="lgbm",
-        windows_count=len(windows),
-        oof_len=len(oof_df),
-        stage_start=stage_start,
-        prefix="LGBM walk-forward complete",
+    _save_arch_copy(oof_df, "lgbm", config)
+    logger.info(
+        "LGBM walk-forward complete: %d windows, %d OOF rows",
+        len(windows),
+        len(oof_df),
     )
 
-    _save_arch_copy(oof_df, "lgbm", config)
+
+# ── Entry point ─────────────────────────────────────────────────────
 
 
 def train_lgbm_walk_forward(config: Config, *, expanded_features: bool = False) -> None:
     """Train LightGBM with walk-forward validation."""
+    from thesis.stage_4_training.walk_forward.loop import run_walk_forward
+
     run_walk_forward(
         config,
-        prepare_fn=_prepare_static_wf_data,
-        window_fn=lambda c, w_i, w, df, fc, **kw: _train_and_predict_static_window(
+        prepare_fn=_prepare,
+        window_fn=lambda c, w_i, w, df, fc, **kw: _train_lgbm_window(
             c, w_i, w, df, fc, expanded_features=expanded_features, **kw
         ),
-        save_fn=_save_lgbm_wf_results,
+        save_fn=_save_results,
     )

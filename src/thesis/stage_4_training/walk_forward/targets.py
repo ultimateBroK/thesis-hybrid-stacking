@@ -1,4 +1,4 @@
-"""Target helpers shared by tabular walk-forward trainers."""
+"""Regression target computation for tabular models."""
 
 from __future__ import annotations
 
@@ -10,58 +10,58 @@ import polars as pl
 from thesis.shared.config import Config
 from thesis.shared.constants import CENSORED_LABEL
 
-logger = logging.getLogger("thesis.pipeline")
+logger = logging.getLogger("thesis")
 
 
-def _compute_regression_target(
+def compute_regression_target(
     df: pl.DataFrame, config: Config
 ) -> tuple[pl.DataFrame, bool]:
-    """Pre-compute regression target column when ``model.objective`` is regression."""
+    """Pre-compute regression target when model.objective is regression.
+
+    Target = sign of forward return over horizon_bars.
+    Tail rows with insufficient forward horizon get censored label.
+    """
     is_regression = config.model.objective == "regression"
     if not is_regression:
         return df, False
 
     if "close" not in df.columns:
-        raise ValueError(
-            "Regression objective requires 'close' column in labeled data. "
-            "Ensure feature engineering includes OHLCV data."
-        )
-    horizon = config.labels.horizon_bars
+        raise ValueError("Regression objective requires 'close' column in labeled data")
+
+    h = config.labels.horizon_bars
     close = df["close"].to_numpy()
     n = len(close)
 
-    reg_target = np.full(n, np.nan, dtype=np.float64)
-    close_future = np.roll(close, -horizon)[: n - horizon]
-    reg_target[: n - horizon] = (close_future - close[: n - horizon]) / close[
-        : n - horizon
-    ]
+    reg = np.full(n, np.nan, dtype=np.float64)
+    future = np.roll(close, -h)[: n - h]
+    reg[: n - h] = (future - close[: n - h]) / close[: n - h]
 
+    # Censored label for tail rows that can't compute forward return
     label_arr = df["label"].to_numpy().copy()
-    tail_start = max(0, n - horizon)
+    tail_start = max(0, n - h)
     label_arr[tail_start:] = CENSORED_LABEL
 
     df = df.with_columns(
         [
-            pl.Series("regression_target", reg_target),
+            pl.Series("regression_target", reg),
             pl.Series("label", label_arr),
         ]
     )
 
+    # Drop rows with no regression target
     n_before = len(df)
     df = df.filter(pl.col("regression_target").is_not_nan())
     n_dropped = n_before - len(df)
     if n_dropped > 0:
         logger.info(
-            "Dropped %d regression tail rows (%d horizon bars) — "
-            "insufficient forward horizon",
+            "  Dropped %d regression tail rows (insufficient forward horizon)",
             n_dropped,
-            horizon,
         )
 
     logger.info(
-        "Regression target computed: horizon=%d bars, mean=%.6f, std=%.6f",
-        horizon,
-        float(np.nanmean(reg_target)),
-        float(np.nanstd(reg_target)),
+        "  Regression target: horizon=%d bars, mean=%.6f, std=%.6f",
+        h,
+        float(np.nanmean(reg)),
+        float(np.nanstd(reg)),
     )
     return df, True

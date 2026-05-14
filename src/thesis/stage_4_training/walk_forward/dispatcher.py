@@ -1,4 +1,4 @@
-"""Walk-forward training dispatcher — routes supported model architecture variants."""
+"""Route walk-forward training to the configured architecture."""
 
 from __future__ import annotations
 
@@ -8,31 +8,21 @@ from thesis.shared.config import Config
 from thesis.stage_4_training.walk_forward.lgbm import train_lgbm_walk_forward
 from thesis.stage_4_training.walk_forward.stacking import train_stacking_walk_forward
 
-logger = logging.getLogger("thesis.pipeline")
+logger = logging.getLogger("thesis")
 
 
 def train_walk_forward(config: Config) -> None:
-    """Dispatch walk-forward training to the configured architecture.
+    """Dispatch to the right trainer based on config.model.architecture."""
+    arch = config.model.architecture
 
-    Supported runtime architectures are classical stacking and LightGBM-only.
-    Legacy sequence-model and sequence-hybrid paths are no longer production
-    runtime paths.
-    """
-    architecture = config.model.architecture
-
-    if architecture == "stacking":
-        logger.info("Using classical stacking walk-forward pipeline")
+    if arch == "stacking":
         train_stacking_walk_forward(config)
         return
 
-    if architecture == "lgbm":
-        logger.info("Using LightGBM walk-forward pipeline")
+    if arch == "lgbm":
         train_lgbm_walk_forward(
             config, expanded_features=config.model.lgbm_expanded_features
         )
         return
 
-    raise ValueError(
-        f"Unsupported model.architecture: {architecture!r}. "
-        "Must be one of: 'stacking', 'lgbm'"
-    )
+    raise ValueError(f"Unsupported architecture: {arch!r}. Use 'stacking' or 'lgbm'")

@@ -1,69 +1,76 @@
-"""Walk-forward artifact persistence helpers.
-
-Shared by LightGBM-only and stacking walk-forward workflows.
-"""
+"""OOF persistence, training history, walk-forward history."""
 
 from __future__ import annotations
 
 import json
 import logging
 from pathlib import Path
-import time
 from typing import Any
 
+import numpy as np
 import polars as pl
 
 from thesis.shared.config import Config
+from thesis.stage_4_training.validation import WalkForwardWindow
+from thesis.stage_4_training.walk_forward.diagnostics import _shannon_entropy
 from thesis.stage_4_training.walk_forward.predictions import (
     _add_confidence_columns,
     _validate_predictions,
     _write_prediction_manifest,
 )
 
-logger = logging.getLogger("thesis.pipeline")
+logger = logging.getLogger("thesis")
 
 
-def _build_lgbm_info(
-    last_lgbm_model: Any,
-    last_feature_cols: list[str],
-    last_window_accuracy: float | None,
-    window_index: int | None = None,
-    total_windows: int = 0,
-    window_train_dates: dict[str, str] | None = None,
-    window_test_dates: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """Build LightGBM metadata dict for training history JSON."""
-    info: dict[str, Any] = {
-        "artifact_strategy": "last_walk_forward_window",
-        "validation_protocol": {
-            "outer_windows": "bar_based_walk_forward_with_purge_embargo",
-            "lgbm_validation": "tail_20_percent_of_outer_train",
-        },
-        "last_window_accuracy": last_window_accuracy,
-        "best_iteration": int(last_lgbm_model.best_iteration_)
-        if hasattr(last_lgbm_model, "best_iteration_")
-        else None,
-        "n_features": len(last_feature_cols),
-        "n_classes": len(last_lgbm_model.classes_)
-        if hasattr(last_lgbm_model, "classes_")
-        else None,
-    }
-    if window_index is not None:
-        info["window_index"] = window_index
-        info["total_windows"] = total_windows
-        info["window_train_date_range"] = window_train_dates or {}
-        info["window_test_date_range"] = window_test_dates or {}
-        info["window_oof_accuracy"] = last_window_accuracy
-    return info
+# ── OOF ──────────────────────────────────────────────────────────────
 
 
-def _aggregate_oof_summary(window_diagnostics: list[dict[str, Any]]) -> dict[str, Any]:
-    """Build aggregate prediction distribution summary across all windows."""
+def _save_oof_predictions(
+    config: Config,
+    *,
+    all_oof_preds: list[pl.DataFrame],
+    window_diagnostics: list[dict[str, Any]],
+) -> pl.DataFrame:
+    """Concatenate OOF chunks, validate, write CSV + manifest."""
+    if not all_oof_preds:
+        raise RuntimeError("No OOF predictions generated")
+
+    oof_df = _add_confidence_columns(pl.concat(all_oof_preds))
+    preds_path = Path(config.paths.predictions)
+    preds_path.parent.mkdir(parents=True, exist_ok=True)
+
+    _validate_predictions(oof_df, preds_path)
+    oof_df.write_csv(preds_path)
+    _write_prediction_manifest(
+        oof_df, preds_path, windows_count=len(window_diagnostics)
+    )
+
+    return oof_df
+
+
+# ── Training history ───────────────────────────────────────────────
+
+
+def _save_training_history(config: Config, payload: dict[str, Any]) -> None:
+    """Write models/training_history.json if session_dir is set."""
+    if not config.paths.session_dir:
+        return
+    path = Path(config.paths.session_dir) / "models" / "training_history.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
+# ── Walk-forward history ──────────────────────────────────────────
+
+
+def _aggregate_oof_summary(diags: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate prediction distribution across all windows."""
     total_long = total_short = total_hold = 0
     entropies, sample_entropies = [], []
-    flagged_windows = []
+    flagged = []
 
-    for d in window_diagnostics:
+    for d in diags:
         pc = d.get("prediction_counts", {})
         total_long += pc.get("1", 0)
         total_short += pc.get("-1", 0)
@@ -73,20 +80,16 @@ def _aggregate_oof_summary(window_diagnostics: list[dict[str, Any]]) -> dict[str
         if d.get("mean_sample_entropy") is not None:
             sample_entropies.append(d["mean_sample_entropy"])
         if d.get("ls_ratio_flagged"):
-            flagged_windows.append(d["window"])
+            flagged.append(d["window"])
 
     total = total_long + total_short + total_hold
     ls = total_long / total_short if total_short > 0 else float("inf")
-
-    import numpy as np
 
     pred_probs = (
         np.array([total_long, total_hold, total_short]) / total
         if total > 0
         else np.array([])
     )
-
-    from thesis.stage_4_training.walk_forward.diagnostics import _shannon_entropy
 
     return {
         "total_predictions": total,
@@ -100,27 +103,29 @@ def _aggregate_oof_summary(window_diagnostics: list[dict[str, Any]]) -> dict[str
         "aggregate_prediction_entropy": (
             round(_shannon_entropy(pred_probs), 4) if pred_probs.size else None
         ),
-        "mean_prediction_entropy": (
-            round(float(np.mean(entropies)), 4) if entropies else None
-        ),
-        "mean_sample_entropy": (
-            round(float(np.mean(sample_entropies)), 4) if sample_entropies else None
-        ),
-        "ls_ratio_flagged_windows": flagged_windows,
-        "ls_ratio_flagged_count": len(flagged_windows),
+        "mean_prediction_entropy": round(float(np.mean(entropies)), 4)
+        if entropies
+        else None,
+        "mean_sample_entropy": round(float(np.mean(sample_entropies)), 4)
+        if sample_entropies
+        else None,
+        "ls_ratio_flagged_windows": flagged,
+        "ls_ratio_flagged_count": len(flagged),
     }
 
 
 def _build_wf_history(
-    windows: list,
-    window_diagnostics: list[dict[str, Any]],
+    windows: list[WalkForwardWindow],
+    diags: list[dict[str, Any]],
     oof_len: int,
+    architecture: str | None = None,
 ) -> dict[str, Any]:
     """Build walk-forward history dict with per-window details."""
     return {
         "num_windows": len(windows),
         "total_oof_predictions": oof_len,
-        "aggregate_oof_summary": _aggregate_oof_summary(window_diagnostics),
+        "aggregate_oof_summary": _aggregate_oof_summary(diags),
+        "architecture": architecture,
         "window_details": [
             {
                 "window": i + 1,
@@ -128,99 +133,64 @@ def _build_wf_history(
                 "train_end_idx": w.train_end_idx,
                 "test_start_idx": w.test_start_idx,
                 "test_end_idx": w.test_end_idx,
-                **next(
-                    (item for item in window_diagnostics if item["window"] == i + 1),
-                    {},
-                ),
+                **(next((d for d in diags if d.get("window") == i + 1), {})),
             }
             for i, w in enumerate(windows)
         ],
     }
 
 
-def _save_oof_predictions(
-    config: Config,
-    *,
-    all_oof_preds: list[pl.DataFrame],
-    window_diagnostics: list[dict[str, Any]],
-) -> pl.DataFrame:
-    """Persist concatenated OOF predictions + manifest; returns OOF dataframe."""
-    if not all_oof_preds:
-        raise RuntimeError(
-            "No OOF predictions generated — all walk-forward windows were skipped"
-        )
-
-    oof_df = _add_confidence_columns(pl.concat(all_oof_preds))
-    preds_path = Path(config.paths.predictions)
-    preds_path.parent.mkdir(parents=True, exist_ok=True)
-    _validate_predictions(oof_df, preds_path)
-    oof_df.write_csv(preds_path)
-    _write_prediction_manifest(
-        oof_df,
-        preds_path,
-        windows_count=len(window_diagnostics),
-    )
-    return oof_df
-
-
-def _save_training_history(config: Config, payload: dict[str, Any]) -> None:
-    """Write ``models/training_history.json`` under the session dir if enabled."""
-    if not config.paths.session_dir:
-        return
-    models_dir = Path(config.paths.session_dir) / "models"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    history_path = models_dir / "training_history.json"
-    with history_path.open("w") as f:
-        json.dump(payload, f, indent=2)
-    logger.info("Training history saved to %s", history_path)
-
-
 def _save_walk_forward_history(
     config: Config,
     *,
-    windows: list,
+    windows: list[WalkForwardWindow],
     window_diagnostics: list[dict[str, Any]],
     oof_len: int,
     architecture: str | None = None,
 ) -> None:
-    """Write ``reports/walk_forward_history.json`` under the session dir if enabled."""
+    """Write reports/walk_forward_history.json if session_dir is set."""
     if not config.paths.session_dir:
         return
-    wf_path = Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
-    wf_path.parent.mkdir(parents=True, exist_ok=True)
+    path = Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(
+            _build_wf_history(windows, window_diagnostics, oof_len, architecture),
+            f,
+            indent=2,
+        )
 
-    wf_history = _build_wf_history(windows, window_diagnostics, oof_len)
-    if architecture is not None:
-        wf_history["architecture"] = architecture
-    with wf_path.open("w") as f:
-        json.dump(wf_history, f, indent=2)
 
-
-def _log_walk_forward_complete(
-    *,
-    arch_name: str,
-    windows_count: int,
-    oof_len: int,
-    stage_start: float,
-    prefix: str = "Walk-forward complete",
-) -> None:
-    logger.info(
-        "%s (%s): %d windows, %d OOF predictions (%.1fs)",
-        prefix,
-        arch_name,
-        windows_count,
-        oof_len,
-        time.perf_counter() - stage_start,
-    )
+# ── Per-architecture copy ──────────────────────────────────────────
 
 
 def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> None:
-    """Save per-architecture prediction copy for multi-arch comparison."""
+    """Save predictions/preds_{arch}.csv for multi-arch comparison."""
     if not config.paths.session_dir:
         return
-    session_dir = Path(config.paths.session_dir)
-    preds_dir = session_dir / "predictions"
-    preds_dir.mkdir(parents=True, exist_ok=True)
-    arch_path = preds_dir / f"preds_{arch_name}.csv"
-    oof_df.write_csv(arch_path)
-    logger.info("Per-arch predictions saved: %s", arch_path)
+    path = Path(config.paths.session_dir) / "predictions" / f"preds_{arch_name}.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    oof_df.write_csv(path)
+
+
+# ── Feature importance ────────────────────────────────────────────
+
+
+def _save_feature_importance(
+    model: Any, feature_cols: list[str], config: Config
+) -> None:
+    """Save sorted model feature importances to JSON."""
+    try:
+        imp = model.feature_importances_
+        pairs = sorted(zip(feature_cols, imp), key=lambda x: x[1], reverse=True)
+        out_path = (
+            Path(config.paths.session_dir) / "reports" / "feature_importance.json"
+            if config.paths.session_dir
+            else Path("results/feature_importance.json")
+        )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w") as f:
+            json.dump({name: float(val) for name, val in pairs}, f, indent=2)
+        logger.info("  Feature importance saved (top 5: %s)", [p[0] for p in pairs[:5]])
+    except (OSError, ValueError) as e:
+        logger.warning("Feature importance save failed: %s", e)

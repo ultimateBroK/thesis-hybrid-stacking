@@ -1,4 +1,4 @@
-"""Prediction validation and probability column helpers for walk-forward training."""
+"""Prediction helpers: confidence threshold, probability alignment, OOF validation."""
 
 from __future__ import annotations
 
@@ -9,73 +9,103 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-logger = logging.getLogger("thesis.pipeline")
+logger = logging.getLogger("thesis")
 
 _CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
 
 
-def _apply_confidence_threshold(
-    proba: np.ndarray,
-    threshold: float,
-) -> np.ndarray:
-    """Apply confidence gate to aligned probability matrix.
+def _apply_confidence_threshold(proba: np.ndarray, threshold: float) -> np.ndarray:
+    """Gate predictions by confidence.
 
-    When *threshold* > 0, only predict LONG (1) when ``P(LONG) - P(SHORT) > threshold``,
-    and SHORT (-1) when ``P(SHORT) - P(LONG) > threshold``.  Otherwise predict HOLD (0).
-    When *threshold* == 0, falls back to standard argmax (backward-compatible).
+    When threshold > 0:
+        LONG  (1) if P(LONG)  - P(SHORT) > threshold
+        SHORT (-1) if P(SHORT) - P(LONG)  > threshold
+        HOLD  (0) otherwise
+    When threshold == 0: standard argmax.
     """
     if threshold <= 0:
         return _CLASS_ORDER[np.argmax(proba, axis=1)]
-    long_minus_short = proba[:, 2] - proba[:, 0]  # P(LONG) - P(SHORT)
-    return np.where(
-        long_minus_short > threshold,
-        1,
-        np.where(long_minus_short < -threshold, -1, 0),
-    ).astype(np.int32)
+
+    diff = proba[:, 2] - proba[:, 0]  # P(LONG) - P(SHORT)
+    return np.where(diff > threshold, 1, np.where(diff < -threshold, -1, 0)).astype(
+        np.int32
+    )
+
+
+def _align_proba(proba: np.ndarray, class_order: list[int] | np.ndarray) -> np.ndarray:
+    """Align probabilities to canonical [-1, 0, 1] order."""
+    aligned = np.zeros((len(proba), 3), dtype=np.float64)
+    index_map = {int(c): i for i, c in enumerate(class_order)}
+    for target_idx, cls in enumerate(_CLASS_ORDER):
+        src = index_map.get(int(cls))
+        if src is not None:
+            aligned[:, target_idx] = proba[:, src]
+    return aligned
+
+
+def proba_columns(
+    proba: np.ndarray,
+    class_order: list[int] | np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Canonical probability columns for [-1, 0, 1]."""
+    aligned = _align_proba(proba, class_order)
+    return {
+        f"pred_proba_class_{'minus' + str(abs(c)) if c < 0 else str(c)}": aligned[:, i]
+        for i, c in enumerate(_CLASS_ORDER)
+    }
+
+
+def _label_suffix(cls: int) -> str:
+    """Suffix for probability column names."""
+    return f"minus{abs(cls)}" if cls < 0 else str(cls)
+
+
+def one_hot_proba(
+    preds: np.ndarray,
+    *,
+    prefix: str = "pred_proba_class_",
+) -> dict[str, np.ndarray]:
+    """One-hot probability columns from predicted labels."""
+    preds = np.asarray(preds, dtype=np.int32)
+    return {
+        f"{prefix}{_label_suffix(int(c))}": (preds == c).astype(np.float64)
+        for c in _CLASS_ORDER
+    }
 
 
 def _validate_predictions(df: pl.DataFrame, path: Path) -> None:
-    """Validate final OOF predictions before writing the parquet artifact."""
+    """Validate OOF predictions before writing.
+
+    Checks: required columns, non-empty, no nulls, no duplicate timestamps,
+    timestamps sorted, valid label values, no null columns.
+    """
     required = {"timestamp", "pred_label"}
     missing = required - set(df.columns)
     if missing:
-        raise ValueError(f"Predictions missing columns {sorted(missing)}: file={path}")
+        raise ValueError(f"Predictions missing columns {sorted(missing)}: {path}")
     if df.is_empty():
-        raise ValueError(f"Predictions are empty: file={path}")
+        raise ValueError(f"Predictions are empty: {path}")
 
-    ts_col = df["timestamp"]
-    if ts_col.null_count() > 0:
-        raise ValueError(
-            f"Predictions timestamp has nulls:"
-            f" actual={ts_col.null_count()}, file={path}"
-        )
-    if ts_col.n_unique() < len(ts_col):
-        dup_count = len(ts_col) - ts_col.n_unique()
-        raise ValueError(
-            f"OOF predictions contain {dup_count} duplicate timestamps — "
-            "walk-forward test windows should be non-overlapping. "
-            f"Check step_bars vs test_window_bars. file={path}"
-        )
-    if ts_col.to_list() != sorted(ts_col.to_list()):
-        raise ValueError(f"OOF predictions must be sorted by timestamp: file={path}")
+    ts = df["timestamp"]
+    if ts.null_count() > 0:
+        raise ValueError(f"Timestamp has nulls ({ts.null_count()}): {path}")
+    if ts.n_unique() < len(ts):
+        raise ValueError(f"OOF predictions contain duplicate timestamps: {path}")
+    if ts.to_list() != sorted(ts.to_list()):
+        raise ValueError(f"OOF predictions not sorted by timestamp: {path}")
 
-    pred_col = df["pred_label"]
-    if pred_col.null_count() > 0:
-        raise ValueError(
-            f"pred_label has nulls: actual={pred_col.null_count()}, file={path}"
-        )
-    invalid = sorted(set(pred_col.unique().to_list()) - {-1, 0, 1})
+    pred = df["pred_label"]
+    if pred.null_count() > 0:
+        raise ValueError(f"pred_label has nulls: {path}")
+    invalid = sorted(set(pred.unique().to_list()) - {-1, 0, 1})
     if invalid:
         raise ValueError(
-            f"Invalid pred_label values: expected={{-1,0,1}},"
-            f" actual={invalid}, file={path}"
+            f"Invalid pred_label values: expected {{-1,0,1}}, got {invalid}: {path}"
         )
 
-    null_cols = {
-        col: df[col].null_count() for col in df.columns if df[col].null_count()
-    }
+    null_cols = {c: df[c].null_count() for c in df.columns if df[c].null_count()}
     if null_cols:
-        raise ValueError(f"Predictions contain nulls: actual={null_cols}, file={path}")
+        raise ValueError(f"Predictions contain nulls: {null_cols}: {path}")
 
 
 def _write_prediction_manifest(
@@ -84,81 +114,33 @@ def _write_prediction_manifest(
     *,
     windows_count: int,
 ) -> None:
-    """Write compact diagnostics beside final_predictions.csv."""
-    from thesis.stage_4_training.walk_forward.diagnostics import _counts_dict
+    """Write prediction_manifest.json next to final_predictions.csv."""
+    from thesis.stage_4_training.walk_forward.diagnostics import _counts
 
-    mean_confidence = (
-        float(df["max_confidence"].mean()) if "max_confidence" in df.columns else None
-    )
     manifest = {
         "row_count": len(df),
         "start": str(df["timestamp"][0]),
         "end": str(df["timestamp"][-1]),
-        "label_distribution": _counts_dict(df["true_label"].to_numpy())
-        if "true_label" in df.columns
-        else {},
-        "prediction_distribution": _counts_dict(df["pred_label"].to_numpy()),
-        "mean_confidence": mean_confidence,
+        "label_distribution": (
+            _counts(df["true_label"].to_numpy()) if "true_label" in df.columns else {}
+        ),
+        "prediction_distribution": _counts(df["pred_label"].to_numpy()),
+        "mean_confidence": (
+            float(df["max_confidence"].mean())
+            if "max_confidence" in df.columns
+            else None
+        ),
         "windows_count": windows_count,
     }
-    manifest_path = path.with_name("prediction_manifest.json")
-    with open(manifest_path, "w") as f:
+    with open(path.with_name("prediction_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
-    logger.info("Prediction manifest saved: %s", manifest_path)
-
-
-def _label_suffix(class_label: int) -> str:
-    """Return canonical probability-column suffix for a class label."""
-    return f"minus{abs(class_label)}" if class_label < 0 else str(class_label)
-
-
-def _one_hot_proba_columns(
-    preds: np.ndarray,
-    *,
-    prefix: str = "pred_proba_class_",
-) -> dict[str, np.ndarray]:
-    """Build one-hot probability columns from predicted class labels."""
-    preds = np.asarray(preds, dtype=np.int32)
-    return {
-        f"{prefix}{_label_suffix(int(cls))}": (preds == cls).astype(np.float64)
-        for cls in _CLASS_ORDER
-    }
-
-
-def _align_probability_matrix(
-    proba: np.ndarray,
-    class_order: list[int] | np.ndarray,
-) -> np.ndarray:
-    """Align class probabilities to the canonical ``[-1, 0, 1]`` order."""
-    aligned = np.zeros((len(proba), len(_CLASS_ORDER)), dtype=np.float64)
-    index_by_class = {int(cls): idx for idx, cls in enumerate(class_order)}
-    for target_idx, cls in enumerate(_CLASS_ORDER):
-        source_idx = index_by_class.get(int(cls))
-        if source_idx is not None:
-            aligned[:, target_idx] = proba[:, source_idx]
-    return aligned
-
-
-def _probability_columns(
-    proba: np.ndarray,
-    class_order: list[int] | np.ndarray,
-    *,
-    prefix: str = "pred_proba_class_",
-) -> dict[str, np.ndarray]:
-    """Build canonical probability columns for ``{-1, 0, 1}``."""
-    aligned = _align_probability_matrix(proba, class_order)
-    return {
-        f"{prefix}{_label_suffix(int(cls))}": aligned[:, idx]
-        for idx, cls in enumerate(_CLASS_ORDER)
-    }
 
 
 _PROBA_COLS = ("pred_proba_class_minus1", "pred_proba_class_0", "pred_proba_class_1")
-"""Canonical probability column names in ``[-1, 0, 1]`` order."""
 
 
 def _add_confidence_columns(df: pl.DataFrame) -> pl.DataFrame:
-    """Attach ``max_confidence`` and ``confidence_bin`` to an OOF DataFrame."""
+    """Attach max_confidence and confidence_bin to OOF DataFrame."""
     if not all(c in df.columns for c in _PROBA_COLS):
         return df
     return df.with_columns(
