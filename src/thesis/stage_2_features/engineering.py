@@ -42,6 +42,8 @@ from thesis.stage_2_features.indicators import (
     _add_price_dist_ratio,
     _add_regime,
     _add_rsi,
+    _add_trend_regime,
+    _add_volatility_regime,
     _add_volume_zscore,
     _add_vwap,
 )
@@ -83,6 +85,11 @@ def generate_features(config: Config) -> None:
     df = _add_macd(df, config)
     df = _add_volume_zscore(df, config)
     df = _add_ohlcv_norm(df, config)
+
+    # Regime features — gated behind config flag
+    if config.features.enable_regime_features:
+        df = _add_volatility_regime(df, config)
+        df = _add_trend_regime(df, config)
 
     # Keep `log_returns` as a diagnostic/helper alias.
     if "return_1h" in df.columns and "log_returns" not in df.columns:

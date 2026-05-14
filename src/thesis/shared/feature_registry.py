@@ -29,13 +29,37 @@ LABEL_META_COLS: list[str] = [
 
 
 # ---------------------------------------------------------------------------
+# Regime feature column names (only active when enable_regime_features=True)
+# ---------------------------------------------------------------------------
+
+_REGIME_INDICATOR_FEATURES: list[str] = ["volatility_regime", "trend_regime"]
+_REGIME_LABEL_PRIOR_FEATURES: list[str] = [
+    "label_prior_long_lag1",
+    "label_prior_short_lag1",
+]
+REGIME_FEATURES: list[str] = _REGIME_INDICATOR_FEATURES + _REGIME_LABEL_PRIOR_FEATURES
+
+
+def get_regime_feature_cols(config) -> list[str]:
+    """Return regime feature columns if enabled, empty list otherwise."""
+    if not getattr(config.features, "enable_regime_features", False):
+        return []
+    return list(REGIME_FEATURES)
+
+
+# ---------------------------------------------------------------------------
 # Config-driven helpers
 # ---------------------------------------------------------------------------
 
 
 def get_static_feature_cols(config) -> list[str]:
     """Return the static (non-sequential) feature columns from config."""
-    return list(config.features.static_feature_cols)
+    cols = list(config.features.static_feature_cols)
+    if getattr(config.features, "enable_regime_features", False):
+        for c in REGIME_FEATURES:
+            if c not in cols:
+                cols.append(c)
+    return cols
 
 
 def get_label_helper_cols(config) -> list[str]:
@@ -48,12 +72,25 @@ def build_feature_output_cols(config) -> list[str]:
 
     Combines OHLCV raw columns, label helpers, and model-facing tabular
     features into a sorted, deduplicated list.
+
+    Note: regime label-prior features (label_prior_long_lag1, etc.) are NOT
+    included here because they depend on labels which don't exist at feature
+    engineering time.  They are added dynamically in stage_4.
     """
+    # Build indicator-only regime features for features.parquet
+    regime_indicator_cols = (
+        _REGIME_INDICATOR_FEATURES
+        if getattr(config.features, "enable_regime_features", False)
+        else []
+    )
+    # Use static_feature_cols from config (without regime additions) as the base
+    base_cols = list(config.features.static_feature_cols)
     return sorted(
         set(
             OHLCV_RAW_COLS
             + get_label_helper_cols(config)
-            + get_static_feature_cols(config)
+            + base_cols
+            + regime_indicator_cols
         )
     )
 

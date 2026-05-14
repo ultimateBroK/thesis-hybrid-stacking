@@ -43,9 +43,7 @@ def _render_oof_vs_oos_section(
         if heading:
             L.append(heading)
             L.append("")
-        L.append(
-            "*Walk-forward history unavailable — OOF/OOS comparison skipped.*"
-        )
+        L.append("*Walk-forward history unavailable — OOF/OOS comparison skipped.*")
         L.append("")
         return
 

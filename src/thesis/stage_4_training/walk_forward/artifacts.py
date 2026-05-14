@@ -57,6 +57,60 @@ def _build_lgbm_info(
     return info
 
 
+def _aggregate_oof_summary(window_diagnostics: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build aggregate prediction distribution summary across all windows."""
+    total_long = total_short = total_hold = 0
+    entropies, sample_entropies = [], []
+    flagged_windows = []
+
+    for d in window_diagnostics:
+        pc = d.get("prediction_counts", {})
+        total_long += pc.get("1", 0)
+        total_short += pc.get("-1", 0)
+        total_hold += pc.get("0", 0)
+        if d.get("prediction_entropy") is not None:
+            entropies.append(d["prediction_entropy"])
+        if d.get("mean_sample_entropy") is not None:
+            sample_entropies.append(d["mean_sample_entropy"])
+        if d.get("ls_ratio_flagged"):
+            flagged_windows.append(d["window"])
+
+    total = total_long + total_short + total_hold
+    ls = total_long / total_short if total_short > 0 else float("inf")
+
+    import numpy as np
+
+    pred_probs = (
+        np.array([total_long, total_hold, total_short]) / total
+        if total > 0
+        else np.array([])
+    )
+
+    from thesis.stage_4_training.walk_forward.diagnostics import _shannon_entropy
+
+    return {
+        "total_predictions": total,
+        "long_count": total_long,
+        "short_count": total_short,
+        "hold_count": total_hold,
+        "long_pct": round(total_long / total * 100, 2) if total else None,
+        "short_pct": round(total_short / total * 100, 2) if total else None,
+        "hold_pct": round(total_hold / total * 100, 2) if total else None,
+        "aggregate_ls_ratio": round(ls, 4) if total_short > 0 else None,
+        "aggregate_prediction_entropy": (
+            round(_shannon_entropy(pred_probs), 4) if pred_probs.size else None
+        ),
+        "mean_prediction_entropy": (
+            round(float(np.mean(entropies)), 4) if entropies else None
+        ),
+        "mean_sample_entropy": (
+            round(float(np.mean(sample_entropies)), 4) if sample_entropies else None
+        ),
+        "ls_ratio_flagged_windows": flagged_windows,
+        "ls_ratio_flagged_count": len(flagged_windows),
+    }
+
+
 def _build_wf_history(
     windows: list,
     window_diagnostics: list[dict[str, Any]],
@@ -66,6 +120,7 @@ def _build_wf_history(
     return {
         "num_windows": len(windows),
         "total_oof_predictions": oof_len,
+        "aggregate_oof_summary": _aggregate_oof_summary(window_diagnostics),
         "window_details": [
             {
                 "window": i + 1,

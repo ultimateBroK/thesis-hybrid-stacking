@@ -6,14 +6,14 @@ import math
 
 import pytest
 
-from thesis.shared.zones import _get_metric_zone, _is_extreme_value
+from thesis.shared.zones import get_metric_zone, is_extreme_value
 
 
 @pytest.mark.unit
 def test_extreme_value_thresholds() -> None:
-    assert _is_extreme_value("profit_factor", 11.0) == (True, 10.0)
-    assert _is_extreme_value("profit_factor", 2.0) == (False, 10.0)
-    assert _is_extreme_value("unknown", 999.0) == (False, float("inf"))
+    assert is_extreme_value("profit_factor", 11.0) == (True, 10.0)
+    assert is_extreme_value("profit_factor", 2.0) == (False, 10.0)
+    assert is_extreme_value("unknown", 999.0) == (False, float("inf"))
 
 
 @pytest.mark.unit
@@ -128,7 +128,7 @@ def test_extreme_value_thresholds() -> None:
 def test_metric_zone_boundaries(
     metric: str, value: float, expected_color: str, expected_label: str
 ) -> None:
-    color, label, recommendation = _get_metric_zone(metric, value)
+    color, label, recommendation = get_metric_zone(metric, value)
     assert color == expected_color
     assert label == expected_label
     assert recommendation
@@ -136,17 +136,17 @@ def test_metric_zone_boundaries(
 
 @pytest.mark.unit
 def test_metric_zone_missing_and_extreme_values() -> None:
-    assert _get_metric_zone("sharpe_ratio", None) == (
+    assert get_metric_zone("sharpe_ratio", None) == (
         "moderate",
         "N/A",
         "No data available",
     )
-    assert _get_metric_zone("sharpe_ratio", math.nan) == (
+    assert get_metric_zone("sharpe_ratio", math.nan) == (
         "moderate",
         "N/A",
         "No data available",
     )
-    color, label, recommendation = _get_metric_zone("profit_factor", 11.0)
+    color, label, recommendation = get_metric_zone("profit_factor", 11.0)
     assert color == "dangerous"
     assert label == "Extreme"
     assert "exceeds threshold" in recommendation

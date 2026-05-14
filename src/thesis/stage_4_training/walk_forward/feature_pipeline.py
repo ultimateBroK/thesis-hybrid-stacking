@@ -15,6 +15,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
 
 from thesis.shared.config import Config
+from thesis.shared.feature_registry import REGIME_FEATURES
 
 logger = logging.getLogger("thesis.pipeline")
 
@@ -24,11 +25,56 @@ def _select_static_feature_cols(
     df: pl.DataFrame,
     candidate_cols: list[str],
 ) -> list[str]:
-    """Return static features for LightGBM, preferring the config whitelist."""
+    """Return static features for LightGBM, preferring the config whitelist.
+
+    When ``enable_regime_features`` is True, dynamically adds any regime
+    feature columns present in *df* (including label-prior features that
+    were computed in stage 4's data preparation step).
+    """
     available = [c for c in config.features.static_feature_cols if c in df.columns]
-    if available:
-        return available
-    return [c for c in candidate_cols if c in df.columns]
+    if not available:
+        available = [c for c in candidate_cols if c in df.columns]
+
+    # Add regime features dynamically when enabled and present in the dataframe
+    if getattr(config.features, "enable_regime_features", False):
+        for c in REGIME_FEATURES:
+            if c in df.columns and c not in available:
+                available.append(c)
+
+    return available
+
+
+def _add_label_prior_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Compute leakage-safe label prior regime features.
+
+    Adds ``label_prior_long_lag1`` and ``label_prior_short_lag1`` — rolling
+    100-bar fraction of LONG/SHORT labels from **past** bars only.
+
+    The shift by ``horizon_bars + 1`` ensures that at bar T we only use labels
+    whose event-end is strictly before T, preventing any lookahead leakage
+    from the triple-barrier labeling process.
+    """
+    if "label" not in df.columns:
+        return df
+
+    horizon = config.labels.horizon_bars
+    shift_n = horizon + 1
+
+    is_long = (pl.col("label") == 1).cast(pl.Float64)
+    is_short = (pl.col("label") == -1).cast(pl.Float64)
+
+    return df.with_columns(
+        [
+            is_long.shift(shift_n)
+            .rolling_mean(window_size=100)
+            .fill_null(0.0)
+            .alias("label_prior_long_lag1"),
+            is_short.shift(shift_n)
+            .rolling_mean(window_size=100)
+            .fill_null(0.0)
+            .alias("label_prior_short_lag1"),
+        ]
+    )
 
 
 def fit_static_feature_pipeline(
@@ -46,6 +92,11 @@ def fit_static_feature_pipeline(
         raise ValueError("Training split is empty; cannot fit static pipeline")
 
     k_best = min(max(5, len(static_cols) // 2), len(static_cols))
+    logger.info(
+        "Feature pipeline: %d static cols → k_best=%d (SelectKBest)",
+        len(static_cols),
+        k_best,
+    )
     feature_pipeline = Pipeline(
         steps=[
             ("drop_duplicate", DropDuplicateFeatures(missing_values="ignore")),
@@ -76,6 +127,12 @@ def fit_static_feature_pipeline(
         ]
         if not selected_cols:
             selected_cols = list(preselect.columns[: min(5, preselect.width)])
+        logger.info(
+            "Selected %d/%d features: %s",
+            len(selected_cols),
+            len(preselect_cols),
+            selected_cols,
+        )
         return feature_pipeline, selected_cols
     except ValueError as exc:
         logger.warning("Static feature selection fallback activated: %s", str(exc))

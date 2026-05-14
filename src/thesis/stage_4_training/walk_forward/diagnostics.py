@@ -11,7 +11,16 @@ import polars as pl
 logger = logging.getLogger("thesis.pipeline")
 
 _HIGH_CONFIDENCE_THRESHOLD = 0.70
-_SHORT_BIAS_RATIO_THRESHOLD = 0.5
+_LS_RATIO_MIN = 0.2
+_LS_RATIO_MAX = 5.0
+
+
+def _shannon_entropy(probabilities: np.ndarray) -> float:
+    """Compute Shannon entropy (base-2) of a probability distribution."""
+    p = probabilities[probabilities > 0]
+    if p.size == 0:
+        return 0.0
+    return float(-np.sum(p * np.log2(p)))
 
 
 def _counts_dict(values: np.ndarray) -> dict[str, int]:
@@ -94,6 +103,8 @@ def _add_prediction_diagnostics(
     preds: np.ndarray,
     y_test: np.ndarray,
     proba: np.ndarray,
+    *,
+    confidence_threshold: float = 0.0,
 ) -> None:
     """Attach prediction distribution, confidence, and per-class metrics to *diag*."""
     pred_counts = _counts_dict(preds)
@@ -101,9 +112,39 @@ def _add_prediction_diagnostics(
 
     long_count = pred_counts.get("1", 0)
     short_count = pred_counts.get("-1", 0)
+    hold_count = pred_counts.get("0", 0)
+    directional = long_count + short_count
+    total = long_count + short_count + hold_count
     ls_ratio = long_count / short_count if short_count > 0 else float("inf")
 
     per_class = _compute_per_class_metrics(preds, y_test) if len(y_test) else {}
+
+    # --- Entropy-based confidence metrics ---
+    # 1) Prediction distribution entropy (uncertainty in predicted class mix)
+    pred_total = sum(pred_counts.values())
+    if pred_total > 0:
+        pred_probs = np.array(
+            [pred_counts[k] / pred_total for k in sorted(pred_counts)]
+        )
+        prediction_entropy = round(_shannon_entropy(pred_probs), 4)
+    else:
+        prediction_entropy = None
+
+    # 2) Mean per-sample entropy (model uncertainty across classes)
+    if len(proba):
+        sample_entropies = np.array(
+            [_shannon_entropy(proba[i]) for i in range(len(proba))]
+        )
+        mean_sample_entropy = round(float(sample_entropies.mean()), 4)
+    else:
+        mean_sample_entropy = None
+
+    # --- L/S ratio guardrail ---
+    ls_ratio_flagged = False
+    if short_count > 0 and long_count > 0:
+        ratio = long_count / short_count
+        ls_ratio_flagged = ratio < _LS_RATIO_MIN or ratio > _LS_RATIO_MAX
+
     diag.update(
         {
             "prediction_counts": pred_counts,
@@ -116,16 +157,28 @@ def _add_prediction_diagnostics(
             if len(confidence)
             else None,
             "ls_ratio": round(ls_ratio, 4) if short_count > 0 else None,
+            "ls_ratio_flagged": ls_ratio_flagged,
+            "prediction_entropy": prediction_entropy,
+            "mean_sample_entropy": mean_sample_entropy,
+            "confidence_threshold": confidence_threshold,
+            "hold_count": hold_count,
+            "hold_pct": round(hold_count / total * 100.0, 2) if total else None,
+            "directional_count": directional,
             "per_class": per_class,
         }
     )
     logger.info(
-        "Window %d preds | pred=%s acc=%.4f mean_conf=%.3f L/S=%.3f",
+        "Window %d preds | pred=%s acc=%.4f mean_conf=%.3f L/S=%.3f "
+        "threshold=%.2f hold=%d/%d (%.1f%%)",
         diag["window"],
         diag["prediction_pct"],
         diag["accuracy"] or 0.0,
         diag["mean_confidence"] or 0.0,
         ls_ratio if short_count > 0 else float("nan"),
+        confidence_threshold,
+        hold_count,
+        total,
+        diag["hold_pct"] or 0.0,
     )
     if per_class:
         logger.info(
@@ -143,21 +196,43 @@ def _add_prediction_diagnostics(
             per_class["1"]["recall"],
             per_class["1"]["f1"],
         )
-    if short_count > 0 and long_count / short_count < _SHORT_BIAS_RATIO_THRESHOLD:
+    # L/S ratio guardrail: warn if outside [0.2, 5.0]
+    if short_count > 0 and long_count > 0:
+        ratio = long_count / short_count
+        if ratio < _LS_RATIO_MIN:
+            logger.warning(
+                "Window %d: L/S ratio %.2f < %.1f — SHORT bias flagged",
+                diag["window"],
+                ratio,
+                _LS_RATIO_MIN,
+            )
+        elif ratio > _LS_RATIO_MAX:
+            logger.warning(
+                "Window %d: L/S ratio %.2f > %.1f — LONG bias flagged",
+                diag["window"],
+                ratio,
+                _LS_RATIO_MAX,
+            )
+        else:
+            logger.info(
+                "Window %d: L/S balanced — ratio %.2f",
+                diag["window"],
+                ratio,
+            )
+    elif short_count == 0 and long_count > 0:
         logger.warning(
-            "Window %d: SHORT bias — LONG/SHORT ratio = %.2f",
+            "Window %d: No SHORT predictions (L/S = inf) — flagged",
             diag["window"],
-            long_count / short_count,
         )
-    elif long_count > 0 and short_count / long_count < _SHORT_BIAS_RATIO_THRESHOLD:
+    elif long_count == 0 and short_count > 0:
         logger.warning(
-            "Window %d: LONG bias — SHORT/LONG ratio = %.2f",
+            "Window %d: No LONG predictions (L/S = 0) — flagged",
             diag["window"],
-            short_count / long_count,
         )
-    else:
+    if prediction_entropy is not None:
         logger.info(
-            "Window %d: L/S balanced — ratio %.2f",
+            "Window %d entropy | pred_entropy=%.3f mean_sample_entropy=%.3f",
             diag["window"],
-            ls_ratio if short_count > 0 else float("inf"),
+            prediction_entropy,
+            mean_sample_entropy or 0.0,
         )

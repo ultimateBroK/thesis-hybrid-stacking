@@ -88,6 +88,7 @@ class FeaturesConfig:
     ema_fast_span: int = 34
     ema_slow_span: int = 89
     correlation_threshold: float = 0.75
+    enable_regime_features: bool = False
     static_feature_cols: list[str] = field(
         default_factory=lambda: list(CORE_STATIC_FEATURES)
     )
@@ -129,6 +130,11 @@ class LGBMConfig:
     stacking_meta_model: str = "logistic_regression"
     stacking_meta_fraction: float = 0.20
     stacking_passthrough: bool = False
+    stacking_internal_folds: int = 0
+    stacking_internal_purge: int = 0
+    stacking_calibrate_base: bool = False
+    stacking_calibration_fraction: float = 0.0
+    prediction_confidence_threshold: float = 0.0
     random_forest_n_estimators: int = 300
     random_forest_max_depth: int = 6
     random_forest_min_samples_leaf: int = 80

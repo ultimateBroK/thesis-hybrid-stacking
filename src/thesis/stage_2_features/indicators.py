@@ -367,3 +367,52 @@ def _add_regime(df: pl.DataFrame, config: Config | None = None) -> pl.DataFrame:
     adx_signal = ((pl.col(adx_cols[0]) - threshold) / threshold).clip(0, clip_max)
     slope_sign = pl.col(slope_cols[0]).sign()
     return df.with_columns((adx_signal * slope_sign).alias("regime_strength"))
+
+
+def _add_volatility_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add volatility regime from rolling 50-bar ATR percentile.
+
+    Buckets ATR percentile into ordinal encoding:
+    0 = low (p < 0.33), 1 = normal (0.33 ≤ p < 0.66), 2 = high (p ≥ 0.66).
+
+    Safe — derived from OHLCV/indicators only, no labels.
+    """
+    atr_pct = pl.col("atr_percentile")
+    regime = (
+        pl.when(atr_pct >= 0.66)
+        .then(pl.lit(2))
+        .when(atr_pct >= 0.33)
+        .then(pl.lit(1))
+        .otherwise(pl.lit(0))
+        .cast(pl.Float64)
+    )
+    return df.with_columns(regime.alias("volatility_regime"))
+
+
+def _add_trend_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Add trend regime composite from EMA slope sign × ADX level.
+
+    Encoding: -2 strong_down, -1 weak_down, 0 range, 1 weak_up, 2 strong_up.
+    Uses the configured ADX regime threshold to distinguish strong/weak trends.
+
+    Safe — derived from indicators only, no labels.
+    """
+    adx_col = f"adx_{config.features.adx_period}"
+    slope_col = f"ema_slope_{config.features.ema_slope_period}"
+    threshold = config.features.adx_regime_threshold
+    adx = pl.col(adx_col)
+    slope = pl.col(slope_col)
+
+    trend_regime = (
+        pl.when((slope > 0) & (adx >= threshold))
+        .then(pl.lit(2))
+        .when((slope > 0) & (adx < threshold))
+        .then(pl.lit(1))
+        .when((slope < 0) & (adx < threshold))
+        .then(pl.lit(-1))
+        .when((slope < 0) & (adx >= threshold))
+        .then(pl.lit(-2))
+        .otherwise(pl.lit(0))
+        .cast(pl.Float64)
+    )
+    return df.with_columns(trend_regime.alias("trend_regime"))

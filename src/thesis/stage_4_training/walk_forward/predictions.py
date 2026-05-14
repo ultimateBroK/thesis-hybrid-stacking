@@ -14,6 +14,26 @@ logger = logging.getLogger("thesis.pipeline")
 _CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
 
 
+def _apply_confidence_threshold(
+    proba: np.ndarray,
+    threshold: float,
+) -> np.ndarray:
+    """Apply confidence gate to aligned probability matrix.
+
+    When *threshold* > 0, only predict LONG (1) when ``P(LONG) - P(SHORT) > threshold``,
+    and SHORT (-1) when ``P(SHORT) - P(LONG) > threshold``.  Otherwise predict HOLD (0).
+    When *threshold* == 0, falls back to standard argmax (backward-compatible).
+    """
+    if threshold <= 0:
+        return _CLASS_ORDER[np.argmax(proba, axis=1)]
+    long_minus_short = proba[:, 2] - proba[:, 0]  # P(LONG) - P(SHORT)
+    return np.where(
+        long_minus_short > threshold,
+        1,
+        np.where(long_minus_short < -threshold, -1, 0),
+    ).astype(np.int32)
+
+
 def _validate_predictions(df: pl.DataFrame, path: Path) -> None:
     """Validate final OOF predictions before writing the parquet artifact."""
     required = {"timestamp", "pred_label"}

@@ -25,13 +25,14 @@ from thesis.stage_4_training.walk_forward.diagnostics import (
     _window_diagnostics,
 )
 from thesis.stage_4_training.walk_forward.feature_pipeline import (
+    _add_label_prior_features,
     _select_static_feature_cols,
     fit_static_feature_pipeline,
 )
 from thesis.stage_4_training.walk_forward.loop import run_walk_forward
 from thesis.stage_4_training.walk_forward.predictions import (
-    _CLASS_ORDER,
     _align_probability_matrix,
+    _apply_confidence_threshold,
     _one_hot_proba_columns,
     _probability_columns,
 )
@@ -64,6 +65,14 @@ def _prepare_static_wf_data(
         df = pl.read_parquet(labels_path)
     logger.info("Loaded labeled data for static baseline: %d rows", len(df))
     df, is_regression_static = _compute_regression_target(df, config)
+
+    # Regime label-prior features — gated behind config flag
+    if getattr(config.features, "enable_regime_features", False):
+        df = _add_label_prior_features(df, config)
+        logger.info(
+            "Added label prior regime features (shift=%d)",
+            config.labels.horizon_bars + 1,
+        )
 
     event_end = df["event_end"].to_numpy() if "event_end" in df.columns else None
     if event_end is None:
@@ -190,7 +199,8 @@ def _train_and_predict_static_window(
     else:
         proba = model.predict_proba(_wrap_np(X_test, selected_static_cols))
         aligned_proba = _align_probability_matrix(proba, model.classes_)
-        preds = _CLASS_ORDER[np.argmax(aligned_proba, axis=1)]
+        threshold = config.model.prediction_confidence_threshold
+        preds = _apply_confidence_threshold(aligned_proba, threshold)
         oof_chunk = pl.DataFrame(
             {
                 "timestamp": test_df["timestamp"],
@@ -199,7 +209,13 @@ def _train_and_predict_static_window(
                 **_probability_columns(proba, model.classes_),
             }
         )
-    _add_prediction_diagnostics(diag, preds, y_test_cls, aligned_proba)
+    _add_prediction_diagnostics(
+        diag,
+        preds,
+        y_test_cls,
+        aligned_proba,
+        confidence_threshold=config.model.prediction_confidence_threshold,
+    )
     acc = float((preds == y_test_cls).mean())
     logger.info(
         "Static window %d: accuracy=%.4f, test_samples=%d",
