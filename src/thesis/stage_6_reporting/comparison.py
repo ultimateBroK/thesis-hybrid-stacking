@@ -1,9 +1,4 @@
-"""Hybrid-vs-static statistical comparison and model-comparison helpers.
-
-Provides paired t-test comparison between hybrid and static architecture
-sessions by matching walk-forward windows on overlapping test date ranges,
-plus thesis-level model comparison row builders and artifact writers.
-"""
+"""Hybrid-vs-static statistical comparison and model-comparison helpers."""
 
 from __future__ import annotations
 
@@ -21,57 +16,27 @@ from polars.exceptions import ColumnNotFoundError
 
 from thesis.shared.config import Config
 from thesis.stage_4_training import baselines as baselines_mod
-from thesis.stage_6_reporting.benchmarks import _model_label
+from thesis.stage_6_reporting.benchmarks import model_label
 
 logger = logging.getLogger("thesis.report")
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
-_MIN_WINDOWS_COMPARISON: int = 3
-_SIGNIFICANCE_ALPHA: float = 0.05
-_MAX_PER_WINDOW_DISPLAY: int = 10
-
-# ---------------------------------------------------------------------------
-# Date parsing
-# ---------------------------------------------------------------------------
+MIN_WINDOWS_COMPARISON: int = 3
+SIGNIFICANCE_ALPHA: float = 0.05
 
 
-def _parse_date(date_str: str) -> datetime | None:
-    """Parse a date string into a datetime, trying multiple formats.
-
-    Timezone-aware formats are tried on the **full** string first to avoid
-    silently dropping offset information.
-
-    Args:
-        date_str: Date string in one of the supported formats
-            (``"%Y-%m-%d"``, ``"%Y-%m-%d %H:%M:%S"``, or ISO 8601
-            variants).
-
-    Returns:
-        Parsed ``datetime`` object, or ``None`` if no format matched.
-    """
+def parse_date(date_str: str) -> datetime | None:
+    """Parse date string trying multiple formats."""
     if not date_str:
         return None
 
-    # Timezone-aware formats must see the full string.
-    tz_aware_formats = (
-        "%Y-%m-%d %H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%S%z",
-    )
+    tz_aware_formats = ("%Y-%m-%d %H:%M:%S%z", "%Y-%m-%dT%H:%M:%S%z")
     for fmt in tz_aware_formats:
         try:
             return datetime.strptime(date_str, fmt)
         except ValueError:
             continue
 
-    # Timezone-naive formats — safe to truncate at 19 chars.
-    naive_formats = (
-        "%Y-%m-%d",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S",
-    )
+    naive_formats = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S")
     truncated = date_str[:19]
     for fmt in naive_formats:
         try:
@@ -81,36 +46,19 @@ def _parse_date(date_str: str) -> datetime | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Window pairing
-# ---------------------------------------------------------------------------
-
-
-def _pair_windows_by_date(
+def pair_windows_by_date(
     current_windows: list[dict],
     sibling_windows: list[dict],
 ) -> list[tuple[float, float]]:
-    """Pair windows by overlapping test date ranges.
-
-    Each window dict is expected to have ``accuracy``, ``test_dates``
-    (with ``start``/``end`` keys), and ``window``.
-
-    Args:
-        current_windows: Window details from the current session.
-        sibling_windows: Window details from the sibling session.
-
-    Returns:
-        List of ``(current_accuracy, sibling_accuracy)`` paired by
-        best-overlapping test date range.
-    """
+    """Pair windows by overlapping test date ranges."""
     paired: list[tuple[float, float]] = []
 
     for cw in current_windows:
         if "accuracy" not in cw or cw["accuracy"] is None:
             continue
         cd = cw.get("test_dates", {})
-        c_start = _parse_date(cd.get("start", ""))
-        c_end = _parse_date(cd.get("end", ""))
+        c_start = parse_date(cd.get("start", ""))
+        c_end = parse_date(cd.get("end", ""))
         if c_start is None or c_end is None:
             continue
 
@@ -120,8 +68,8 @@ def _pair_windows_by_date(
             if "accuracy" not in sw or sw["accuracy"] is None:
                 continue
             sd = sw.get("test_dates", {})
-            s_start = _parse_date(sd.get("start", ""))
-            s_end = _parse_date(sd.get("end", ""))
+            s_start = parse_date(sd.get("start", ""))
+            s_end = parse_date(sd.get("end", ""))
             if s_start is None or s_end is None:
                 continue
 
@@ -138,26 +86,10 @@ def _pair_windows_by_date(
     return paired
 
 
-# ---------------------------------------------------------------------------
-# Session discovery
-# ---------------------------------------------------------------------------
-
-
-def _find_architecture_session(
+def find_architecture_session(
     results_dir: Path, target_arch: str, exclude_session: str
 ) -> Path | None:
-    """Find the most recent session directory with a given architecture.
-
-    Args:
-        results_dir: Directory containing session subdirectories.
-        target_arch: Architecture to search for (``"static"``, ``"lgbm"``,
-            or ``"hybrid"``). When ``"static"``, sessions with ``"lgbm"`` are
-            also matched.
-        exclude_session: Session path to exclude (the current session).
-
-    Returns:
-        Path to the most recent matching session, or ``None``.
-    """
+    """Find most recent session directory with a given architecture."""
     if not results_dir.exists():
         return None
 
@@ -177,10 +109,7 @@ def _find_architecture_session(
             with open(snapshot, "rb") as f:
                 data = tomllib.load(f)
             arch = data.get("model", {}).get("architecture", "")
-            # "lgbm" is the canonical name for the static baseline; accept
-            # legacy "static" in session configs for backward compatibility.
             if arch == target_arch or (target_arch == "static" and arch == "lgbm"):
-                # Use directory modification time for recency
                 candidates.append((session_dir.stat().st_mtime, session_dir))
         except (OSError, ValueError):
             logger.debug(
@@ -197,14 +126,10 @@ def _find_architecture_session(
     return candidates[0][1]
 
 
-def _build_model_comparison_rows(
+def build_model_comparison_rows(
     config: Config, pred_stats: dict | None
 ) -> list[dict[str, Any]]:
-    """Build thesis-level model comparison rows with available metrics.
-
-    Rows include directional accuracy, accuracy, macro F1, long/short F1, and
-    optional regression metrics.
-    """
+    """Build thesis-level model comparison rows with available metrics."""
     rows: list[dict[str, Any]] = []
 
     if pred_stats:
@@ -212,7 +137,7 @@ def _build_model_comparison_rows(
         reg_aux = pred_stats.get("regression_auxiliary", {})
         rows.append(
             {
-                "model": _model_label(config),
+                "model": model_label(config),
                 "directional_accuracy": pred_stats.get("directional_accuracy"),
                 "accuracy": pred_stats.get("accuracy"),
                 "macro_f1": pred_stats.get("macro_f1"),
@@ -270,7 +195,6 @@ def _build_model_comparison_rows(
                 "Failed to build baseline rows for model comparison", exc_info=True
             )
 
-    # Per-model comparison emitted by stacking walk-forward.
     session_dir = config.paths.session_dir
     existing = {str(r["model"]).lower() for r in rows}
     name_map = {
@@ -334,9 +258,7 @@ def _build_model_comparison_rows(
     return rows
 
 
-def _write_model_comparison_artifacts(
-    out_dir: Path, rows: list[dict[str, Any]]
-) -> Path:
+def write_model_comparison_artifacts(out_dir: Path, rows: list[dict[str, Any]]) -> Path:
     """Write model comparison table to CSV."""
     csv_path = out_dir / "model_comparison.csv"
     frame = pd.DataFrame(rows)

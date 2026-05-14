@@ -1,4 +1,8 @@
-"""Report generation — orchestrator, markdown builder, and statistics."""
+"""Report generation orchestrator.
+
+Loads data, computes metrics, renders charts, and persists markdown reports.
+No I/O inside renderers — all data flows through ReportData payload.
+"""
 
 from __future__ import annotations
 
@@ -14,44 +18,44 @@ from polars.exceptions import ColumnNotFoundError, ComputeError
 from thesis.shared.config import Config
 from thesis.shared.ui import console
 from thesis.stage_6_reporting import model_metrics
-from thesis.stage_6_reporting.benchmarks import _model_label
+from thesis.stage_6_reporting.benchmarks import model_label
 from thesis.stage_6_reporting.charts import (
-    _load_feature_importance,
-    _plot_equity_curve,
-    _plot_feature_importance,
+    load_feature_importance,
+    plot_equity_curve,
+    plot_feature_importance,
 )
 from thesis.stage_6_reporting.comparison import (
-    _build_model_comparison_rows,
-    _write_model_comparison_artifacts,
+    build_model_comparison_rows,
+    write_model_comparison_artifacts,
 )
 from thesis.stage_6_reporting.sections import (
-    _render_baseline_comparison_section,
-    _render_data_quality_section,
-    _render_label_design_section,
-    _render_metric_zones_section,
-    _render_oof_vs_oos_section,
-    _render_validation_methodology_section,
+    render_baseline_comparison_section,
+    render_data_quality_section,
+    render_label_design_section,
+    render_metric_zones_section,
+    render_oof_vs_oos_section,
+    render_validation_methodology_section,
 )
 from thesis.stage_6_reporting.tables import (
-    _accuracy_table,
-    _backtest_metrics_table,
-    _backtest_params_table,
-    _benchmark_comparison_table,
-    _config_table,
-    _exec_table,
-    _exec_verdict,
-    _feature_importance_table,
-    _issues_list,
+    accuracy_table,
+    backtest_metrics_table,
+    backtest_params_table,
+    benchmark_comparison_table,
+    config_table,
+    exec_table,
+    exec_verdict,
+    feature_importance_table,
+    issues_list,
 )
 
 logger = logging.getLogger("thesis.report")
 
-_HIGH_CONFIDENCE_THRESHOLD: float = 0.70
-_DIRECTIONAL_BASELINE: float = 0.5
+HIGH_CONFIDENCE_THRESHOLD: float = 0.70
+DIRECTIONAL_BASELINE: float = 0.5
 
 
-def _load_prediction_stats(preds_path: Path) -> dict | None:
-    """Compute prediction quality statistics from a predictions parquet file."""
+def load_prediction_stats(preds_path: Path) -> dict | None:
+    """Compute prediction quality statistics from predictions CSV."""
     if not preds_path.exists():
         return None
     try:
@@ -91,7 +95,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
             "accuracy": float(raw_metrics["accuracy"]),
             "balanced_accuracy": float(raw_metrics["balanced_accuracy"]),
             "directional_accuracy": float(raw_metrics["directional_accuracy"]),
-            "directional_baseline": _DIRECTIONAL_BASELINE,
+            "directional_baseline": DIRECTIONAL_BASELINE,
             "majority_baseline": float(raw_metrics["majority_baseline_accuracy"]),
             "macro_f1": float(raw_metrics["macro_f1"]),
             "weighted_f1": float(raw_metrics["weighted_f1"]),
@@ -102,7 +106,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
 
         if proba is not None:
             max_proba = proba.max(axis=1)
-            hc_mask = max_proba >= _HIGH_CONFIDENCE_THRESHOLD
+            hc_mask = max_proba >= HIGH_CONFIDENCE_THRESHOLD
             hc_count = int(hc_mask.sum())
             hc_acc = float((true[hc_mask] == pred[hc_mask]).mean()) if hc_count else 0.0
             hc_non_hold = hc_mask & (pred != 0)
@@ -113,9 +117,9 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
                 else 0.0
             )
             result["high_confidence"] = {
-                "threshold": _HIGH_CONFIDENCE_THRESHOLD,
+                "threshold": HIGH_CONFIDENCE_THRESHOLD,
                 "count": hc_count,
-                "pct_of_total": (hc_count / len(true)) if len(true) else 0.0,
+                "pct_of_total": hc_count / len(true) if len(true) else 0.0,
                 "accuracy": hc_acc,
                 "directional_accuracy": hc_dir_acc,
             }
@@ -127,7 +131,7 @@ def _load_prediction_stats(preds_path: Path) -> dict | None:
         return None
 
 
-def _build_markdown(
+def build_markdown(
     config: Config,
     metrics: dict,
     trades: list[dict],
@@ -139,33 +143,28 @@ def _build_markdown(
     session = config.paths.session_dir or "N/A"
     L: list[str] = []
 
-    # Title & metadata
-    L.append(f"# Thesis Report: {_model_label(config)} — XAU/USD")
+    L.append(f"# Thesis Report: {model_label(config)} — XAU/USD")
     L.append("")
     L.append(f"> Generated: {now} | Session: `{session}`")
     L.append("")
 
-    # 1. Executive Summary
     L.append("## Executive Summary")
     L.append("")
-    _exec_table(L, metrics, pred_stats)
-    _exec_verdict(L, metrics, pred_stats)
+    exec_table(L, metrics, pred_stats)
+    exec_verdict(L, metrics, pred_stats)
     L.append("")
 
-    # 2. Methodology
     L.append("## Methodology")
     L.append("")
-    _render_data_quality_section(L, config, heading="### Data & Quality")
-    _render_label_design_section(L, config, heading="### Label Design")
-    _render_validation_methodology_section(L, config, heading="### Validation Scheme")
+    render_data_quality_section(L, config, heading="### Data & Quality")
+    render_label_design_section(L, config, heading="### Label Design")
+    render_validation_methodology_section(L, config, heading="### Validation Scheme")
 
-    # Model Architecture subsection
     L.append("### Model Architecture")
     L.append("")
-    _feature_importance_table(L, feature_importance)
+    feature_importance_table(L, feature_importance)
     L.append("")
 
-    # 3. Classification Results ★
     L.append("## Classification Results ★")
     L.append("")
     L.append(
@@ -174,12 +173,11 @@ def _build_markdown(
         "ability to predict market direction (Short / Hold / Long).*"
     )
     L.append("")
-    _accuracy_table(L, pred_stats, config)
+    accuracy_table(L, pred_stats, config)
     L.append("")
 
-    _render_baseline_comparison_section(L, config, heading="### Baseline Comparison")
+    render_baseline_comparison_section(L, config, heading="### Baseline Comparison")
 
-    # 4. Application Demo: Backtest
     L.append("## Application Demo: Backtest")
     L.append("")
     L.append(
@@ -188,44 +186,41 @@ def _build_markdown(
         "They are **not** the primary evaluation criterion.*"
     )
     L.append("")
-    _backtest_params_table(L, config)
-    _backtest_metrics_table(L, metrics, config)
-    _render_metric_zones_section(L, metrics, trades, heading="")
+    backtest_params_table(L, config)
+    backtest_metrics_table(L, metrics, config)
+    render_metric_zones_section(L, metrics, trades, heading="")
     L.append("")
 
     L.append("### Benchmark Comparison")
     L.append("")
-    _benchmark_comparison_table(L, metrics, config)
+    benchmark_comparison_table(L, metrics, config)
 
-    # 5. Generalization Assessment
-    _render_oof_vs_oos_section(L, config, heading="## Generalization Assessment")
+    render_oof_vs_oos_section(L, config, heading="## Generalization Assessment")
 
-    # 6. Issues & Recommendations
     L.append("## Issues & Recommendations")
     L.append("")
-    _issues_list(L, metrics, trades, config, pred_stats)
+    issues_list(L, metrics, trades, config, pred_stats)
     L.append("")
 
-    # 7. Appendix: Full Configuration
     L.append("## Appendix: Full Configuration")
     L.append("")
-    _config_table(L, config)
+    config_table(L, config)
     L.append("")
 
     return "\n".join(L)
 
 
-def _build_model_evaluation_markdown(
+def build_model_evaluation_markdown(
     config: Config, pred_stats: dict | None, model_comparison_rows: list[dict[str, Any]]
 ) -> str:
     """Build compact evaluation-first markdown artifact."""
     lines: list[str] = ["# Model Evaluation", ""]
     lines.append(
-        "This file is the primary ML evidence artifact."
-        " Backtest metrics are intentionally excluded."
+        "This file is the primary ML evidence artifact. "
+        "Backtest metrics are intentionally excluded."
     )
     lines.append("")
-    lines.append(f"- Model: {_model_label(config)}")
+    lines.append(f"- Model: {model_label(config)}")
     lines.append(f"- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append("")
 
@@ -233,22 +228,24 @@ def _build_model_evaluation_markdown(
         lines.append("*Prediction statistics unavailable.*")
         return "\n".join(lines)
 
-    def _pct(v, default=0.0):
+    def pct(v, default=0.0):
         return f"{float(v if v is not None else default) * 100:.2f}%"
 
-    def _f4(v, default=0.0):
+    def f4(v, default=0.0):
         return f"{float(v if v is not None else default):.4f}"
 
     lines.append("## Classification Metrics (Primary)")
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|---|---|")
-    lines.append(f"| Accuracy | {_pct(pred_stats.get('accuracy'))} |")
-    da = _pct(pred_stats.get("directional_accuracy"))
-    lines.append(f"| Directional Accuracy | {da} |")
-    lines.append(f"| Macro F1 | {_f4(pred_stats.get('macro_f1'))} |")
-    lines.append(f"| Balanced Accuracy | {_pct(pred_stats.get('balanced_accuracy'))} |")
+    lines.append(f"| Accuracy | {pct(pred_stats.get('accuracy'))} |")
+    lines.append(
+        f"| Directional Accuracy | {pct(pred_stats.get('directional_accuracy'))} |"
+    )
+    lines.append(f"| Macro F1 | {f4(pred_stats.get('macro_f1'))} |")
+    lines.append(f"| Balanced Accuracy | {pct(pred_stats.get('balanced_accuracy'))} |")
     lines.append("")
+
     lines.append("## Per-Class Metrics")
     lines.append("")
     lines.append("| Class | Precision | Recall | F1 |")
@@ -267,10 +264,10 @@ def _build_model_evaluation_markdown(
         lines.append("## Regression Auxiliary Metrics")
         lines.append("")
         lines.append("| Metric | Value |")
-        lines.append("|---|---|")
+        lines.append("|---|---:|")
         lines.append(f"| MAE Return | {reg_aux.get('mae', float('nan')):.6f} |")
         lines.append(f"| RMSE Return | {reg_aux.get('rmse', float('nan')):.6f} |")
-        lines.append(f"| R² Return | {reg_aux.get('r_squared', float('nan')):.6f} |")
+        lines.append(f"| R2 Return | {reg_aux.get('r_squared', float('nan')):.6f} |")
         lines.append("")
 
     lines.append("## Model Comparison")
@@ -280,7 +277,7 @@ def _build_model_evaluation_markdown(
     )
     lines.append("|---|---:|---:|---:|---:|---:|")
 
-    def _cell(row: dict, key: str, fmt: str = "pct") -> str:
+    def cell(row: dict, key: str, fmt: str = "pct") -> str:
         v = row.get(key)
         if v is None:
             return ""
@@ -288,19 +285,19 @@ def _build_model_evaluation_markdown(
 
     for row in model_comparison_rows:
         lines.append(
-            f"| {row.get('model', '')} | {_cell(row, 'directional_accuracy')}"
-            f" | {_cell(row, 'accuracy')} | {_cell(row, 'macro_f1', 'f4')}"
-            f" | {_cell(row, 'long_f1', 'f4')} | {_cell(row, 'short_f1', 'f4')} |"
+            f"| {row.get('model', '')} | {cell(row, 'directional_accuracy')}"
+            f" | {cell(row, 'accuracy')} | {cell(row, 'macro_f1', 'f4')}"
+            f" | {cell(row, 'long_f1', 'f4')} | {cell(row, 'short_f1', 'f4')} |"
         )
     lines.append("")
     return "\n".join(lines)
 
 
 class ReportData:
-    """Structured report payload — all data needed to render & persist reports.
+    """Structured report payload — all data needed to render and persist reports.
 
-    Computed once by :func:`compute_report_data`, then passed to rendering
-    and persistence functions.  Keeps I/O out of renderers.
+    Computed once by compute_report_data, then passed to rendering
+    and persistence functions. Keeps I/O out of renderers.
     """
 
     __slots__ = (
@@ -334,14 +331,20 @@ class ReportData:
         self.report_path = report_path
 
 
-def _setup_matplotlib() -> None:
+def setup_matplotlib() -> None:
     """Configure matplotlib for headless report chart rendering."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    plt.style.use("seaborn-v0_8-whitegrid")
+    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid", "ggplot"):
+        try:
+            plt.style.use(style)
+            break
+        except Exception:
+            continue
+
     plt.rcParams.update(
         {
             "figure.dpi": 150,
@@ -356,10 +359,10 @@ def _setup_matplotlib() -> None:
 def compute_report_data(config: Config) -> ReportData:
     """Load data, compute metrics, render charts — return structured payload.
 
-    No report files are written.  Callers use the returned
-    :class:`ReportData` to build markdown and persist artifacts.
+    No report files are written. Callers use the returned ReportData
+    to build markdown and persist artifacts.
     """
-    _setup_matplotlib()
+    setup_matplotlib()
 
     out_dir = (
         Path(config.paths.session_dir) / "reports"
@@ -369,7 +372,6 @@ def compute_report_data(config: Config) -> ReportData:
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = Path(config.paths.report)
 
-    # Load backtest results
     bt_path = Path(config.paths.backtest_results)
     metrics: dict = {}
     trades: list[dict] = []
@@ -380,16 +382,14 @@ def compute_report_data(config: Config) -> ReportData:
             metrics = bt.get("metrics", {})
             trades = bt.get("trades", [])
 
-    # Render charts
     with console.status("[cyan]Rendering report charts[/]"):
-        _plot_equity_curve(trades, config, out_dir)
-        feature_importance = _load_feature_importance(config, out_dir)
-        _plot_feature_importance(feature_importance, out_dir)
+        plot_equity_curve(trades, config, out_dir)
+        feature_importance = load_feature_importance(config, out_dir)
+        plot_feature_importance(feature_importance, out_dir)
 
-    # Compute prediction statistics and model comparisons
     with console.status("[cyan]Building thesis markdown[/]"):
-        pred_stats = _load_prediction_stats(Path(config.paths.predictions))
-        model_comparison_rows = _build_model_comparison_rows(config, pred_stats)
+        pred_stats = load_prediction_stats(Path(config.paths.predictions))
+        model_comparison_rows = build_model_comparison_rows(config, pred_stats)
 
     return ReportData(
         metrics=metrics,
@@ -406,14 +406,13 @@ def generate_report(config: Config) -> None:
     """Generate thesis report with static charts and markdown."""
     data = compute_report_data(config)
 
-    md = _build_markdown(
+    md = build_markdown(
         config, data.metrics, data.trades, data.feature_importance, data.pred_stats
     )
-    model_eval_md = _build_model_evaluation_markdown(
+    model_eval_md = build_model_evaluation_markdown(
         config, data.pred_stats, data.model_comparison_rows
     )
 
-    # Persist artifacts
     data.report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(data.report_path, "w") as f:
         f.write(md)
@@ -429,7 +428,7 @@ def generate_report(config: Config) -> None:
         json.dump(data.pred_stats or {}, f, indent=2)
     logger.info("Model metrics saved: %s", model_metrics_path)
 
-    model_cmp_csv = _write_model_comparison_artifacts(
+    model_cmp_csv = write_model_comparison_artifacts(
         data.out_dir, data.model_comparison_rows
     )
     logger.info("Model comparison saved: %s", model_cmp_csv)

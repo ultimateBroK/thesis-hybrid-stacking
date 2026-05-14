@@ -1,9 +1,4 @@
-"""Shared Markdown formatting helpers for stage 6 reporting.
-
-This module centralizes tiny formatting helpers that were previously duplicated
-across report-generation modules. Keep these functions stable: many report
-sections rely on their exact output.
-"""
+"""Shared Markdown formatting helpers for stage 6 reporting."""
 
 from __future__ import annotations
 
@@ -11,7 +6,6 @@ import math
 
 from thesis.shared.zones import get_metric_zone
 
-# Zone emoji mapping
 _ZONE_EMOJI = {
     "excellent": "✅",
     "good": "🟢",
@@ -22,18 +16,13 @@ _ZONE_EMOJI = {
 
 
 def _zone(key: str, value: float) -> str:
-    """Zone emoji for a metric value."""
-    if value is None or (
-        isinstance(value, float)
-        and (math.isnan(value) if isinstance(value, float) else False)
-    ):
+    if value is None or (isinstance(value, float) and math.isnan(value)):
         return "⚪"
     color, _, _ = get_metric_zone(key, value)
     return _ZONE_EMOJI.get(color, "⚪")
 
 
 def _tbl_row(*cells: str) -> str:
-    """Format cells as a markdown table row."""
     return "| " + " | ".join(cells) + " |"
 
 

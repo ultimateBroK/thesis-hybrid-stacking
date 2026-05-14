@@ -1,13 +1,7 @@
-"""Backtest metric zones, baseline comparison, and verdict section renderers.
-
-Contains metric quality zone classification, baseline strategy comparison,
-and the synthesized verdict / issue renderers.  Assessment helpers and
-constants live in ``assess.py``.
-"""
+"""Backtest metric zones, baseline comparison, and verdict section renderers."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
 from pathlib import Path
 
@@ -18,32 +12,22 @@ from polars.exceptions import ColumnNotFoundError, ComputeError
 from thesis.shared.config import Config
 from thesis.stage_4_training import baselines as baselines_mod
 from thesis.stage_6_reporting.sections.assess import (
-    _PRIORITY_ICON,
-    _PRIORITY_ORDER,
-    _QUALITY_ACC_DELTA,
-    _QUALITY_DIR_ACC_FAIR,
-    _QUALITY_DIR_ACC_GOOD,
-    _QUALITY_MACRO_F1_GOOD,
-    _SEVERITY_ICON,
-    _SEVERITY_ORDER,
-    _assess_model_quality,
-    _assess_trading_edge,
-    _derive_recommendation,
-    _get_zone_info,
-    _identify_primary_issue,
+    PRIORITY_ICON,
+    PRIORITY_ORDER,
+    SEVERITY_ICON,
+    SEVERITY_ORDER,
+    assess_model_quality,
+    assess_trading_edge,
+    derive_recommendation,
+    get_zone_info,
+    identify_primary_issue,
 )
 from thesis.stage_6_reporting.sections.data import _fmt_f2, _fmt_pct, _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
 
-# ---------------------------------------------------------------------------
-# Support functions
-# ---------------------------------------------------------------------------
-
-
-def _compute_avg_win_loss_ratio(trades: list[dict]) -> float | None:
-    """Compute average win / average loss ratio from trade records."""
+def compute_avg_win_loss_ratio(trades: list[dict]) -> float | None:
     wins = [t["pnl"] for t in trades if t["pnl"] > 0]
     losses = [t["pnl"] for t in trades if t["pnl"] < 0]
     if not wins or not losses:
@@ -55,27 +39,19 @@ def _compute_avg_win_loss_ratio(trades: list[dict]) -> float | None:
     return avg_win / avg_loss
 
 
-# ---------------------------------------------------------------------------
-# Section renderers
-# ---------------------------------------------------------------------------
-
-
-def _render_metric_zones_section(
+def render_metric_zones_section(
     L: list[str],
     metrics: dict,
     trades: list[dict] | None = None,
     heading: str | None = None,
 ) -> None:
-    """Render backtest metric quality zones with emoji indicators."""
     if heading is None:
         heading = "## Metric Quality Zones"
-    if heading:
-        L.append(heading)
-        L.append("")
+    L.append(heading)
+    L.append("")
     L.append(
-        "*Each metric is classified into three quality zones based on "
-        "industry-standard thresholds (see "
-        "[Boring Edge](https://boringedge.com/backtest-metrics-explained)). "
+        "*Each metric is classified into quality zones based on "
+        "industry-standard thresholds. "
         "🔴 = poor/dangerous, 🟡 = marginal, 🟢 = good.*"
     )
     L.append("")
@@ -83,13 +59,11 @@ def _render_metric_zones_section(
     L.append(_tbl_row("Metric", "Value", "Zone & Rating", "Recommended"))
     L.append(_tbl_row("------", "-----", "------------", "-----------"))
 
-    # Compute win/loss ratio from trades if available
     avg_wl: float | None = None
     if trades:
-        avg_wl = _compute_avg_win_loss_ratio(trades)
+        avg_wl = compute_avg_win_loss_ratio(trades)
 
-    # -- Metric definitions: (key, label, format_fn) --
-    metric_defs: list[tuple[str, str, Callable[[float], str], float | None]] = [
+    metric_defs: list[tuple[str, str, callable, float | None]] = [
         ("return_pct", "Total Return", _fmt_pct, metrics.get("return_pct")),
         ("sharpe_ratio", "Sharpe Ratio", _fmt_f2, metrics.get("sharpe_ratio")),
         (
@@ -99,58 +73,29 @@ def _render_metric_zones_section(
             metrics.get("max_drawdown_pct"),
         ),
         ("win_rate_pct", "Win Rate", _fmt_pct, metrics.get("win_rate_pct")),
-        (
-            "profit_factor",
-            "Profit Factor",
-            _fmt_f2,
-            metrics.get("profit_factor"),
-        ),
-        (
-            "calmar_ratio",
-            "Calmar Ratio",
-            _fmt_f2,
-            metrics.get("calmar_ratio"),
-        ),
-        (
-            "sortino_ratio",
-            "Sortino Ratio",
-            _fmt_f2,
-            metrics.get("sortino_ratio"),
-        ),
-        (
-            "avg_win_loss_ratio",
-            "Avg Win / Avg Loss",
-            _fmt_f2,
-            avg_wl,
-        ),
-        (
-            "expectancy_pct",
-            "Expectancy",
-            _fmt_pct,
-            metrics.get("expectancy_pct"),
-        ),
+        ("profit_factor", "Profit Factor", _fmt_f2, metrics.get("profit_factor")),
+        ("calmar_ratio", "Calmar Ratio", _fmt_f2, metrics.get("calmar_ratio")),
+        ("sortino_ratio", "Sortino Ratio", _fmt_f2, metrics.get("sortino_ratio")),
+        ("avg_win_loss_ratio", "Avg Win / Avg Loss", _fmt_f2, avg_wl),
+        ("expectancy_pct", "Expectancy", _fmt_pct, metrics.get("expectancy_pct")),
     ]
 
     for key, label, fmt, val in metric_defs:
         if val is None:
             L.append(_tbl_row(label, "N/A", "⚪ N/A", "N/A"))
             continue
-        emoji, zone_desc, rec = _get_zone_info(key, val)
-        value_str = fmt(val)
-        zone_str = f"{emoji} {zone_desc}"
-        L.append(_tbl_row(label, value_str, zone_str, rec))
+        emoji, zone_desc, rec = get_zone_info(key, val)
+        L.append(_tbl_row(label, fmt(val), f"{emoji} {zone_desc}", rec))
     L.append("")
 
 
-def _render_baseline_comparison_section(
+def render_baseline_comparison_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
-    """Render baseline strategy comparison using the _baselines module."""
     if heading is None:
         heading = "## Baseline Comparison"
-    if heading:
-        L.append(heading)
-        L.append("")
+    L.append(heading)
+    L.append("")
 
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
@@ -172,8 +117,6 @@ def _render_baseline_comparison_section(
         return
 
     y_true = df["true_label"].to_numpy()
-
-    # Get bar returns for naive_direction baseline
     y_returns: np.ndarray | None = None
     ohlcv_path = Path(config.paths.ohlcv)
     if ohlcv_path.exists():
@@ -189,7 +132,6 @@ def _render_baseline_comparison_section(
             logger.warning("Failed to load OHLCV for baseline returns", exc_info=True)
 
     if y_returns is None:
-        # Fallback: label-derived synthetic returns (approximate)
         y_returns = y_true.astype(np.float64)
 
     try:
@@ -203,9 +145,9 @@ def _render_baseline_comparison_section(
         return
 
     L.append(
-        "*Baseline strategies computed on the same prediction labels as"
-        " reference.  The model should outperform all baselines on"
-        " directional accuracy and macro F1.*"
+        "*Baseline strategies computed on the same prediction labels as "
+        "reference. The model should outperform all baselines on "
+        "directional accuracy and macro F1.*"
     )
     L.append("")
     L.append(_tbl_row("Strategy", "Accuracy", "Macro F1", "Dir. Accuracy"))
@@ -223,20 +165,17 @@ def _render_baseline_comparison_section(
     L.append("")
 
 
-def _render_issues(
-    L: list[str],
-    issues: list[tuple[str, str]],
-    recs: list[tuple[str, str]],
+def render_issues(
+    L: list[str], issues: list[tuple[str, str]], recs: list[tuple[str, str]]
 ) -> None:
-    """Render sorted issues and recommendations into markdown lines."""
     L.append("### Issues")
     L.append("")
     if not issues:
         L.append("*No issues detected.*")
     else:
-        sorted_issues = sorted(issues, key=lambda x: _SEVERITY_ORDER.get(x[0], 9))
+        sorted_issues = sorted(issues, key=lambda x: SEVERITY_ORDER.get(x[0], 9))
         for i, (severity, desc) in enumerate(sorted_issues, 1):
-            icon = _SEVERITY_ICON.get(severity, "⚪")
+            icon = SEVERITY_ICON.get(severity, "⚪")
             L.append(f"{i}. {icon} {desc}")
     L.append("")
 
@@ -245,14 +184,13 @@ def _render_issues(
     if not recs:
         L.append("*No specific recommendations.*")
     else:
-        sorted_recs = sorted(recs, key=lambda x: _PRIORITY_ORDER.get(x[0], 9))
+        sorted_recs = sorted(recs, key=lambda x: PRIORITY_ORDER.get(x[0], 9))
         for i, (priority, desc) in enumerate(sorted_recs, 1):
-            icon = _PRIORITY_ICON.get(priority, "⚪")
+            icon = PRIORITY_ICON.get(priority, "⚪")
             L.append(f"{i}. {icon} {desc}")
 
 
-def _render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
-    """Append one-paragraph ML quality assessment to markdown lines."""
+def render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
     acc = pred_stats["accuracy"]
     baseline = pred_stats["majority_baseline"]
     dir_acc = pred_stats["directional_accuracy"]
@@ -263,14 +201,10 @@ def _render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
     if gap < 0:
         ml_quality = "weak"
         gate_msg = "Model is below majority baseline; predictive edge is not validated."
-    elif (
-        acc > baseline + _QUALITY_ACC_DELTA
-        and dir_acc > _QUALITY_DIR_ACC_GOOD
-        and macro_f1 >= _QUALITY_MACRO_F1_GOOD
-    ):
+    elif acc > baseline + 0.05 and dir_acc > 0.55 and macro_f1 >= 0.45:
         ml_quality = "strong"
         gate_msg = "Model is above baseline with directional edge."
-    elif dir_acc >= _QUALITY_DIR_ACC_FAIR:
+    elif dir_acc >= 0.50:
         ml_quality = "acceptable"
         gate_msg = "Model is slightly above baseline with marginal directional edge."
     else:
@@ -284,12 +218,11 @@ def _render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
     )
 
 
-def _render_synthesized_verdict(L: list[str], pred_stats: dict, metrics: dict) -> None:
-    """Append synthesized verdict (model quality + trading edge + rec)."""
-    model_quality, ml_reason = _assess_model_quality(pred_stats)
+def render_synthesized_verdict(L: list[str], pred_stats: dict, metrics: dict) -> None:
+    model_quality, ml_reason = assess_model_quality(pred_stats)
     if metrics:
-        trading_edge, trade_reason = _assess_trading_edge(metrics)
-        recommendation = _derive_recommendation(model_quality, trading_edge, metrics)
+        trading_edge, trade_reason = assess_trading_edge(metrics)
+        recommendation = derive_recommendation(model_quality, trading_edge, metrics)
         L.append(
             f"**Verdict:** Model quality **{model_quality}** ({ml_reason}), "
             f"Trading edge **{trading_edge}** ({trade_reason}), "
@@ -302,10 +235,9 @@ def _render_synthesized_verdict(L: list[str], pred_stats: dict, metrics: dict) -
         )
 
 
-def _render_primary_issue(L: list[str], metrics: dict, pred_stats: dict) -> None:
-    """Append primary issue identification and application demo summary."""
+def render_primary_issue(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
     if metrics:
-        primary = _identify_primary_issue(metrics, pred_stats)
+        primary = identify_primary_issue(metrics, pred_stats)
         if primary:
             L.append(f"**Primary issue:** {primary}.")
     else:
@@ -320,6 +252,5 @@ def _render_primary_issue(L: list[str], metrics: dict, pred_stats: dict) -> None
     dd = abs(metrics.get("max_drawdown_pct", 0))
     L.append(
         f"Application demo returned {ret:.1f}% over {n_trades} trades "
-        f"with Sharpe {sharpe:.2f}, win rate {wr:.1f}%, "
-        f"max drawdown {dd:.1f}%."
+        f"with Sharpe {sharpe:.2f}, win rate {wr:.1f}%, max drawdown {dd:.1f}%."
     )

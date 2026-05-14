@@ -1,8 +1,4 @@
-"""Chart rendering helpers for the thesis report.
-
-Contains equity-curve and feature-importance plot generators used by
-:func:`generate_report`.
-"""
+"""Chart rendering helpers for the thesis report."""
 
 from __future__ import annotations
 
@@ -17,15 +13,9 @@ from thesis.shared.config import Config
 logger = logging.getLogger("thesis.report")
 
 
-# ---------------------------------------------------------------------------
-# Equity curve
-# ---------------------------------------------------------------------------
-
-
-def _equity_series_from_closed_trades(
+def equity_series_from_closed_trades(
     trades: list[dict], initial_capital: float
 ) -> tuple[list, list]:
-    """Timestamps and equity from closed-trade PnL (not mark-to-market)."""
     times = [pd.to_datetime(trades[0]["entry_time"])]
     equity = [initial_capital]
     for t in trades:
@@ -34,15 +24,7 @@ def _equity_series_from_closed_trades(
     return times, equity
 
 
-def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None:
-    """Render and save an equity curve image from trade history.
-
-    Args:
-        trades: List of trade dictionaries with ``pnl``,
-            ``entry_time``, and ``exit_time``.
-        config: Application configuration for initial capital.
-        out_dir: Output directory for the saved PNG.
-    """
+def plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None:
     if not trades:
         return
 
@@ -51,7 +33,7 @@ def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> Non
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    times, equity = _equity_series_from_closed_trades(
+    times, equity = equity_series_from_closed_trades(
         trades, config.backtest.initial_capital
     )
     fig, ax = plt.subplots(figsize=(12, 5))
@@ -61,27 +43,20 @@ def _plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> Non
     ax.set_xlabel("Date")
     fig.autofmt_xdate()
     ax.grid(True, alpha=0.3)
+
+    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid", "ggplot"):
+        try:
+            plt.style.use(style)
+            break
+        except Exception:
+            continue
+
     fig.savefig(out_dir / "equity_curve.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
     logger.info("Chart saved: equity_curve.png")
 
 
-# ---------------------------------------------------------------------------
-# Feature importance
-# ---------------------------------------------------------------------------
-
-
-def _load_feature_importance(config: Config, out_dir: Path) -> dict:
-    """Load feature-importance JSON from session report outputs.
-
-    Args:
-        config: Application configuration.
-        out_dir: Fallback directory when no session dir is configured.
-
-    Returns:
-        Feature-importance dictionary, or an empty dict if the JSON
-        file is not found.
-    """
+def load_feature_importance(config: Config, out_dir: Path) -> dict:
     fi_path = (
         Path(config.paths.session_dir) / "reports" / "feature_importance.json"
         if config.paths.session_dir
@@ -93,20 +68,21 @@ def _load_feature_importance(config: Config, out_dir: Path) -> dict:
         return json.load(f)
 
 
-def _plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
-    """Render and save a top-20 feature-importance chart.
-
-    Args:
-        feature_importance: Dictionary mapping feature names to
-            importance scores.
-        out_dir: Output directory for the saved PNG.
-    """
+def plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
     if not feature_importance:
         return
+
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
+    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid", "ggplot"):
+        try:
+            plt.style.use(style)
+            break
+        except Exception:
+            continue
 
     top = dict(
         sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:20]

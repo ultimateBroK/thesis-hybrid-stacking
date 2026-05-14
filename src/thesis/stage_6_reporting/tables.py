@@ -1,7 +1,6 @@
 """Markdown table builders and verdict logic for the thesis report.
 
-Each function appends markdown lines to a caller-provided list ``L``.
-Used by ``generation.py``.
+Each function appends markdown lines to a caller-provided list L.
 """
 
 from __future__ import annotations
@@ -16,8 +15,8 @@ from polars.exceptions import ComputeError
 from thesis.shared.config import Config
 from thesis.stage_6_reporting import calibration
 from thesis.stage_6_reporting.benchmarks import (
-    _model_label,
     compute_benchmark_comparison,
+    model_label,
 )
 from thesis.stage_6_reporting.md_format import (
     _fmt_dollar,
@@ -27,50 +26,23 @@ from thesis.stage_6_reporting.md_format import (
     _zone,
 )
 from thesis.stage_6_reporting.sections import (
-    _identify_primary_issue,
-    _render_issues,
-    _render_ml_quality_paragraph,
-    _render_primary_issue,
-    _render_synthesized_verdict,
+    identify_primary_issue,
+    render_issues,
+    render_ml_quality_paragraph,
+    render_primary_issue,
+    render_synthesized_verdict,
 )
 
 logger = logging.getLogger("thesis.report")
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
+DIRECTIONAL_BASELINE: float = 0.5
 
-# Confidence & baseline
-_DIRECTIONAL_BASELINE: float = 0.5
-
-# Expected Calibration Error (ECE) thresholds
-_ECE_WELL_CALIBRATED: float = 0.05
-_ECE_MODERATELY_CALIBRATED: float = 0.15
+ECE_WELL_CALIBRATED: float = 0.05
+ECE_MODERATELY_CALIBRATED: float = 0.15
 
 
-# ---------------------------------------------------------------------------
-# Calibration helpers (used by _accuracy_table)
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Table builders
-
-
-def _calibration_summary_text(config: Config) -> str | None:
-    """Compute a one-paragraph calibration reliability note.
-
-    Reads predicted probabilities and true labels from the predictions
-    CSV file, computes calibration metrics via the ``calibration``
-    module, and returns a human-readable summary.
-
-    Args:
-        config: Loaded runtime configuration.
-
-    Returns:
-        Calibration summary string, or ``None`` if the predictions file
-        is unavailable or missing probability columns.
-    """
+def calibration_summary_text(config: Config) -> str | None:
+    """Compute calibration reliability note from predictions CSV."""
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
         return None
@@ -99,7 +71,6 @@ def _calibration_summary_text(config: Config) -> str | None:
     true_labels = df["true_label"].to_numpy()
     pred_labels = df["pred_label"].to_numpy() if "pred_label" in df.columns else None
 
-    # Single call — all calibration metrics from the canonical module
     calib = calibration.compute_all_calibration_metrics(
         true_labels,
         pred_labels if pred_labels is not None else np.argmax(proba, axis=1) - 1,
@@ -110,29 +81,28 @@ def _calibration_summary_text(config: Config) -> str | None:
     brier = calib["brier_score"]
     logloss = calib["log_loss"]
 
-    if ece < _ECE_WELL_CALIBRATED:
+    if ece < ECE_WELL_CALIBRATED:
         quality = "well-calibrated"
         note = (
-            f"**Calibration**: ECE = {ece:.4f} — confidence scores are"
-            f" **{quality}** (ECE < {_ECE_WELL_CALIBRATED:.2f})."
+            f"**Calibration**: ECE = {ece:.4f} — confidence scores are "
+            f"**{quality}** (ECE < {ECE_WELL_CALIBRATED:.2f})."
             " Predicted probabilities closely match observed frequencies."
         )
-    elif ece < _ECE_MODERATELY_CALIBRATED:
+    elif ece < ECE_MODERATELY_CALIBRATED:
         quality = "moderately calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            f"({_ECE_WELL_CALIBRATED:.2f} ≤ ECE"
-            f" < {_ECE_MODERATELY_CALIBRATED:.2f}). Probabilities are"
-            " somewhat aligned with outcomes; the model may be slightly"
-            " over- or under-confident in some bins."
+            f"({ECE_WELL_CALIBRATED:.2f} <= ECE < {ECE_MODERATELY_CALIBRATED:.2f}). "
+            "Probabilities are somewhat aligned with outcomes; the model may be "
+            "slightly over- or under-confident in some bins."
         )
     else:
         quality = "poorly calibrated"
         note = (
             f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            f"(ECE ≥ {_ECE_MODERATELY_CALIBRATED:.2f}). Predicted"
-            " probabilities do not reliably reflect true likelihoods."
-            " Consider temperature scaling or isotonic regression."
+            f"(ECE >= {ECE_MODERATELY_CALIBRATED:.2f}). Predicted probabilities do not "
+            "reliably reflect true likelihoods. Consider temperature scaling or "
+            "isotonic regression."
         )
 
     note += f" Brier score = {brier:.4f}, Log-loss = {logloss:.4f}."
@@ -147,19 +117,8 @@ def _calibration_summary_text(config: Config) -> str | None:
     return note
 
 
-# ---------------------------------------------------------------------------
-# Table builders
-# ---------------------------------------------------------------------------
-
-
-def _exec_table(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
-    """Key ML-first metrics with application-demo metrics second.
-
-    Args:
-        L: Output markdown lines.
-        metrics: Backtest metrics dictionary.
-        pred_stats: Preloaded prediction statistics.
-    """
+def exec_table(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
+    """Key ML-first metrics with application-demo metrics second."""
     if not pred_stats and not metrics:
         L.append("*No metrics available.*")
         return
@@ -208,35 +167,21 @@ def _exec_table(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
             L.append(_tbl_row(label, fmt(val), _zone(key, val)))
 
 
-def _exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
-    """One-paragraph ML-first overall assessment with synthesized verdict.
-
-    Delegates to rendering helpers for ML quality, synthesized verdict, and
-    primary issue text.
-
-    Args:
-        L: Output markdown lines.
-        metrics: Backtest metrics dictionary.
-        pred_stats: Preloaded prediction statistics.
-    """
+def exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
+    """One-paragraph ML-first overall assessment with synthesized verdict."""
     if not pred_stats:
         if not metrics:
             return
         L.append("Prediction metrics are unavailable; only the application demo ran.")
         return
 
-    _render_ml_quality_paragraph(L, pred_stats)
-    _render_synthesized_verdict(L, pred_stats, metrics)
-    _render_primary_issue(L, metrics, pred_stats)
+    render_ml_quality_paragraph(L, pred_stats)
+    render_synthesized_verdict(L, pred_stats, metrics)
+    render_primary_issue(L, metrics, pred_stats)
 
 
-def _config_table(L: list[str], config: Config) -> None:
-    """Key hyperparameters in one table.
-
-    Args:
-        L: Output markdown lines list (mutated in-place).
-        config: Application configuration.
-    """
+def config_table(L: list[str], config: Config) -> None:
+    """Key hyperparameters in one table."""
     rows = [
         ("Data", "symbol", str(config.data.symbol)),
         ("Data", "timeframe", config.data.timeframe),
@@ -259,11 +204,7 @@ def _config_table(L: list[str], config: Config) -> None:
                     "purge/embargo bars",
                     f"{config.validation.purge_bars}/{config.validation.embargo_bars}",
                 ),
-                (
-                    "Validation",
-                    "min_train_bars",
-                    str(config.validation.min_train_bars),
-                ),
+                ("Validation", "min_train_bars", str(config.validation.min_train_bars)),
             ]
         )
     else:
@@ -271,8 +212,8 @@ def _config_table(L: list[str], config: Config) -> None:
             [
                 (
                     "Data Range",
-                    "start → end",
-                    f"{config.data_range.start} → {config.data_range.end}",
+                    "start -> end",
+                    f"{config.data_range.start} -> {config.data_range.end}",
                 ),
                 (
                     "Walk-Forward",
@@ -348,16 +289,10 @@ def _config_table(L: list[str], config: Config) -> None:
         L.append(_tbl_row(section, param, val))
 
 
-def _accuracy_table(
+def accuracy_table(
     L: list[str], pred_stats: dict | None, config: Config | None = None
 ) -> None:
-    """Model accuracy: exact + directional + per-class + calibration.
-
-    Args:
-        L: Output markdown lines.
-        pred_stats: Preloaded prediction statistics.
-        config: Optional application configuration for calibration check.
-    """
+    """Model accuracy: exact + directional + per-class + calibration."""
     if not pred_stats:
         L.append("*Prediction data not found.*")
         return
@@ -365,7 +300,7 @@ def _accuracy_table(
     total = pred_stats["total"]
     acc = pred_stats["accuracy"]
     dir_acc = pred_stats.get("directional_accuracy", acc)
-    dir_bl = pred_stats.get("directional_baseline", _DIRECTIONAL_BASELINE)
+    dir_bl = pred_stats.get("directional_baseline", DIRECTIONAL_BASELINE)
     maj_bl = pred_stats.get("majority_baseline", 0)
     acc_gap = acc - maj_bl
 
@@ -385,7 +320,6 @@ def _accuracy_table(
     L.append(_tbl_row("Acc - Baseline", f"{acc_gap * 100:+.1f}pp", ""))
     L.append("")
 
-    # Per-class
     per_class = pred_stats["per_class"]
     L.append(_tbl_row("Class", "Actual", "Pred", "Recall", "F1"))
     L.append(_tbl_row("-----", "------", "----", "------", "--"))
@@ -402,36 +336,33 @@ def _accuracy_table(
         )
     L.append("")
 
-    # Confidence filtering
     hc = pred_stats.get("high_confidence")
     if hc:
         L.append(
-            f"High-confidence (≥{hc['threshold']:.0%}): "
+            f"High-confidence (>={hc['threshold']:.0%}): "
             f"{hc['count']:,} samples ({hc['pct_of_total'] * 100:.2f}%), "
             f"accuracy {hc['accuracy'] * 100:.1f}%, "
             f"dir. acc. {hc['directional_accuracy'] * 100:.1f}%"
         )
         L.append("")
 
-    # Calibration reliability note (after confidence section)
     if config is not None:
-        calib_note = _calibration_summary_text(config)
+        calib_note = calibration_summary_text(config)
         if calib_note:
             L.append(calib_note)
             L.append("")
 
 
-def _feature_importance_table(L: list[str], feature_importance: dict) -> None:
+def feature_importance_table(L: list[str], feature_importance: dict) -> None:
     """Top-10 feature importance."""
     if not feature_importance:
         return
     items = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
     model_count = sum(1 for n, _ in items if n.startswith("model_"))
 
-    # Auto-format: if max importance < 1, show 3 decimals; if < 100, show 1
     max_imp = max(imp for _, imp in items) if items else 0
 
-    def _fmt_imp(v: float) -> str:
+    def fmt_imp(v: float) -> str:
         if max_imp < 1:
             return f"{v:.3f}"
         if max_imp < 100:
@@ -442,15 +373,15 @@ def _feature_importance_table(L: list[str], feature_importance: dict) -> None:
     L.append(_tbl_row("----", "-------", "------", "-----"))
     for i, (name, imp) in enumerate(items, 1):
         src = "Model" if name.startswith("model_") else "Technical"
-        L.append(_tbl_row(str(i), f"`{name}`", src, _fmt_imp(imp)))
+        L.append(_tbl_row(str(i), f"`{name}`", src, fmt_imp(imp)))
     L.append(
-        f"Top-10: {model_count}/{len(items)} model-derived features"
-        f" ({model_count / len(items) * 100:.0f}%)"
+        f"Top-10: {model_count}/{len(items)} model-derived features "
+        f"({model_count / len(items) * 100:.0f}%)"
     )
     L.append("")
 
 
-def _backtest_params_table(L: list[str], config: Config) -> None:
+def backtest_params_table(L: list[str], config: Config) -> None:
     """Backtest simulation parameters."""
     bc = config.backtest
     L.append(_tbl_row("Parameter", "Value"))
@@ -462,24 +393,13 @@ def _backtest_params_table(L: list[str], config: Config) -> None:
     if bc.atr_tp_multiplier > 0:
         L.append(_tbl_row("ATR TP", f"{bc.atr_tp_multiplier}x"))
     L.append(_tbl_row("Confidence Thr.", str(bc.confidence_threshold)))
-    L.append(
-        _tbl_row(
-            "Spread",
-            f"${bc.spread_ticks * config.data.tick_size:.2f}",
-        )
-    )
+    L.append(_tbl_row("Spread", f"${bc.spread_ticks * config.data.tick_size:.2f}"))
     L.append(_tbl_row("Commission/lot", _fmt_dollar(bc.commission_per_lot)))
     L.append("")
 
 
-def _backtest_metrics_table(L: list[str], metrics: dict, config: Config) -> None:
-    """Core backtest metrics with zone indicators.
-
-    Args:
-        L: Output markdown lines list (mutated in-place).
-        metrics: Backtest metrics dictionary.
-        config: Application configuration (for initial capital display).
-    """
+def backtest_metrics_table(L: list[str], metrics: dict, config: Config) -> None:
+    """Core backtest metrics with zone indicators."""
     if not metrics:
         L.append("*No backtest results available.*")
         return
@@ -509,7 +429,7 @@ def _backtest_metrics_table(L: list[str], metrics: dict, config: Config) -> None
     L.append("")
 
 
-def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> None:
+def benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> None:
     """Compare benchmarks against the configured model architecture."""
     test_path = Path(config.paths.test_data)
     benchmarks = compute_benchmark_comparison(test_path, metrics, config)
@@ -524,7 +444,7 @@ def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> 
     )
     L.append(
         "*Note: Benchmarks exclude transaction costs (spread, slippage, "
-        f"commission); not directly comparable to the {_model_label(config)} model "
+        f"commission); not directly comparable to the {model_label(config)} model "
         "which incurs all three.*"
     )
     L.append("")
@@ -558,48 +478,34 @@ def _benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> 
     L.append("")
 
 
-def _issues_list(
+def issues_list(
     L: list[str],
     metrics: dict,
     trades: list[dict],
     config: Config,
     pred_stats: dict | None,
 ) -> None:
-    """High-signal issues and recommendations from report metrics.
-
-    Delegates issue identification to :mod:`assess` to avoid threshold
-    duplication.  Only the most critical checks are rendered to keep
-    the report focused.
-
-    Args:
-        L: Output markdown lines.
-        metrics: Backtest metrics dictionary.
-        trades: Backtest trades list.
-        config: Loaded runtime configuration.
-        pred_stats: Preloaded prediction statistics.
-    """
+    """High-signal issues and recommendations from report metrics."""
     issues: list[tuple[str, str]] = []
     recs: list[tuple[str, str]] = []
 
     if not metrics:
         issues.append(("critical", "No backtest metrics — pipeline may have failed."))
-        _render_issues(L, issues, recs)
+        render_issues(L, issues, recs)
         return
 
-    # Delegate to the canonical issue identification in assess.py
-    primary = _identify_primary_issue(metrics, pred_stats)
+    primary = identify_primary_issue(metrics, pred_stats)
     if primary:
         issues.append(("critical", primary))
     else:
         issues.append(("info", "No critical issues identified."))
 
-    # — Single actionable recommendation —
     recs.append(
         (
             "info",
-            "Consider walk-forward validation for production"
-            " readiness and robustness testing.",
+            "Consider walk-forward validation for production "
+            "readiness and robustness testing.",
         )
     )
 
-    _render_issues(L, issues, recs)
+    render_issues(L, issues, recs)

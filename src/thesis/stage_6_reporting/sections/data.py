@@ -1,8 +1,4 @@
-"""Data-quality and methodology section renderers.
-
-Renderers for data quality, label design, and validation methodology.
-Each function appends markdown lines to a caller-provided list ``L``.
-"""
+"""Data-quality and methodology section renderers."""
 
 from __future__ import annotations
 
@@ -16,21 +12,12 @@ from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
 from thesis.stage_6_reporting import data_quality
-from thesis.stage_6_reporting.md_format import (
-    _fmt_f2,  # noqa: F401
-    _fmt_pct,  # noqa: F401
-    _tbl_row,
-)
+from thesis.stage_6_reporting.md_format import _fmt_f2, _fmt_pct, _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
-# ---------------------------------------------------------------------------
-# Support functions
-# ---------------------------------------------------------------------------
 
-
-def _load_label_distribution(labels_path: Path) -> dict | None:
-    """Compute class distribution from the labels parquet file."""
+def load_label_distribution(labels_path: Path) -> dict | None:
     if not labels_path.exists():
         return None
     try:
@@ -50,22 +37,13 @@ def _load_label_distribution(labels_path: Path) -> dict | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Section renderers
-# ---------------------------------------------------------------------------
-
-
-def _render_data_quality_section(
+def render_data_quality_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
-    """Render the Data Quality analysis section from the JSON sidecar."""
     if heading is None:
         heading = "## Data Quality"
-    if heading:
-        L.append(heading)
-        L.append("")
-    else:
-        L.append("")
+    L.append(heading)
+    L.append("")
 
     dq_path = Path(config.paths.data_quality_json)
     if not dq_path.exists():
@@ -83,8 +61,7 @@ def _render_data_quality_section(
         return
 
     L.append(
-        'This section addresses the thesis question: *"Is that because of data, '
-        'the result awful?"*'
+        'This section addresses the thesis question: *"Is that because of data, the result awful?"*'
     )
     L.append("")
     L.append(_tbl_row("Metric", "Value"))
@@ -95,22 +72,13 @@ def _render_data_quality_section(
     L.append(_tbl_row("  - Weekend / Holiday", f"{dq.get('weekend_gaps', 0):,}"))
     L.append(_tbl_row("  - Real Gaps", f"{dq.get('real_gaps', 0):,}"))
     L.append(
-        _tbl_row(
-            "Estimated Missing Bars",
-            f"{dq.get('estimated_missing_bars', 0):,}",
-        )
+        _tbl_row("Estimated Missing Bars", f"{dq.get('estimated_missing_bars', 0):,}")
     )
-    L.append(
-        _tbl_row(
-            "Largest Gap",
-            f"{dq.get('largest_gap_bars', 0)} bars",
-        )
-    )
+    L.append(_tbl_row("Largest Gap", f"{dq.get('largest_gap_bars', 0)} bars"))
     L.append(_tbl_row("Data Start", str(dq.get("start_date", "N/A"))))
     L.append(_tbl_row("Data End", str(dq.get("end_date", "N/A"))))
     L.append("")
 
-    # --- Computed data quality from _data_quality module ---
     ohlcv_path = Path(config.paths.ohlcv)
     if ohlcv_path.exists():
         try:
@@ -124,28 +92,18 @@ def _render_data_quality_section(
             L.append("")
             L.append(_tbl_row("Check", "Result"))
             L.append(_tbl_row("-----", "------"))
+            L.append(_tbl_row("Total rows", f"{ohlcv_c.get('total_rows', 0):,}"))
+            L.append(
+                _tbl_row("OHLC violations", f"{ohlcv_c.get('ohlc_violations', 0):,}")
+            )
             L.append(
                 _tbl_row(
-                    "Total rows",
-                    f"{ohlcv_c.get('total_rows', 0):,}",
+                    "Negative prices", f"{ohlcv_c.get('price_negative_count', 0):,}"
                 )
             )
             L.append(
                 _tbl_row(
-                    "OHLC violations",
-                    f"{ohlcv_c.get('ohlc_violations', 0):,}",
-                )
-            )
-            L.append(
-                _tbl_row(
-                    "Negative prices",
-                    f"{ohlcv_c.get('price_negative_count', 0):,}",
-                )
-            )
-            L.append(
-                _tbl_row(
-                    "Consistent",
-                    "✅ Yes" if ohlcv_c.get("is_consistent") else "❌ No",
+                    "Consistent", "✅ Yes" if ohlcv_c.get("is_consistent") else "❌ No"
                 )
             )
             L.append("")
@@ -154,29 +112,11 @@ def _render_data_quality_section(
             L.append("")
             L.append(_tbl_row("Metric", "Value"))
             L.append(_tbl_row("------", "-----"))
+            L.append(_tbl_row("Total bars", f"{missing.get('total_bars', 0):,}"))
+            L.append(_tbl_row("Gaps found", f"{missing.get('gaps_found', 0):,}"))
+            L.append(_tbl_row("Weekend gaps", f"{missing.get('weekend_gaps', 0):,}"))
             L.append(
-                _tbl_row(
-                    "Total bars",
-                    f"{missing.get('total_bars', 0):,}",
-                )
-            )
-            L.append(
-                _tbl_row(
-                    "Gaps found",
-                    f"{missing.get('gaps_found', 0):,}",
-                )
-            )
-            L.append(
-                _tbl_row(
-                    "Weekend gaps",
-                    f"{missing.get('weekend_gaps', 0):,}",
-                )
-            )
-            L.append(
-                _tbl_row(
-                    "Missing ratio",
-                    f"{missing.get('missing_ratio', 0.0):.6f}",
-                )
+                _tbl_row("Missing ratio", f"{missing.get('missing_ratio', 0.0):.6f}")
             )
             L.append("")
 
@@ -186,43 +126,31 @@ def _render_data_quality_section(
                 L.append(_tbl_row("Metric", "Value"))
                 L.append(_tbl_row("------", "-----"))
                 L.append(
-                    _tbl_row(
-                        "Outlier count",
-                        str(outliers.get("outlier_count", 0)),
-                    )
+                    _tbl_row("Outlier count", str(outliers.get("outlier_count", 0)))
                 )
                 L.append(
                     _tbl_row(
-                        "Outlier ratio",
-                        f"{outliers.get('outlier_ratio', 0.0):.6f}",
+                        "Outlier ratio", f"{outliers.get('outlier_ratio', 0.0):.6f}"
                     )
                 )
                 L.append(
-                    _tbl_row(
-                        "Max return",
-                        f"{outliers.get('max_return', 0.0):.8f}",
-                    )
+                    _tbl_row("Max return", f"{outliers.get('max_return', 0.0):.8f}")
                 )
                 L.append(
-                    _tbl_row(
-                        "Min return",
-                        f"{outliers.get('min_return', 0.0):.8f}",
-                    )
+                    _tbl_row("Min return", f"{outliers.get('min_return', 0.0):.8f}")
                 )
                 L.append("")
         except (ComputeError, ColumnNotFoundError, ValueError):
             logger.warning("Failed to compute data quality from OHLCV", exc_info=True)
 
 
-def _render_label_design_section(
+def render_label_design_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
-    """Render the Label Design & Methodology explanation section."""
     if heading is None:
         heading = "## Label Design & Methodology"
-    if heading:
-        L.append(heading)
-        L.append("")
+    L.append(heading)
+    L.append("")
     labels_cfg = config.labels
     L.append(
         "Labels are generated using the **triple-barrier method**: for each "
@@ -237,17 +165,11 @@ def _render_label_design_section(
     L.append(_tbl_row("ATR SL multiplier", f"{labels_cfg.atr_sl_multiplier}×"))
     L.append(_tbl_row("Horizon", f"{labels_cfg.horizon_bars} bars"))
     L.append(_tbl_row("Classes", str(labels_cfg.num_classes)))
-    L.append(
-        _tbl_row(
-            "Class mapping",
-            "Short (-1) / Hold (0) / Long (+1)",
-        )
-    )
+    L.append(_tbl_row("Class mapping", "Short (-1) / Hold (0) / Long (+1)"))
     L.append("")
 
-    # Label distribution
     labels_path = Path(config.paths.labels)
-    dist = _load_label_distribution(labels_path)
+    dist = load_label_distribution(labels_path)
     if dist:
         L.append("**Class distribution:**")
         L.append("")
@@ -260,15 +182,13 @@ def _render_label_design_section(
         L.append("")
 
 
-def _render_validation_methodology_section(
+def render_validation_methodology_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
-    """Render the Validation Methodology section (walk-forward, purge/embargo)."""
     if heading is None:
         heading = "## Validation Methodology"
-    if heading:
-        L.append(heading)
-        L.append("")
+    L.append(heading)
+    L.append("")
     val_cfg = config.validation
 
     method_label = (
@@ -278,7 +198,6 @@ def _render_validation_methodology_section(
     )
 
     def _bars_human(bars: int, bars_per_year: int = 8760) -> str:
-        """Convert bar count to human-readable duration."""
         if bars >= bars_per_year:
             years = bars / bars_per_year
             return f"{years:.1f}y" if years != int(years) else f"{int(years)}y"
@@ -300,15 +219,13 @@ def _render_validation_methodology_section(
     L.append(
         _tbl_row(
             "Train window",
-            f"{val_cfg.train_window_bars:,} bars"
-            f" (~{_bars_human(val_cfg.train_window_bars)})",
+            f"{val_cfg.train_window_bars:,} bars (~{_bars_human(val_cfg.train_window_bars)})",
         )
     )
     L.append(
         _tbl_row(
             "Test window",
-            f"{val_cfg.test_window_bars:,} bars"
-            f" (~{_bars_human(val_cfg.test_window_bars)})",
+            f"{val_cfg.test_window_bars:,} bars (~{_bars_human(val_cfg.test_window_bars)})",
         )
     )
     L.append(_tbl_row("Step", f"{val_cfg.step_bars:,} bars"))
@@ -324,3 +241,15 @@ def _render_validation_methodology_section(
         "and evaluation data.*"
     )
     L.append("")
+
+
+def _fmt_f2(v: float) -> str:
+    return f"{v:.2f}"
+
+
+def _fmt_pct(v: float) -> str:
+    return f"{v:.1f}%"
+
+
+def _tbl_row(*cells: str) -> str:
+    return "| " + " | ".join(cells) + " |"

@@ -1,11 +1,7 @@
 """Data quality evidence for the thesis report.
 
-Provides functions to compute OHLCV consistency, missing-bar gaps,
-label distribution, outlier-return detection, and a combined report
-rendered as markdown.
-
-Core checks delegate to ``thesis.shared.data_quality``; this module
-adds reporting-specific fields and markdown rendering.
+OHLCV consistency, missing-bar gaps, label distribution, outlier detection,
+and combined report rendered as markdown.
 """
 
 from __future__ import annotations
@@ -24,13 +20,9 @@ from thesis.shared.data_quality import (
     validate_ohlcv,
 )
 
-# ---------------------------------------------------------------------------
-# OHLCV consistency — delegates to shared module
-# ---------------------------------------------------------------------------
-
 
 def compute_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
-    """Check OHLCV relationships via :func:`validate_ohlcv`."""
+    """Check OHLCV relationships via validate_ohlcv."""
     result = validate_ohlcv(df)
     return {
         "total_rows": result["total_rows"],
@@ -40,19 +32,10 @@ def compute_ohlcv_consistency(df: pl.DataFrame) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------
-# Missing-bar statistics — delegates to shared gap check + weekend heuristic
-# ---------------------------------------------------------------------------
-
-
 def compute_missing_bar_stats(
     df: pl.DataFrame, expected_interval: str = "1h"
 ) -> dict[str, Any]:
-    """Analyse gaps between consecutive bars.
-
-    Delegates core gap detection to ``check_gap_report`` then adds a
-    weekend-gap heuristic and missing-ratio calculation.
-    """
+    """Analyse gaps between consecutive bars."""
     total_bars = len(df)
 
     if "timestamp" not in df.columns or total_bars < 2:
@@ -94,11 +77,6 @@ def compute_missing_bar_stats(
     }
 
 
-# ---------------------------------------------------------------------------
-# Label distribution (kept local — not in shared module)
-# ---------------------------------------------------------------------------
-
-
 def compute_label_distribution(
     labels: npt.NDArray, classes: list[int] | None = None
 ) -> dict[str, Any]:
@@ -115,11 +93,9 @@ def compute_label_distribution(
         counts[c] = cnt
         percentages[c] = round(cnt / total * 100, 2) if total > 0 else 0.0
 
-    non_zero_counts = [counts[c] for c in classes if counts[c] > 0]
+    non_zero = [counts[c] for c in classes if counts[c] > 0]
     imbalance_ratio = (
-        round(max(non_zero_counts) / min(non_zero_counts), 2)
-        if len(non_zero_counts) >= 2
-        else 0.0
+        round(max(non_zero) / min(non_zero), 2) if len(non_zero) >= 2 else 0.0
     )
 
     return {
@@ -130,23 +106,13 @@ def compute_label_distribution(
     }
 
 
-# ---------------------------------------------------------------------------
-# Outlier returns — delegates to shared module + adds reporting fields
-# ---------------------------------------------------------------------------
-
-
 def compute_outlier_returns(
     df: pl.DataFrame, z_threshold: float = 5.0
 ) -> dict[str, Any]:
-    """Flag returns that exceed *z_threshold* standard deviations.
-
-    Delegates z-score computation to ``check_outlier_returns`` then
-    enriches the result with outlier-ratio, max/min return, and dates.
-    """
+    """Flag returns that exceed z_threshold standard deviations."""
     result = check_outlier_returns(df, z_threshold)
     outlier_count = result["outlier_count"]
 
-    # Compute reporting-specific fields from close prices
     close = df["close"].cast(pl.Float64).to_numpy() if "close" in df.columns else None
     log_returns = (
         np.diff(np.log(close)) if close is not None and len(close) >= 2 else None
@@ -173,15 +139,8 @@ def compute_outlier_returns(
     }
 
 
-# ---------------------------------------------------------------------------
-# Markdown rendering
-# ---------------------------------------------------------------------------
-
-_CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
-
-
 def render_data_quality_markdown(stats: dict[str, Any]) -> str:
-    """Render all quality stats as a markdown section for the report."""
+    """Render all quality stats as a markdown section."""
     lines: list[str] = ["## Data Quality Report", ""]
 
     ohlcv = stats.get("ohlcv_consistency", {})
@@ -207,7 +166,7 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
         lines.append("### Label Distribution")
         lines.append("")
         lines.append(f"- Total samples: {lbl.get('total', 'N/A')}")
-        for cls_val, name in _CLASS_NAMES.items():
+        for cls_val, name in {**{-1: "Short", 0: "Hold", 1: "Long"}}.items():
             cnt = lbl.get("counts", {}).get(cls_val, "N/A")
             pct = lbl.get("percentages", {}).get(cls_val, "N/A")
             lines.append(f"- {name} ({cls_val}): {cnt} ({pct}%)")
@@ -224,11 +183,6 @@ def render_data_quality_markdown(stats: dict[str, Any]) -> str:
     lines.append("")
 
     return "\n".join(lines)
-
-
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
 
 
 def compute_data_quality_report(
