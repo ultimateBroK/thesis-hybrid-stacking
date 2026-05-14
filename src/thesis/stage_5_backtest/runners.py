@@ -23,7 +23,6 @@ def _validate_backtest_merge(
     test_source: str = "<in-memory test/features>",
     preds_source: str = "<in-memory predictions>",
 ) -> None:
-    """Guard against silent timestamp loss in the backtest inner join."""
     coverage = merged_rows / prediction_rows if prediction_rows else 0.0
     dropped = prediction_rows - merged_rows
     logger.info(
@@ -53,7 +52,6 @@ def _prepare_df(
     test_source: str = "<in-memory test/features>",
     preds_source: str = "<in-memory predictions>",
 ) -> pd.DataFrame:
-    """Join features and predictions on ``timestamp``; OHLCV → Open/High/.../Volume."""
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
@@ -106,21 +104,19 @@ def _prepare_df(
 
 
 def _compute_spread_rate(
-    bc: Config.BacktestConfig,
-    dc: Config.DataConfig,
+    spread_ticks: float,
+    slippage_ticks: float,
+    tick_size: float,
     median_price: float,
 ) -> float:
-    """Convert tick-based spread + slippage to relative rate for backtesting.py."""
-    total_ticks = bc.spread_ticks + bc.slippage_ticks
-    return total_ticks * dc.tick_size / median_price
+    total_ticks = spread_ticks + slippage_ticks
+    return total_ticks * tick_size / median_price
 
 
 def _make_commission_fn(
     commission_per_lot: float,
     contract_size: float,
 ) -> Callable[[float, float], float]:
-    """Build a commission function closure for backtesting.py."""
-
     def commission_fn(order_size: float, price: float) -> float:  # noqa: ARG001
         lots = abs(order_size) / contract_size
         return lots * commission_per_lot
@@ -135,8 +131,8 @@ def _create_fractional_backtest(
     spread: float,
     commission_fn: Callable[[float, float], float],
     leverage: float | int,
+    fractional_unit: float = 1.0,
 ) -> FractionalBacktest:
-    """Configure ``FractionalBacktest`` without running it."""
     return FractionalBacktest(
         pdf,
         MLSignalStrategy,
@@ -146,7 +142,7 @@ def _create_fractional_backtest(
         margin=1.0 / float(leverage),
         exclusive_orders=True,
         finalize_trades=True,
-        fractional_unit=1.0,
+        fractional_unit=fractional_unit,
     )
 
 
@@ -154,12 +150,13 @@ def _run_fractional_backtest(
     pdf: pd.DataFrame,
     config: Config,
 ) -> tuple[pd.Series, FractionalBacktest]:
-    """Run the configured FractionalBacktest and return (stats, bt)."""
     bc = config.backtest
     dc = config.data
 
     median_price = float(pdf["Close"].median())
-    spread = _compute_spread_rate(bc, dc, median_price)
+    spread = _compute_spread_rate(
+        bc.spread_ticks, bc.slippage_ticks, dc.tick_size, median_price
+    )
     commission_fn = _make_commission_fn(bc.commission_per_lot, dc.contract_size)
     bt = _create_fractional_backtest(
         pdf,

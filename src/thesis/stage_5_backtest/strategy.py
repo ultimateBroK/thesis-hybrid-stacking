@@ -9,64 +9,50 @@ import pandas as pd
 
 logger = logging.getLogger("thesis.backtest")
 
-#: Floor to prevent microscopic stops in low-volatility regimes.
 _MIN_ATR_FLOOR: float = 0.0001
-
-#: Default initial capital used as fallback when BacktestConfig is unavailable.
-_DEFAULT_INITIAL_CAPITAL: float = 10_000.0
-
-#: Default commission per lot — fallback for _trades_to_list when config absent.
-_DEFAULT_COMMISSION_PER_LOT: float = 20.0
-
-#: Default contract size (units per lot) — fallback for _trades_to_list.
 _DEFAULT_CONTRACT_SIZE: float = 100.0
-
-#: Minimum bars required before the shifted-signal logic can activate.
 _MIN_BARS_FOR_SIGNAL: int = 2
-
-#: Minimum order size in units (backtesting.py requires whole-number sizes).
 _MIN_ORDER_SIZE: int = 1
 
 
 def _calendar_day(value: object) -> object:
-    """Return 5PM NY-anchored market date for a timestamp-like value."""
+    """Return market date anchored to 5PM New York (FX/CFD market close).
+
+    UTC conversion accounts for NY DST offsets (UTC-5 standard / UTC-4 DST).
+    Market day rolls at 5PM NY; adding 7 hours shifts to next-calendar-day 00:00 ET,
+    which is equivalent to next- calendar-day in UTC terms after TZ conversion.
+    """
     ts = pd.Timestamp(value)
     if ts.tzinfo is None:
         ts = ts.tz_localize("UTC")
-    else:
-        ts = ts.tz_convert("UTC")
     ts_ny = ts.tz_convert("America/New_York")
-    # FX/CFD market day rolls at 5PM New York (24/5 session model).
-    return (ts_ny + pd.Timedelta(hours=7)).date()
+    ny_offset_hours = ts_ny.utcoffset().total_seconds() / 3600
+    hours_to_midnight_ny = 24 - (17 + 7) + ny_offset_hours
+    return (ts_ny + pd.Timedelta(hours=hours_to_midnight_ny)).date()
 
 
 class MLSignalStrategy(Strategy):
     """Trade on ML signals with ATR stops and simple risk gates.
 
-    Key detail: use ``signals[-2]`` so the prediction anchored at ``close[i-1]``
-    is executed at ``open[i]`` (backtesting fills on the next bar).
-
-    Runtime configuration is passed through bt.run() keyword arguments.
-    These class attributes provide safety defaults for direct Strategy use
-    and for parameters omitted by a caller. Short Strategy attribute names
-    are mapped from configuration fields in _run_fractional_backtest() and
-    run_backtest_manual().
+    Signal shift: pred_label[i-1] → trade at open[i] (backtesting fills next bar).
+    Runtime config passed through bt.run() keyword arguments.
+    Class attrs are safety defaults; callers override via bt.run().
     """
 
-    atr_stop_mult = 1.0  # cf. BacktestConfig.atr_stop_multiplier = 2.0
-    atr_tp_mult = 2.0  # 0 = disabled (no take-profit); matches BacktestConfig
-    lots_per_trade = 0.2  # cf. BacktestConfig.lots_per_trade = 0.1
-    min_lots = 0.1  # cf. BacktestConfig.min_lots = 0.01
-    max_lots = 0.5  # matches BacktestConfig
-    confidence_threshold = 0.0  # 0 = disabled (trade all); cf. BacktestConfig = 0.50
-    min_atr = _MIN_ATR_FLOOR  # floor to prevent microscopic stops
-    contract_size = 100  # units per lot; overridden via DataConfig.contract_size
-    horizon_bars = 0  # 0 = disabled (hold until opposite signal or stop)
-    max_drawdown_cutoff = 0.50  # circuit breaker threshold; cf. BacktestConfig = 0.30
-    dd_cooldown_bars = 12  # pause duration after drawdown breach
-    max_open_positions = 1  # max simultaneous positions
-    daily_loss_limit = 0.03  # daily loss fraction limit
-    min_bars_between_trades = 0  # 0 = disabled; min bars after exit before re-entry
+    atr_stop_mult = 1.0
+    atr_tp_mult = 2.0
+    lots_per_trade = 0.2
+    min_lots = 0.1
+    max_lots = 0.5
+    confidence_threshold = 0.0
+    min_atr = _MIN_ATR_FLOOR
+    contract_size = 100
+    horizon_bars = 0
+    max_drawdown_cutoff = 0.50
+    dd_cooldown_bars = 12
+    max_open_positions = 1
+    daily_loss_limit = 0.03
+    min_bars_between_trades = 0
 
     def init(self) -> None:
         """Register indicators and initialise risk-management state."""
@@ -99,15 +85,9 @@ class MLSignalStrategy(Strategy):
         self._current_date: object = None
 
     def _floor_atr(self, atr: float) -> float:
-        """Floor ATR to ``max(atr, self.min_atr)``."""
         return max(atr, self.min_atr)
 
     def _update_risk_state(self) -> None:
-        """Update peak equity, drawdown tracking, and daily loss tracking.
-
-        The drawdown circuit breaker is permanent: once triggered, no new
-        positions are opened for the rest of the backtest.
-        """
         eq = self.equity
         self._peak_equity = max(self._peak_equity, eq)
 
@@ -132,7 +112,6 @@ class MLSignalStrategy(Strategy):
             self._daily_start_equity = eq
 
     def _is_trading_allowed(self) -> bool:
-        """Check all risk gates before opening a new position."""
         if len(self.orders) > 0:
             return False
 
@@ -162,28 +141,16 @@ class MLSignalStrategy(Strategy):
         return True
 
     def _compute_lots(self, confidence: float | None) -> float:
-        """Return fixed position size after confidence filtering.
-
-        Scaling lots by confidence amplified wrong high-confidence predictions
-        in OOS runs. Keep sizing fixed until profitable at base risk level.
-        """
         return max(self.min_lots, min(self.lots_per_trade, self.max_lots))
 
     def next(self) -> None:
-        """Evaluate the latest model signal and place orders if appropriate.
-
-        The backtesting engine fills orders on the next bar, so signal
-        bar ``i`` cannot trade at the same bar's close.
-        """
-        # Cooldown tracking — detect auto-closure from framework SL/TP
+        """Evaluate latest model signal, place orders if appropriate."""
         if self._position_was_open and not self.position:
             self._last_exit_bar = len(self.data)
             self._position_was_open = False
 
         self._update_risk_state()
 
-        # Signal shift: trade at bar i uses prediction from bar i-1 (signals[-2]),
-        # aligning label anchor close[i-1] with execution at open[i].
         if len(self.signals) < _MIN_BARS_FOR_SIGNAL:
             return
         raw_signal = float(self.signals[-2])
@@ -193,7 +160,6 @@ class MLSignalStrategy(Strategy):
             signal = int(raw_signal)
         atr = self._floor_atr(self.atr[-1])
 
-        # Time-based exit
         if self.horizon_bars > 0 and self.position:
             entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
             if entry_bar is not None:
@@ -208,7 +174,6 @@ class MLSignalStrategy(Strategy):
         if not self._is_trading_allowed():
             return
 
-        # Confidence gate
         confidence: float | None = None
         if self.confidence_threshold > 0 and self._has_proba:
             if signal == 1:
@@ -221,13 +186,11 @@ class MLSignalStrategy(Strategy):
             if confidence < self.confidence_threshold:
                 return
 
-        # Position sizing
         proxy_entry_price = self.data.Close[-1]
         lots = self._compute_lots(confidence)
         size = lots * self.contract_size
         size = max(_MIN_ORDER_SIZE, round(size))
 
-        # Execute trades
         if signal == 1 and not self.position:
             self._entry_bar["long"] = len(self.data)
             sl_price = proxy_entry_price - (atr * self.atr_stop_mult)

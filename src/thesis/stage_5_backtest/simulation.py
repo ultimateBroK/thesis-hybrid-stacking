@@ -1,8 +1,7 @@
 """CFD backtest simulation via backtesting.py.
 
-Keep SL/TP ATR multipliers aligned with the label barriers (same ATR
-multiple), otherwise the model is trained on a different risk envelope
-than the backtest executes.
+SL/TP ATR multipliers must align with label barriers (same ATR multiple),
+otherwise model trained on different risk envelope than backtest executes.
 """
 
 from __future__ import annotations
@@ -26,26 +25,21 @@ from thesis.stage_5_backtest.persistence import (
     _trades_to_list,
 )
 from thesis.stage_5_backtest.runners import (
-    _create_fractional_backtest,
-    _make_commission_fn,
     _prepare_df,
     _run_fractional_backtest,
 )
 
 logger = logging.getLogger("thesis.backtest")
 
+BacktestResult = tuple[BacktestMetrics, list[TradeRecord], object]
+
 
 # ---------------------------------------------------------------------------
-# Data loading — separate I/O from computation
+# Data loading
 # ---------------------------------------------------------------------------
 
 
 def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
-    """Load and join test/features + predictions based on config.
-
-    Returns:
-        Tuple of (merged pandas DataFrame ready for backtesting, source label).
-    """
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
         raise FileNotFoundError(f"Predictions not found: {preds_path}")
@@ -55,7 +49,6 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
     test_path = Path(config.paths.test_data)
     is_static = config.validation.method == "static"
     labels_path = Path(config.paths.labels)
-
     if test_path.exists() and is_static:
         source = str(test_path)
         with console.status(f"[cyan]Loading static test data[/] {test_path}"):
@@ -84,7 +77,6 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
 
 
 def _apply_oos_date_filter(pdf: pd.DataFrame, config: Config) -> pd.DataFrame:
-    """Apply optional OOS date range filter to the merged DataFrame."""
     bc = config.backtest
     if bc.oob_start_date:
         start_ts = pd.Timestamp(bc.oob_start_date)
@@ -105,22 +97,14 @@ def _apply_oos_date_filter(pdf: pd.DataFrame, config: Config) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Pure computation — no I/O side effects
+# Pure computation
 # ---------------------------------------------------------------------------
 
 
-BacktestResult = tuple[BacktestMetrics, list[TradeRecord], object]
-"""(metrics, trades, bt_engine) — bt_engine kept for optional chart rendering."""
-
-
 def compute_backtest(config: Config) -> BacktestResult:
-    """Run backtest computation, return structured results.
+    """Load data, run FractionalBacktest, return normalized results.
 
-    Loads data, runs the FractionalBacktest, and returns normalized metrics
-    with trade records. No files are written.
-
-    Returns:
-        Tuple of (metrics dict, trades list, backtest engine for chart).
+    No files written. Returns (metrics dict, trades list, bt_engine).
     """
     pdf, _ = _load_backtest_data(config)
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
@@ -137,7 +121,7 @@ def compute_backtest(config: Config) -> BacktestResult:
 
 
 # ---------------------------------------------------------------------------
-# Persistence — write results to disk
+# Persistence
 # ---------------------------------------------------------------------------
 
 
@@ -147,41 +131,34 @@ def _persist_backtest_results(
     bt_engine: object,
     config: Config,
 ) -> None:
-    """Write backtest artifacts (JSON, CSV, Bokeh chart) to disk."""
     out_path = Path(config.paths.backtest_results)
     _save_json_results(metrics, trades, out_path)
-
     if trades:
         _save_trade_details_csv(trades, out_path.parent)
         _save_equity_curve_csv(trades, out_path.parent, config.backtest.initial_capital)
-
     _log_core_backtest_metrics(metrics, config.backtest.initial_capital)
-
     session_dir = Path(config.paths.session_dir) if config.paths.session_dir else None
     _save_bokeh_chart(bt_engine, metrics, session_dir)
 
 
 # ---------------------------------------------------------------------------
-# Pipeline entry point (called by pipeline.py)
+# Pipeline entry point
 # ---------------------------------------------------------------------------
 
 
 def run_backtest(config: Config) -> None:
-    """Run a full CFD backtest from files specified in config.
+    """Run full CFD backtest from files in config.
 
-    For walk-forward (sliding) validation, joins OOF predictions with the
-    full labeled dataset (which contains OHLCV + features). For static
-    validation, uses the traditional test split file.
-
-    Writes normalized metrics and trade records as JSON, optional trade-detail
-    and equity-curve CSV files, and an optional Bokeh HTML chart.
+    Walk-forward: joins OOF predictions with labeled dataset.
+    Static: uses traditional test split file.
+    Writes metrics JSON, trade-detail CSV, equity-curve CSV, Bokeh HTML.
     """
     metrics, trades, bt_engine = compute_backtest(config)
     _persist_backtest_results(metrics, trades, bt_engine, config)
 
 
 # ---------------------------------------------------------------------------
-# Alternative entry points (in-memory, manual)
+# In-memory entry points
 # ---------------------------------------------------------------------------
 
 
@@ -189,21 +166,26 @@ def run_backtest_from_data(
     test_df: pl.DataFrame,
     preds_df: pl.DataFrame,
     config: Config,
-) -> BacktestMetrics:
-    """Run the full backtest pipeline using in-memory Polars DataFrames.
+) -> BacktestResult:
+    """Run backtest using in-memory Polars DataFrames.
 
     Args:
-        test_df: Market/test data containing price columns and atr_14.
-        preds_df: Predictions with timestamp and pred_label
-            (optional pred_proba_* columns allowed).
-        config: Configuration object with backtest, data, and paths sections.
+        test_df: Market/test data with price columns and atr_14.
+        preds_df: Predictions with timestamp and pred_label.
+        config: Configuration with backtest, data, and paths sections.
 
     Returns:
-        Normalized metrics dictionary extracted from the backtest results.
+        Tuple of (metrics dict, trades list).
     """
     pdf = _prepare_df(test_df, preds_df)
-    stats, _ = _run_fractional_backtest(pdf, config)
-    return _normalize_stats(stats)
+    stats, bt = _run_fractional_backtest(pdf, config)
+    metrics = _normalize_stats(stats)
+    trades = _trades_to_list(
+        stats["_trades"],
+        commission_per_lot=config.backtest.commission_per_lot,
+        contract_size=config.data.contract_size,
+    )
+    return metrics, trades, bt
 
 
 def run_backtest_manual(
@@ -230,18 +212,25 @@ def run_backtest_manual(
     daily_loss_limit: float = 0.03,
     min_bars_between_trades: int = 6,
 ) -> tuple[BacktestMetrics, list[TradeRecord]]:
-    """Run a backtest with manually specified parameters (no Config required).
+    """Run backtest with manual params (no Config required).
 
-    Designed for interactive use in dashboards where parameters can be tuned
-    without modifying the config file.
+    Designed for dashboards where params can be tuned without config file.
 
     Returns:
         Tuple of (metrics dict, trades list).
     """
+    from thesis.stage_5_backtest.runners import (
+        _compute_spread_rate,
+        _create_fractional_backtest,
+        _make_commission_fn,
+    )
+
     pdf = _prepare_df(test_df, preds_df)
 
     median_price = float(pdf["Close"].median())
-    spread_total = (spread_ticks + slippage_ticks) * tick_size / median_price
+    spread_total = _compute_spread_rate(
+        spread_ticks, slippage_ticks, tick_size, median_price
+    )
 
     commission_fn = _make_commission_fn(commission_per_lot, contract_size)
     bt = _create_fractional_backtest(

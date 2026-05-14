@@ -12,14 +12,9 @@ from backtesting.lib import FractionalBacktest
 import pandas as pd
 
 from thesis.shared.schemas import BacktestMetrics, TradeRecord
-from thesis.stage_5_backtest.strategy import (
-    _DEFAULT_COMMISSION_PER_LOT,
-    _DEFAULT_CONTRACT_SIZE,
-    _DEFAULT_INITIAL_CAPITAL,
-)
+from thesis.stage_5_backtest.strategy import _DEFAULT_CONTRACT_SIZE
 
 logger = logging.getLogger("thesis.backtest")
-
 
 CORE_BACKTEST_METRICS: tuple[tuple[str, str, str], ...] = (
     ("return_pct", "Total Return", "{:.2f}%"),
@@ -30,8 +25,6 @@ CORE_BACKTEST_METRICS: tuple[tuple[str, str, str], ...] = (
     ("num_trades", "Trades", "{:,.0f}"),
 )
 
-# Explicit mapping: backtesting.py stat key → canonical BacktestMetrics key.
-# No string-munging; new metrics require an explicit entry here.
 _BT_KEY_MAP: dict[str, str] = {
     "Return [%]": "return_pct",
     "Max. Drawdown [%]": "max_drawdown_pct",
@@ -50,9 +43,8 @@ _BT_KEY_MAP: dict[str, str] = {
 
 
 def _log_core_backtest_metrics(
-    metrics: BacktestMetrics, initial_capital: float = _DEFAULT_INITIAL_CAPITAL
+    metrics: BacktestMetrics, initial_capital: float
 ) -> None:
-    """Log only the finance metrics that matter for CLI readability."""
     logger.info("=== BACKTEST CORE METRICS ===")
     logger.info("  Initial Balance: %s", f"${initial_capital:,.0f}")
     for key, label, fmt in CORE_BACKTEST_METRICS:
@@ -67,11 +59,6 @@ def _log_core_backtest_metrics(
 
 
 def _normalize_stats(stats: pd.Series) -> BacktestMetrics:
-    """Convert backtesting.py statistics into the canonical BacktestMetrics dict.
-
-    Uses an explicit key mapping instead of string-munging to prevent
-    silent metric loss from unexpected label formats.
-    """
     raw = stats.to_dict()
     out: dict[str, Any] = {}
     for bt_key, canonical_key in _BT_KEY_MAP.items():
@@ -83,14 +70,9 @@ def _normalize_stats(stats: pd.Series) -> BacktestMetrics:
 
 def _trades_to_list(
     trades_df: pd.DataFrame,
-    commission_per_lot: float = _DEFAULT_COMMISSION_PER_LOT,
+    commission_per_lot: float,
     contract_size: float = _DEFAULT_CONTRACT_SIZE,
 ) -> list[TradeRecord]:
-    """Convert a backtesting.py trades DataFrame to a JSON-serializable list.
-
-    Each record contains entry/exit timestamps, direction, prices, lot size,
-    PnL, return percentage, commission, and duration.
-    """
     if trades_df.empty:
         return []
     records = trades_df.reset_index(drop=True)
@@ -99,6 +81,15 @@ def _trades_to_list(
         size = float(row.get("Size", 0))
         lots = abs(size) / contract_size
         commission = lots * commission_per_lot
+        duration_val = row.get("Duration")
+        if duration_val is not None:
+            try:
+                dur_td = pd.Timedelta(duration_val)
+                duration_secs = dur_td.total_seconds()
+            except Exception:
+                duration_secs = None
+        else:
+            duration_secs = None
         result.append(
             {
                 "entry_time": str(row.get("EntryTime", "")),
@@ -110,7 +101,7 @@ def _trades_to_list(
                 "pnl": float(row.get("PnL", 0)),
                 "return_pct": float(row.get("ReturnPct", 0)) * 100,
                 "commission": round(commission, 2),
-                "duration": str(row.get("Duration", "")),
+                "duration_sec": duration_secs,
             }
         )
     return result
@@ -121,7 +112,6 @@ def _save_json_results(
     trades: list[TradeRecord],
     out_path: Path,
 ) -> None:
-    """Save backtest results (metrics + trades) as JSON."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump({"metrics": metrics, "trades": trades}, f, indent=2, default=str)
@@ -129,7 +119,6 @@ def _save_json_results(
 
 
 def _save_trade_details_csv(trades: list[TradeRecord], out_dir: Path) -> None:
-    """Save per-trade records as CSV."""
     if not trades:
         return
     csv_path = out_dir / "trades_detail.csv"
@@ -144,13 +133,8 @@ def _save_trade_details_csv(trades: list[TradeRecord], out_dir: Path) -> None:
 def _save_equity_curve_csv(
     trades: list[TradeRecord],
     out_dir: Path,
-    initial_capital: float = _DEFAULT_INITIAL_CAPITAL,
+    initial_capital: float,
 ) -> None:
-    """Save equity curve as CSV with running peak and drawdown.
-
-    Equity curve is trade-by-trade closed PnL, not mark-to-market,
-    so intra-trade drawdowns are not visible.
-    """
     if not trades:
         return
     eq_path = out_dir / "equity_curve.csv"
@@ -180,7 +164,6 @@ def _save_bokeh_chart(
     metrics: BacktestMetrics,
     session_dir: Path | None,
 ) -> None:
-    """Save Bokeh HTML chart for the backtest."""
     if not session_dir:
         return
     n_trades = int(metrics.get("num_trades", 0))
