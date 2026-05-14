@@ -1,1 +1,1 @@
-"""LightGBM sub-package."""
+"""LightGBM helpers."""

@@ -1,4 +1,4 @@
-"""LightGBM walk-forward training. Tabular only, no sequences."""
+"""LightGBM walk-forward trainer. Tabular only."""
 
 from __future__ import annotations
 
@@ -38,15 +38,16 @@ from thesis.stage_4_training.walk_forward.predictions import (
     _apply_confidence_threshold,
     proba_columns,
 )
+from thesis.stage_4_training.walk_forward.targets import compute_regression_target
 
 logger = logging.getLogger("thesis")
 
 
-# ── Data loading ────────────────────────────────────────────────────
+# Data loading
 
 
 def _load_labeled_data(config: Config) -> tuple[pl.DataFrame, bool]:
-    """Load labels parquet. Pre-compute regression target if needed."""
+    """Load labels. Add regression target when needed."""
     path = Path(config.paths.labels)
     if not path.exists():
         raise FileNotFoundError(f"Labels not found: {path}")
@@ -54,35 +55,22 @@ def _load_labeled_data(config: Config) -> tuple[pl.DataFrame, bool]:
     df = pl.read_parquet(path)
     logger.info("Loaded labels: %d rows", len(df))
 
-    # Regression: sign of forward return as target
-    is_regression = config.model.objective == "regression"
-    if is_regression:
-        if "close" not in df.columns:
-            raise ValueError("Regression objective requires 'close' column")
-        h = config.labels.horizon_bars
-        close = df["close"].to_numpy()
-        n = len(close)
-        reg = np.full(n, np.nan, dtype=np.float64)
-        future = np.roll(close, -h)[: n - h]
-        reg[: n - h] = (future - close[: n - h]) / close[: n - h]
-        df = df.with_columns(pl.Series("regression_target", reg))
-        df = df.filter(pl.col("regression_target").is_not_nan())
-        logger.info("Regression target: horizon=%d", h)
+    df, is_regression = compute_regression_target(df, config)
 
-    # Regime label-prior features
+    # Label priors need regression-adjusted labels
     if getattr(config.features, "enable_regime_features", False):
         df = _add_label_prior_features(df, config)
 
     return df, is_regression
 
 
-# ── Prepare ─────────────────────────────────────────────────────────
+# Prepare
 
 
 def _prepare(
     config: Config,
 ) -> tuple[pl.DataFrame, list[WalkForwardWindow], list[str], dict[str, Any]]:
-    """Load data and generate walk-forward windows."""
+    """Load data and build windows."""
     df, is_regression = _load_labeled_data(config)
 
     event_end = df["event_end"].to_numpy() if "event_end" in df.columns else None
@@ -104,7 +92,7 @@ def _prepare(
     return df, windows, feature_cols, {"is_regression": is_regression}
 
 
-# ── Train one window ────────────────────────────────────────────────
+# Train one window
 
 
 def _train_lgbm_window(
@@ -117,7 +105,7 @@ def _train_lgbm_window(
     is_regression: bool,
     expanded_features: bool = False,
 ) -> dict[str, Any] | None:
-    """Train LightGBM and predict for one window."""
+    """Train/predict one LightGBM window."""
     train_df = df.slice(window.train_start_idx, window.train_len)
     test_df = df.slice(window.test_start_idx, window.test_len)
 
@@ -130,7 +118,7 @@ def _train_lgbm_window(
 
     diag = _window_diagnostics(w_idx + 1, train_df, test_df, y_train_cls, y_test_cls)
 
-    # Feature columns
+    # Feature set
     if expanded_features:
         static_cols = [
             c
@@ -140,7 +128,7 @@ def _train_lgbm_window(
     else:
         static_cols = select_static_cols(config, train_df, feature_cols)
 
-    # Tail 20% of training for LightGBM's internal validation
+    # Tail 20% for early stopping
     val_split = max(1, int(len(train_df) * 0.2))
     train_head_df = train_df.slice(0, len(train_df) - val_split)
     pipeline, selected = fit_static_feature_pipeline(
@@ -153,7 +141,7 @@ def _train_lgbm_window(
     X_tr, y_tr = X_train[:-val_split], y_train_cls[:-val_split]
     X_val, y_val = X_train[-val_split:], y_train_cls[-val_split:]
 
-    # Sample weights
+    # Optional sample weights
     sw = (
         train_df["sample_weight"].to_numpy().astype(np.float64)
         if "sample_weight" in train_df.columns
@@ -161,17 +149,17 @@ def _train_lgbm_window(
     )
     w_tr = sw[:-val_split] if sw is not None else None
 
-    # Class weights (regression has no class weights)
+    # Class weights for classifier only
     class_weights = None if is_regression else _compute_class_weights(y_tr)
     if class_weights:
         diag["class_weights"] = {str(k): v for k, v in class_weights.items()}
 
-    # Train
+    # Fit model
     model = _train_lgbm(
         X_tr, y_tr, X_val, y_val, class_weights, config, selected, sample_weight=w_tr
     )
 
-    # Predict
+    # Predict test window
     if is_regression:
         raw = model.predict(_wrap_np(X_test, selected))
         preds = np.sign(raw).astype(np.int32)
@@ -212,7 +200,7 @@ def _train_lgbm_window(
     }
 
 
-# ── Save ────────────────────────────────────────────────────────────
+# Save
 
 
 def _save_results(
@@ -221,7 +209,7 @@ def _save_results(
     windows: list[WalkForwardWindow],
     _elapsed: float,
 ) -> None:
-    """Validate OOF, persist artifacts."""
+    """Persist LGBM artifacts."""
     import joblib
 
     if not results:
@@ -287,11 +275,11 @@ def _save_results(
     )
 
 
-# ── Entry point ─────────────────────────────────────────────────────
+# Entry point
 
 
 def train_lgbm_walk_forward(config: Config, *, expanded_features: bool = False) -> None:
-    """Train LightGBM with walk-forward validation."""
+    """Run LightGBM walk-forward training."""
     from thesis.stage_4_training.walk_forward.loop import run_walk_forward
 
     run_walk_forward(

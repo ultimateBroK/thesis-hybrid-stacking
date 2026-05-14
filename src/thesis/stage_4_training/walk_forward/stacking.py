@@ -1,4 +1,4 @@
-"""Classical stacking: base learners + meta learner. Walk-forward validated."""
+"""Stacking trainer. Base learners feed meta learner."""
 
 from __future__ import annotations
 
@@ -46,11 +46,11 @@ _MIN_SPLIT = 4
 _MIN_CAL = 50
 
 
-# ── Base model registry ────────────────────────────────────────────
+# Base model registry
 
 
 def _build_base(name: str, config: Config) -> Any:
-    """Construct a sklearn base estimator."""
+    """Build base learner."""
     if name == "logistic_regression":
         from sklearn.linear_model import LogisticRegression
 
@@ -75,7 +75,7 @@ def _build_base(name: str, config: Config) -> Any:
 
 
 def _fit_safe(model: Any, X: np.ndarray, y: np.ndarray) -> Any:
-    """Fit model. Fall back to DummyClassifier if only one class present."""
+    """Fit model. Dummy protects single-class folds."""
     if len(np.unique(y)) < 2:
         from sklearn.dummy import DummyClassifier
 
@@ -84,11 +84,11 @@ def _fit_safe(model: Any, X: np.ndarray, y: np.ndarray) -> Any:
     return model
 
 
-# ── Meta model registry ─────────────────────────────────────────────
+# Meta model registry
 
 
 def _build_meta(name: str, config: Config, X: np.ndarray, y: np.ndarray) -> Any:
-    """Construct meta learner. Dummy if only one class."""
+    """Build meta learner. Dummy protects single-class meta labels."""
     if len(np.unique(y)) < 2:
         from sklearn.dummy import DummyClassifier
 
@@ -103,25 +103,32 @@ def _build_meta(name: str, config: Config, X: np.ndarray, y: np.ndarray) -> Any:
             random_state=config.workflow.random_seed,
         ).fit(X, y)
     if name == "lightgbm":
+        val_split = max(1, int(len(X) * 0.2))
+        if len(X) <= _MIN_SPLIT or len(X) - val_split < 2:
+            logger.warning("Meta LGBM validation too small; reusing train as val")
+            X_tr, y_tr, X_val, y_val = X, y, X, y
+        else:
+            X_tr, y_tr = X[:-val_split], y[:-val_split]
+            X_val, y_val = X[-val_split:], y[-val_split:]
         return _train_lgbm(
-            X,
-            y,
-            X,
-            y,
-            _compute_class_weights(y),
+            X_tr,
+            y_tr,
+            X_val,
+            y_val,
+            _compute_class_weights(y_tr),
             config,
             [f"m{i}" for i in range(X.shape[1])],
         )
     raise ValueError(f"Unsupported meta model: {name!r}")
 
 
-# ── Probability helpers ──────────────────────────────────────────────
+# Probability helpers
 
 
 def _aligned_proba(
     model: Any, X: np.ndarray, feature_names: list[str] | None = None
 ) -> np.ndarray:
-    """Predict probabilities aligned to [-1, 0, 1] class order."""
+    """Predict probabilities in [-1, 0, 1] order."""
     X_p = X
     fitted_names = getattr(model, "feature_names_in_", None)
     if (
@@ -139,7 +146,7 @@ def _aligned_proba(
 def _stack_features(
     base_outputs: dict[str, np.ndarray],
 ) -> tuple[np.ndarray, list[str]]:
-    """Concatenate base probability matrices into meta feature matrix."""
+    """Stack base probabilities into meta features."""
     if not base_outputs:
         raise ValueError("No base model outputs for stacking")
     row_counts = {n: m.shape[0] for n, m in base_outputs.items()}
@@ -155,7 +162,7 @@ def _stack_features(
 
 
 def _classification_summary(y_true: list[int], y_pred: list[int]) -> dict[str, Any]:
-    """Accuracy, macro-F1, per-class metrics. For model comparison JSON."""
+    """Build model comparison metrics."""
     from sklearn.metrics import (
         accuracy_score,
         f1_score,
@@ -185,16 +192,15 @@ def _classification_summary(y_true: list[int], y_pred: list[int]) -> dict[str, A
     }
 
 
-# ── Expanding-origin OOF ────────────────────────────────────────────
+# Expanding-origin OOF
 
 
 def _internal_folds(
     train_len: int, n_folds: int, purge_bars: int
 ) -> list[WalkForwardWindow]:
-    """Create expanding-origin folds inside one outer train window.
+    """Build internal expanding-origin folds.
 
-    Each fold trains on rows 0..boundary[i] and predicts boundary[i]..boundary[i+1].
-    Purge gap applied between train tail and predict head.
+    Purge gap keeps meta features out-of-sample.
     """
     fold_size = train_len // n_folds
     boundaries = [i * fold_size for i in range(n_folds)] + [train_len]
@@ -222,10 +228,9 @@ def _expanding_origin_oof(
     feature_cols: list[str],
     purge_bars: int,
 ) -> tuple[dict[str, np.ndarray], np.ndarray, Any, list[str], list[str]]:
-    """Generate OOF meta features via expanding-origin forward chain.
+    """Generate OOF meta features.
 
-    Each internal fold produces out-of-sample predictions from base learners.
-    Those predictions become meta features for the next stage.
+    Meta learner trains only on base out-of-sample outputs.
     """
     n_folds = config.model.stacking_internal_folds
     if n_folds < 2:
@@ -287,7 +292,7 @@ def _expanding_origin_oof(
     return meta_train_outputs, y_meta, pipeline, selected, static_cols
 
 
-# ── Calibration ─────────────────────────────────────────────────────
+# Calibration
 
 
 def _calibrate_models(
@@ -296,10 +301,9 @@ def _calibrate_models(
     y_cal: np.ndarray,
     n_models: int,
 ) -> dict[str, Any]:
-    """Wrap base models with Platt (sigmoid) scaling.
+    """Calibrate base probabilities with sigmoid.
 
-    Requires enough calibration rows: n_cal >= _MIN_CAL * n_models.
-    Otherwise skips calibration.
+    Skip when calibration rows too few.
     """
     from sklearn.calibration import CalibratedClassifierCV
     from sklearn.frozen import FrozenEstimator
@@ -322,7 +326,7 @@ def _calibrate_models(
     return calibrated
 
 
-# ── Train one outer window ──────────────────────────────────────────
+# Train one outer window
 
 
 def _train_stacking_window(
@@ -334,7 +338,7 @@ def _train_stacking_window(
     *,
     is_regression: bool = False,
 ) -> dict[str, Any] | None:
-    """Train base learners + meta learner for one outer walk-forward window."""
+    """Train/predict one stacking window."""
     train_df = df.slice(window.train_start_idx, window.train_len)
     test_df = df.slice(window.test_start_idx, window.test_len)
     if train_df.is_empty() or test_df.is_empty():
@@ -350,14 +354,14 @@ def _train_stacking_window(
 
     diag_extra: dict[str, Any] = {}
 
-    # ── OOF path (n_folds >= 2) ─────────────────────────────────
+    # OOF path
     if n_folds >= 2:
         purge_bars = config.model.stacking_internal_purge
         if purge_bars <= 0:
             purge_bars = config.labels.horizon_bars
 
         if do_cal:
-            # Split outer train into: base_train | calibration
+            # Chronological base/calibration split
             cal_rows = max(1, int(round(len(train_df) * cal_frac)))
             base_cal_df = train_df.slice(0, len(train_df) - cal_rows)
             cal_df = train_df.slice(len(train_df) - cal_rows, cal_rows)
@@ -392,7 +396,7 @@ def _train_stacking_window(
 
         X_test = pipeline.transform(test_df.select(static_cols).to_pandas())
 
-        # Train base models on full outer train (or base portion if calibrated)
+        # Refit bases on deployable train slice
         base_models: dict[str, Any] = {}
         for configured_name in config.model.stacking_base_models:
             short = _BASE_ALIASES.get(configured_name, configured_name)
@@ -425,7 +429,7 @@ def _train_stacking_window(
         diag_extra["stacking_mode"] = "expanding_origin_oof"
         diag_extra["internal_folds"] = n_folds
 
-    # ── Legacy single-holdout path (n_folds == 0) ─────────────
+    # Legacy single-holdout path
     else:
         meta_frac = config.model.stacking_meta_fraction
         base_rows = int(round(len(train_df) * (1 - meta_frac)))
@@ -461,11 +465,11 @@ def _train_stacking_window(
         }
         diag_extra["stacking_mode"] = "single_holdout"
 
-    # ── Soft-voting baseline ───────────────────────────────────
+    # Soft-voting baseline
     soft_vote = np.mean(list(test_outputs.values()), axis=0)
     soft_vote_preds = _CLASS_ORDER[np.argmax(soft_vote, axis=1)]
 
-    # ── Meta model ─────────────────────────────────────────────
+    # Meta model
     X_meta_stack, meta_names = _stack_features(meta_train_outputs)
     X_test_stack, _ = _stack_features(test_outputs)
     meta_model = _build_meta(
@@ -475,7 +479,7 @@ def _train_stacking_window(
     threshold = config.model.prediction_confidence_threshold
     final_preds = _apply_confidence_threshold(final_proba, threshold)
 
-    # ── Diagnostics ─────────────────────────────────────────
+    # Diagnostics
     diag = _window_diagnostics(
         w_idx + 1, train_df, test_df, train_df["label"].to_numpy(), y_test
     )
@@ -531,7 +535,7 @@ def _train_stacking_window(
     }
 
 
-# ── Save ────────────────────────────────────────────────────────────
+# Save
 
 
 def _save_results(
@@ -540,7 +544,7 @@ def _save_results(
     windows: list[WalkForwardWindow],
     _elapsed: float,
 ) -> None:
-    """Persist stacking artifacts: model bundle, OOF, histories, comparison."""
+    """Persist stacking artifacts and comparison."""
     import joblib
 
     if not results:
@@ -562,7 +566,7 @@ def _save_results(
     if last["lgbm_model"] is not None:
         _save_feature_importance(last["lgbm_model"], last["feature_cols"], config)
 
-    # Model comparison: stacking vs each base
+    # Model comparison payload
     comparison: dict[str, dict[str, list[int]]] = {
         "hybrid_stacking": {"true": [], "pred": []}
     }
@@ -639,11 +643,11 @@ def _save_results(
     )
 
 
-# ── Entry point ─────────────────────────────────────────────────────
+# Entry point
 
 
 def train_stacking_walk_forward(config: Config) -> None:
-    """Train classical stacking with outer walk-forward validation."""
+    """Run stacking walk-forward training."""
     from thesis.stage_4_training.walk_forward.loop import run_walk_forward
 
     if config.model.objective != "multiclass":
@@ -660,7 +664,7 @@ def train_stacking_walk_forward(config: Config) -> None:
 def _prepare_for_stacking(
     config: Config,
 ) -> tuple[pl.DataFrame, list[WalkForwardWindow], list[str], dict[str, Any]]:
-    """Load labels, generate windows. Stacking does not support regression."""
+    """Prepare stacking data. Multiclass only."""
     from thesis.stage_4_training.validation import generate_windows
     from thesis.stage_4_training.walk_forward.lgbm import _load_labeled_data
 

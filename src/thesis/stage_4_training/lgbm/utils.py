@@ -1,4 +1,4 @@
-"""LightGBM training utilities for tabular walk-forward."""
+"""LightGBM fit helpers. Keep folds consistent."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ logger = logging.getLogger("thesis")
 
 
 def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
-    """Wrap NumPy matrix as pandas DataFrame. Preserves feature names for LightGBM."""
+    """Wrap matrix. Preserve feature names."""
     import pandas as pd
 
     return pd.DataFrame(X, columns=feature_cols)
 
 
 def _compute_class_weights(y: np.ndarray) -> dict[int, float]:
-    """Balanced class weights for multiclass labels."""
+    """Balanced weights. Counter class skew."""
     from sklearn.utils.class_weight import compute_class_weight
 
     classes = np.unique(y)
@@ -36,11 +36,9 @@ def _filter_unseen_classes(
     y_train: np.ndarray,
     feature_cols: list[str],
 ) -> tuple[Any, np.ndarray] | None:
-    """Drop validation rows whose class is absent from training fold.
+    """Drop val rows with unseen classes.
 
-    LightGBM cannot evaluate on unseen class labels.
-    Small folds can miss the rare Hold class.
-    Returns None if no overlapping classes (skip early stopping).
+    LightGBM eval cannot encode labels train never saw.
     """
     seen = np.unique(y_train)
     mask = np.isin(y_val, seen)
@@ -67,7 +65,7 @@ def _train_lgbm(
     feature_cols: list[str],
     sample_weight: np.ndarray | None = None,
 ) -> Any:
-    """Train LightGBM with fixed hyperparameters. Optional early stopping."""
+    """Fit LightGBM. Early stop when validation usable."""
     import lightgbm as lgb
 
     m = config.model
@@ -115,7 +113,7 @@ def _train_lgbm(
             zero_as_missing=False,
         )
 
-    # Filter validation to seen classes (regression skips this)
+    # Filter val to classes seen in train
     filtered = (
         None
         if is_regression
@@ -123,7 +121,7 @@ def _train_lgbm(
     )
 
     def _progress(env: Any) -> None:
-        """Log progress every 50 iterations."""
+        """Log every 50 rounds."""
         if env.iteration % 50 == 0 or env.iteration == env.end_iteration - 1:
             loss = (
                 env.evaluation_result_list[0][2] if env.evaluation_result_list else 0.0

@@ -1,4 +1,4 @@
-"""Baseline strategies for walk-forward comparison."""
+"""Naive baselines. Sanity floor for model skill."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ def naive_direction(y_returns: npt.NDArray) -> npt.NDArray:
 
 
 def always_class(y_true: npt.NDArray, cls: int) -> npt.NDArray:
-    """Predict the same class every time."""
+    """Predict one class. Bias check."""
     return np.full(len(y_true), cls, dtype=np.int8)
 
 
 def majority_class(y_true: npt.NDArray) -> tuple[npt.NDArray, int]:
-    """Predict the most common class. Return predictions and the class."""
+    """Predict majority class. Class imbalance floor."""
     vals, counts = np.unique(y_true, return_counts=True)
     maj = int(vals[np.argmax(counts)])
     return np.full(len(y_true), maj, dtype=np.int8), maj
@@ -32,7 +32,7 @@ def random_baseline(
     classes: list[int] | None = None,
     seed: int = 42,
 ) -> npt.NDArray:
-    """Random predictions. Fixed seed for reproducibility."""
+    """Random labels. Seeded noise floor."""
     if classes is None:
         classes = [-1, 0, 1]
     rng = np.random.default_rng(seed)
@@ -40,7 +40,7 @@ def random_baseline(
 
 
 def compute_metrics(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict[str, float]:
-    """Accuracy, macro-F1, directional accuracy."""
+    """Core classification metrics."""
     return {
         "accuracy": accuracy(y_true, y_pred),
         "macro_f1": macro_f1(y_true, y_pred),
@@ -53,7 +53,7 @@ def run_all(
     y_returns: npt.NDArray,
     seed: int = 42,
 ) -> dict[str, dict]:
-    """Run every baseline. Return {name: metrics}."""
+    """Run all baselines. Compare model lift."""
     results: dict[str, dict] = {}
 
     results["naive_direction"] = compute_metrics(y_true, naive_direction(y_returns))

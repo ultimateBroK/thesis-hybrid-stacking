@@ -1,4 +1,4 @@
-"""Generic walk-forward loop. Used by both LGBM and stacking."""
+"""Shared walk-forward loop. Strategy hooks do model work."""
 
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ def run_walk_forward(
     window_fn: Callable[..., dict[str, Any] | None],
     save_fn: Callable[[Config, list[dict[str, Any]], list[Any], float], None],
 ) -> None:
-    """Execute the walk-forward loop.
+    """Run walk-forward hooks.
 
     Args:
-        config: Application config.
-        prepare_fn: Loads data, returns (df, windows, feature_cols, extra).
-        window_fn: Trains one window, returns result or None to skip.
-        save_fn: Persists all results after loop finishes.
+        config: Pipeline config.
+        prepare_fn: Load data, windows, feature columns, extras.
+        window_fn: Train one window, return result or skip.
+        save_fn: Persist results after loop.
     """
     t0 = time.perf_counter()
     df, windows, feature_cols, extra_data = prepare_fn(config)

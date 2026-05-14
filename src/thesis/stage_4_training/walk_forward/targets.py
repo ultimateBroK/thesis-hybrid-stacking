@@ -1,4 +1,4 @@
-"""Regression target computation for tabular models."""
+"""Training targets. Share label math across trainers."""
 
 from __future__ import annotations
 
@@ -16,10 +16,9 @@ logger = logging.getLogger("thesis")
 def compute_regression_target(
     df: pl.DataFrame, config: Config
 ) -> tuple[pl.DataFrame, bool]:
-    """Pre-compute regression target when model.objective is regression.
+    """Add forward-return target for regression.
 
-    Target = sign of forward return over horizon_bars.
-    Tail rows with insufficient forward horizon get censored label.
+    Tail rows cannot see horizon; mark censored then drop target-null rows.
     """
     is_regression = config.model.objective == "regression"
     if not is_regression:
@@ -36,7 +35,7 @@ def compute_regression_target(
     future = np.roll(close, -h)[: n - h]
     reg[: n - h] = (future - close[: n - h]) / close[: n - h]
 
-    # Censored label for tail rows that can't compute forward return
+    # Tail cannot compute forward return
     label_arr = df["label"].to_numpy().copy()
     tail_start = max(0, n - h)
     label_arr[tail_start:] = CENSORED_LABEL
@@ -48,7 +47,7 @@ def compute_regression_target(
         ]
     )
 
-    # Drop rows with no regression target
+    # Drop target-null tail rows
     n_before = len(df)
     df = df.filter(pl.col("regression_target").is_not_nan())
     n_dropped = n_before - len(df)

@@ -1,4 +1,4 @@
-"""OOF persistence, training history, walk-forward history."""
+"""Persist OOF, history, feature importance."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from thesis.stage_4_training.walk_forward.predictions import (
 logger = logging.getLogger("thesis")
 
 
-# ── OOF ──────────────────────────────────────────────────────────────
+# OOF
 
 
 def _save_oof_predictions(
@@ -31,7 +31,7 @@ def _save_oof_predictions(
     all_oof_preds: list[pl.DataFrame],
     window_diagnostics: list[dict[str, Any]],
 ) -> pl.DataFrame:
-    """Concatenate OOF chunks, validate, write CSV + manifest."""
+    """Write validated OOF predictions."""
     if not all_oof_preds:
         raise RuntimeError("No OOF predictions generated")
 
@@ -48,11 +48,11 @@ def _save_oof_predictions(
     return oof_df
 
 
-# ── Training history ───────────────────────────────────────────────
+# Training history
 
 
 def _save_training_history(config: Config, payload: dict[str, Any]) -> None:
-    """Write models/training_history.json if session_dir is set."""
+    """Write training history when session exists."""
     if not config.paths.session_dir:
         return
     path = Path(config.paths.session_dir) / "models" / "training_history.json"
@@ -61,11 +61,11 @@ def _save_training_history(config: Config, payload: dict[str, Any]) -> None:
         json.dump(payload, f, indent=2)
 
 
-# ── Walk-forward history ──────────────────────────────────────────
+# Walk-forward history
 
 
 def _aggregate_oof_summary(diags: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate prediction distribution across all windows."""
+    """Aggregate OOF distribution and guardrails."""
     total_long = total_short = total_hold = 0
     entropies, sample_entropies = [], []
     flagged = []
@@ -120,7 +120,7 @@ def _build_wf_history(
     oof_len: int,
     architecture: str | None = None,
 ) -> dict[str, Any]:
-    """Build walk-forward history dict with per-window details."""
+    """Build per-window history payload."""
     return {
         "num_windows": len(windows),
         "total_oof_predictions": oof_len,
@@ -148,7 +148,7 @@ def _save_walk_forward_history(
     oof_len: int,
     architecture: str | None = None,
 ) -> None:
-    """Write reports/walk_forward_history.json if session_dir is set."""
+    """Write walk-forward history when session exists."""
     if not config.paths.session_dir:
         return
     path = Path(config.paths.session_dir) / "reports" / "walk_forward_history.json"
@@ -161,11 +161,11 @@ def _save_walk_forward_history(
         )
 
 
-# ── Per-architecture copy ──────────────────────────────────────────
+# Per-architecture copy
 
 
 def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> None:
-    """Save predictions/preds_{arch}.csv for multi-arch comparison."""
+    """Save architecture OOF copy."""
     if not config.paths.session_dir:
         return
     path = Path(config.paths.session_dir) / "predictions" / f"preds_{arch_name}.csv"
@@ -173,13 +173,13 @@ def _save_arch_copy(oof_df: pl.DataFrame, arch_name: str, config: Config) -> Non
     oof_df.write_csv(path)
 
 
-# ── Feature importance ────────────────────────────────────────────
+# Feature importance
 
 
 def _save_feature_importance(
     model: Any, feature_cols: list[str], config: Config
 ) -> None:
-    """Save sorted model feature importances to JSON."""
+    """Save sorted feature importance JSON."""
     try:
         imp = model.feature_importances_
         pairs = sorted(zip(feature_cols, imp), key=lambda x: x[1], reverse=True)

@@ -1,4 +1,4 @@
-"""Prediction helpers: confidence threshold, probability alignment, OOF validation."""
+"""Prediction helpers. Align probabilities, gate confidence, validate OOF."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ _CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
 
 
 def _apply_confidence_threshold(proba: np.ndarray, threshold: float) -> np.ndarray:
-    """Gate predictions by confidence.
+    """Gate LONG/SHORT by confidence.
 
     When threshold > 0:
         LONG  (1) if P(LONG)  - P(SHORT) > threshold
@@ -26,14 +26,14 @@ def _apply_confidence_threshold(proba: np.ndarray, threshold: float) -> np.ndarr
     if threshold <= 0:
         return _CLASS_ORDER[np.argmax(proba, axis=1)]
 
-    diff = proba[:, 2] - proba[:, 0]  # P(LONG) - P(SHORT)
+    diff = proba[:, 2] - proba[:, 0]  # Long edge over short
     return np.where(diff > threshold, 1, np.where(diff < -threshold, -1, 0)).astype(
         np.int32
     )
 
 
 def _align_proba(proba: np.ndarray, class_order: list[int] | np.ndarray) -> np.ndarray:
-    """Align probabilities to canonical [-1, 0, 1] order."""
+    """Align probabilities to [-1, 0, 1]."""
     aligned = np.zeros((len(proba), 3), dtype=np.float64)
     index_map = {int(c): i for i, c in enumerate(class_order)}
     for target_idx, cls in enumerate(_CLASS_ORDER):
@@ -47,7 +47,7 @@ def proba_columns(
     proba: np.ndarray,
     class_order: list[int] | np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """Canonical probability columns for [-1, 0, 1]."""
+    """Probability columns in canonical order."""
     aligned = _align_proba(proba, class_order)
     return {
         f"pred_proba_class_{'minus' + str(abs(c)) if c < 0 else str(c)}": aligned[:, i]
@@ -56,7 +56,7 @@ def proba_columns(
 
 
 def _label_suffix(cls: int) -> str:
-    """Suffix for probability column names."""
+    """Probability column suffix."""
     return f"minus{abs(cls)}" if cls < 0 else str(cls)
 
 
@@ -65,7 +65,7 @@ def one_hot_proba(
     *,
     prefix: str = "pred_proba_class_",
 ) -> dict[str, np.ndarray]:
-    """One-hot probability columns from predicted labels."""
+    """One-hot probabilities from labels."""
     preds = np.asarray(preds, dtype=np.int32)
     return {
         f"{prefix}{_label_suffix(int(c))}": (preds == c).astype(np.float64)
@@ -74,10 +74,9 @@ def one_hot_proba(
 
 
 def _validate_predictions(df: pl.DataFrame, path: Path) -> None:
-    """Validate OOF predictions before writing.
+    """Validate OOF before write.
 
-    Checks: required columns, non-empty, no nulls, no duplicate timestamps,
-    timestamps sorted, valid label values, no null columns.
+    Catch missing columns, nulls, duplicate time, bad labels.
     """
     required = {"timestamp", "pred_label"}
     missing = required - set(df.columns)
@@ -114,7 +113,7 @@ def _write_prediction_manifest(
     *,
     windows_count: int,
 ) -> None:
-    """Write prediction_manifest.json next to final_predictions.csv."""
+    """Write prediction manifest beside CSV."""
     from thesis.stage_4_training.walk_forward.diagnostics import _counts
 
     manifest = {
@@ -140,7 +139,7 @@ _PROBA_COLS = ("pred_proba_class_minus1", "pred_proba_class_0", "pred_proba_clas
 
 
 def _add_confidence_columns(df: pl.DataFrame) -> pl.DataFrame:
-    """Attach max_confidence and confidence_bin to OOF DataFrame."""
+    """Add confidence score and bin."""
     if not all(c in df.columns for c in _PROBA_COLS):
         return df
     return df.with_columns(

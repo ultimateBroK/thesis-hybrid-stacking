@@ -1,4 +1,4 @@
-"""Walk-forward validation with purge and embargo."""
+"""Walk-forward windows. Purge leakage, embargo spillover."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ import polars as pl
 
 @dataclass(frozen=True)
 class WalkForwardWindow:
-    """Train/test slice for one walk-forward fold.
+    """One walk-forward fold.
 
     Attributes:
-        train_start_idx: Inclusive start of training period.
-        train_end_idx: Exclusive end of training period (after purge).
-        test_start_idx: Inclusive start of test period (after embargo).
-        test_end_idx: Exclusive end of test period.
+        train_start_idx: Train start, inclusive.
+        train_end_idx: Train end, exclusive, after purge.
+        test_start_idx: Test start, inclusive, after embargo.
+        test_end_idx: Test end, exclusive.
     """
 
     train_start_idx: int
@@ -26,12 +26,12 @@ class WalkForwardWindow:
 
     @property
     def train_len(self) -> int:
-        """Number of training bars."""
+        """Training bar count."""
         return self.train_end_idx - self.train_start_idx
 
     @property
     def test_len(self) -> int:
-        """Number of test bars."""
+        """Test bar count."""
         return self.test_end_idx - self.test_start_idx
 
 
@@ -45,23 +45,22 @@ def generate_windows(
     min_train_bars: int = 2000,
     event_end: np.ndarray | None = None,
 ) -> list[WalkForwardWindow]:
-    """Create bar-count walk-forward windows across total_bars.
+    """Build bar-count walk-forward windows.
 
-    Windows slide forward by step_bars. Purge trims training tail;
-    embargo skips test head to prevent leakage.
+    Purge removes label overlap. Embargo blocks spillover.
 
     Args:
-        total_bars: Total rows in dataset.
-        train_window_bars: Desired training length in bars.
-        test_window_bars: Desired test length in bars.
-        step_bars: Bars between successive windows.
-        purge_bars: Bars removed from training tail.
-        embargo_bars: Bars skipped at test head after purge.
-        min_train_bars: Minimum training bars required.
-        event_end: Event-end indices for label-aware purging.
+        total_bars: Dataset rows.
+        train_window_bars: Target train bars.
+        test_window_bars: Target test bars.
+        step_bars: Window stride.
+        purge_bars: Train-tail gap.
+        embargo_bars: Test-head gap.
+        min_train_bars: Minimum usable train bars.
+        event_end: Label event-end indices.
 
     Returns:
-        List of WalkForwardWindow objects.
+        Valid windows.
     """
     windows: list[WalkForwardWindow] = []
     test_start = 0
@@ -106,11 +105,9 @@ def _apply_purge_embargo(
     purge_bars: int,
     embargo_bars: int,
 ) -> WalkForwardWindow | None:
-    """Adjust indices using fixed-bar purge and embargo.
+    """Apply fixed purge/embargo gaps.
 
-    Gap between adjusted train end and adjusted test start =
-    2*purge_bars + embargo_bars. Extra purge_bar on test side
-    accounts for label lookahead.
+    Extra test-side purge covers label lookahead.
     """
     adj_train_end = raw_train_end - purge_bars
     adj_test_start = test_start + purge_bars + embargo_bars
@@ -136,10 +133,9 @@ def _apply_event_purge(
     event_end: np.ndarray,
     embargo_bars: int,
 ) -> WalkForwardWindow | None:
-    """Adjust window using event-end times instead of fixed purge.
+    """Apply event-end purge.
 
-    Training samples kept only when event ends strictly before
-    test boundary. Embargo still skips embargo_bars at test head.
+    Keep train rows only if event ends before test.
     """
     if raw_train_end <= train_start:
         return None
@@ -172,7 +168,7 @@ def log_windows(
     df: pl.DataFrame,
     ts_col: str = "timestamp",
 ) -> None:
-    """Log date ranges for every window."""
+    """Log window date ranges."""
     import logging
 
     logger = logging.getLogger("thesis")

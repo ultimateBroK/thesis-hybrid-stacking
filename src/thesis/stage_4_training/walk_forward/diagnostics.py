@@ -1,4 +1,4 @@
-"""Per-window diagnostics: label distributions, prediction metrics, entropy."""
+"""Window diagnostics. Labels, predictions, entropy."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ logger = logging.getLogger("thesis")
 
 
 def _shannon_entropy(p: np.ndarray) -> float:
-    """Shannon entropy (base-2) of a probability distribution."""
+    """Base-2 entropy."""
     p = p[p > 0]
     if p.size == 0:
         return 0.0
@@ -21,7 +21,7 @@ def _shannon_entropy(p: np.ndarray) -> float:
 
 
 def _counts(values: np.ndarray) -> dict[str, int]:
-    """Class → count dict with string keys. For JSON serialization."""
+    """Class counts. String keys for JSON."""
     if values.size == 0:
         return {}
     labels, counts = np.unique(values.astype(np.int32), return_counts=True)
@@ -29,7 +29,7 @@ def _counts(values: np.ndarray) -> dict[str, int]:
 
 
 def _pct(counts: dict[str, int]) -> dict[str, float]:
-    """Convert counts to percentages."""
+    """Counts to percentages."""
     total = sum(counts.values())
     if total == 0:
         return {}
@@ -37,7 +37,7 @@ def _pct(counts: dict[str, int]) -> dict[str, float]:
 
 
 def _dates(df: pl.DataFrame) -> dict[str, str]:
-    """Start/end timestamps for a window slice."""
+    """Window start/end timestamps."""
     if df.is_empty() or "timestamp" not in df.columns:
         return {"start": "", "end": ""}
     return {"start": str(df["timestamp"][0]), "end": str(df["timestamp"][-1])}
@@ -50,7 +50,7 @@ def _window_diagnostics(
     y_train: np.ndarray,
     y_test: np.ndarray,
 ) -> dict[str, Any]:
-    """Build label distribution diagnostics for one window."""
+    """Build label diagnostics for one window."""
     train_c = _counts(y_train)
     test_c = _counts(y_test)
     diag: dict[str, Any] = {
@@ -77,7 +77,7 @@ def _per_class_metrics(
     preds: np.ndarray,
     y_test: np.ndarray,
 ) -> dict[str, dict[str, float]]:
-    """Per-class precision, recall, F1, support."""
+    """Per-class classification metrics."""
     classes = np.array([-1, 0, 1], dtype=np.int32)
     p, r, f1, s = precision_recall_fscore_support(
         y_test, preds, labels=classes, zero_division=0
@@ -101,7 +101,7 @@ def _add_prediction_diagnostics(
     *,
     confidence_threshold: float = 0.0,
 ) -> None:
-    """Attach prediction distribution, confidence, L/S ratio, entropy to diag."""
+    """Attach prediction diagnostics to window."""
     pred_c = _counts(preds)
     confidence = np.max(proba, axis=1) if len(proba) else np.array([])
     n_total = sum(pred_c.values())
@@ -116,7 +116,7 @@ def _add_prediction_diagnostics(
     else:
         pred_entropy = None
 
-    # Mean per-sample entropy (model uncertainty across classes)
+    # Mean sample uncertainty
     if len(proba):
         sample_entropies = np.array(
             [_shannon_entropy(proba[i]) for i in range(len(proba))]
@@ -125,7 +125,7 @@ def _add_prediction_diagnostics(
     else:
         mean_sample_entropy = None
 
-    # L/S ratio guardrail: flag if outside [0.2, 5.0]
+    # Flag extreme long/short imbalance
     ls_ratio = n_long / n_short if n_short > 0 else float("inf")
     ls_flagged = False
     if n_short > 0 and n_long > 0:

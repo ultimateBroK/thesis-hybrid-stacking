@@ -1,4 +1,4 @@
-"""Route walk-forward training to the configured architecture."""
+"""Dispatch Stage 4 architecture."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ logger = logging.getLogger("thesis")
 
 
 def train_walk_forward(config: Config) -> None:
-    """Dispatch to the right trainer based on config.model.architecture."""
+    """Run configured trainer."""
     arch = config.model.architecture
 
     if arch == "stacking":

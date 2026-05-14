@@ -1,4 +1,4 @@
-"""Feature pipeline: select + scale static features for tabular models."""
+"""Static feature pipeline. Select stable signal, scale outliers."""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ def select_static_cols(
     df: pl.DataFrame,
     candidates: list[str],
 ) -> list[str]:
-    """Pick static feature columns. Prefer config whitelist, fallback to candidates.
+    """Choose static feature columns.
 
-    If enable_regime_features is True, add any regime columns present in df.
+    Prefer config list. Add regime features when enabled.
     """
     available = [c for c in config.features.static_feature_cols if c in df.columns]
     if not available:
@@ -39,10 +39,9 @@ def select_static_cols(
 
 
 def _add_label_prior_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add leakage-safe label prior regime features.
+    """Add leakage-safe label priors.
 
-    Rolling 100-bar fraction of LONG/SHORT labels from past bars only.
-    Shift by horizon_bars + 1 prevents label lookahead.
+    Past label mix can reveal regime without lookahead.
     """
     if "label" not in df.columns:
         return df
@@ -73,15 +72,15 @@ def fit_static_feature_pipeline(
     cols: list[str],
     y_train: np.ndarray,
 ) -> tuple[Pipeline, list[str]]:
-    """Fit scaler + selector pipeline on static features.
+    """Fit feature filter pipeline.
 
     Steps:
-        1. DropDuplicateFeatures — remove constant/duplicate columns
-        2. DropCorrelatedFeatures — remove highly correlated pairs
-        3. RobustScaler — median/mad normalisation, robust to outliers
-        4. SelectKBest — univariate feature selection (f_classif)
+        1. DropDuplicateFeatures: remove duplicate columns.
+        2. DropCorrelatedFeatures: remove correlated pairs.
+        3. RobustScaler: resist outliers.
+        4. SelectKBest: keep strongest univariate signals.
 
-    Falls back to scaler-only if selection fails.
+    Fallback keeps scaled raw columns.
     """
     X = train_df.select(cols).to_pandas()
     X.columns = cols
@@ -107,7 +106,7 @@ def fit_static_feature_pipeline(
     try:
         pipe.fit(X, y_train)
 
-        # Get selected column names after pipeline transform
+        # Names after filters, before SelectKBest
         pre_select = pipe[:-1].get_feature_names_out()
         pre_cols = [str(c) for c in pre_select]
         mask = pipe.named_steps["select"].get_support()

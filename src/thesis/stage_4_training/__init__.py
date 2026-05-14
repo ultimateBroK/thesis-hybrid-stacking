@@ -1,4 +1,4 @@
-"""Stage 4: Walk-forward model training with purge/embargo validation."""
+"""Stage 4 training. Walk-forward, purged, embargoed."""
 
 from thesis.stage_4_training.validation import WalkForwardWindow, generate_windows
 

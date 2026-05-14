@@ -1,4 +1,4 @@
-"""Walk-forward training sub-package."""
+"""Walk-forward trainer entrypoint."""
 
 from thesis.stage_4_training.walk_forward.dispatcher import train_walk_forward
 
