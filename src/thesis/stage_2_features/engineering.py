@@ -1,4 +1,4 @@
-"""Feature engineering — production pipeline for price-action features."""
+"""OHLCV → enriched features pipeline."""
 
 from __future__ import annotations
 
@@ -43,13 +43,14 @@ from thesis.stage_2_features.indicators import (
 logger = logging.getLogger("thesis.stage_2_features")
 
 
-# --------------------------------------------------------------------------- #
-# Public API
-# --------------------------------------------------------------------------- #
+# ── public ──
 
 
 def generate_features(config: Config) -> None:
-    """Load OHLCV → add all features → validate → save parquet + feature list."""
+    """Load OHLCV → chain indicators → validate → save parquet + feature list.
+
+    CRITICAL: indicator order matters. ATR must come first (many features divide by it).
+    """
     ohlcv_path = Path(config.paths.ohlcv)
     if not ohlcv_path.exists():
         raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
@@ -61,7 +62,7 @@ def generate_features(config: Config) -> None:
     OhlcvSchema.validate(df)
     _validate_ohlcv_input(df, config)
 
-    # core indicators — ATR must come first (many divide by it)
+    # ATR first — many features divide by it
     df = add_atr(df, config)
     df = add_rsi(df, config)
     df = add_adx(df, config)
@@ -70,7 +71,7 @@ def generate_features(config: Config) -> None:
     df = add_atr_ratio(df, config)
     df = add_atr_percentile(df, config)
 
-    # EMA features — depend on ATR
+    # EMA features — need ATR
     df = add_ema_slope(df, config)
     df = add_ema_crossover(df, config)
 
@@ -81,28 +82,28 @@ def generate_features(config: Config) -> None:
     df = add_pivot_position(df)
     df = add_session_dummies(df)
 
-    # volume + returns — rolling, no cross-feature dependencies
+    # volume + returns — rolling, no cross-feature deps
     df = add_volume_zscore(df, config)
     df = add_log_returns(df, config)
     df = add_high_low_range(df, config)
 
-    # MACD — uses ATR column
+    # MACD — needs ATR column
     df = add_macd(df, config)
 
-    # OHLCV z-score normalization
+    # OHLCV z-score norm
     df = add_ohlcv_norm(df, config)
 
-    # regime features — gated behind config flag
+    # regime — config-gated
     if config.features.enable_regime_features:
         df = add_volatility_regime(df, config)
         df = add_trend_regime(df, config)
         df = add_regime(df, config)
 
-    # Map return_1h → log_returns for backward compatibility
+    # backward compat: return_1h → log_returns
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
 
-    # Keep only columns registered in feature registry
+    # keep only registered feature columns
     desired = build_feature_output_cols(config)
     existing = [c for c in desired if c in df.columns]
     df = df.select(existing)
@@ -124,13 +125,11 @@ def generate_features(config: Config) -> None:
     logger.info("Feature columns (%d): %s", len(model_cols), model_cols)
 
 
-# --------------------------------------------------------------------------- #
-# Validation helpers
-# --------------------------------------------------------------------------- #
+# ── validation ──
 
 
 def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
-    """Reject empty, unsorted, duplicate, or heavily-gapped OHLCV."""
+    """Reject empty, unsorted, duplicate, or heavily-gapped input."""
     if df.is_empty():
         raise ValueError("OHLCV is empty; cannot generate features")
 
@@ -147,7 +146,7 @@ def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
     if len(df) < 2:
         return
 
-    # Log gap stats but do not fail — weekends and holidays expected
+    # log gap stats — weekends/holidays expected, don't fail
     expected_ms = timeframe_to_ms(config.data.timeframe)
     deltas = (
         df.select(pl.col("timestamp").diff().dt.total_milliseconds().alias("delta_ms"))
@@ -165,12 +164,12 @@ def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
 
 
 def _drop_warmup_rows(df: pl.DataFrame, feature_cols: list[str]) -> pl.DataFrame:
-    """Drop rows with null or non-finite model-facing feature values."""
+    """Drop rows with null/non-finite features (rolling warm-up period)."""
     existing = [c for c in feature_cols if c in df.columns]
     n_before = len(df)
     df = df.fill_nan(None).drop_nulls(subset=existing)
     if existing:
-        # Ensure no inf/-inf from division-by-zero edge cases
+        # catch inf/-inf from div-by-zero
         df = df.filter(pl.all_horizontal(pl.col(c).is_finite() for c in existing))
     dropped = n_before - len(df)
     if dropped > 0:
@@ -181,7 +180,7 @@ def _drop_warmup_rows(df: pl.DataFrame, feature_cols: list[str]) -> pl.DataFrame
 
 
 def _validate_feature_quality(df: pl.DataFrame, config: Config) -> None:
-    """Pandera schema + timestamp uniqueness + strictly-increasing + no nulls."""
+    """Pandera schema + unique timestamps + strictly increasing + no nulls."""
     p = config.features.rsi_period
     checks = {"timestamp": pa.Column(nullable=False)}
     if f"rsi_{p}" in df.columns:
@@ -206,7 +205,7 @@ def _validate_feature_quality(df: pl.DataFrame, config: Config) -> None:
 
 
 def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
-    """Write JSON sidecar listing model-facing feature column names."""
+    """Write JSON sidecar with model-facing feature column names."""
     list_path = features_path.with_suffix(".feature_list.json")
     with open(list_path, "w") as f:
         json.dump(feature_cols, f, indent=2)

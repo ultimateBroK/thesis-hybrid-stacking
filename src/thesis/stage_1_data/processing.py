@@ -1,4 +1,4 @@
-"""Data prep — raw ticks → OHLCV bars."""
+"""Raw ticks → OHLCV bars."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from thesis.shared.data_quality import (
 
 logger = logging.getLogger("thesis.prepare")
 
-# DISCOVER
+# ── discover ──
 
 
 def _discover_files(raw_dir: Path, ohlcv_path: Path) -> list[Path]:
@@ -38,11 +38,11 @@ def _discover_files(raw_dir: Path, ohlcv_path: Path) -> list[Path]:
     return files
 
 
-# AGGREGATE
+# ── aggregate ──
 
 
 def _parse_dt(value: str, tz: str) -> pl.Expr:
-    """Parse config datetime string → Polars timezone-aware expr."""
+    """Config datetime string → timezone-aware Polars expr."""
     if not value:
         raise ValueError("datetime bound must not be empty")
     value = value.strip()
@@ -52,7 +52,7 @@ def _parse_dt(value: str, tz: str) -> pl.Expr:
 
 
 def _microprice(ticks: pl.DataFrame) -> pl.DataFrame:
-    """Add microprice + volume columns. Weights bid/ask by opposing side size."""
+    """Weight bid/ask by opposing side volume. Add microprice + volume cols."""
     return ticks.with_columns(
         (
             (
@@ -66,7 +66,7 @@ def _microprice(ticks: pl.DataFrame) -> pl.DataFrame:
 
 
 def _clip_to_month(df: pl.DataFrame, stem: str) -> pl.DataFrame:
-    """Drop bars outside nominal month. Edge ticks from boundary go to wrong month."""
+    """Drop bars outside nominal month (boundary ticks bleed into neighbor file)."""
     year, month = int(stem[:4]), int(stem[5:7])
     start = pl.datetime(year, month, 1)
     end = (
@@ -78,13 +78,13 @@ def _clip_to_month(df: pl.DataFrame, stem: str) -> pl.DataFrame:
 
 
 def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
-    """One file → OHLCV. Validate quotes, compute microprice, group by time."""
+    """One file → OHLCV bars. Validate quotes, microprice, group by time."""
     ticks = pl.read_parquet(
         file_path,
         columns=["timestamp", "bid", "ask", "ask_volume", "bid_volume"],
     )
     n_raw = len(ticks)
-    # Filter bad quotes: zero/negative bid/ask, negative volume, crossed spread
+    # drop bad quotes: zero/negative bid/ask, negative volume, crossed spread
     ticks = ticks.filter(
         (pl.col("bid") > 0)
         & (pl.col("ask") > 0)
@@ -121,7 +121,7 @@ def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
 
 
 def _aggregate_all(files: list[Path], group_every: str) -> pl.DataFrame:
-    """All monthly files → one sorted OHLCV DataFrame."""
+    """All monthly files → sorted OHLCV DataFrame."""
     bars = []
     for i, f in enumerate(files, 1):
         logger.info("Aggregating %d/%d: %s", i, len(files), f.name)
@@ -129,11 +129,14 @@ def _aggregate_all(files: list[Path], group_every: str) -> pl.DataFrame:
     return pl.concat(bars, how="vertical").sort("timestamp")
 
 
-# CLEAN
+# ── clean ──
 
 
 def _dedupe_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
-    """Drop duplicate timestamps (keep first). Drop bars with year < 2000 or > 2100."""
+    """Drop duplicate timestamps (keep first).
+
+    Drop corrupted (year < 2000 or > 2100).
+    """
     n = len(ohlcv)
     dupes = n - ohlcv.get_column("timestamp").n_unique()
     if dupes > 0:
@@ -150,7 +153,7 @@ def _dedupe_and_filter(ohlcv: pl.DataFrame) -> tuple[pl.DataFrame, int]:
 
 
 def _filter_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Apply date range from config. Raise if no bars remain."""
+    """Apply config date range. Raise if empty result."""
     tz = config.data.market_tz
     start = _parse_dt(config.data_range.start, tz)
     end = _parse_dt(config.data_range.end, tz)
@@ -171,7 +174,7 @@ def _filter_range(ohlcv: pl.DataFrame, config: Config) -> pl.DataFrame:
     return ohlcv
 
 
-# PERSIST
+# ── persist ──
 
 
 def _log_gap(ohlcv: pl.DataFrame, group_ms: int) -> None:
@@ -197,7 +200,7 @@ def _log_gap(ohlcv: pl.DataFrame, group_ms: int) -> None:
 
 
 def _log_quality(ohlcv: pl.DataFrame) -> None:
-    """Log candle integrity: invalid candles, range/spread/tick stats."""
+    """Log candle integrity: invalid count, range/spread/tick stats."""
     if ohlcv.is_empty():
         return
     v = validate_ohlcv(ohlcv)
@@ -222,7 +225,7 @@ def _log_quality(ohlcv: pl.DataFrame) -> None:
 
 
 def _save_json(ohlcv: pl.DataFrame, config: Config, group_ms: int, dupes: int) -> None:
-    """Compute + write data quality stats to JSON sidecar."""
+    """Write data quality stats JSON sidecar."""
     total = len(ohlcv)
     stats = {
         "total_bars": total,
@@ -270,13 +273,11 @@ def _persist(ohlcv: pl.DataFrame, config: Config, dupes: int) -> None:
     logger.info("Saved: %s", out)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ORCHESTRATE
-# ──────────────────────────────────────────────────────────────────────────────
+# ── orchestrate ──
 
 
 def generate_data(config: Config) -> None:
-    """Build OHLCV from raw ticks → parquet + quality JSON."""
+    """OHLCV from raw ticks → parquet + quality JSON. Public entry point."""
     raw_dir = Path(config.paths.data_raw)
     ohlcv_path = Path(config.paths.ohlcv)
 

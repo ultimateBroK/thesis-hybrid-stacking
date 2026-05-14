@@ -54,7 +54,11 @@ class ValidationConfig:
 
 @dataclass
 class MultiTimeframeConfig:
-    """Hidden defaults for derived multi-timeframe features."""
+    """Derived multi-timeframe feature params.
+
+    Not exposed in config.toml by default — internal knobs for
+    regime detection, rolling windows, and ATR multi-horizon.
+    """
 
     sma_periods: list[int] = field(default_factory=lambda: [50])
     ema_long: int = 200
@@ -70,6 +74,9 @@ class MultiTimeframeConfig:
     atr_percentile_window: int = 50
     ohlcv_norm_window: int = 20
     ema_slope_shift: int = 5
+    # Volatility regime bucket thresholds (atr_percentile → 0/1/2)
+    vol_regime_p33: float = 0.33
+    vol_regime_p66: float = 0.66
 
 
 @dataclass

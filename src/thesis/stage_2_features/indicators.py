@@ -1,4 +1,4 @@
-"""Polars-native indicator helpers for stage 2 feature engineering."""
+"""Polars-native indicator functions. Each add_* takes (df, config) → df + new cols."""
 
 from __future__ import annotations
 
@@ -7,13 +7,11 @@ import polars as pl
 from thesis.shared.config import Config
 from thesis.shared.constants import FEATURE_EPS, STD_EPS
 
-# --------------------------------------------------------------------------- #
-# Shared primitives
-# --------------------------------------------------------------------------- #
+# ── primitives ──
 
 
 def _true_range() -> pl.Expr:
-    """True Range — max of (H-L, |H-C_prev|, |L-C_prev|)."""
+    """max(H-L, |H-C_prev|, |L-C_prev|)."""
     return pl.max_horizontal(
         [
             pl.col("high") - pl.col("low"),
@@ -24,7 +22,7 @@ def _true_range() -> pl.Expr:
 
 
 def _wilder_smooth(expr: pl.Expr, period: int) -> pl.Expr:
-    """Wilder smoothing — EWM with alpha=1/period, no adjust."""
+    """EWM alpha=1/period, no adjust."""
     return expr.ewm_mean(alpha=1.0 / period, adjust=False)
 
 
@@ -36,18 +34,19 @@ def _ensure_utc(ts: pl.Expr, df: pl.DataFrame) -> pl.Expr:
 
 
 def _ny_trading_day(df: pl.DataFrame) -> pl.Expr:
-    """NY trading day anchored at 7PM NY time."""
+    """Trading day anchored at 7PM NY."""
     ts = _ensure_utc(pl.col("timestamp"), df).dt.convert_time_zone("America/New_York")
     return (ts + pl.duration(hours=7)).dt.truncate("1d")
 
 
-# --------------------------------------------------------------------------- #
-# ATR + RSI + ADX (core — most features divide by ATR)
-# --------------------------------------------------------------------------- #
+# ── ATR + RSI + ADX (core — many features divide by ATR) ──
 
 
 def add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Wilder ATR + close-normalized ATR."""
+    """Wilder ATR + close-normalized ATR.
+
+    MUST RUN FIRST — many features divide by ATR.
+    """
     p = config.features.atr_period
     atr = _true_range().ewm_mean(alpha=1.0 / p, adjust=False)
     return df.with_columns(
@@ -59,7 +58,7 @@ def add_atr(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_rsi(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Wilder RSI — avg_gain/avg_loss ratio → 0-100."""
+    """Wilder RSI, 0–100."""
     p = config.features.rsi_period
     delta = pl.col("close").diff()
     gain = delta.clip(lower_bound=0.0)
@@ -87,9 +86,7 @@ def add_adx(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df.with_columns(_wilder_smooth(dx, period).alias(f"adx_{period}"))
 
 
-# --------------------------------------------------------------------------- #
-# MACD
-# --------------------------------------------------------------------------- #
+# ── MACD ──
 
 
 def add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -110,13 +107,11 @@ def add_macd(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# --------------------------------------------------------------------------- #
-# ATR ratio (multi-timeframe)
-# --------------------------------------------------------------------------- #
+# ── multi-timeframe ATR ──
 
 
 def add_atr_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Short/long ATR ratio — volatility regime filter."""
+    """Short/long ATR ratio — volatility regime."""
     mt = config.features.multi_timeframe
     short = _true_range().ewm_mean(alpha=1.0 / mt.atr_short_period, adjust=False)
     long = _true_range().ewm_mean(alpha=1.0 / mt.atr_long_period, adjust=False)
@@ -124,7 +119,7 @@ def add_atr_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_atr_percentile(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Rolling ATR rank — volatility relative to lookback window."""
+    """Rolling ATR rank — relative volatility within lookback."""
     p = config.features.atr_period
     w = config.features.multi_timeframe.atr_percentile_window
     return df.with_columns(
@@ -134,9 +129,7 @@ def add_atr_percentile(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# --------------------------------------------------------------------------- #
-# EMA features
-# --------------------------------------------------------------------------- #
+# ── EMA features ──
 
 
 def add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -149,7 +142,7 @@ def add_ema_slope(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """ATR-normalized distance: close→EMA34 and EMA34→EMA89."""
+    """ATR-normalized distance: close→EMA_fast and EMA_fast→EMA_slow."""
     p = config.features.atr_period
     atr = pl.col(f"atr_{p}")
     fc = config.features.ema_fast_span
@@ -164,9 +157,7 @@ def add_ema_crossover(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# --------------------------------------------------------------------------- #
-# Price action
-# --------------------------------------------------------------------------- #
+# ── price action ──
 
 
 def add_price_action(df: pl.DataFrame, config: Config) -> pl.DataFrame:
@@ -209,7 +200,7 @@ def add_price_action(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_price_dist_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """ATR-normalized distance from EMA89 — overextended signal."""
+    """ATR-normalized distance from EMA89 — overextension signal."""
     p = config.features.atr_period
     ema_89 = pl.col("close").ewm_mean(span=89, adjust=False)
     return df.with_columns(
@@ -219,13 +210,11 @@ def add_price_dist_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# --------------------------------------------------------------------------- #
-# VWAP + Pivot (session-anchored, share _ny_trading_day logic)
-# --------------------------------------------------------------------------- #
+# ── VWAP + Pivot (session-anchored) ──
 
 
 def add_vwap(df: pl.DataFrame) -> pl.DataFrame:
-    """Session VWAP anchored to 5PM NY market open (7PM bucket calc)."""
+    """Session VWAP anchored to 5PM NY open."""
     td = _ny_trading_day(df)
     tp = (pl.col("high") + pl.col("low") + pl.col("close")) / 3.0
     return (
@@ -244,10 +233,10 @@ def add_vwap(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
-    """Clipped position within prior day R1-S1 range. 0=at S1, 1=at R1."""
+    """Position within prior day R1-S1 range, clipped [0,1]."""
     td = _ny_trading_day(df)
     df = df.with_columns(td.alias("_td"))
-    # Prior day OHLC aggregated to trading day
+    # prior day OHLC → trading day
     daily = (
         df.group_by("_td")
         .agg(
@@ -262,7 +251,7 @@ def add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
     pivot = (daily["day_high"] + daily["day_low"] + daily["day_close"]) / 3.0
     r1 = 2.0 * pivot - daily["day_low"]
     s1 = 2.0 * pivot - daily["day_high"]
-    # Shift so today's bar gets PREVIOUS day's pivots
+    # shift: today gets PREVIOUS day's pivots
     pivots = (
         daily.with_columns([pivot.alias("pivot"), r1.alias("r1"), s1.alias("s1")])
         .select(["_td", "pivot", "r1", "s1"])
@@ -286,13 +275,11 @@ def add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
     ).drop(["prev_pivot", "prev_r1", "prev_s1"])
 
 
-# --------------------------------------------------------------------------- #
-# Session dummies
-# --------------------------------------------------------------------------- #
+# ── session dummies ──
 
 
 def add_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
-    """NY, London, Asia session flags from UTC timestamp → NY hour."""
+    """NY/London/Asia session flags from UTC→NY hour."""
     ny = (
         _ensure_utc(pl.col("timestamp"), df)
         .dt.convert_time_zone("America/New_York")
@@ -312,13 +299,11 @@ def add_session_dummies(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-# --------------------------------------------------------------------------- #
-# Volume + returns
-# --------------------------------------------------------------------------- #
+# ── volume + returns ──
 
 
 def add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Rolling z-score of volume — abnormal volume signal."""
+    """Rolling z-score of volume."""
     n = config.features.multi_timeframe.volume_zscore_period
     vol_mean = pl.col("volume").rolling_mean(window_size=n)
     vol_std = pl.col("volume").rolling_std(window_size=n)
@@ -330,7 +315,7 @@ def add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_log_returns(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Multi-horizon log returns: 1h, 4h, 1d (and others from config)."""
+    """Multi-horizon log returns (1h, 4h, 1d + config extras)."""
     cols = []
     name_map = {1: "return_1h", 4: "return_4h", 24: "return_1d"}
     for lb in config.features.multi_timeframe.return_lookbacks:
@@ -340,7 +325,7 @@ def add_log_returns(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_high_low_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """ATR-normalized rolling high-low range — range expansion signal."""
+    """ATR-normalized rolling high-low range."""
     p = config.features.atr_period
     n = config.features.multi_timeframe.range_lookback
     rh = pl.col("high").rolling_max(window_size=n)
@@ -364,13 +349,11 @@ def add_ohlcv_norm(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     )
 
 
-# --------------------------------------------------------------------------- #
-# Regime features (config-gated)
-# --------------------------------------------------------------------------- #
+# ── regime features (config-gated) ──
 
 
 def add_volatility_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """ATR percentile bucketed to 0/1/2 — low/normal/high volatility."""
+    """ATR percentile bucketed 0/1/2 (low/normal/high)."""
     p33 = config.features.multi_timeframe.vol_regime_p33
     p66 = config.features.multi_timeframe.vol_regime_p66
     atr_pct = pl.col("atr_percentile")
@@ -386,7 +369,7 @@ def add_volatility_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_trend_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Trend regime from EMA slope sign × ADX level. -2..2 scale."""
+    """EMA slope sign × ADX level → -2..2 scale."""
     adx_col = f"adx_{config.features.adx_period}"
     slope_col = f"ema_slope_{config.features.ema_slope_period}"
     if adx_col not in df.columns or slope_col not in df.columns:
@@ -410,7 +393,7 @@ def add_trend_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Composite regime: ADX signal × EMA slope sign. Clipped [0, clip_max]."""
+    """Composite: ADX signal × EMA slope sign, clipped [0, clip_max]."""
     adx_cols = [c for c in df.columns if c.startswith("adx_")]
     slope_cols = [c for c in df.columns if c.startswith("ema_slope_")]
     if not adx_cols or not slope_cols:

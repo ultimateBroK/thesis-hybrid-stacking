@@ -1,8 +1,4 @@
-"""Stage 3: asymmetric direction-barrier labeling.
-
-Labels: +1 long / 0 hold / -1 short / -2 censored.
-Triple-barrier: upper (TP), lower (SL), horizon (time).
-"""
+"""Triple-barrier labeling. +1 long / 0 hold / -1 short / -2 censored."""
 
 from __future__ import annotations
 
@@ -31,7 +27,7 @@ logger = logging.getLogger("thesis.labels")
 
 
 def generate_labels(config: Config) -> None:
-    """Load → compute barriers → attach columns → filter → validate → write."""
+    """Load features → triple-barrier labels → filter censored → validate → write."""
     df, atr_col = _load_features_and_ohlcv(config)
     _log_atr_stats(df, atr_col, config.labels.min_atr)
 
@@ -73,7 +69,7 @@ def generate_labels(config: Config) -> None:
 
 
 def _load_features_and_ohlcv(config: Config) -> tuple[pl.DataFrame, str]:
-    """Load features parquet. Join OHLCV if OHLC missing from features."""
+    """Load features parquet. Join OHLCV if OHLC columns missing from features."""
     features_path = Path(config.paths.features)
     ohlcv_path = Path(config.paths.ohlcv)
 
@@ -121,7 +117,7 @@ def _compute_triple_barrier(
     horizon: int,
     min_atr: float,
 ) -> tuple:
-    """Call numba compute_labels. Returns (labels, upper, lower, touched)."""
+    """Delegate to numba compute_labels. Returns (labels, upper, lower, touched)."""
     from thesis.stage_3_labels._label_numba import compute_labels as _numba_labels
 
     return _numba_labels(close, high, low, atr, tp_mult, sl_mult, horizon, min_atr)
@@ -136,7 +132,7 @@ def _attach_label_columns(
     event_end: np.ndarray,
     weights: np.ndarray,
 ) -> pl.DataFrame:
-    """Add label, barrier, touched, event_end, sample_weight columns."""
+    """Attach label, barrier, touched, event_end, sample_weight columns."""
     return df.with_columns(
         [
             pl.Series("label", labels),
@@ -150,7 +146,7 @@ def _attach_label_columns(
 
 
 def _drop_join_artifacts(df: pl.DataFrame) -> pl.DataFrame:
-    """Drop _right suffix columns from inner join. Check timestamp uniqueness."""
+    """Drop _right suffix columns from inner join. Verify timestamp uniqueness."""
     right_cols = [c for c in df.columns if c.endswith("_right")]
     if right_cols:
         logger.warning(
@@ -164,7 +160,7 @@ def _drop_join_artifacts(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _check_unique_timestamps(df: pl.DataFrame, name: str) -> None:
-    """Raise if duplicate timestamps found."""
+    """Raise on duplicate timestamps."""
     if "timestamp" not in df.columns:
         return
     dup_count = len(df) - df["timestamp"].n_unique()
@@ -175,14 +171,14 @@ def _check_unique_timestamps(df: pl.DataFrame, name: str) -> None:
 
 
 def _validate_no_join_artifacts(df: pl.DataFrame) -> None:
-    """Fail if output would contain join artifacts (_right suffix columns)."""
+    """Fail if output has _right suffix columns."""
     right_cols = [c for c in df.columns if c.endswith("_right")]
     if right_cols:
         raise ValueError(f"labels.parquet contains join artifacts: {right_cols}")
 
 
 def _drop_censored_and_nan(df: pl.DataFrame) -> pl.DataFrame:
-    """Drop censored (label=-2) and regression_target NaN rows."""
+    """Drop censored (label=-2) and NaN regression_target rows."""
     n_before = len(df)
     n_censored = int((df["label"] == CENSORED_LABEL).sum())
     if n_censored > 0:
@@ -206,7 +202,7 @@ def _drop_censored_and_nan(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
-    """Log ATR min/median/p5/p95 and % below min_atr floor."""
+    """ATR min/median/p5/p95 + % below min_atr floor."""
     s = df.select(
         pl.col(atr_col).min().alias("min"),
         pl.col(atr_col).median().alias("median"),
@@ -226,7 +222,7 @@ def _log_atr_stats(df: pl.DataFrame, atr_col: str, min_atr: float) -> None:
 
 
 def _log_distribution(df: pl.DataFrame) -> None:
-    """Log label class counts and percentages."""
+    """Label class counts + percentages."""
     if "label" not in df.columns:
         return
     total = len(df)
@@ -235,7 +231,7 @@ def _log_distribution(df: pl.DataFrame) -> None:
 
 
 def _log_weight_stats(df: pl.DataFrame) -> None:
-    """Log sample weight min/median/max/mean."""
+    """Sample weight min/median/max/mean."""
     if "sample_weight" not in df.columns:
         return
     s = df.select(
@@ -254,7 +250,7 @@ def _log_weight_stats(df: pl.DataFrame) -> None:
 
 
 def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
-    """Log % of long/short labels profitable after trading costs.
+    """% long/short labels profitable after trading costs.
 
     Net return = (close[t+h] - close[t+1]) / close[t] * leverage - cost / close[t].
     """
@@ -307,20 +303,33 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
     if hold_total:
         logger.info("  Class 0 (Hold): %d samples", hold_total)
 
-    long_total = result.filter(pl.col("label") == 1).height
-    short_total = result.filter(pl.col("label") == -1).height
-    warn_thresh = LABEL_PROFITABILITY_WARN_PCT
-    if long_total < warn_thresh and short_total < warn_thresh:
+    # warn if both sides unprofitable after costs
+    long_df = result.filter(pl.col("label") == 1)
+    short_df = result.filter(pl.col("label") == -1)
+    long_pct = (
+        long_df.filter(pl.col("_net_return") > 0).height / long_df.height * 100
+        if long_df.height > 0
+        else 0.0
+    )
+    short_pct = (
+        short_df.filter(pl.col("_net_return") < 0).height / short_df.height * 100
+        if short_df.height > 0
+        else 0.0
+    )
+    if (
+        long_pct < LABEL_PROFITABILITY_WARN_PCT
+        and short_pct < LABEL_PROFITABILITY_WARN_PCT
+    ):
         logger.warning(
             "LABEL PROFITABILITY LOW: Long %.1f%% Short %.1f%% — "
             "labels may not be economically useful after trading costs",
-            long_total,
-            short_total,
+            long_pct,
+            short_pct,
         )
 
 
 def _roundtrip_cost_price_units(config: Config) -> float:
-    """Spread + slippage + commission per round-trip in price units."""
+    """Spread + slippage + commission → price units per round-trip."""
     return (
         (config.backtest.spread_ticks + config.backtest.slippage_ticks)
         * config.data.tick_size

@@ -1,4 +1,4 @@
-"""Numba-compiled labeling kernels."""
+"""Numba-compiled triple-barrier labeling kernels."""
 
 from __future__ import annotations
 
@@ -19,17 +19,13 @@ def compute_labels(
     horizon: int,
     min_atr: float,
 ) -> tuple:
-    """Triple-barrier label scan.
+    """Triple-barrier scan.
 
-    For each bar i:
-        upper = close[i] + tp_mult * max(atr[i], min_atr)
-        lower = close[i] - sl_mult * max(atr[i], min_atr)
-        scan bars i+1 .. i+horizon for first touch
+    Per bar i: upper = close[i] + tp_mult * max(atr[i], min_atr),
+    lower = close[i] - sl_mult * max(atr[i], min_atr).
+    Scan i+1..i+horizon for first touch.
 
-    Returns (labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count):
-        labels: +1 long / 0 hold / -1 short / -2 censored
-        touched_bars: bars until first touch (-1 if none)
-        ambiguous_count: same-bar both-upper-and-lower hit
+    Returns (labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count).
     """
     n = len(close)
     labels = np.zeros(n, dtype=np.int32)
@@ -79,11 +75,7 @@ def compute_labels(
 
 @njit(cache=True)
 def compute_event_end(touched_bars: np.ndarray, horizon: int) -> np.ndarray:
-    """Offset array → absolute end indices.
-
-    touched_bars[i] = -1 or -2  →  event_end[i] = i + horizon
-    touched_bars[i] = k >= 0    →  event_end[i] = i + k
-    """
+    """Offset array → absolute end indices. -1/-2 → i+horizon, k≥0 → i+k."""
     n = len(touched_bars)
     event_end = np.empty(n, dtype=np.int32)
 
@@ -98,11 +90,10 @@ def compute_event_end(touched_bars: np.ndarray, horizon: int) -> np.ndarray:
 
 @njit(cache=True)
 def compute_average_uniqueness(event_end: np.ndarray) -> np.ndarray:
-    """López de Prado average-uniqueness weights.
+    """Lopez de Prado average-uniqueness weights from concurrency.
 
-    Concurrency: diff array → prefix sum
-    Weight per bar: (inv_prefix[end+1] - inv_prefix[i]) / (end - i + 1)
-    Normalise by mean.
+    diff array → prefix sum → per-bar weight = mean(1/concurrency) over span.
+    Normalized by mean.
     """
     n = len(event_end)
     diff = np.zeros(n + 1, dtype=np.float64)
