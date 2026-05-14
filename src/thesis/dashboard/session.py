@@ -1,4 +1,4 @@
-"""Session discovery, parsing, and loading helpers."""
+"""Session discovery, parsing, and loading."""
 
 from __future__ import annotations
 
@@ -13,13 +13,12 @@ from thesis.shared.session_paths import load_config_for_session
 
 
 def find_sessions() -> list[Path]:
-    """Discover available session directories under ``results/``."""
+    """Find session dirs in results/ that have a config subdirectory."""
     results = Path("results")
     if not results.exists():
         return []
 
-    def _parse_session_timestamp(path: Path) -> datetime | None:
-        """Parse a session directory name into a datetime."""
+    def _parse_ts(path: Path) -> datetime | None:
         m = re.search(r"(\d{8})_(\d{6})$", path.name)
         if not m:
             return None
@@ -30,14 +29,14 @@ def find_sessions() -> list[Path]:
 
     sessions = sorted(
         [p for p in results.iterdir() if p.is_dir() and (p / "config").exists()],
-        key=lambda p: _parse_session_timestamp(p) or datetime.min,
+        key=lambda p: _parse_ts(p) or datetime.min,
         reverse=True,
     )
     return sessions
 
 
 def parse_session_meta(name: str) -> dict[str, str]:
-    """Parse a session directory name into metadata fields."""
+    """Parse session dirname → {symbol, timeframe, date, time}."""
     parts = name.split("_")
     if len(parts) >= 4:
         return {
@@ -51,7 +50,7 @@ def parse_session_meta(name: str) -> dict[str, str]:
 
 @st.cache_resource(ttl=60)
 def load_config(session_dir: str) -> dict:
-    """Load configuration and session data for *session_dir*."""
+    """Load config + chart data for session. Cached 60s."""
     config = load_config_for_session(session_dir)
     data = load_session_data(config)
     return {"config": config, "data": data}
@@ -59,22 +58,28 @@ def load_config(session_dir: str) -> dict:
 
 @st.fragment(run_every=30)
 def session_selector_fragment() -> str | None:
-    """Render a sidebar session selector and return the chosen session name."""
+    """Sidebar session picker. Fires toast on new sessions (idempotent)."""
     sessions = find_sessions()
     if not sessions:
         return None
 
     session_names = [s.name for s in sessions]
 
+    # Toast only once per new session — track in session_state
     known = st.session_state.get("known_sessions", set())
     current_set = set(session_names)
     new_sessions = current_set - known
     if new_sessions and known:
+        shown = st.session_state.get("shown_toasts", set())
         for ns in sorted(new_sessions):
-            meta = parse_session_meta(ns)
-            st.toast(f"🆕 New session: {meta['date']} {meta['time']}", icon="📈")
+            if ns not in shown:
+                meta = parse_session_meta(ns)
+                st.toast(f"🆕 New session: {meta['date']} {meta['time']}", icon="📈")
+                shown.add(ns)
+        st.session_state.shown_toasts = shown
     st.session_state.known_sessions = current_set
 
+    # Build selectbox labels
     session_labels = []
     for name in session_names:
         meta = parse_session_meta(name)

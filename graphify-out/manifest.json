@@ -212,40 +212,40 @@
     "hash": "d4cd8a3a9d15cf949900a598039d9637"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/backtest.py": {
-    "mtime": 1778762888.4602664,
-    "hash": "190e179269e7e92b512dc2f8fd0be939"
+    "mtime": 1778788079.4142525,
+    "hash": "1c770ccc0672ac248d56dcd435517823"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/cards.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "920958163a482cdc7a9f85142ff3d14b"
+    "mtime": 1778787973.2805994,
+    "hash": "5a6a951cdd654b1ec2d61a4695c2855b"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/data.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "67366cc8df75de39e55221dc42cd6e27"
+    "mtime": 1778787997.6611357,
+    "hash": "cf1289d7aa1f935aef86eee72f4ddce6"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/main.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "a7762041d59ce2e7dfed3379f8ad58fe"
+    "mtime": 1778788062.8398328,
+    "hash": "eb630d3ac590cabc623265410b468757"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/model.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "3650811b1d06e8a3a698dc596f371255"
+    "mtime": 1778788015.1672397,
+    "hash": "ad57fe8317c8f57787e874d0a1663d40"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/reports.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "ed26879fe7912d0cbac86df110734e7b"
+    "mtime": 1778788090.7505956,
+    "hash": "520e8679da4781d9bd0ba7dcae106dd8"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/session.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "9c09d5323988550f9948ba5915d1b990"
+    "mtime": 1778787957.4937356,
+    "hash": "089a3ea47a1941ed56937cd2950dc3c1"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/shared.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "85f4af7615996dd07ef26068826099cf"
+    "mtime": 1778787985.8004918,
+    "hash": "9ea7be174bd8ea03b15292c47d1ef30b"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/dashboard/training.py": {
-    "mtime": 1778762888.4612663,
-    "hash": "fdfbc09fcf8bb8cfbd9ea72dd218650e"
+    "mtime": 1778788022.6921754,
+    "hash": "c241b5d50e211bf6eecc8c47bba25602"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/shared/__init__.py": {
     "mtime": 1778762888.4612663,

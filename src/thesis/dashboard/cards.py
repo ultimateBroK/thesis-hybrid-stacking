@@ -1,27 +1,18 @@
-"""Metric card renderers and CSS constants for the dashboard."""
+"""Metric card renderers: zone-based and plain gradient cards."""
 
 from __future__ import annotations
 
 import html
 
-from thesis.shared.zones import (
-    ZONE_COLORS,
-    get_metric_zone,
-    is_extreme_value,
-)
+from thesis.shared.zones import ZONE_COLORS, get_metric_zone, is_extreme_value
 
-# CSS style strings extracted to avoid embedding long inline attributes.
-CSS_METRIC_LABEL = (
+# Extracted CSS to avoid long inline attribute soup
+CSS_LABEL = (
     "font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase;"
     " letter-spacing: 0.05em; margin-bottom: 4px;"
 )
-CSS_METRIC_VALUE = (
-    "font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;"
-)
-CSS_METRIC_REC = (
-    "font-size: 0.65rem; color: inherit; opacity: 0.6;"
-    " margin-top: 4px; line-height: 1.3;"
-)
+CSS_VALUE = "font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;"
+CSS_REC = "font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;"
 
 
 def render_zoned_metric(
@@ -32,12 +23,13 @@ def render_zoned_metric(
     format_str: str = "{:.2f}",
     unit: str = "",
 ) -> None:
-    """Render a metric card with colour-coded zone indicator."""
+    """Zone-coloured card: green/yellow/red border + recommendation text."""
     is_extreme, _ = is_extreme_value(metric_key, value)
     color, zone_label, recommendation = get_metric_zone(metric_key, value)
 
     hex_color = ZONE_COLORS.get(color, "#6b7280")
-    display_suffix = " ⚠️" if is_extreme else ""
+    suffix = " ⚠️" if is_extreme else ""
+    # Escape all user-facing strings before HTML interpolation
     safe_label = html.escape(label)
     safe_value = html.escape(format_str.format(value))
     safe_unit = html.escape(unit)
@@ -60,10 +52,8 @@ def render_zoned_metric(
             box-sizing: border-box;
         ">
             <div>
-                <div style="{CSS_METRIC_LABEL}">{safe_label}</div>
-                <div style="{CSS_METRIC_VALUE}">
-                    {safe_value}{safe_unit}{display_suffix}
-                </div>
+                <div style="{CSS_LABEL}">{safe_label}</div>
+                <div style="{CSS_VALUE}">{safe_value}{safe_unit}{suffix}</div>
             </div>
             <div style="margin-top: 8px;">
                 <span style="
@@ -76,7 +66,7 @@ def render_zoned_metric(
                     text-transform: uppercase;
                     letter-spacing: 0.03em;
                 ">{safe_zone}</span>
-                <div style="{CSS_METRIC_REC}">{safe_rec}</div>
+                <div style="{CSS_REC}">{safe_rec}</div>
             </div>
         </div>
         """,
@@ -91,11 +81,11 @@ def render_metric_card(
     caption: str | None,
     color: str,
 ) -> None:
-    """Render a styled metric card with gradient background and accent border."""
+    """Plain gradient card: coloured left border, optional caption."""
     safe_label = html.escape(label)
     safe_value = html.escape(value)
     caption_html = (
-        f'<div style="{CSS_METRIC_REC}">{html.escape(caption)}</div>' if caption else ""
+        f'<div style="{CSS_REC}">{html.escape(caption)}</div>' if caption else ""
     )
     col.markdown(
         f"""
@@ -113,8 +103,8 @@ def render_metric_card(
             box-sizing: border-box;
         ">
             <div>
-                <div style="{CSS_METRIC_LABEL}">{safe_label}</div>
-                <div style="{CSS_METRIC_VALUE}">{safe_value}</div>
+                <div style="{CSS_LABEL}">{safe_label}</div>
+                <div style="{CSS_VALUE}">{safe_value}</div>
             </div>
             {caption_html}
         </div>

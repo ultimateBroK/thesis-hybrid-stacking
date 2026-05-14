@@ -1,4 +1,4 @@
-"""Dashboard entry point — sidebar, navigation, and section dispatch."""
+"""Dashboard: session selection, navigation, section dispatch."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ from thesis.dashboard.session import load_config, session_selector_fragment
 from thesis.dashboard.shared import render_config_summary
 from thesis.dashboard.training import render_training_section
 
+# AMOLED glass — metric cards, hover glow
 _CSS = """
 <style>
-    /* AMOLED glass effect for metric cards */
     .stMetric {
         background: linear-gradient(135deg,
             rgba(255,255,255,0.05) 0%,
@@ -42,7 +42,6 @@ _CSS = """
     .stMetric div[data-testid="stMetricDelta"] {
         font-size: 0.85rem;
     }
-    /* Subtle glow on hover */
     .stMetric:hover {
         border-color: rgba(255,255,255,0.15);
         box-shadow: 0 4px 30px rgba(0,0,0,0.4),
@@ -50,7 +49,6 @@ _CSS = """
                     0 0 20px rgba(37,99,235,0.05);
         transition: all 0.2s ease;
     }
-    /* Compact sidebar spacing */
     .stSidebar .stExpander details summary {
         font-weight: 600;
         font-size: 0.9rem;
@@ -58,17 +56,33 @@ _CSS = """
 </style>
 """
 
+
+def _make_section_renderer(name: str, fn: object) -> tuple[str, object]:
+    """Auto-bind renderer: arity 1→(data), 2→(data,session_dir).
+
+    Exceptions hardcoded below.
+    """
+    import inspect
+
+    n_params = len(inspect.signature(fn).parameters)
+    if n_params == 1:
+        return (name, lambda d, _: fn(d))
+    if n_params == 2:
+        return (name, lambda d, s: fn(d, s))
+    return (name, lambda d, _, __: fn(d, _))
+
+
 _SECTION_RENDERERS: dict[str, tuple[str, object]] = {
-    "📊 Data": ("Data Exploration", lambda d, c, s: render_data_section(d, c)),
-    "🧠 Model": ("Model Performance", lambda d, c, s: render_model_section(d, s)),
-    "🏃 Training": ("Training", lambda d, c, s: render_training_section(d, s)),
-    "💰 Backtest": ("Backtest Results", lambda d, c, s: render_backtest_section(d, c)),
-    "📝 Reports": ("Reports", lambda d, c, s: render_reports_section(s)),
+    "📊 Data": _make_section_renderer("Data Exploration", render_data_section),
+    "🧠 Model": _make_section_renderer("Model Performance", render_model_section),
+    "🏃 Training": _make_section_renderer("Training", render_training_section),
+    "💰 Backtest": _make_section_renderer("Backtest Results", render_backtest_section),
+    "📝 Reports": _make_section_renderer("Reports", render_reports_section),
 }
 
 
 def main() -> None:
-    """Render the Streamlit dashboard with session selection and navigation."""
+    """Render dashboard: sidebar, nav, load session, dispatch section."""
     st.set_page_config(
         page_title="Thesis Dashboard — XAU/USD",
         page_icon="📊",
@@ -78,11 +92,11 @@ def main() -> None:
 
     st.markdown(_CSS, unsafe_allow_html=True)
 
-    # ── Sidebar Header ──
+    # Sidebar header
     st.sidebar.markdown("### 📈 Thesis Dashboard")
     st.sidebar.caption("Hybrid Stacking — XAU/USD")
 
-    # ── Session Selector ──
+    # Session selector (fragment: reruns every 30s)
     with st.sidebar.expander("📁 Session", expanded=True):
         selected = session_selector_fragment()
 
@@ -90,7 +104,7 @@ def main() -> None:
         st.error("No session results found. Run `pixi run workflow` first.")
         return
 
-    # ── Navigation ──
+    # Nav: 5 buttons, current section highlighted
     sections = list(_SECTION_RENDERERS)
     current_section = st.session_state.get("nav_section", "📊 Data")
 
@@ -106,18 +120,17 @@ def main() -> None:
 
     section = st.session_state.get("nav_section", "📊 Data")
 
-    # ── Load data ──
+    # Load session data
     session_path = str(Path("results") / selected)
     loaded = load_config(session_path)
     config = loaded["config"]
     data = loaded["data"]
     metrics = data.get("metrics", {})
 
-    # ── Configuration sidebar ──
+    # Sidebar: config summary + quick stats
     with st.sidebar.expander("⚙️ Configuration", expanded=False):
         render_config_summary(config)
 
-    # ── Quick Stats sidebar ──
     if metrics:
         with st.sidebar.expander("📊 Quick Stats", expanded=False):
             c1, c2 = st.columns(2)
@@ -126,9 +139,12 @@ def main() -> None:
             c1.metric("Trades", f"{metrics.get('num_trades', 0)}")
             c2.metric("Sharpe", f"{metrics.get('sharpe_ratio', 0):.2f}")
 
-    # ── Render selected section ──
+    # Dispatch section renderer
     _name, renderer = _SECTION_RENDERERS[section]
-    renderer(data, config, session_path)
+    if section == "💰 Backtest":
+        renderer(data, config, session_path)
+    else:
+        renderer(data, session_path)
 
 
 main()

@@ -1,4 +1,4 @@
-"""Data Exploration section renderer."""
+"""Data Exploration: candlestick, feature correlations, label distributions."""
 
 from __future__ import annotations
 
@@ -17,42 +17,45 @@ from thesis.charts import (
 from thesis.dashboard.shared import render_chart
 
 
-def render_data_section(data: dict, config: object) -> None:
-    """Render the Data Exploration section with charts and controls."""
+def render_data_section(data: dict, session_dir: str = "") -> None:
+    """OHLCV candlestick + feature/label charts with date range filter."""
     st.markdown("> 🏠 Dashboard > **Data Exploration**")
     st.header("Data Exploration")
 
     ohlcv = data.get("ohlcv")
+    features = data.get("features")
+    labels = data.get("labels")
+
+    # ── OHLCV summary ──
     if ohlcv is not None:
         st.caption(
             f"{len(ohlcv):,} bars | "
             f"{ohlcv['timestamp'].cast(pl.Utf8).min()}"
             f" → {ohlcv['timestamp'].cast(pl.Utf8).max()}"
         )
-    features = data.get("features")
-    labels = data.get("labels")
 
     if ohlcv is not None and len(ohlcv) > 0:
         st.subheader("Candlestick Chart")
 
+        # Parse timestamp
         ts_col = ohlcv["timestamp"]
-        if ts_col.dtype == pl.Utf8:
-            ts_parsed = ts_col.str.to_datetime()
-        else:
-            ts_parsed = ts_col.cast(pl.Datetime)
+        ts_parsed = (
+            ts_col.str.to_datetime()
+            if ts_col.dtype == pl.Utf8
+            else ts_col.cast(pl.Datetime)
+        )
 
-        min_dt = ts_parsed.min()
-        max_dt = ts_parsed.max()
+        min_dt, max_dt = ts_parsed.min(), ts_parsed.max()
         total_bars = len(ohlcv)
 
+        # Date range filter (default: last 180 days)
         if min_dt is not None and max_dt is not None:
-            min_date = min_dt.date()
-            max_date = max_dt.date()
+            min_date, max_date = min_dt.date(), max_dt.date()
             default_end = max_date
             default_start = max(min_date, max_date - timedelta(days=180))
 
-            col_range1, col_range2 = st.columns(2)
-            with col_range1:
+            c1, c2 = st.columns(2)
+            with c1:
                 start_date = st.date_input(
                     "From",
                     value=default_start,
@@ -60,7 +63,7 @@ def render_data_section(data: dict, config: object) -> None:
                     max_value=max_date,
                     key="_candle_start",
                 )
-            with col_range2:
+            with c2:
                 end_date = st.date_input(
                     "To",
                     value=default_end,
@@ -79,48 +82,42 @@ def render_data_section(data: dict, config: object) -> None:
             ohlcv_filtered = ohlcv
 
         if len(ohlcv_filtered) > 0:
-            chart, info = build_candlestick_chart(ohlcv_filtered, config)
+            chart, info = build_candlestick_chart(ohlcv_filtered, None)
             render_chart(chart, height="700px")
-            if info["total_bars"] < total_bars:
+
+            if info["downsampled"]:
                 st.caption(
-                    f"Showing {info['displayed_bars']:,} of {total_bars:,} total bars "
-                    f"({len(ohlcv_filtered):,} in selected range)"
-                )
-            elif info["downsampled"]:
-                st.caption(
-                    f"Showing {info['displayed_bars']:,} of"
-                    f" {info['total_bars']:,} bars"
-                    " (downsampled). Use DataZoom to navigate."
+                    f"Showing {info['displayed_bars']:,} of {info['total_bars']:,} bars"
+                    " (downsampled). DataZoom to navigate."
                 )
         else:
             st.info("No data in selected date range.")
     else:
         st.info("No OHLCV data available.")
 
+    # ── Feature + Label charts ──
     if features is not None:
-        col1, col2 = st.columns(2)
-        with col1:
+        c1, c2 = st.columns(2)
+        with c1:
             st.subheader("Feature Correlation")
-            chart = build_correlation_heatmap(features)
-            render_chart(chart, height="600px")
-        with col2:
+            render_chart(build_correlation_heatmap(features), height="600px")
+        with c2:
             st.subheader("Label Distribution")
             if labels is not None and "label" in labels.columns:
-                chart = build_label_distribution_chart(labels)
-                render_chart(chart, height="500px")
+                render_chart(build_label_distribution_chart(labels), height="500px")
             else:
                 st.info("No labels data.")
 
+        # Per-feature histogram
         st.subheader("Feature Distributions")
         feature_cols = [c for c in features.columns if c not in EXCLUDED_FEATURE_COLS]
-        st.caption(
-            f"{len(feature_cols)} model-facing columns; raw ATR is label-helper only."
-        )
+        st.caption(f"{len(feature_cols)} model-facing columns.")
         if feature_cols:
-            selected_feature = st.selectbox(
+            selected = st.selectbox(
                 "Feature", feature_cols, key="_feature_distribution_select"
             )
-            chart = build_feature_distribution_chart(features, selected_feature)
-            render_chart(chart, height="450px")
+            render_chart(
+                build_feature_distribution_chart(features, selected), height="450px"
+            )
     else:
         st.info("No features data available.")

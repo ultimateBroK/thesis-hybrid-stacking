@@ -1,4 +1,4 @@
-"""Shared chart renderer and config/trade summary helpers."""
+"""Chart renderer + config/trade helpers used across sections."""
 
 from __future__ import annotations
 
@@ -11,59 +11,73 @@ from thesis.dashboard.cards import render_metric_card
 
 
 def render_chart(chart: object, height: str = "500px") -> None:
-    """Render a pyecharts chart into the Streamlit app."""
+    """Render pyecharts chart into Streamlit via streamlit-echarts."""
     try:
         from streamlit_echarts import st_pyecharts
-
         st_pyecharts(chart, height=height)
     except ImportError as e:
         st.warning(f"Chart render failed: {e}")
 
 
 def date_only(value: str) -> str:
-    """Return the date part of a config timestamp string."""
+    """Return date part of ISO timestamp string."""
     return str(value).split()[0]
 
 
 def trim_generated_visual_sections(content: str) -> str:
-    """Hide report sections duplicated by dashboard-native charts."""
-    marker_pattern = re.compile(r"^##\s+\d*\.?\s*Visual Evidence", re.MULTILINE)
-    marker = marker_pattern.search(content)
-    return content[: marker.start()].rstrip() if marker else content
+    """Strip 'Visual Evidence' section — duplicated by dashboard charts."""
+    m = re.compile(r"^##\s+\d*\.?\s*Visual Evidence", re.MULTILINE).search(content)
+    return content[: m.start()].rstrip() if m else content
+
+
+def _cfg_attr(obj: object, key: str, default: str = "?") -> str:
+    """Get config attr safely; return default if missing."""
+    val = getattr(obj, key, None)
+    return str(val) if val is not None else default
 
 
 def render_config_summary(config: object) -> None:
-    """Render compact current experiment settings in the sidebar."""
+    """Sidebar: current experiment config — data, validation, model, labels, backtest."""
+    data = getattr(config, "data", None)
+    val = getattr(config, "validation", None)
+    model = getattr(config, "model", None)
+    labels = getattr(config, "labels", None)
+    bt = getattr(config, "backtest", None)
+
     st.markdown(
-        f"**Data**: {config.data.symbol} {config.data.timeframe}  "
-        f"{date_only(config.data_range.start)}→{date_only(config.data_range.end)}"
+        f"**Data**: {data.symbol if data else '?'} {data.timeframe if data else '?'}  "
+        f"{date_only(getattr(data, 'data_range', None) and config.data_range.start)}"
+        f"→{date_only(getattr(data, 'data_range', None) and config.data_range.end)}"
     )
-    st.markdown(
-        f"**Walk-forward**: {config.validation.method}, "
-        f"train={config.validation.train_window_bars:,}, "
-        f"test={config.validation.test_window_bars:,}, "
-        f"purge={config.validation.purge_bars} bars"
-    )
-    st.markdown()
-    st.markdown(
-        f"**LightGBM**: {config.model.architecture}, "
-        f"objective={config.model.objective}, leaves={config.model.num_leaves}, "
-        f"lr={config.model.learning_rate}"
-    )
-    st.markdown(
-        f"**Labels**: horizon={config.labels.horizon_bars}, "
-        f"TP={config.labels.atr_tp_multiplier}×ATR, "
-        f"SL={config.labels.atr_sl_multiplier}×ATR"
-    )
-    st.markdown(
-        f"**Backtest**: capital=${config.backtest.initial_capital:,.0f}, "
-        f"spread={config.backtest.spread_ticks:g} ticks, "
-        f"conf≥{config.backtest.confidence_threshold:.2f}"
-    )
+    if val:
+        st.markdown(
+            f"**Walk-forward**: {val.method}, "
+            f"train={val.train_window_bars:,}, "
+            f"test={val.test_window_bars:,}, "
+            f"purge={val.purge_bars} bars"
+        )
+    if model:
+        st.markdown(
+            f"**LightGBM**: {model.architecture}, "
+            f"objective={model.objective}, leaves={model.num_leaves}, "
+            f"lr={model.learning_rate}"
+        )
+    if labels:
+        st.markdown(
+            f"**Labels**: horizon={labels.horizon_bars}, "
+            f"TP={labels.atr_tp_multiplier}×ATR, "
+            f"SL={labels.atr_sl_multiplier}×ATR"
+        )
+    if bt:
+        st.markdown(
+            f"**Backtest**: capital=${bt.initial_capital:,.0f}, "
+            f"spread={bt.spread_ticks:g} ticks, "
+            f"conf≥{bt.confidence_threshold:.2f}"
+        )
 
 
 def render_trade_direction_summary(trades: list[dict]) -> None:
-    """Render compact direction counts and PnL without low-value charts."""
+    """Sidebar expander: long/short trade counts and PnL."""
     if not trades:
         return
 
