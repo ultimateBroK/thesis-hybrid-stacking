@@ -59,7 +59,6 @@ def render_oof_vs_oos_section(
 
     total_test_rows = 0
     weighted_acc = 0.0
-    weighted_macro_f1 = 0.0
     class_support: dict[str, int] = {"-1": 0, "0": 0, "1": 0}
     weighted_class_f1: dict[str, float] = {"-1": 0.0, "0": 0.0, "1": 0.0}
 
@@ -80,25 +79,20 @@ def render_oof_vs_oos_section(
             class_support[cls_key] += support
             weighted_class_f1[cls_key] += cls_f1 * support
 
-        window_f1s = [
-            per_class.get(cls_key, {}).get("f1", 0.0) for cls_key in ("-1", "0", "1")
-        ]
-        window_macro_f1 = float(np.mean(window_f1s)) if window_f1s else 0.0
-        weighted_macro_f1 += window_macro_f1 * test_rows
-
     if total_test_rows == 0:
         oof_accuracy: float | None = None
         oof_macro_f1: float | None = None
         oof_class_f1: dict[str, float | None] = {"-1": None, "0": None, "1": None}
     else:
         oof_accuracy = weighted_acc / total_test_rows
-        oof_macro_f1 = weighted_macro_f1 / total_test_rows
         oof_class_f1 = {}
         for cls_key in ("-1", "0", "1"):
             sup = class_support.get(cls_key, 0)
             oof_class_f1[cls_key] = (
                 weighted_class_f1[cls_key] / sup if sup > 0 else None
             )
+        valid_class_f1s = [v for v in oof_class_f1.values() if v is not None]
+        oof_macro_f1 = float(np.mean(valid_class_f1s)) if valid_class_f1s else None
 
     oos_accuracy: float | None = None
     oos_macro_f1: float | None = None
@@ -128,7 +122,7 @@ def render_oof_vs_oos_section(
                         end_s = parse_date(str(bt_end)[:19])
                         if start_s and end_s:
                             total_span = end_s - start_s
-                            mid_point = start_s + timedelta(days=total_span.days // 2)
+                            mid_point = start_s + timedelta(seconds=total_span.total_seconds() / 2)
                             oos_start = mid_point.strftime("%Y-%m-%d %H:%M:%S")
                             oos_end = str(bt_end)[:19]
                 except (OSError, json.JSONDecodeError):

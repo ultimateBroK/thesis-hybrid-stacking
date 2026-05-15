@@ -77,7 +77,7 @@ def compute_random_strategy(
         "sharpe": sharpe,
         "max_dd_pct": max_dd,
         "win_rate_pct": win_rate,
-        "num_trades": int(np.abs(np.diff(signals)).sum() / 2 + 1),
+        "num_trades": int((np.diff(signals) != 0).sum()) + 1,
     }
 
 
@@ -152,7 +152,7 @@ def compute_benchmark_comparison(
     bh_equity = equity_curve_from_bar_returns(bar_returns, initial)
     bh_return = (bh_equity[-1] / initial - 1) * 100
 
-    al_returns = bar_returns * leverage
+    al_returns = (bar_returns * leverage).copy()
     al_equity = equity_curve_from_bar_returns(al_returns, initial)
     al_return = (al_equity[-1] / initial - 1) * 100
 

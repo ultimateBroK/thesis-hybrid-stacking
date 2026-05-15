@@ -32,8 +32,7 @@ def compute_regression_target(
     n = len(close)
 
     reg = np.full(n, np.nan, dtype=np.float64)
-    future = np.roll(close, -h)[: n - h]
-    reg[: n - h] = (future - close[: n - h]) / close[: n - h]
+    reg[: n - h] = (close[h:] - close[: n - h]) / close[: n - h]
 
     # Tail cannot compute forward return
     label_arr = df["label"].to_numpy().copy()

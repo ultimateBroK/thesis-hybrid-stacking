@@ -8,17 +8,17 @@ import pytest
 
 from thesis.shared.config import Config
 from thesis.stage_6_reporting.benchmarks import (
-    _annualized_sharpe,
-    _compute_random_strategy,
-    _equity_curve_from_bar_returns,
-    _load_close_prices_for_benchmark,
-    _max_drawdown_pct,
-    _model_label,
+    annualized_sharpe,
+    compute_random_strategy,
+    equity_curve_from_bar_returns,
+    load_close_prices_for_benchmark,
+    max_drawdown_pct,
+    model_label,
     compute_benchmark_comparison,
 )
 
 # ---------------------------------------------------------------------------
-# _model_label
+# model_label
 # ---------------------------------------------------------------------------
 
 
@@ -27,17 +27,17 @@ class TestModelLabel:
     def test_lgbm(self) -> None:
         config = Config()
         config.model.architecture = "lgbm"
-        assert _model_label(config) == "LightGBM"
+        assert model_label(config) == "LightGBM"
 
     def test_stacking(self) -> None:
         config = Config()
         config.model.architecture = "stacking"
-        assert _model_label(config) == "Hybrid Stacking"
+        assert model_label(config) == "Hybrid Stacking"
 
     def test_unknown(self) -> None:
         config = Config()
         config.model.architecture = "custom_arch"
-        assert _model_label(config) == "Custom_Arch Model"
+        assert model_label(config) == "Custom_Arch Model"
 
 
 # ---------------------------------------------------------------------------
@@ -49,40 +49,40 @@ class TestModelLabel:
 class TestAnnualizedSharpe:
     def test_positive_returns(self) -> None:
         returns = np.array([0.01, 0.02, -0.005, 0.015, 0.008])
-        sharpe = _annualized_sharpe(returns)
+        sharpe = annualized_sharpe(returns)
         assert isinstance(sharpe, float)
         assert sharpe > 0
 
     def test_zero_std(self) -> None:
         returns = np.array([0.01, 0.01, 0.01])
-        assert _annualized_sharpe(returns) == 0.0
+        assert annualized_sharpe(returns) == 0.0
 
     def test_empty(self) -> None:
         returns = np.array([])
-        assert _annualized_sharpe(returns) == 0.0
+        assert annualized_sharpe(returns) == 0.0
 
 
 @pytest.mark.unit
 class TestMaxDrawdownPct:
     def test_no_drawdown(self) -> None:
         equity = np.array([100, 110, 120, 130])
-        assert _max_drawdown_pct(equity) == 0.0
+        assert max_drawdown_pct(equity) == 0.0
 
     def test_with_drawdown(self) -> None:
         equity = np.array([100, 120, 90, 110])
-        dd = _max_drawdown_pct(equity)
+        dd = max_drawdown_pct(equity)
         assert dd > 0
         assert dd == pytest.approx(25.0, abs=0.1)  # 90/120 = 75%, dd = 25%
 
     def test_single_point(self) -> None:
-        assert _max_drawdown_pct(np.array([100])) == 0.0
+        assert max_drawdown_pct(np.array([100])) == 0.0
 
 
 @pytest.mark.unit
 class TestBuildEquityCurve:
     def test_basic(self) -> None:
         returns = np.array([0.1, -0.05, 0.15])
-        equity = _equity_curve_from_bar_returns(returns, 1000)
+        equity = equity_curve_from_bar_returns(returns, 1000)
         assert len(equity) == 4
         assert equity[0] == 1000
         assert equity[1] == pytest.approx(1100)
@@ -94,7 +94,7 @@ class TestBuildEquityCurve:
 class TestComputeRandomStrategy:
     def test_returns_expected_keys(self) -> None:
         returns = np.array([0.01, -0.02, 0.005, -0.01, 0.02] * 10)
-        result = _compute_random_strategy(returns, 10000, 100, seed=42)
+        result = compute_random_strategy(returns, 10000, 100, seed=42)
         assert "return_pct" in result
         assert "sharpe" in result
         assert "max_dd_pct" in result
@@ -103,13 +103,13 @@ class TestComputeRandomStrategy:
 
     def test_deterministic_with_seed(self) -> None:
         returns = np.random.randn(100) * 0.01
-        r1 = _compute_random_strategy(returns, 10000, 100, seed=42)
-        r2 = _compute_random_strategy(returns, 10000, 100, seed=42)
+        r1 = compute_random_strategy(returns, 10000, 100, seed=42)
+        r2 = compute_random_strategy(returns, 10000, 100, seed=42)
         assert r1["return_pct"] == r2["return_pct"]
 
 
 # ---------------------------------------------------------------------------
-# _load_close_prices_for_benchmark
+# load_close_prices_for_benchmark
 # ---------------------------------------------------------------------------
 
 
@@ -122,7 +122,7 @@ class TestLoadClosePricesForBenchmark:
         test_path = tmp_path / "test.parquet"
         pl.DataFrame({"close": [100.0, 101.0, 102.0]}).write_parquet(test_path)
 
-        result = _load_close_prices_for_benchmark(test_path, {}, config)
+        result = load_close_prices_for_benchmark(test_path, {}, config)
         assert result is not None
         assert len(result) == 3
 
@@ -139,7 +139,7 @@ class TestLoadClosePricesForBenchmark:
             ohlcv_path
         )
 
-        result = _load_close_prices_for_benchmark(
+        result = load_close_prices_for_benchmark(
             tmp_path / "nonexistent.parquet",
             {},
             config,
@@ -166,7 +166,7 @@ class TestLoadClosePricesForBenchmark:
             config.paths.ohlcv
         )
 
-        result = _load_close_prices_for_benchmark(
+        result = load_close_prices_for_benchmark(
             tmp_path / "nonexistent.parquet",
             {"start": "2023-01-02 00:00:00", "end": "2023-01-03 00:00:00"},
             config,
@@ -179,7 +179,7 @@ class TestLoadClosePricesForBenchmark:
         config = Config()
         config.validation.method = "sliding"
         config.paths.ohlcv = str(tmp_path / "nonexistent.parquet")
-        result = _load_close_prices_for_benchmark(
+        result = load_close_prices_for_benchmark(
             tmp_path / "nonexistent.parquet", {}, config
         )
         assert result is None

@@ -31,7 +31,7 @@ def generate_labels(config: Config) -> None:
     df, atr_col = _load_features_and_ohlcv(config)
     _log_atr_stats(df, atr_col, config.labels.min_atr)
 
-    labels, upper, lower, touched = _compute_triple_barrier(
+    labels, upper, lower, touched, _ambiguous = _compute_triple_barrier(
         close=df["close"].to_numpy(),
         high=df["high"].to_numpy(),
         low=df["low"].to_numpy(),
@@ -252,7 +252,7 @@ def _log_weight_stats(df: pl.DataFrame) -> None:
 def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
     """% long/short labels profitable after trading costs.
 
-    Net return = (close[t+h] - close[t+1]) / close[t] * leverage - cost / close[t].
+    Net return = (close[t+h] - close[t+1]) / close[t+1] * leverage - cost / close[t+1].
     """
     if not {"close", "label", "timestamp"}.issubset(df.columns):
         return
@@ -266,9 +266,9 @@ def _log_label_profitability(df: pl.DataFrame, config: Config) -> None:
         .with_columns(
             (
                 (pl.col("close").shift(-h) - pl.col("close").shift(-1))
-                / pl.col("close")
+                / pl.col("close").shift(-1)
                 * lev
-                - cost / pl.col("close")
+                - cost / pl.col("close").shift(-1)
             ).alias("_net_return")
         )
         .filter(

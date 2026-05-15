@@ -113,7 +113,7 @@ def compute_backtest(config: Config) -> BacktestResult:
 
     metrics = _normalize_stats(stats)
     trades = _trades_to_list(
-        stats["_trades"],
+        stats.get("_trades", pd.DataFrame()),
         commission_per_lot=config.backtest.commission_per_lot,
         contract_size=config.data.contract_size,
     )
@@ -173,7 +173,7 @@ def run_backtest_from_data(
     stats, bt = _run_fractional_backtest(pdf, config)
     metrics = _normalize_stats(stats)
     trades = _trades_to_list(
-        stats["_trades"],
+        stats.get("_trades", pd.DataFrame()),
         commission_per_lot=config.backtest.commission_per_lot,
         contract_size=config.data.contract_size,
     )
@@ -245,7 +245,7 @@ def run_backtest_manual(
 
     metrics = _normalize_stats(stats)
     trades = _trades_to_list(
-        stats["_trades"],
+        stats.get("_trades", pd.DataFrame()),
         commission_per_lot=commission_per_lot,
         contract_size=contract_size,
     )

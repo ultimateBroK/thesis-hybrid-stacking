@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from thesis.stage_4_training.walk_forward.stacking import _aligned_predict_proba
+from thesis.stage_4_training.walk_forward.stacking import _aligned_proba
 
 
 @pytest.mark.unit
@@ -34,7 +34,7 @@ def test_aligned_predict_proba_preserves_lgbm_feature_names() -> None:
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        proba = _aligned_predict_proba(model, X.to_numpy(), feature_names)
+        proba = _aligned_proba(model, X.to_numpy(), feature_names)
 
     assert proba.shape == (len(X), 3)
     assert not any("valid feature names" in str(w.message) for w in caught)

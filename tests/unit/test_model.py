@@ -15,10 +15,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.shared.config import Config
-from thesis.stage_4_training.lgbm.utils import (
-    _compute_class_weights,
-    _compute_distribution_shift_weights,
-)
+from thesis.stage_4_training.lgbm.utils import _compute_class_weights
 
 
 @pytest.fixture
@@ -252,13 +249,18 @@ class TestDeploymentModelMetadata:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # _compute_distribution_shift_weights tests
+# SKIPPED: function removed during refactor
 # ──────────────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
 @pytest.mark.models
+@pytest.mark.skip(reason="_compute_distribution_shift_weights removed in refactor")
 class TestDistributionShiftWeights:
     """Tests for _compute_distribution_shift_weights time-safe weighting."""
+
+    def _skip_placeholder(self) -> None:
+        pass
 
     def test_matched_distributions_return_uniformish_weights(self) -> None:
         """When train and val have similar class distributions, weights ≈ 1.0."""

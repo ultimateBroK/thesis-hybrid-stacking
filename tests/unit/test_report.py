@@ -9,31 +9,31 @@ import polars as pl
 import pytest
 
 from thesis.shared.config import Config
-from thesis.stage_6_reporting.benchmarks import _model_label
+from thesis.stage_6_reporting.benchmarks import model_label
 from thesis.stage_6_reporting.generation import (
-    _benchmark_comparison_table,
-    _config_table,
-    _exec_verdict,
+    benchmark_comparison_table,
+    config_table,
+    exec_verdict,
 )
 from thesis.stage_6_reporting.sections import (
-    _assess_model_quality,
-    _assess_trading_edge,
-    _derive_recommendation,
-    _identify_primary_issue,
-    _render_data_quality_section,
-    _render_metric_zones_section,
-    _render_oof_vs_oos_section,
+    assess_model_quality,
+    assess_trading_edge,
+    derive_recommendation,
+    identify_primary_issue,
+    render_data_quality_section,
+    render_metric_zones_section,
+    render_oof_vs_oos_section,
 )
 
 
 @pytest.mark.unit
-def test_config_table_shows_walk_forward_for_sliding_validation() -> None:
+def testconfig_table_shows_walk_forward_for_sliding_validation() -> None:
     """Sliding validation should not render stale static split ranges."""
     cfg = Config()
     cfg.validation.method = "sliding"
     lines: list[str] = []
 
-    _config_table(lines, cfg)
+    config_table(lines, cfg)
     rendered = "\n".join(lines)
 
     assert cfg.data_range.start not in rendered
@@ -41,13 +41,13 @@ def test_config_table_shows_walk_forward_for_sliding_validation() -> None:
 
 
 @pytest.mark.unit
-def test_config_table_shows_static_ranges_for_static_validation() -> None:
+def testconfig_table_shows_static_ranges_for_static_validation() -> None:
     """Static validation should show data range and window config."""
     cfg = Config()
     cfg.validation.method = "static"
     lines: list[str] = []
 
-    _config_table(lines, cfg)
+    config_table(lines, cfg)
     rendered = "\n".join(lines)
 
     assert cfg.data_range.start in rendered
@@ -56,15 +56,15 @@ def test_config_table_shows_static_ranges_for_static_validation() -> None:
 
 
 @pytest.mark.unit
-def test_model_label_matches_architecture() -> None:
+def testmodel_label_matches_architecture() -> None:
     """Report title should reflect the configured architecture."""
     cfg = Config()
 
     cfg.model.architecture = "lgbm"
-    assert _model_label(cfg) == "LightGBM"
+    assert model_label(cfg) == "LightGBM"
 
     cfg.model.architecture = "stacking"
-    assert _model_label(cfg) == "Hybrid Stacking"
+    assert model_label(cfg) == "Hybrid Stacking"
 
 
 @pytest.mark.unit
@@ -93,7 +93,7 @@ def test_benchmark_table_discloses_not_cost_equivalent(
     )
     lines: list[str] = []
 
-    _benchmark_comparison_table(lines, metrics, cfg)
+    benchmark_comparison_table(lines, metrics, cfg)
     rendered = "\n".join(lines)
 
     assert "not trading-cost-equivalent" in rendered
@@ -106,7 +106,7 @@ def test_benchmark_table_discloses_not_cost_equivalent(
 
 
 class TestAssessModelQuality:
-    """Unit tests for _assess_model_quality."""
+    """Unit tests for assess_model_quality."""
 
     def test_poor_acc_below_baseline(self) -> None:
         ps = {
@@ -119,7 +119,7 @@ class TestAssessModelQuality:
                 "Long": {"f1": 0.3},
             },
         }
-        quality, reason = _assess_model_quality(ps)
+        quality, reason = assess_model_quality(ps)
         assert quality == "POOR"
         assert "below" in reason.lower()
 
@@ -134,7 +134,7 @@ class TestAssessModelQuality:
                 "Long": {"f1": 0.5},
             },
         }
-        quality, reason = _assess_model_quality(ps)
+        quality, reason = assess_model_quality(ps)
         assert quality == "GOOD"
         assert "directional edge" in reason.lower()
 
@@ -149,77 +149,77 @@ class TestAssessModelQuality:
                 "Long": {"f1": 0.3},
             },
         }
-        quality, reason = _assess_model_quality(ps)
+        quality, reason = assess_model_quality(ps)
         assert quality == "FAIR"
 
 
 class TestAssessTradingEdge:
-    """Unit tests for _assess_trading_edge."""
+    """Unit tests for assess_trading_edge."""
 
     def test_negative_profit_factor_below_one(self) -> None:
-        edge, reason = _assess_trading_edge(
+        edge, reason = assess_trading_edge(
             {"profit_factor": 0.8, "sharpe_ratio": 0.5, "return_pct": 10}
         )
         assert edge == "NEGATIVE"
 
     def test_negative_sharpe(self) -> None:
-        edge, reason = _assess_trading_edge(
+        edge, reason = assess_trading_edge(
             {"profit_factor": 1.5, "sharpe_ratio": -0.2, "return_pct": 5}
         )
         assert edge == "NEGATIVE"
 
     def test_marginal_low_sharpe(self) -> None:
-        edge, reason = _assess_trading_edge(
+        edge, reason = assess_trading_edge(
             {"profit_factor": 1.3, "sharpe_ratio": 0.7, "return_pct": 5}
         )
         assert edge == "MARGINAL"
 
     def test_positive(self) -> None:
-        edge, reason = _assess_trading_edge(
+        edge, reason = assess_trading_edge(
             {"profit_factor": 2.0, "sharpe_ratio": 2.0, "return_pct": 15}
         )
         assert edge == "POSITIVE"
 
 
 class TestDeriveRecommendation:
-    """Unit tests for _derive_recommendation."""
+    """Unit tests for derive_recommendation."""
 
     def test_not_deployable_poor_model(self) -> None:
-        rec = _derive_recommendation(
+        rec = derive_recommendation(
             "POOR", "POSITIVE", {"num_trades": 100, "return_pct": 10}
         )
         assert "NOT DEPLOYABLE" in rec
 
     def test_not_deployable_negative_edge(self) -> None:
-        rec = _derive_recommendation(
+        rec = derive_recommendation(
             "GOOD", "NEGATIVE", {"num_trades": 100, "return_pct": 10}
         )
         assert "NOT DEPLOYABLE" in rec
 
     def test_dep_insufficient_trades(self) -> None:
-        rec = _derive_recommendation(
+        rec = derive_recommendation(
             "GOOD", "POSITIVE", {"num_trades": 10, "return_pct": 10}
         )
         assert "NOT DEPLOYABLE" in rec and "insufficient" in rec.lower()
 
     def test_deployable_with_caution(self) -> None:
-        rec = _derive_recommendation(
+        rec = derive_recommendation(
             "FAIR", "MARGINAL", {"num_trades": 100, "return_pct": 10}
         )
         assert "caution" in rec.lower()
 
     def test_deployable(self) -> None:
-        rec = _derive_recommendation(
+        rec = derive_recommendation(
             "GOOD", "POSITIVE", {"num_trades": 150, "return_pct": 10}
         )
         assert rec == "DEPLOYABLE"
 
 
 class TestIdentifyPrimaryIssue:
-    """Unit tests for _identify_primary_issue."""
+    """Unit tests for identify_primary_issue."""
 
     def test_zero_trades(self) -> None:
-        result = _identify_primary_issue(
+        result = identify_primary_issue(
             {
                 "num_trades": 0,
                 "sharpe_ratio": 0,
@@ -234,7 +234,7 @@ class TestIdentifyPrimaryIssue:
         assert "Zero trades" in result
 
     def test_negative_sharpe(self) -> None:
-        result = _identify_primary_issue(
+        result = identify_primary_issue(
             {
                 "num_trades": 50,
                 "sharpe_ratio": -0.3,
@@ -249,7 +249,7 @@ class TestIdentifyPrimaryIssue:
         assert "negative" in result.lower()
 
     def test_drawdown_catastrophic(self) -> None:
-        result = _identify_primary_issue(
+        result = identify_primary_issue(
             {
                 "num_trades": 80,
                 "sharpe_ratio": 0.6,
@@ -264,7 +264,7 @@ class TestIdentifyPrimaryIssue:
         assert "catastrophic" in result.lower()
 
     def test_none_when_all_ok(self) -> None:
-        result = _identify_primary_issue(
+        result = identify_primary_issue(
             {
                 "num_trades": 200,
                 "sharpe_ratio": 2.0,
@@ -279,7 +279,7 @@ class TestIdentifyPrimaryIssue:
 
 
 class TestExecVerdict:
-    """Integration tests for the extended _exec_verdict function."""
+    """Integration tests for the extended exec_verdict function."""
 
     def _make_pred_stats(self, **overrides) -> dict:
         base = {
@@ -306,7 +306,7 @@ class TestExecVerdict:
             "max_drawdown_pct": 15,
             "win_rate_pct": 40,
         }
-        _exec_verdict(L, metrics, self._make_pred_stats())
+        exec_verdict(L, metrics, self._make_pred_stats())
         rendered = "\n".join(L)
         assert "**Verdict:**" in rendered
         assert "Primary issue" in rendered
@@ -314,7 +314,7 @@ class TestExecVerdict:
     def test_no_metrics_still_shows_model_quality(self) -> None:
         """Verdict line shows model quality even without backtest metrics."""
         L: list[str] = []
-        _exec_verdict(L, {}, self._make_pred_stats())
+        exec_verdict(L, {}, self._make_pred_stats())
         rendered = "\n".join(L)
         assert "**Verdict:**" in rendered
         assert "no backtest metrics available" in rendered.lower()
@@ -323,14 +323,14 @@ class TestExecVerdict:
     def test_no_pred_stats_no_metrics(self) -> None:
         """Returns early with no output lines."""
         L: list[str] = []
-        _exec_verdict(L, {}, None)
+        exec_verdict(L, {}, None)
         # Should have no lines appended
         assert len(L) == 0
 
     def test_no_pred_stats_with_metrics(self) -> None:
         """Fallback message when only the demo ran."""
         L: list[str] = []
-        _exec_verdict(L, {"return_pct": 5, "num_trades": 10}, None)
+        exec_verdict(L, {"return_pct": 5, "num_trades": 10}, None)
         rendered = "\n".join(L)
         assert "unavailable" in rendered.lower()
 
@@ -371,14 +371,14 @@ def _make_predictions_csv(path: Path, rows: list[dict]) -> None:
 
 @pytest.mark.unit
 class TestOofVsOosSection:
-    """Tests for _render_oof_vs_oos_section."""
+    """Tests for render_oof_vs_oos_section."""
 
     def test_missing_session_dir_shows_unavailable(self) -> None:
         """Graceful message when session_dir is empty."""
         cfg = Config()
         cfg.paths.session_dir = ""
         L: list[str] = []
-        _render_oof_vs_oos_section(L, cfg)
+        render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
         assert "session directory unavailable" in rendered.lower()
 
@@ -387,7 +387,7 @@ class TestOofVsOosSection:
         cfg = Config()
         cfg.paths.session_dir = str(tmp_path)
         L: list[str] = []
-        _render_oof_vs_oos_section(L, cfg)
+        render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
         assert "walk-forward history unavailable" in rendered.lower()
 
@@ -398,7 +398,7 @@ class TestOofVsOosSection:
         wf_path = tmp_path / "reports" / "walk_forward_history.json"
         _make_wf_history_json(wf_path, [])
         L: list[str] = []
-        _render_oof_vs_oos_section(L, cfg)
+        render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
         assert "no window details available" in rendered.lower()
 
@@ -437,7 +437,7 @@ class TestOofVsOosSection:
         )
 
         L: list[str] = []
-        _render_oof_vs_oos_section(L, cfg)
+        render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
 
         assert "OOF vs OOS Generalization Check" in rendered
@@ -515,7 +515,7 @@ class TestOofVsOosSection:
         )
 
         L: list[str] = []
-        _render_oof_vs_oos_section(L, cfg)
+        render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
 
         assert "OOF vs OOS Generalization Check" in rendered
@@ -548,7 +548,7 @@ class TestOofVsOosSection:
         )
 
         L: list[str] = []
-        _render_oof_vs_oos_section(L, cfg)
+        render_oof_vs_oos_section(L, cfg)
         rendered = "\n".join(L)
 
         assert "OOF vs OOS Generalization Check" in rendered
@@ -562,7 +562,7 @@ class TestOofVsOosSection:
 
 @pytest.mark.unit
 class TestRenderDataQualitySection:
-    """Tests for _render_data_quality_section."""
+    """Tests for render_data_quality_section."""
 
     def test_missing_json_shows_unavailable_message(self) -> None:
         """Graceful message when data quality JSON is missing."""
@@ -570,7 +570,7 @@ class TestRenderDataQualitySection:
         cfg.paths.session_dir = "/nonexistent"
         cfg.paths.data_quality_json = "/nonexistent/data_quality.json"
         L: list[str] = []
-        _render_data_quality_section(L, cfg)
+        render_data_quality_section(L, cfg)
         rendered = "\n".join(L)
         assert "not found" in rendered.lower()
 
@@ -595,7 +595,7 @@ class TestRenderDataQualitySection:
         cfg.paths.data_quality_json = str(dq_path)
 
         L: list[str] = []
-        _render_data_quality_section(L, cfg)
+        render_data_quality_section(L, cfg)
         rendered = "\n".join(L)
 
         assert "## Data Quality" in rendered
@@ -613,7 +613,7 @@ class TestRenderDataQualitySection:
         cfg.paths.data_quality_json = str(dq_path)
 
         L: list[str] = []
-        _render_data_quality_section(L, cfg)
+        render_data_quality_section(L, cfg)
         rendered = "\n".join(L)
 
         assert "could not be read" in rendered.lower()
@@ -626,7 +626,7 @@ class TestRenderDataQualitySection:
 
 @pytest.mark.unit
 class TestRenderMetricZonesSection:
-    """Tests for _render_metric_zones_section."""
+    """Tests for render_metric_zones_section."""
 
     def test_renders_all_expected_metrics(self) -> None:
         """All configured metrics appear in the output."""
@@ -641,7 +641,7 @@ class TestRenderMetricZonesSection:
             "expectancy_pct": 0.5,
         }
         L: list[str] = []
-        _render_metric_zones_section(L, metrics)
+        render_metric_zones_section(L, metrics)
         rendered = "\n".join(L)
 
         assert "## Metric Quality Zones" in rendered
@@ -667,7 +667,7 @@ class TestRenderMetricZonesSection:
             "profit_factor": 2.0,
         }
         L: list[str] = []
-        _render_metric_zones_section(L, metrics)
+        render_metric_zones_section(L, metrics)
         rendered = "\n".join(L)
 
         # Green indicators should appear for good metrics
@@ -683,7 +683,7 @@ class TestRenderMetricZonesSection:
             "profit_factor": 0.8,
         }
         L: list[str] = []
-        _render_metric_zones_section(L, metrics)
+        render_metric_zones_section(L, metrics)
         rendered = "\n".join(L)
 
         # Red indicators should appear for poor metrics
@@ -696,7 +696,7 @@ class TestRenderMetricZonesSection:
             "sharpe_ratio": None,
         }
         L: list[str] = []
-        _render_metric_zones_section(L, metrics)
+        render_metric_zones_section(L, metrics)
         rendered = "\n".join(L)
 
         # Each None metric has 2 "N/A" occurrences (value column + zone column)
@@ -712,7 +712,7 @@ class TestRenderMetricZonesSection:
         ]
         metrics = {"return_pct": 5.0}
         L: list[str] = []
-        _render_metric_zones_section(L, metrics, trades=trades)
+        render_metric_zones_section(L, metrics, trades=trades)
         rendered = "\n".join(L)
 
         assert "Avg Win / Avg Loss" in rendered

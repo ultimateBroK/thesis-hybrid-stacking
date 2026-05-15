@@ -19,23 +19,23 @@ from helpers import create_synthetic_ohlcv
 from thesis.shared.config import Config
 from thesis.shared.constants import EXCLUDE_COLS
 from thesis.stage_2_features.indicators import (
-    _add_adx,
-    _add_atr,
-    _add_atr_percentile,
-    _add_atr_ratio,
-    _add_ema_crossover,
-    _add_ema_slope,
-    _add_high_low_range,
-    _add_log_returns,
-    _add_macd,
-    _add_ny_session_dummies,
-    _add_pivot_position,
-    _add_price_action_features,
-    _add_price_dist_ratio,
-    _add_regime,
-    _add_rsi,
-    _add_volume_zscore,
-    _add_vwap,
+    add_adx,
+    add_atr,
+    add_atr_percentile,
+    add_atr_ratio,
+    add_ema_crossover,
+    add_ema_slope,
+    add_high_low_range,
+    add_log_returns,
+    add_macd,
+    add_pivot_position,
+    add_price_action,
+    add_price_dist_ratio,
+    add_regime,
+    add_rsi,
+    add_session_dummies,
+    add_volume_zscore,
+    add_vwap,
 )
 
 
@@ -53,22 +53,22 @@ def sample_config() -> Config:
 
 def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Apply the full feature pipeline to a DataFrame (mirrors generate_features)."""
-    df = _add_rsi(df, config)
-    df = _add_atr(df, config)
-    df = _add_atr_ratio(df, config)
-    df = _add_price_dist_ratio(df, config)
-    df = _add_vwap(df)
-    df = _add_pivot_position(df)
-    df = _add_ny_session_dummies(df)
-    df = _add_atr_percentile(df, config)
-    df = _add_price_action_features(df, config)
-    df = _add_ema_crossover(df, config)
-    df = _add_volume_zscore(df, config)
-    df = _add_log_returns(df, config)
-    df = _add_high_low_range(df, config)
-    df = _add_adx(df, config)
-    df = _add_ema_slope(df, config)
-    df = _add_regime(df)
+    df = add_rsi(df, config)
+    df = add_atr(df, config)
+    df = add_atr_ratio(df, config)
+    df = add_price_dist_ratio(df, config)
+    df = add_vwap(df)
+    df = add_pivot_position(df)
+    df = add_session_dummies(df)
+    df = add_atr_percentile(df, config)
+    df = add_price_action(df, config)
+    df = add_ema_crossover(df, config)
+    df = add_volume_zscore(df, config)
+    df = add_log_returns(df, config)
+    df = add_high_low_range(df, config)
+    df = add_adx(df, config)
+    df = add_ema_slope(df, config)
+    df = add_regime(df)
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
     # NaN → Polars null, then forward-fill (mirrors production pipeline)
@@ -134,7 +134,7 @@ EXPECTED_FEATURES: list[str] = [
 def test_ema_slope_column(sample_config: Config) -> None:
     """Test ema_slope_20 column is produced."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_ema_slope(df, sample_config)
+    result = add_ema_slope(df, sample_config)
 
     assert "ema_slope_20" in result.columns
     vals = result["ema_slope_20"].drop_nulls().to_numpy()
@@ -169,7 +169,7 @@ def test_ema_slope_direction(sample_config: Config) -> None:
             "volume": np.ones(n) * 5000,
         }
     )
-    result = _add_ema_slope(df, sample_config)
+    result = add_ema_slope(df, sample_config)
     vals = result["ema_slope_20"].drop_nulls().to_numpy()
     assert len(vals) > 0
     tail_mean = vals[-50:].mean()
@@ -188,9 +188,9 @@ def test_ema_slope_direction(sample_config: Config) -> None:
 def test_regime_strength_column(sample_config: Config) -> None:
     """Test regime_strength column is produced."""
     df = create_synthetic_ohlcv(n_rows=300)
-    df = _add_adx(df, sample_config)
-    df = _add_ema_slope(df, sample_config)
-    result = _add_regime(df)
+    df = add_adx(df, sample_config)
+    df = add_ema_slope(df, sample_config)
+    result = add_regime(df)
 
     assert "regime_strength" in result.columns
     vals = result["regime_strength"].drop_nulls().to_numpy()
@@ -207,9 +207,9 @@ def test_regime_strength_sign_follows_ema_slope(sample_config: Config) -> None:
     is positive, regime_strength should be non-negative, and vice versa.
     """
     df = create_synthetic_ohlcv(n_rows=300)
-    df = _add_adx(df, sample_config)
-    df = _add_ema_slope(df, sample_config)
-    result = _add_regime(df)
+    df = add_adx(df, sample_config)
+    df = add_ema_slope(df, sample_config)
+    result = add_regime(df)
 
     slope = result["ema_slope_20"].drop_nulls()
     regime = result["regime_strength"].drop_nulls()
@@ -258,9 +258,9 @@ def test_regime_strength_ranging_flat(sample_config: Config) -> None:
             "volume": np.ones(n) * 5000,
         }
     )
-    df = _add_adx(df, sample_config)
-    df = _add_ema_slope(df, sample_config)
-    result = _add_regime(df)
+    df = add_adx(df, sample_config)
+    df = add_ema_slope(df, sample_config)
+    result = add_regime(df)
 
     adx = result["adx_14"].drop_nulls().to_numpy()
     regime = result["regime_strength"].drop_nulls().to_numpy()
@@ -285,7 +285,7 @@ def test_regime_strength_ranging_flat(sample_config: Config) -> None:
 def test_rsi_bounded(sample_config: Config) -> None:
     """Test RSI is bounded [0, 100]."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_rsi(df, sample_config)
+    result = add_rsi(df, sample_config)
 
     assert "rsi_14" in result.columns
 
@@ -300,7 +300,7 @@ def test_rsi_bounded(sample_config: Config) -> None:
 def test_atr_positive(sample_config: Config) -> None:
     """Test ATR > 0 for valid data."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_atr(df, sample_config)
+    result = add_atr(df, sample_config)
 
     assert "atr_14" in result.columns
     assert "atr_pct_close" in result.columns
@@ -319,8 +319,8 @@ def test_atr_positive(sample_config: Config) -> None:
 def test_macd_histogram_only(sample_config: Config) -> None:
     """Test MACD produces raw and ATR-normalized histograms."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
-    result = _add_macd(df, sample_config)
+    df = add_atr(df, sample_config)
+    result = add_macd(df, sample_config)
 
     assert "macd_hist" in result.columns
     assert "macd_hist_atr" in result.columns
@@ -338,8 +338,8 @@ def test_macd_histogram_only(sample_config: Config) -> None:
 def test_atr_ratio_positive(sample_config: Config) -> None:
     """Test atr_ratio > 0 (ratio of short to long ATR)."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
-    result = _add_atr_ratio(df, sample_config)
+    df = add_atr(df, sample_config)
+    result = add_atr_ratio(df, sample_config)
 
     assert "atr_ratio" in result.columns
     values = result["atr_ratio"].drop_nulls().to_numpy()
@@ -352,8 +352,8 @@ def test_atr_ratio_positive(sample_config: Config) -> None:
 def test_price_dist_ratio_exists(sample_config: Config) -> None:
     """Test price_dist_ratio is computed."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
-    result = _add_price_dist_ratio(df, sample_config)
+    df = add_atr(df, sample_config)
+    result = add_price_dist_ratio(df, sample_config)
 
     assert "price_dist_ratio" in result.columns
 
@@ -363,8 +363,8 @@ def test_price_dist_ratio_exists(sample_config: Config) -> None:
 def test_atr_percentile_bounded(sample_config: Config) -> None:
     """Test atr_percentile is within [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
-    result = _add_atr_percentile(df, sample_config)
+    df = add_atr(df, sample_config)
+    result = add_atr_percentile(df, sample_config)
 
     assert "atr_percentile" in result.columns
     values = result["atr_percentile"].drop_nulls().to_numpy()
@@ -383,7 +383,7 @@ def test_atr_percentile_bounded(sample_config: Config) -> None:
 def test_pivot_position_bounded(sample_config: Config) -> None:
     """Test pivot_position is clipped to [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_pivot_position(df)
+    result = add_pivot_position(df)
 
     assert "pivot_position" in result.columns
     values = result["pivot_position"].drop_nulls().to_numpy()
@@ -397,7 +397,7 @@ def test_pivot_position_bounded(sample_config: Config) -> None:
 def test_pivot_position_no_lookahead(sample_config: Config) -> None:
     """Test that pivot uses previous day's levels (shifted by 1)."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_pivot_position(df)
+    result = add_pivot_position(df)
 
     # First few rows should have null pivots (no previous day data)
     # The exact count depends on how trading day aligns with calendar day
@@ -418,7 +418,7 @@ def test_pivot_position_no_lookahead(sample_config: Config) -> None:
 def test_session_dummies_four_columns() -> None:
     """Test 4 session columns are produced."""
     df = create_synthetic_ohlcv(n_rows=100)
-    result = _add_ny_session_dummies(df)
+    result = add_session_dummies(df)
 
     for col in ["sess_asia", "sess_london", "sess_ny_am", "sess_ny_pm"]:
         assert col in result.columns, f"Missing session column: {col}"
@@ -429,7 +429,7 @@ def test_session_dummies_four_columns() -> None:
 def test_session_dummies_binary() -> None:
     """Test session dummy columns are binary {0, 1}."""
     df = create_synthetic_ohlcv(n_rows=100)
-    result = _add_ny_session_dummies(df)
+    result = add_session_dummies(df)
 
     for col in ["sess_asia", "sess_london", "sess_ny_am", "sess_ny_pm"]:
         values = result[col].to_numpy()
@@ -441,7 +441,7 @@ def test_session_dummies_binary() -> None:
 def test_session_dummies_coverage() -> None:
     """Test that every hour belongs to exactly one session."""
     df = create_synthetic_ohlcv(n_rows=100)
-    result = _add_ny_session_dummies(df)
+    result = add_session_dummies(df)
 
     total = (
         result["sess_asia"].cast(pl.Int32)
@@ -467,15 +467,15 @@ def test_all_features_together(sample_config: Config) -> None:
     df = create_synthetic_ohlcv(n_rows=200)
 
     # Apply all feature functions in order
-    df = _add_rsi(df, sample_config)
-    df = _add_atr(df, sample_config)
-    df = _add_macd(df, sample_config)
-    df = _add_atr_ratio(df, sample_config)
-    df = _add_price_dist_ratio(df, sample_config)
-    df = _add_vwap(df)
-    df = _add_pivot_position(df)
-    df = _add_ny_session_dummies(df)
-    df = _add_atr_percentile(df, sample_config)
+    df = add_rsi(df, sample_config)
+    df = add_atr(df, sample_config)
+    df = add_macd(df, sample_config)
+    df = add_atr_ratio(df, sample_config)
+    df = add_price_dist_ratio(df, sample_config)
+    df = add_vwap(df)
+    df = add_pivot_position(df)
+    df = add_session_dummies(df)
+    df = add_atr_percentile(df, sample_config)
 
     # Fill nulls like the main function does
     df = df.fill_null(strategy="forward").fill_null(0.0)
@@ -513,9 +513,9 @@ def test_insufficient_rows_handled(sample_config: Config) -> None:
     df = create_synthetic_ohlcv(n_rows=10)
 
     # Should not crash, but will have many nulls
-    result = _add_rsi(df, sample_config)
-    result = _add_atr(result, sample_config)
-    result = _add_macd(result, sample_config)
+    result = add_rsi(df, sample_config)
+    result = add_atr(result, sample_config)
+    result = add_macd(result, sample_config)
 
     # Should produce columns even with few rows
     assert "rsi_14" in result.columns
@@ -658,8 +658,8 @@ def test_4h_join_is_backward(sample_config: Config) -> None:
 def test_ema_crossover_columns(sample_config: Config) -> None:
     """Test that EMA crossover features are produced."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
-    result = _add_ema_crossover(df, sample_config)
+    df = add_atr(df, sample_config)
+    result = add_ema_crossover(df, sample_config)
 
     expected = ["close_vs_ema_34", "ema34_vs_ema89"]
     for col in expected:
@@ -677,7 +677,7 @@ def test_ema_crossover_columns(sample_config: Config) -> None:
 def test_bollinger_bands_columns(sample_config: Config) -> None:
     """Test that bb_width and bb_position columns are produced."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
+    df = add_atr(df, sample_config)
     result = _add_bollinger_bands(df, sample_config)
 
     assert "bb_width" in result.columns
@@ -690,7 +690,7 @@ def test_bollinger_bands_columns(sample_config: Config) -> None:
 def test_bollinger_position_bounded(sample_config: Config) -> None:
     """Test that bb_position is clipped to [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=300)
-    df = _add_atr(df, sample_config)
+    df = add_atr(df, sample_config)
     result = _add_bollinger_bands(df, sample_config)
 
     vals = result["bb_position"].drop_nulls().to_numpy()
@@ -705,7 +705,7 @@ def test_bollinger_position_bounded(sample_config: Config) -> None:
 def test_bollinger_width_positive(sample_config: Config) -> None:
     """Test that bb_width is positive for valid data."""
     df = create_synthetic_ohlcv(n_rows=300)
-    df = _add_atr(df, sample_config)
+    df = add_atr(df, sample_config)
     result = _add_bollinger_bands(df, sample_config)
 
     vals = result["bb_width"].drop_nulls().to_numpy()
@@ -723,7 +723,7 @@ def test_bollinger_width_positive(sample_config: Config) -> None:
 def test_volume_zscore_column(sample_config: Config) -> None:
     """Test volume_zscore_20 column is produced."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_volume_zscore(df, sample_config)
+    result = add_volume_zscore(df, sample_config)
     assert "volume_zscore_20" in result.columns
 
 
@@ -737,7 +737,7 @@ def test_volume_zscore_column(sample_config: Config) -> None:
 def test_log_returns_columns(sample_config: Config) -> None:
     """Test return_1h, return_4h, return_1d columns are produced."""
     df = create_synthetic_ohlcv(n_rows=200)
-    result = _add_log_returns(df, sample_config)
+    result = add_log_returns(df, sample_config)
 
     for col in ("return_1h", "return_4h", "return_1d"):
         assert col in result.columns, f"Missing return column: {col}"
@@ -753,8 +753,8 @@ def test_log_returns_columns(sample_config: Config) -> None:
 def test_high_low_range_column(sample_config: Config) -> None:
     """Test high_low_range_20 column is produced and positive."""
     df = create_synthetic_ohlcv(n_rows=200)
-    df = _add_atr(df, sample_config)
-    result = _add_high_low_range(df, sample_config)
+    df = add_atr(df, sample_config)
+    result = add_high_low_range(df, sample_config)
 
     assert "high_low_range_20" in result.columns
     vals = result["high_low_range_20"].drop_nulls().to_numpy()
@@ -805,7 +805,7 @@ def test_adx_range(sample_config: Config) -> None:
     values slightly above 100 in edge cases. We check non-negative + finite.
     """
     df = create_synthetic_ohlcv(n_rows=300)
-    result = _add_adx(df, sample_config)
+    result = add_adx(df, sample_config)
 
     assert "adx_14" in result.columns
     vals = result["adx_14"].drop_nulls().to_numpy()
@@ -842,7 +842,7 @@ def test_adx_trending_detection(sample_config: Config) -> None:
             "volume": np.ones(n) * 5000,
         }
     )
-    result = _add_adx(df, sample_config)
+    result = add_adx(df, sample_config)
     vals = result["adx_14"].drop_nulls().to_numpy()
 
     # For a strong uptrend, ADX should be well above 20 (trending threshold)
@@ -952,8 +952,8 @@ def test_regime_features_no_leakage(sample_config: Config) -> None:
     df_full = create_synthetic_ohlcv(n_rows=300)
     df_prefix = df_full.slice(0, 250)
 
-    result_full = _add_adx(df_full, sample_config)
-    result_prefix = _add_adx(df_prefix, sample_config)
+    result_full = add_adx(df_full, sample_config)
+    result_prefix = add_adx(df_prefix, sample_config)
 
     # First 250 values should be identical
     full_vals = result_full["adx_14"].to_numpy()[:250]

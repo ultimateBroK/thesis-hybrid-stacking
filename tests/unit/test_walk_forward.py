@@ -15,21 +15,21 @@ from thesis.shared.config import Config
 from thesis.stage_4_training.walk_forward.artifacts import _build_wf_history
 from thesis.stage_4_training.walk_forward.diagnostics import (
     _add_prediction_diagnostics,
-    _compute_per_class_metrics,
-    _counts_dict,
-    _pct_dict,
-    _window_dates,
+    _per_class_metrics,
+    _counts,
+    _pct,
+    _dates,
     _window_diagnostics,
 )
 from thesis.stage_4_training.walk_forward.feature_pipeline import (
-    _select_static_feature_cols,
+    select_static_cols,
 )
 from thesis.stage_4_training.walk_forward.predictions import (
     _add_confidence_columns,
-    _align_probability_matrix,
+    _align_proba,
     _label_suffix,
-    _one_hot_proba_columns,
-    _probability_columns,
+    one_hot_proba,
+    proba_columns,
     _validate_predictions,
     _write_prediction_manifest,
 )
@@ -222,7 +222,7 @@ class TestSelectStaticFeatureCols:
         config = Config()
         config.features.static_feature_cols = ["rsi_14", "adx_14"]
         df = pl.DataFrame({"rsi_14": [1.0], "adx_14": [2.0], "extra": [3.0]})
-        result = _select_static_feature_cols(config, df, ["extra"])
+        result = select_static_cols(config, df, ["extra"])
         assert result == ["rsi_14", "adx_14"]
 
     def test_fallback_when_config_cols_missing(self) -> None:
@@ -230,7 +230,7 @@ class TestSelectStaticFeatureCols:
         config = Config()
         config.features.static_feature_cols = ["nonexistent"]
         df = pl.DataFrame({"a": [1.0], "b": [2.0]})
-        result = _select_static_feature_cols(config, df, ["a", "b"])
+        result = select_static_cols(config, df, ["a", "b"])
         assert result == ["a", "b"]
 
     def test_fallback_filters_to_available(self) -> None:
@@ -238,7 +238,7 @@ class TestSelectStaticFeatureCols:
         config = Config()
         config.features.static_feature_cols = ["nonexistent"]
         df = pl.DataFrame({"a": [1.0], "c": [3.0]})
-        result = _select_static_feature_cols(config, df, ["a", "b", "c"])
+        result = select_static_cols(config, df, ["a", "b", "c"])
         assert "a" in result
         assert "c" in result
         assert "b" not in result
@@ -247,24 +247,24 @@ class TestSelectStaticFeatureCols:
 @pytest.mark.unit
 class TestCountsDict:
     def test_basic(self) -> None:
-        counts = _counts_dict(np.array([-1, 0, 1, -1, 0, 0]))
+        counts = _counts(np.array([-1, 0, 1, -1, 0, 0]))
         assert counts == {"-1": 2, "0": 3, "1": 1}
 
     def test_empty(self) -> None:
-        assert _counts_dict(np.array([], dtype=np.int32)) == {}
+        assert _counts(np.array([], dtype=np.int32)) == {}
 
     def test_single_class(self) -> None:
-        assert _counts_dict(np.array([1, 1, 1])) == {"1": 3}
+        assert _counts(np.array([1, 1, 1])) == {"1": 3}
 
 
 @pytest.mark.unit
 class TestPctDict:
     def test_basic(self) -> None:
-        result = _pct_dict({"1": 3, "0": 1})
+        result = _pct({"1": 3, "0": 1})
         assert result == {"1": 75.0, "0": 25.0}
 
     def test_empty(self) -> None:
-        assert _pct_dict({}) == {}
+        assert _pct({}) == {}
 
 
 @pytest.mark.unit
@@ -273,18 +273,18 @@ class TestWindowDates:
         df = pl.DataFrame(
             {"timestamp": [pl.datetime(2024, 1, 1), pl.datetime(2024, 1, 2)]}
         )
-        result = _window_dates(df)
+        result = _dates(df)
         assert result["start"] == str(pl.datetime(2024, 1, 1))
         assert result["end"] == str(pl.datetime(2024, 1, 2))
 
     def test_empty(self) -> None:
         df = pl.DataFrame({"timestamp": []}).cast({"timestamp": pl.Datetime})
-        result = _window_dates(df)
+        result = _dates(df)
         assert result == {"start": "", "end": ""}
 
     def test_no_timestamp_col(self) -> None:
         df = pl.DataFrame({"a": [1]})
-        result = _window_dates(df)
+        result = _dates(df)
         assert result == {"start": "", "end": ""}
 
 
@@ -330,7 +330,7 @@ class TestWindowDiagnostics:
 class TestComputePerClassMetrics:
     def test_perfect_predictions(self) -> None:
         y = np.array([-1, 0, 1, -1, 0, 1])
-        result = _compute_per_class_metrics(y, y)
+        result = _per_class_metrics(y, y)
         for cls_str in ["-1", "0", "1"]:
             assert result[cls_str]["precision"] == 1.0
             assert result[cls_str]["recall"] == 1.0
@@ -339,7 +339,7 @@ class TestComputePerClassMetrics:
     def test_partial_misses(self) -> None:
         preds = np.array([-1, 0, 1, 0, -1, 1])
         y = np.array([-1, 0, 1, -1, 0, 1])
-        result = _compute_per_class_metrics(preds, y)
+        result = _per_class_metrics(preds, y)
         assert isinstance(result, dict)
         assert "-1" in result
 
@@ -358,7 +358,7 @@ class TestLabelSuffix:
 class TestOneHotProbaColumns:
     def test_basic(self) -> None:
         preds = np.array([-1, 0, 1])
-        result = _one_hot_proba_columns(preds)
+        result = one_hot_proba(preds)
         assert "pred_proba_class_minus1" in result
         assert "pred_proba_class_0" in result
         assert "pred_proba_class_1" in result
@@ -368,7 +368,7 @@ class TestOneHotProbaColumns:
 
     def test_custom_prefix(self) -> None:
         preds = np.array([0, 1])
-        result = _one_hot_proba_columns(preds, prefix="proba_")
+        result = one_hot_proba(preds, prefix="proba_")
         assert "proba_0" in result
         assert "proba_1" in result
 
@@ -379,7 +379,7 @@ class TestAlignProbabilityMatrix:
         # Model outputs in order [0, 1, -1]
         proba = np.array([[0.1, 0.2, 0.7], [0.3, 0.4, 0.3]])
         class_order = [0, 1, -1]
-        result = _align_probability_matrix(proba, class_order)
+        result = _align_proba(proba, class_order)
         assert result.shape == (2, 3)
         # Column 0 should be class -1 (index 2 in original) = 0.7, 0.3
         np.testing.assert_allclose(result[:, 0], [0.7, 0.3])
@@ -390,7 +390,7 @@ class TestAlignProbabilityMatrix:
         # Binary model — only classes [0, 1]
         proba = np.array([[0.6, 0.4], [0.3, 0.7]])
         class_order = [0, 1]
-        result = _align_probability_matrix(proba, class_order)
+        result = _align_proba(proba, class_order)
         assert result.shape == (2, 3)
         # Column 0 is class -1 → should be zeros
         np.testing.assert_allclose(result[:, 0], [0.0, 0.0])
@@ -401,7 +401,7 @@ class TestProbabilityColumns:
     def test_basic(self) -> None:
         proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.3, 0.6]])
         class_order = [-1, 0, 1]
-        result = _probability_columns(proba, class_order)
+        result = proba_columns(proba, class_order)
         assert "pred_proba_class_minus1" in result
         assert "pred_proba_class_0" in result
         assert "pred_proba_class_1" in result

@@ -117,7 +117,7 @@ class MLSignalStrategy(Strategy):
         if (
             self.min_bars_between_trades > 0
             and self._last_exit_bar > 0
-            and (len(self.data) - self._last_exit_bar) < self.min_bars_between_trades
+            and (len(self.data) - self._last_exit_bar) <= self.min_bars_between_trades
         ):
             return False
 
@@ -145,6 +145,8 @@ class MLSignalStrategy(Strategy):
         if self._position_was_open and not self.position:
             self._last_exit_bar = len(self.data)
             self._position_was_open = False
+            self._entry_bar.pop("long", None)
+            self._entry_bar.pop("short", None)
 
         self._update_risk_state()
 

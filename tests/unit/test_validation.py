@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from thesis.stage_4_training.validation import (
     WalkForwardWindow,
-    apply_event_time_purge,
-    apply_purge_embargo,
+    _apply_event_purge,
+    _apply_purge_embargo,
     generate_windows,
     log_windows,
 )
@@ -54,7 +54,7 @@ class TestWalkForwardWindow:
 
 class TestApplyPurgeEmbargo:
     def test_basic_purge(self):
-        result = apply_purge_embargo(
+        result = _apply_purge_embargo(
             train_start=0,
             raw_train_end=1000,
             test_start=1000,
@@ -67,7 +67,7 @@ class TestApplyPurgeEmbargo:
         assert result.test_start_idx == 1075  # 1000 + 25 + 50
 
     def test_no_purge(self):
-        result = apply_purge_embargo(
+        result = _apply_purge_embargo(
             train_start=0,
             raw_train_end=1000,
             test_start=1000,
@@ -80,7 +80,7 @@ class TestApplyPurgeEmbargo:
         assert result.test_start_idx == 1000
 
     def test_returns_none_if_train_too_small(self):
-        result = apply_purge_embargo(
+        result = _apply_purge_embargo(
             train_start=0,
             raw_train_end=10,
             test_start=10,
@@ -95,7 +95,7 @@ class TestApplyEventTimePurge:
     def test_removes_train_events_reaching_test_start(self):
         event_end = np.arange(200)
         event_end[90:100] = 105
-        result = apply_event_time_purge(
+        result = _apply_event_purge(
             train_start=0,
             raw_train_end=100,
             test_start=100,
@@ -109,7 +109,7 @@ class TestApplyEventTimePurge:
 
     def test_returns_none_when_all_train_events_overlap(self):
         event_end = np.full(100, 100)
-        result = apply_event_time_purge(
+        result = _apply_event_purge(
             train_start=0,
             raw_train_end=50,
             test_start=50,
@@ -135,7 +135,7 @@ class TestApplyEventTimePurge:
         assert windows[0].test_start_idx % 1000 == 5
 
     def test_returns_none_if_test_too_small(self):
-        result = apply_purge_embargo(
+        result = _apply_purge_embargo(
             train_start=0,
             raw_train_end=1000,
             test_start=1000,

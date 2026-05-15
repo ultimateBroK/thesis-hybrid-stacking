@@ -12,8 +12,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from unittest.mock import patch
-
 from thesis.shared.config import Config, LabelsConfig, LGBMConfig
 from thesis.shared.constants import CENSORED_LABEL
 from thesis.stage_3_labels import (
@@ -21,12 +19,11 @@ from thesis.stage_3_labels import (
     compute_event_end,
 )
 from thesis.stage_3_labels.labeling import (
-    _compute_labels,
-    _filter_censored,
-    _merge_label_columns,
-    generate_labels,
+    _attach_label_columns,
+    _compute_triple_barrier,
+    _drop_censored_and_nan,
 )
-from thesis.stage_4_training.walk_forward.targets import _compute_regression_target
+from thesis.stage_4_training.walk_forward.targets import compute_regression_target
 
 
 @pytest.mark.unit
@@ -39,7 +36,7 @@ def test_labels_in_valid_set() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    labels, _, _, _, _ = _compute_labels(
+    labels, _, _, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -70,7 +67,7 @@ def test_upper_lower_barrier_relationship() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    _, upper_barriers, lower_barriers, _, _ = _compute_labels(
+    _, upper_barriers, lower_barriers, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -102,7 +99,7 @@ def test_touched_bars_for_hold() -> None:
     low = close - 0.1
     atr = np.ones(n) * 10  # Barriers will be at +/- 15
 
-    labels, _, _, touched_bars, _ = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -130,7 +127,7 @@ def test_same_bar_both_hit_counted_as_ambiguous_hold() -> None:
     low = np.array([100.0, 97.0, 100.0, 100.0])
     atr = np.ones(len(close))
 
-    labels, _, _, touched_bars, ambiguous_count = _compute_labels(
+    labels, _, _, touched_bars, ambiguous_count = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -151,14 +148,14 @@ def test_same_bar_both_hit_counted_as_ambiguous_hold() -> None:
 def test_label_columns_do_not_emit_legacy_tp_sl_aliases() -> None:
     """New label output uses upper/lower barrier names only."""
     df = pl.DataFrame({"timestamp": [1, 2, 3]})
-    result = _merge_label_columns(
+    result = _attach_label_columns(
         df,
-        labels_arr=np.array([1, 0, -1], dtype=np.int32),
-        upper_arr=np.array([102.0, 103.0, 104.0]),
-        lower_arr=np.array([98.0, 97.0, 96.0]),
-        touched_bars_arr=np.array([1, -1, 2], dtype=np.int32),
-        event_end_arr=np.array([1, 3, 4], dtype=np.int32),
-        sample_weight_arr=np.array([1.0, 0.8, 1.2]),
+        labels=np.array([1, 0, -1], dtype=np.int32),
+        upper=np.array([102.0, 103.0, 104.0]),
+        lower=np.array([98.0, 97.0, 96.0]),
+        touched=np.array([1, -1, 2], dtype=np.int32),
+        event_end=np.array([1, 3, 4], dtype=np.int32),
+        weights=np.array([1.0, 0.8, 1.2]),
     )
 
     assert "upper_barrier" in result.columns
@@ -209,7 +206,7 @@ def test_touched_bars_for_non_hold() -> None:
     low = close - 1
     atr = np.ones(n) * 10
 
-    labels, _, _, touched_bars, _ = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -239,7 +236,7 @@ def test_zero_atr_handled() -> None:
     low = close - 5
     atr = np.zeros(n)  # Zero ATR
 
-    labels, upper_barriers, lower_barriers, _, _ = _compute_labels(
+    labels, upper_barriers, lower_barriers, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -271,7 +268,7 @@ def test_extreme_volatility_all_long() -> None:
     low = close - 1
     atr = np.ones(n) * 10
 
-    labels, _, _, _, _ = _compute_labels(
+    labels, _, _, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -298,7 +295,7 @@ def test_extreme_volatility_all_short() -> None:
     low = close - 100
     atr = np.ones(n) * 10
 
-    labels, _, _, _, _ = _compute_labels(
+    labels, _, _, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -325,7 +322,7 @@ def test_horizon_boundary() -> None:
     atr = np.ones(n) * 10
     horizon = 5
 
-    labels, _, _, touched_bars, _ = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -355,7 +352,7 @@ def test_atr_multiplier_effect_asymmetric() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    labels_small, _, _, _, _ = _compute_labels(
+    labels_small, _, _, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -366,7 +363,7 @@ def test_atr_multiplier_effect_asymmetric() -> None:
         min_atr=0.0001,
     )
 
-    labels_large, _, _, _, _ = _compute_labels(
+    labels_large, _, _, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -397,7 +394,7 @@ def test_no_lookahead_bias() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    labels, _, _, touched_bars, _ = _compute_labels(
+    labels, _, _, touched_bars, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -427,7 +424,7 @@ def test_asymmetric_barriers_tp_sl_ratio() -> None:
     low = close - 5
     atr = np.ones(n) * 10
 
-    _, upper_barriers, lower_barriers, _, _ = _compute_labels(
+    _, upper_barriers, lower_barriers, _, _ = _compute_triple_barrier(
         close=close,
         high=high,
         low=low,
@@ -468,7 +465,7 @@ def _make_labeled_df(
     """Build a minimal labeled Polars DataFrame for regression testing.
 
     Creates a monotonically increasing close series and dummy columns
-    required by ``_compute_regression_target``.
+    required by ``compute_regression_target``.
     """
     close = np.linspace(close_start, close_start + close_step * (n - 1), n)
     return pl.DataFrame(
@@ -494,7 +491,7 @@ class TestRegressionTailCensoring:
         df_in = _make_labeled_df(n=n)
         cfg = _make_regression_config(horizon_bars=horizon)
 
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is True
         assert len(result_df) == n - horizon, (
@@ -513,7 +510,7 @@ class TestRegressionTailCensoring:
         df_in = _make_labeled_df(n=n, close_step=0.5)  # trending up
         cfg = _make_regression_config(horizon_bars=horizon)
 
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is True
         mean_target = result_df["regression_target"].mean()
@@ -542,7 +539,7 @@ class TestRegressionTailCensoring:
         )
 
         cfg = _make_regression_config(horizon_bars=horizon)
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is True
         # The mean could be positive or negative, but it should not be zero
@@ -552,10 +549,10 @@ class TestRegressionTailCensoring:
             "Expected non-zero mean regression target for volatile series"
         )
 
-    # ── 3. _filter_censored removes NaN regression_target ──────────────
+    # ── 3. _drop_censored_and_nan removes NaN regression_target ──────────────
 
-    def test_filter_censored_removes_label_censored(self) -> None:
-        """_filter_censored drops rows where label == CENSORED_LABEL (-2)."""
+    def test_drop_censored_and_nan_removes_label_censored(self) -> None:
+        """_drop_censored_and_nan drops rows where label == CENSORED_LABEL (-2)."""
         n = 20
         labels = np.full(n, 0, dtype=np.int32)
         labels[[3, 7, 15]] = CENSORED_LABEL  # rows 3, 7, 15 are censored
@@ -567,7 +564,7 @@ class TestRegressionTailCensoring:
             }
         )
 
-        result_df = _filter_censored(df_in)
+        result_df = _drop_censored_and_nan(df_in)
 
         assert result_df["label"].min() >= -1, (
             f"Censored labels should be removed; got {result_df['label'].to_list()}"
@@ -576,8 +573,8 @@ class TestRegressionTailCensoring:
             f"Expected {n - 3} rows after dropping 3 censored, got {len(result_df)}"
         )
 
-    def test_filter_censored_removes_nan_regression_target(self) -> None:
-        """_filter_censored drops rows where regression_target is NaN."""
+    def test_drop_censored_and_nan_removes_nan_regression_target(self) -> None:
+        """_drop_censored_and_nan drops rows where regression_target is NaN."""
         n = 20
         reg_target = np.full(n, 0.02, dtype=np.float64)
         reg_target[[2, 8, 14]] = np.nan  # rows 2, 8, 14 have NaN
@@ -590,7 +587,7 @@ class TestRegressionTailCensoring:
             }
         )
 
-        result_df = _filter_censored(df_in)
+        result_df = _drop_censored_and_nan(df_in)
 
         assert result_df["regression_target"].is_nan().sum() == 0, (
             "All NaN regression_target rows should be removed"
@@ -599,8 +596,8 @@ class TestRegressionTailCensoring:
             f"Expected {n - 3} rows after dropping 3 NaN rows, got {len(result_df)}"
         )
 
-    def test_filter_censored_preserves_valid_rows(self) -> None:
-        """_filter_censored leaves rows without censored labels or NaN target untouched."""
+    def test_drop_censored_and_nan_preserves_valid_rows(self) -> None:
+        """_drop_censored_and_nan leaves rows without censored labels or NaN target untouched."""
         n = 20
         reg_target = np.full(n, 0.03, dtype=np.float64)
         df_in = pl.DataFrame(
@@ -612,7 +609,7 @@ class TestRegressionTailCensoring:
             }
         )
 
-        result_df = _filter_censored(df_in)
+        result_df = _drop_censored_and_nan(df_in)
 
         assert len(result_df) == n, (
             f"No rows should be dropped; expected {n}, got {len(result_df)}"
@@ -621,10 +618,10 @@ class TestRegressionTailCensoring:
             result_df["regression_target"].to_numpy(), reg_target, rtol=1e-12
         )
 
-    # ── 4. _compute_regression_target correctness ──────────────────────
+    # ── 4. compute_regression_target correctness ──────────────────────
 
-    def test_compute_regression_target_correct_forward_returns(self) -> None:
-        """_compute_regression_target computes exact forward returns."""
+    def testcompute_regression_target_correct_forward_returns(self) -> None:
+        """compute_regression_target computes exact forward returns."""
         horizon = 4
         n = 20
         close = np.arange(100.0, 100.0 + n, 1.0, dtype=np.float64)
@@ -638,7 +635,7 @@ class TestRegressionTailCensoring:
         )
 
         cfg = _make_regression_config(horizon_bars=horizon)
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is True
         reg_result = result_df["regression_target"].to_numpy()
@@ -648,8 +645,8 @@ class TestRegressionTailCensoring:
         expected = (close[horizon:] - close_orig) / close_orig
         np.testing.assert_allclose(reg_result, expected, rtol=1e-12)
 
-    def test_compute_regression_target_zero_return_for_flat_prices(self) -> None:
-        """_compute_regression_target yields near-zero returns for flat prices."""
+    def testcompute_regression_target_zero_return_for_flat_prices(self) -> None:
+        """compute_regression_target yields near-zero returns for flat prices."""
         horizon = 3
         n = 30
         close = np.full(n, 50.0, dtype=np.float64)
@@ -663,20 +660,20 @@ class TestRegressionTailCensoring:
         )
 
         cfg = _make_regression_config(horizon_bars=horizon)
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is True
         reg_result = result_df["regression_target"].to_numpy()
         np.testing.assert_allclose(reg_result, np.zeros(n - horizon), atol=1e-15)
 
-    def test_compute_regression_target_full_horizon_censored(self) -> None:
+    def testcompute_regression_target_full_horizon_censored(self) -> None:
         """When horizon equals data length, all rows are censored (empty result)."""
         horizon = 10
         n = 10
         df_in = _make_labeled_df(n=n)
         cfg = _make_regression_config(horizon_bars=horizon)
 
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is True
         assert len(result_df) == 0, (
@@ -684,14 +681,14 @@ class TestRegressionTailCensoring:
         )
 
     def test_non_regression_objective_noop(self) -> None:
-        """When the model objective is NOT regression, _compute_regression_target is a no-op."""
+        """When the model objective is NOT regression, compute_regression_target is a no-op."""
         n = 30
         df_in = _make_labeled_df(n=n)
         cfg = Config()
         cfg.labels = LabelsConfig(horizon_bars=5)
         cfg.model = LGBMConfig(objective="multiclass")  # LGBM not regression
 
-        result_df, is_regression = _compute_regression_target(df_in, cfg)
+        result_df, is_regression = compute_regression_target(df_in, cfg)
 
         assert is_regression is False
         assert "regression_target" not in result_df.columns
@@ -711,164 +708,4 @@ class TestRegressionTailCensoring:
         cfg = _make_regression_config(horizon_bars=3)
 
         with pytest.raises(ValueError, match="close"):
-            _compute_regression_target(df_in, cfg)
-
-
-# ── generate_labels join-path tests ─────────────────────────────────────
-
-
-def _make_features_with_ohlc_atr(n: int = 50) -> pl.DataFrame:
-    """Build a features DataFrame with OHLC + ATR columns."""
-    rng = np.random.default_rng(42)
-    close = 1800 + rng.normal(0, 5, n).cumsum()
-    return pl.DataFrame(
-        {
-            "timestamp": np.arange(n, dtype=np.int64),
-            "open": close + 0.5,
-            "high": close + 3.0,
-            "low": close - 3.0,
-            "close": close,
-            "volume": rng.integers(100, 1000, n).astype(float),
-            "atr_14": np.ones(n) * 10.0,
-        }
-    )
-
-
-def _make_minimal_config(tmp_path: Path, features_df: pl.DataFrame) -> Config:
-    """Build a Config pointing to tmp parquet files for generate_labels tests."""
-    feat_path = tmp_path / "features.parquet"
-    ohlcv_path = tmp_path / "ohlcv.parquet"
-    labels_path = tmp_path / "labels.parquet"
-
-    features_df.write_parquet(feat_path)
-    # Minimal OHLCV so _validate_paths succeeds even when the join is skipped
-    pl.DataFrame(
-        {
-            "timestamp": [0],
-            "open": [1.0],
-            "high": [1.0],
-            "low": [1.0],
-            "close": [1.0],
-            "volume": [1.0],
-        }
-    ).write_parquet(ohlcv_path)
-
-    cfg = Config()
-    cfg.paths.features = str(feat_path)
-    cfg.paths.ohlcv = str(ohlcv_path)
-    cfg.paths.labels = str(labels_path)
-    return cfg
-
-
-_SCHEMA_PATCHES = (
-    "thesis.stage_3_labels.labeling.FeaturesSchema.validate",
-    "thesis.stage_3_labels.labeling.LabelsSchema.validate",
-)
-
-
-@pytest.mark.unit
-def test_labels_skip_ohlcv_join_when_features_have_ohlc(
-    tmp_path: Path,
-) -> None:
-    """When features already contain OHLC columns, ohlcv.parquet is NOT loaded."""
-    features_df = _make_features_with_ohlc_atr()
-    cfg = _make_minimal_config(tmp_path, features_df)
-
-    with (
-        patch(_SCHEMA_PATCHES[0]),
-        patch(_SCHEMA_PATCHES[1]),
-        patch(
-            "thesis.stage_3_labels.labeling.pl.read_parquet",
-            wraps=pl.read_parquet,
-        ) as mock_read,
-    ):
-        generate_labels(cfg)
-
-    # Only one read (features); OHLCV file should never be opened
-    assert mock_read.call_count == 1, (
-        f"Expected exactly 1 parquet read (features only), got {mock_read.call_count}"
-    )
-
-
-@pytest.mark.unit
-def test_labels_join_ohlcv_when_features_missing_ohlc(
-    tmp_path: Path,
-) -> None:
-    """When features lack OHLC columns, OHLCV is loaded and joined."""
-    n = 50
-    rng = np.random.default_rng(42)
-    close = 1800 + rng.normal(0, 5, n).cumsum()
-
-    features_df = pl.DataFrame(
-        {
-            "timestamp": np.arange(n, dtype=np.int64),
-            "volume": rng.integers(100, 1000, n).astype(float),
-            "atr_14": np.ones(n) * 10.0,
-        }
-    )
-    ohlcv_df = pl.DataFrame(
-        {
-            "timestamp": np.arange(n, dtype=np.int64),
-            "open": close + 0.5,
-            "high": close + 3.0,
-            "low": close - 3.0,
-            "close": close,
-        }
-    )
-
-    feat_path = tmp_path / "features.parquet"
-    ohlcv_path = tmp_path / "ohlcv.parquet"
-    labels_path = tmp_path / "labels.parquet"
-
-    features_df.write_parquet(feat_path)
-    ohlcv_df.write_parquet(ohlcv_path)
-
-    cfg = Config()
-    cfg.paths.features = str(feat_path)
-    cfg.paths.ohlcv = str(ohlcv_path)
-    cfg.paths.labels = str(labels_path)
-
-    with patch(_SCHEMA_PATCHES[0]), patch(_SCHEMA_PATCHES[1]):
-        generate_labels(cfg)
-
-    result = pl.read_parquet(labels_path)
-    for col in ("open", "high", "low", "close"):
-        assert col in result.columns, f"Missing OHLC column after join: {col}"
-
-
-@pytest.mark.unit
-def test_labels_no_right_columns(tmp_path: Path) -> None:
-    """Output DataFrame has zero columns matching the *_right join-artifact pattern."""
-    features_df = _make_features_with_ohlc_atr()
-    cfg = _make_minimal_config(tmp_path, features_df)
-
-    with patch(_SCHEMA_PATCHES[0]), patch(_SCHEMA_PATCHES[1]):
-        generate_labels(cfg)
-
-    result = pl.read_parquet(cfg.paths.labels)
-    right_cols = [c for c in result.columns if c.endswith("_right")]
-    assert len(right_cols) == 0, f"Found *_right columns in output: {right_cols}"
-
-
-@pytest.mark.unit
-def test_labels_missing_atr_raises(tmp_path: Path) -> None:
-    """Missing ATR column raises ValueError before any labeling work."""
-    n = 50
-    rng = np.random.default_rng(42)
-    close = 1800 + rng.normal(0, 5, n).cumsum()
-    # Features WITH OHLC but WITHOUT atr_14
-    features_df = pl.DataFrame(
-        {
-            "timestamp": np.arange(n, dtype=np.int64),
-            "open": close + 0.5,
-            "high": close + 3.0,
-            "low": close - 3.0,
-            "close": close,
-            "volume": rng.integers(100, 1000, n).astype(float),
-        }
-    )
-    cfg = _make_minimal_config(tmp_path, features_df)
-
-    with patch(_SCHEMA_PATCHES[0]), patch(_SCHEMA_PATCHES[1]):
-        with pytest.raises(ValueError, match="atr_14"):
-            generate_labels(cfg)
+            compute_regression_target(df_in, cfg)

@@ -14,8 +14,8 @@ import pandas as pd
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
 
-from thesis.shared.config import Config
 from thesis.shared import baselines as baselines_mod
+from thesis.shared.config import Config
 from thesis.stage_6_reporting.benchmarks import model_label
 
 logger = logging.getLogger("thesis.report")
@@ -156,7 +156,7 @@ def build_model_comparison_rows(
             df = pl.read_csv(preds_path)
             y_true = df["true_label"].to_numpy()
             close_path = Path(config.paths.ohlcv)
-            y_returns = y_true.astype(np.float64)
+            y_returns = np.zeros(len(y_true), dtype=np.float64)
             if close_path.exists():
                 ohlcv = pl.read_parquet(close_path, columns=["close"])
                 close = ohlcv["close"].to_numpy()
