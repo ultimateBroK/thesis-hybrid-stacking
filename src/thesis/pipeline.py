@@ -1,8 +1,4 @@
-"""Pipeline orchestration for the sequential thesis workflow.
-
-Runs data preparation, feature engineering, labeling, model training,
-optional backtesting, and report generation in order.
-"""
+"""Pipeline: data → features → labels → train → backtest → report."""
 
 from __future__ import annotations
 
@@ -24,11 +20,7 @@ from thesis.stage_6_reporting import generate_report
 
 logger = logging.getLogger("thesis.pipeline")
 
-
-# Cache fingerprinting
-
-# Config sections whose values affect each stage's output.
-# Used by _cache_hash to fingerprint the inputs.
+# Config sections used for cache fingerprinting per stage.
 _STAGE_CONFIG_SECTIONS: dict[int, list[str]] = {
     1: ["data"],
     2: ["features"],
@@ -40,15 +32,7 @@ _STAGE_CONFIG_SECTIONS: dict[int, list[str]] = {
 
 
 def _cache_hash(config: Config, stage_num: int) -> str:
-    """Compute an 8-char SHA-256 fingerprint of config sections relevant to a stage.
-
-    Args:
-        config: Application configuration.
-        stage_num: Pipeline stage number (1–6).
-
-    Returns:
-        Hex digest string, or empty string if no sections are mapped.
-    """
+    """8-char SHA-256 fingerprint of stage-relevant config sections."""
     sections = _STAGE_CONFIG_SECTIONS.get(stage_num, [])
     if not sections:
         return ""
@@ -69,17 +53,12 @@ def _resolve_cache_path(
     config: Config,
     stage_num: int,
 ) -> Path | None:
-    """Resolve the effective cache check path based on invalidation strategy.
+    """Return cache Path or None (disabled).
 
-    Args:
-        base: Raw cache path (e.g. ``data/processed/features.parquet``).
-        invalidation: One of ``"path"``, ``"hash"``, ``"none"``.
-        config: Application configuration.
-        stage_num: Pipeline stage number.
-
-    Returns:
-        The resolved ``Path`` to use for cache existence checks, or
-        ``None`` when caching is disabled.
+    ``invalidation`` controls strategy:
+    - ``path``: use base path directly
+    - ``hash``: embed config fingerprint into stem
+    - ``none``: caching disabled, always recompute
     """
     if base is None or invalidation == "none":
         return None
@@ -87,14 +66,9 @@ def _resolve_cache_path(
     p = Path(base)
     if invalidation == "hash":
         h = _cache_hash(config, stage_num)
-        if h:
-            return p.with_stem(f"{p.stem}_{h}")
-        return p
+        return p.with_stem(f"{p.stem}_{h}") if h else p
 
     return p
-
-
-# Stage runner with cache checking
 
 
 def _run_stage(
@@ -104,20 +78,7 @@ def _run_stage(
     cache_path: str | Path | None,
     work_fn: callable,
 ) -> None:
-    """Execute a pipeline stage with cache checking.
-
-    Checks the workflow flag and optional cache file; skips the stage
-    if disabled or cached unless ``force_rerun`` is set.
-
-    Args:
-        stage_num: Stage number for console display.
-        config: Application configuration.
-        flag_name: Workflow boolean flag name on ``config.workflow``.
-        cache_path: Path to the cached output file, or ``None`` for
-            no cache check.
-        work_fn: Callable ``(Config) -> None`` that performs the
-            actual stage work.
-    """
+    """Execute stage if enabled, skip on cache hit unless force_rerun."""
     flag = getattr(config.workflow, flag_name, False)
     if not flag:
         stage_skip(stage_num, "disabled")
@@ -137,62 +98,40 @@ def _run_stage(
     stage_header(stage_num)
     work_fn(config)
 
-    # Create cache marker so subsequent runs with the same config skip.
+    # Touch cache marker so later runs skip.
     if effective is not None and not effective.exists():
         effective.touch()
 
 
 def _run_backtest_with_barrier_guard(config: Config) -> None:
-    """Run backtest only when label and execution ATR barriers match."""
+    """Backtest only when label and execution ATR barriers match."""
     label_tp = config.labels.atr_tp_multiplier
     label_sl = config.labels.atr_sl_multiplier
     backtest_tp = config.backtest.atr_tp_multiplier
     backtest_sl = config.backtest.atr_stop_multiplier
     if label_tp != backtest_tp or label_sl != backtest_sl:
         raise ValueError(
-            "Label/Backtest ATR barrier mismatch: "
-            f"labels(tp={label_tp}, sl={label_sl}) != "
-            f"backtest(tp={backtest_tp}, sl={backtest_sl}). "
-            "Expected matching multipliers so training target and "
-            "execution exits measure the same event."
+            f"Label/Backtest ATR mismatch: labels(tp={label_tp}, sl={label_sl}) "
+            f"!= backtest(tp={backtest_tp}, sl={backtest_sl}). "
+            "Training target and execution exits must measure same event."
         )
     run_backtest(config)
 
 
-# Main pipeline
-
-
 def run_pipeline(config: Config) -> None:
-    """Execute the full thesis pipeline.
-
-    Runs all six stages in order:
-
-    1. Data preparation — download and cache OHLCV bars.
-    2. Feature engineering — compute technical indicators.
-    3. Triple-barrier labeling — generate directional labels.
-    4. Model training — walk-forward LightGBM or Hybrid Stacking.
-    5. Backtesting — optional simulation of model signals.
-    6. Report generation — write Markdown and HTML artefacts.
-
-    Args:
-        config: Loaded application configuration.
-    """
-    # Stage 1: Prepare OHLCV from raw ticks
+    """Run full pipeline: data → features → labels → train → backtest → report."""
+    # Stage 1: OHLCV from raw ticks.
     _run_stage(1, config, "run_data_pipeline", config.paths.ohlcv, generate_data)
 
-    # Stage 2: Features
+    # Stage 2: Technical indicators.
     _run_stage(
-        2,
-        config,
-        "run_feature_engineering",
-        config.paths.features,
-        generate_features,
+        2, config, "run_feature_engineering", config.paths.features, generate_features
     )
 
-    # Stage 3: Labels
+    # Stage 3: Triple-barrier directional labels.
     _run_stage(3, config, "run_label_generation", config.paths.labels, generate_labels)
 
-    # Stage 4: Training
+    # Stage 4: Walk-forward LightGBM or Hybrid Stacking.
     logger.info(
         "Using %s (%s architecture)",
         "walk-forward sliding window"
@@ -206,23 +145,11 @@ def run_pipeline(config: Config) -> None:
     else:
         stage_skip(4, "disabled")
 
-    # Stage 5: Backtest (Optional Application Demo)
-    _run_stage(
-        5,
-        config,
-        "run_backtest",
-        None,
-        _run_backtest_with_barrier_guard,
-    )
+    # Stage 5: Optional backtest simulation.
+    _run_stage(5, config, "run_backtest", None, _run_backtest_with_barrier_guard)
 
-    # Stage 6: Report
-    _run_stage(
-        6,
-        config,
-        "run_reporting",
-        None,
-        generate_report,
-    )
+    # Stage 6: Markdown + HTML artefacts.
+    _run_stage(6, config, "run_reporting", None, generate_report)
 
     console.print()
     console.rule("[bold green]Pipeline Complete[/]")
