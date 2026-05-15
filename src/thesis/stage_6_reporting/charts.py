@@ -16,6 +16,7 @@ logger = logging.getLogger("thesis.report")
 def equity_series_from_closed_trades(
     trades: list[dict], initial_capital: float
 ) -> tuple[list, list]:
+    """Extract time and equity lists from closed trades."""
     times = [pd.to_datetime(trades[0]["entry_time"])]
     equity = [initial_capital]
     for t in trades:
@@ -25,6 +26,7 @@ def equity_series_from_closed_trades(
 
 
 def plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None:
+    """Render equity curve chart."""
     if not trades:
         return
 
@@ -57,6 +59,7 @@ def plot_equity_curve(trades: list[dict], config: Config, out_dir: Path) -> None
 
 
 def load_feature_importance(config: Config, out_dir: Path) -> dict:
+    """Load feature importance JSON."""
     fi_path = (
         Path(config.paths.session_dir) / "reports" / "feature_importance.json"
         if config.paths.session_dir
@@ -69,6 +72,7 @@ def load_feature_importance(config: Config, out_dir: Path) -> dict:
 
 
 def plot_feature_importance(feature_importance: dict, out_dir: Path) -> None:
+    """Render feature importance chart."""
     if not feature_importance:
         return
 

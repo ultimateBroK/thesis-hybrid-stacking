@@ -19,6 +19,7 @@ BARS_PER_YEAR = H1_BARS_PER_YEAR
 
 
 def model_label(config: Config) -> str:
+    """Return human-readable model label from config."""
     architecture = config.model.architecture
     if architecture in ("static", "lgbm"):
         return "LightGBM"
@@ -28,6 +29,7 @@ def model_label(config: Config) -> str:
 
 
 def annualized_sharpe(returns: np.ndarray, bars_per_year: int = BARS_PER_YEAR) -> float:
+    """Annualized Sharpe ratio from bar returns."""
     std = float(np.std(returns, ddof=1))
     if std == 0 or np.isnan(std):
         return 0.0
@@ -35,6 +37,7 @@ def annualized_sharpe(returns: np.ndarray, bars_per_year: int = BARS_PER_YEAR) -
 
 
 def max_drawdown_pct(equity: np.ndarray) -> float:
+    """Maximum drawdown percentage from equity curve."""
     if len(equity) < 2:
         return 0.0
     peak = np.maximum.accumulate(equity)
@@ -45,6 +48,7 @@ def max_drawdown_pct(equity: np.ndarray) -> float:
 def equity_curve_from_bar_returns(
     returns: np.ndarray, initial_capital: float
 ) -> np.ndarray:
+    """Build equity curve from bar returns."""
     equity = np.empty(len(returns) + 1)
     equity[0] = initial_capital
     for i, r in enumerate(returns):
@@ -55,6 +59,7 @@ def equity_curve_from_bar_returns(
 def compute_random_strategy(
     returns: np.ndarray, initial_capital: float, leverage: int, seed: int
 ) -> dict:
+    """Random signal benchmark."""
     rng = np.default_rng(seed)
     signals = rng.choice([-1, 1], size=len(returns))
     leveraged = returns * signals * leverage
@@ -79,6 +84,7 @@ def compute_random_strategy(
 def load_close_prices_for_benchmark(
     test_data_path: Path, hybrid_metrics: dict, config: Config
 ) -> np.ndarray | None:
+    """Load close prices for benchmark comparison."""
     is_static = config.validation.method == "static"
     if test_data_path.exists() and is_static:
         try:
@@ -90,7 +96,8 @@ def load_close_prices_for_benchmark(
             )
     elif test_data_path.exists() and not is_static:
         logger.warning(
-            "Static test file found but workflow is walk-forward — ignoring stale test_data"
+            "Static test file found but workflow is walk-forward — "
+            "ignoring stale test_data"
         )
 
     ohlcv_path = Path(config.paths.ohlcv)
@@ -132,6 +139,7 @@ def load_close_prices_for_benchmark(
 def compute_benchmark_comparison(
     test_data_path: Path, hybrid_metrics: dict, config: Config
 ) -> list[dict]:
+    """Build benchmark comparison table."""
     close = load_close_prices_for_benchmark(test_data_path, hybrid_metrics, config)
     if close is None or len(close) < 2:
         return []

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import json
 import logging
-from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +12,8 @@ import polars as pl
 from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
-from thesis.stage_6_reporting.sections.data import _tbl_row
 from thesis.stage_6_reporting.comparison import parse_date
+from thesis.stage_6_reporting.sections.data import _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
@@ -21,6 +21,7 @@ logger = logging.getLogger("thesis.report")
 def render_oof_vs_oos_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
+    """Render OOF vs OOS generalization section."""
     if heading is None:
         heading = "## OOF vs OOS Generalization Check"
 
@@ -210,7 +211,8 @@ def render_oof_vs_oos_section(
         L.append(heading)
         L.append("")
         L.append(
-            "*Insufficient data for OOF/OOS comparison — no test predictions available.*"
+            "*Insufficient data for OOF/OOS comparison — "
+            "no test predictions available.*"
         )
         L.append("")
         return

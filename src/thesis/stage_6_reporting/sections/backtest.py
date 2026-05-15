@@ -28,6 +28,7 @@ logger = logging.getLogger("thesis.report")
 
 
 def compute_avg_win_loss_ratio(trades: list[dict]) -> float | None:
+    """Average win / average loss from trades list."""
     wins = [t["pnl"] for t in trades if t["pnl"] > 0]
     losses = [t["pnl"] for t in trades if t["pnl"] < 0]
     if not wins or not losses:
@@ -45,6 +46,7 @@ def render_metric_zones_section(
     trades: list[dict] | None = None,
     heading: str | None = None,
 ) -> None:
+    """Render metric quality zones section."""
     if heading is None:
         heading = "## Metric Quality Zones"
     L.append(heading)
@@ -92,6 +94,7 @@ def render_metric_zones_section(
 def render_baseline_comparison_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
+    """Render baseline comparison section."""
     if heading is None:
         heading = "## Baseline Comparison"
     L.append(heading)
@@ -168,6 +171,7 @@ def render_baseline_comparison_section(
 def render_issues(
     L: list[str], issues: list[tuple[str, str]], recs: list[tuple[str, str]]
 ) -> None:
+    """Render issues and recommendations lists."""
     L.append("### Issues")
     L.append("")
     if not issues:
@@ -191,6 +195,7 @@ def render_issues(
 
 
 def render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
+    """Render ML quality assessment paragraph."""
     acc = pred_stats["accuracy"]
     baseline = pred_stats["majority_baseline"]
     dir_acc = pred_stats["directional_accuracy"]
@@ -219,6 +224,7 @@ def render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
 
 
 def render_synthesized_verdict(L: list[str], pred_stats: dict, metrics: dict) -> None:
+    """Render synthesized verdict from model quality and trading edge."""
     model_quality, ml_reason = assess_model_quality(pred_stats)
     if metrics:
         trading_edge, trade_reason = assess_trading_edge(metrics)
@@ -236,6 +242,7 @@ def render_synthesized_verdict(L: list[str], pred_stats: dict, metrics: dict) ->
 
 
 def render_primary_issue(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
+    """Render primary issue paragraph."""
     if metrics:
         primary = identify_primary_issue(metrics, pred_stats)
         if primary:

@@ -8,6 +8,7 @@ from thesis.stage_6_reporting.model_metrics import high_confidence_accuracy
 
 
 def to_onehot(y_true: np.ndarray, classes: list[int]) -> np.ndarray:
+    """Convert labels to one-hot encoding."""
     k = len(classes)
     idx_map = {c: i for i, c in enumerate(classes)}
     indices = np.array([idx_map[int(y)] for y in y_true], dtype=int)
@@ -17,6 +18,7 @@ def to_onehot(y_true: np.ndarray, classes: list[int]) -> np.ndarray:
 def expected_calibration_error(
     y_true_onehot: np.ndarray, y_proba: np.ndarray, n_bins: int = 10
 ) -> float:
+    """Expected Calibration Error (ECE)."""
     confidences = np.max(y_proba, axis=1)
     correct = (np.argmax(y_proba, axis=1) == np.argmax(y_true_onehot, axis=1)).astype(
         float
@@ -33,12 +35,14 @@ def expected_calibration_error(
 
 
 def brier_score(y_true_onehot: np.ndarray, y_proba: np.ndarray) -> float:
+    """Brier score for probability calibration."""
     return float(np.mean((y_true_onehot - y_proba) ** 2))
 
 
 def log_loss(
     y_true: np.ndarray, y_proba: np.ndarray, classes: list[int] | None = None
 ) -> float:
+    """Log loss (cross-entropy) for multi-class classification."""
     if classes is None:
         classes = [-1, 0, 1]
     class_to_idx = {label: idx for idx, label in enumerate(classes)}
@@ -55,6 +59,7 @@ def confidence_bins_accuracy(
     y_proba: np.ndarray,
     bins: list[float] | None = None,
 ) -> list[dict]:
+    """Accuracy per confidence bin."""
     if bins is None:
         bins = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     confidences = np.max(y_proba, axis=1)
@@ -79,6 +84,7 @@ def confidence_bins_accuracy(
 def calibration_reliability_data(
     y_true_onehot: np.ndarray, y_proba: np.ndarray, n_bins: int = 10
 ) -> dict:
+    """Reliability data for calibration curve."""
     confidences = np.max(y_proba, axis=1)
     correct_mask = (
         np.argmax(y_proba, axis=1) == np.argmax(y_true_onehot, axis=1)
@@ -100,6 +106,7 @@ def compute_all_calibration_metrics(
     y_proba: np.ndarray,
     classes: list[int] | None = None,
 ) -> dict:
+    """Compute all calibration metrics."""
     y_true = np.asarray(y_true, dtype=int)
     y_pred = np.asarray(y_pred, dtype=int)
     y_proba = np.asarray(y_proba, dtype=np.float64)

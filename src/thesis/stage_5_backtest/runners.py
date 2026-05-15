@@ -118,6 +118,7 @@ def _make_commission_fn(
     contract_size: float,
 ) -> Callable[[float, float], float]:
     """Build per-trade commission function."""
+
     def commission_fn(order_size: float, price: float) -> float:  # noqa: ARG001
         lots = abs(order_size) / contract_size
         return lots * commission_per_lot

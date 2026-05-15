@@ -203,8 +203,18 @@ def build_monthly_returns_heatmap(
 
     years = sorted(set(k[0] for k in monthly))
     month_names = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
     ]
 
     data = []
@@ -320,12 +330,8 @@ def build_duration_pnl_scatter(trades: list[dict]) -> Scatter:
 
     for t in trades:
         try:
-            entry = datetime.fromisoformat(
-                str(t["entry_time"]).replace("Z", "+00:00")
-            )
-            exit_ = datetime.fromisoformat(
-                str(t["exit_time"]).replace("Z", "+00:00")
-            )
+            entry = datetime.fromisoformat(str(t["entry_time"]).replace("Z", "+00:00"))
+            exit_ = datetime.fromisoformat(str(t["exit_time"]).replace("Z", "+00:00"))
             dur_hours = (exit_ - entry).total_seconds() / 3600
             dur = round(dur_hours, 2)
             pnl = round(t["pnl"], 2)

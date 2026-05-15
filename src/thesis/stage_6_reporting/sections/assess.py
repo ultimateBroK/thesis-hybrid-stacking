@@ -34,6 +34,7 @@ PRIORITY_ICON = {"high": "🔴", "medium": "🟡", "low": "🔵", "info": "✅"}
 
 
 def get_zone_info(metric_name: str, value: float | None) -> tuple[str, str, str]:
+    """Get emoji, zone label, and recommendation for a metric value."""
     if value is None or (isinstance(value, float) and (value != value)):
         return ("⚪", "N/A", "N/A")
     color, label, rec = get_metric_zone(metric_name, value)
@@ -48,6 +49,7 @@ def get_zone_info(metric_name: str, value: float | None) -> tuple[str, str, str]
 
 
 def assess_model_quality(pred_stats: dict) -> tuple[str, str]:
+    """Assess ML model quality from prediction stats."""
     acc = pred_stats["accuracy"]
     baseline = pred_stats["majority_baseline"]
     dir_acc = pred_stats["directional_accuracy"]
@@ -69,6 +71,7 @@ def assess_model_quality(pred_stats: dict) -> tuple[str, str]:
 
 
 def assess_trading_edge(metrics: dict) -> tuple[str, str]:
+    """Assess trading edge from backtest metrics."""
     pf = metrics.get("profit_factor", 0)
     sharpe = metrics.get("sharpe_ratio", 0)
 
@@ -81,6 +84,7 @@ def assess_trading_edge(metrics: dict) -> tuple[str, str]:
 
 
 def derive_recommendation(ml_quality: str, trading_edge: str, metrics: dict) -> str:
+    """Derive deployability recommendation from ML quality and trading edge."""
     n_trades = int(metrics.get("num_trades", 0)) if metrics else 0
     if ml_quality == "POOR" or trading_edge == "NEGATIVE":
         return "NOT DEPLOYABLE without fixes"
@@ -94,6 +98,7 @@ def derive_recommendation(ml_quality: str, trading_edge: str, metrics: dict) -> 
 
 
 def identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | None:
+    """Identify the primary issue preventing deployment."""
     if not metrics:
         return None
 
@@ -112,15 +117,27 @@ def identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | None
     if sh < 0:
         return f"Sharpe {sh:.2f} is negative — strategy underperforms risk-free rate"
     if dd > ISSUE_DD_CATASTROPHIC:
-        return f"Max drawdown {dd:.1f}% > {ISSUE_DD_CATASTROPHIC:.0f}% — catastrophic capital erosion"
+        return (
+            f"Max drawdown {dd:.1f}% > {ISSUE_DD_CATASTROPHIC:.0f}% — "
+            "catastrophic capital erosion"
+        )
     if pf < EDGE_PF_NEGATIVE:
-        return f"Profit factor {pf:.2f} < {EDGE_PF_NEGATIVE:.1f} — strategy loses money on average"
+        return (
+            f"Profit factor {pf:.2f} < {EDGE_PF_NEGATIVE:.1f} — "
+            "strategy loses money on average"
+        )
     if da > 0 and da < QUALITY_DIR_ACC_FAIR:
-        return f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_FAIR:.0%} — predicts worse than random"
+        return (
+            f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_FAIR:.0%} — "
+            "predicts worse than random"
+        )
     if ret < ISSUE_RET_SEVERE_LOSS:
         return f"Return {ret:.0f}% — severe capital loss"
     if pf < ISSUE_PF_MARGINAL_EDGE and pf >= EDGE_PF_NEGATIVE:
-        return f"Profit factor {pf:.2f} < {ISSUE_PF_MARGINAL_EDGE:.1f} — barely covers transaction costs"
+        return (
+            f"Profit factor {pf:.2f} < {ISSUE_PF_MARGINAL_EDGE:.1f} — "
+            "barely covers transaction costs"
+        )
     if sh < ISSUE_SHARPE_POOR and sh >= 0:
         return f"Sharpe {sh:.2f} < {ISSUE_SHARPE_POOR:.1f} — poor risk-adjusted returns"
     if dd > ISSUE_DD_ELEVATED and dd <= ISSUE_DD_CATASTROPHIC:
@@ -128,13 +145,22 @@ def identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | None
     if nt >= MIN_TRADES_DEPLOYABLE and nt < ISSUE_TRADES_MARGINAL:
         return f"Only {nt} trades — marginal sample size"
     if sh < EDGE_SHARPE_MARGINAL and sh >= ISSUE_SHARPE_POOR:
-        return f"Sharpe {sh:.2f} < {EDGE_SHARPE_MARGINAL:.1f} — below professional threshold"
+        return (
+            f"Sharpe {sh:.2f} < {EDGE_SHARPE_MARGINAL:.1f} — "
+            "below professional threshold"
+        )
     if ret > ISSUE_RET_SUSPICIOUS:
         return f"Return {ret:.0f}% suspiciously high — verify for overfitting"
     if dd > ISSUE_DD_CFD_ELEVATED and dd <= ISSUE_DD_ELEVATED:
-        return f"Max drawdown {dd:.1f}% > {ISSUE_DD_CFD_ELEVATED:.0f}% — elevated for CFD trading"
+        return (
+            f"Max drawdown {dd:.1f}% > {ISSUE_DD_CFD_ELEVATED:.0f}% — "
+            "elevated for CFD trading"
+        )
     if wr < ISSUE_WIN_RATE_VIABILITY and wr >= 0:
-        return f"Win rate {wr:.1f}% < {ISSUE_WIN_RATE_VIABILITY:.0f}% — below trading viability"
+        return (
+            f"Win rate {wr:.1f}% < {ISSUE_WIN_RATE_VIABILITY:.0f}% — "
+            "below trading viability"
+        )
     if da > 0 and da < QUALITY_DIR_ACC_GOOD:
         return (
             f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_GOOD:.0%} — unreliable"

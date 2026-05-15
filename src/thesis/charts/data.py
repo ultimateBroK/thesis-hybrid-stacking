@@ -84,9 +84,7 @@ def build_candlestick_chart(
         for o, c, lo, hi in zip(opens, closes, lows, highs, strict=True)
     ]
 
-    volumes = (
-        df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
-    )
+    volumes = df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
 
     kline = (
         Kline()

@@ -12,12 +12,13 @@ from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
 from thesis.stage_6_reporting import data_quality
-from thesis.stage_6_reporting.md_format import _fmt_f2, _fmt_pct, _tbl_row
+from thesis.stage_6_reporting.md_format import _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
 
 def load_label_distribution(labels_path: Path) -> dict | None:
+    """Load label distribution from parquet."""
     if not labels_path.exists():
         return None
     try:
@@ -40,6 +41,7 @@ def load_label_distribution(labels_path: Path) -> dict | None:
 def render_data_quality_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
+    """Render data quality section."""
     if heading is None:
         heading = "## Data Quality"
     L.append(heading)
@@ -61,7 +63,8 @@ def render_data_quality_section(
         return
 
     L.append(
-        'This section addresses the thesis question: *"Is that because of data, the result awful?"*'
+        'This section addresses the thesis question: *"Is that because of data, '
+        'the result awful?"*'
     )
     L.append("")
     L.append(_tbl_row("Metric", "Value"))
@@ -147,6 +150,7 @@ def render_data_quality_section(
 def render_label_design_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
+    """Render label design & methodology section."""
     if heading is None:
         heading = "## Label Design & Methodology"
     L.append(heading)
@@ -185,6 +189,7 @@ def render_label_design_section(
 def render_validation_methodology_section(
     L: list[str], config: Config, heading: str | None = None
 ) -> None:
+    """Render validation methodology section."""
     if heading is None:
         heading = "## Validation Methodology"
     L.append(heading)
@@ -219,13 +224,15 @@ def render_validation_methodology_section(
     L.append(
         _tbl_row(
             "Train window",
-            f"{val_cfg.train_window_bars:,} bars (~{_bars_human(val_cfg.train_window_bars)})",
+            f"{val_cfg.train_window_bars:,} bars "
+            f"(~{_bars_human(val_cfg.train_window_bars)})",
         )
     )
     L.append(
         _tbl_row(
             "Test window",
-            f"{val_cfg.test_window_bars:,} bars (~{_bars_human(val_cfg.test_window_bars)})",
+            f"{val_cfg.test_window_bars:,} bars "
+            f"(~{_bars_human(val_cfg.test_window_bars)})",
         )
     )
     L.append(_tbl_row("Step", f"{val_cfg.step_bars:,} bars"))
@@ -243,13 +250,13 @@ def render_validation_methodology_section(
     L.append("")
 
 
-def _fmt_f2(v: float) -> str:
+def _fmt_f2_local(v: float) -> str:
     return f"{v:.2f}"
 
 
-def _fmt_pct(v: float) -> str:
+def _fmt_pct_local(v: float) -> str:
     return f"{v:.1f}%"
 
 
-def _tbl_row(*cells: str) -> str:
+def _tbl_row_local(*cells: str) -> str:
     return "| " + " | ".join(cells) + " |"
