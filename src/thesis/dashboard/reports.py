@@ -13,7 +13,7 @@ from thesis.dashboard.shared import render_chart, trim_generated_visual_sections
 
 
 def render_reports_section(session_dir: str) -> None:
-    """Markdown report + equity curve image + walk-forward summary + feature importance."""
+    """Markdown report + equity image + walk-forward history + feature importance."""
     st.markdown("> 🏠 Dashboard > **Reports**")
 
     reports_dir = Path(session_dir) / "reports"
@@ -46,19 +46,25 @@ def render_reports_section(session_dir: str) -> None:
             st.caption("Sliding-window validation summary")
             cols = st.columns(3, gap="small")
             render_metric_card(
-                cols[0], "Windows",
+                cols[0],
+                "Windows",
                 str(wf.get("num_windows", "?")),
-                "Total walk-forward windows", "#3b82f6",
+                "Total walk-forward windows",
+                "#3b82f6",
             )
             render_metric_card(
-                cols[1], "OOF Predictions",
+                cols[1],
+                "OOF Predictions",
                 f"{wf.get('total_oof_predictions', 0):,}",
-                "Out-of-fold prediction count", "#10b981",
+                "Out-of-fold prediction count",
+                "#10b981",
             )
             render_metric_card(
-                cols[2], "Architecture",
+                cols[2],
+                "Architecture",
                 str(wf.get("architecture", "hybrid")),
-                "Model architecture used", "#8b5cf6",
+                "Model architecture used",
+                "#8b5cf6",
             )
 
             details = wf.get("window_details", [])

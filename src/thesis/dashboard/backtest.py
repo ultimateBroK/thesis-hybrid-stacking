@@ -18,7 +18,7 @@ from thesis.dashboard.shared import render_chart, render_trade_direction_summary
 
 
 def render_backtest_section(data: dict, config: object, session_dir: str) -> None:
-    """Zone-coded KPIs, equity/drawdown, PnL histograms, monthly heatmap, CSV downloads."""
+    """Zone KPIs, equity/drawdown, PnL histograms, monthly heatmap, CSV downloads."""
     st.markdown("> 🏠 Dashboard > **Backtest Results**")
     st.header("Backtest Results")
 
@@ -30,7 +30,7 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
         st.info("No backtest results available.")
         return
 
-    # ── Zone-coded KPIs ──
+    # Zone-coded KPIs
     with st.container(border=True):
         st.subheader("Performance Overview")
         st.caption("Zone indicators: industry benchmarks for XAU/USD CFD trading")
@@ -40,34 +40,56 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
 
         kpi_cols = st.columns(3, gap="small")
         render_zoned_metric(
-            kpi_cols[0], "Total Return",
-            metrics.get("return_pct", 0), "return_pct", "{:.2f}", "%",
+            kpi_cols[0],
+            "Total Return",
+            metrics.get("return_pct", 0),
+            "return_pct",
+            "{:.2f}",
+            "%",
         )
         render_zoned_metric(
-            kpi_cols[1], "Max Drawdown",
-            metrics.get("max_drawdown_pct", 0), "max_drawdown_pct", "{:.1f}", "%",
+            kpi_cols[1],
+            "Max Drawdown",
+            metrics.get("max_drawdown_pct", 0),
+            "max_drawdown_pct",
+            "{:.1f}",
+            "%",
         )
         render_zoned_metric(
-            kpi_cols[2], "Profit Factor",
-            metrics.get("profit_factor", 0), "profit_factor", "{:.2f}",
+            kpi_cols[2],
+            "Profit Factor",
+            metrics.get("profit_factor", 0),
+            "profit_factor",
+            "{:.2f}",
         )
 
         kpi_cols = st.columns(3, gap="small")
         render_zoned_metric(
-            kpi_cols[0], "Sharpe Ratio",
-            metrics.get("sharpe_ratio", 0), "sharpe_ratio", "{:.2f}",
+            kpi_cols[0],
+            "Sharpe Ratio",
+            metrics.get("sharpe_ratio", 0),
+            "sharpe_ratio",
+            "{:.2f}",
         )
         render_zoned_metric(
-            kpi_cols[1], "Win Rate",
-            metrics.get("win_rate_pct", 0), "win_rate_pct", "{:.1f}", "%",
+            kpi_cols[1],
+            "Win Rate",
+            metrics.get("win_rate_pct", 0),
+            "win_rate_pct",
+            "{:.1f}",
+            "%",
         )
         render_zoned_metric(
-            kpi_cols[2], "Trades",
-            metrics.get("num_trades", 0), "num_trades", "{:.0f}",
+            kpi_cols[2],
+            "Trades",
+            metrics.get("num_trades", 0),
+            "num_trades",
+            "{:.0f}",
         )
 
         st.caption(
-            f"Period: {metrics.get('start', 'N/A')[:10]} → {metrics.get('end', 'N/A')[:10]}"
+            f"Period: {metrics.get('start', 'N/A')[:10]} "
+            f"→ {metrics.get('end', 'N/A')[:10]}"
         )
         st.caption(f"Initial: ${config.backtest.initial_capital:,.0f}")
         st.caption(f"Final equity: ${metrics.get('equity_final', 0):,.0f}")
@@ -75,7 +97,7 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
 
     st.divider()
 
-    # ── Equity Curve + Drawdown ──
+    # Equity Curve + Drawdown
     st.subheader("Equity Curve & Drawdown")
     render_chart(
         build_equity_drawdown_chart(
@@ -86,7 +108,7 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
 
     st.divider()
 
-    # ── PnL Histogram + Duration Scatter ──
+    # PnL Histogram + Duration Scatter
     pnl_col, dur_col = st.columns(2)
     with pnl_col:
         st.subheader("Trade PnL Distribution")
@@ -97,7 +119,7 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
 
     st.divider()
 
-    # ── Monthly Returns + Rolling Sharpe ──
+    # Monthly Returns + Rolling Sharpe
     monthly_col, rolling_col = st.columns(2)
     with monthly_col:
         st.subheader("Monthly Returns")
@@ -118,7 +140,7 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
 
     st.divider()
 
-    # ── Downloads ──
+    # Downloads
     st.subheader("Download Data")
     session_dir = data.get("session_dir")
     if not session_dir:

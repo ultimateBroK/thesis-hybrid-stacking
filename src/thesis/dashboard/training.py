@@ -11,7 +11,7 @@ from thesis.dashboard.cards import render_metric_card
 
 
 def render_training_section(data: dict, session_dir: str) -> None:
-    """Training history metrics + full pipeline log (last 150 lines)."""
+    """Training history metrics + full pipeline log."""
     st.markdown("> 🏠 Dashboard > **Training**")
     st.header("Training History")
 
@@ -30,19 +30,25 @@ def render_training_section(data: dict, session_dir: str) -> None:
                 st.caption("Gradient boosting model training parameters and results")
                 cols = st.columns(3, gap="small")
                 render_metric_card(
-                    cols[0], "Best Iteration",
+                    cols[0],
+                    "Best Iteration",
                     str(lgbm.get("best_iteration", "N/A")),
-                    "Optimal boosting round", "#22c55e",
+                    "Optimal boosting round",
+                    "#22c55e",
                 )
                 render_metric_card(
-                    cols[1], "Features",
+                    cols[1],
+                    "Features",
                     str(lgbm.get("n_features", "N/A")),
-                    "Input feature count", "#3b82f6",
+                    "Input feature count",
+                    "#3b82f6",
                 )
                 render_metric_card(
-                    cols[2], "Classes",
+                    cols[2],
+                    "Classes",
                     str(lgbm.get("n_classes", "N/A")),
-                    "Target labels", "#8b5cf6",
+                    "Target labels",
+                    "#8b5cf6",
                 )
     else:
         st.info("No training history file found for this session.")

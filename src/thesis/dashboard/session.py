@@ -1,4 +1,4 @@
-"""Session discovery, parsing, and loading."""
+"""Session discovery and data loading."""
 
 from __future__ import annotations
 
@@ -8,12 +8,9 @@ import re
 
 import streamlit as st
 
-from thesis.charts import load_session_data
-from thesis.shared.session_paths import load_config_for_session
-
 
 def find_sessions() -> list[Path]:
-    """Find session dirs in results/ that have a config subdirectory."""
+    """Find session dirs in results/ with config subdirectory."""
     results = Path("results")
     if not results.exists():
         return []
@@ -36,7 +33,7 @@ def find_sessions() -> list[Path]:
 
 
 def parse_session_meta(name: str) -> dict[str, str]:
-    """Parse session dirname → {symbol, timeframe, date, time}."""
+    """Parse session dirname → symbol, timeframe, date, time."""
     parts = name.split("_")
     if len(parts) >= 4:
         return {
@@ -48,24 +45,28 @@ def parse_session_meta(name: str) -> dict[str, str]:
     return {"symbol": "?", "timeframe": "?", "date": "?", "time": "?"}
 
 
-@st.cache_resource(ttl=60)
+@st.cache_data(ttl=60)
 def load_config(session_dir: str) -> dict:
     """Load config + chart data for session. Cached 60s."""
+    from thesis.charts import load_session_data
+    from thesis.shared.session_paths import load_config_for_session
+
     config = load_config_for_session(session_dir)
     data = load_session_data(config)
     return {"config": config, "data": data}
 
 
-@st.fragment(run_every=30)
-def session_selector_fragment() -> str | None:
-    """Sidebar session picker. Fires toast on new sessions (idempotent)."""
+@st.fragment
+def session_selector_fragment() -> None:
+    """Sidebar session picker. Auto-refreshes every interaction."""
     sessions = find_sessions()
     if not sessions:
-        return None
+        st.session_state.selected_session = None
+        return
 
     session_names = [s.name for s in sessions]
 
-    # Toast only once per new session — track in session_state
+    # Track known sessions; toast on new
     known = st.session_state.get("known_sessions", set())
     current_set = set(session_names)
     new_sessions = current_set - known
@@ -74,12 +75,12 @@ def session_selector_fragment() -> str | None:
         for ns in sorted(new_sessions):
             if ns not in shown:
                 meta = parse_session_meta(ns)
-                st.toast(f"🆕 New session: {meta['date']} {meta['time']}", icon="📈")
+                st.toast(f"New session: {meta['date']} {meta['time']}", icon="📈")
                 shown.add(ns)
         st.session_state.shown_toasts = shown
     st.session_state.known_sessions = current_set
 
-    # Build selectbox labels
+    # Build labels
     session_labels = []
     for name in session_names:
         meta = parse_session_meta(name)
@@ -88,10 +89,10 @@ def session_selector_fragment() -> str | None:
         )
 
     current = st.session_state.get("selected_session")
+    idx = 0
     if current in session_names:
         idx = session_names.index(current)
     else:
-        idx = 0
         st.session_state.selected_session = session_names[0]
 
     selected_label = st.selectbox(
@@ -103,8 +104,7 @@ def session_selector_fragment() -> str | None:
     selected = session_names[session_labels.index(selected_label)]
     st.session_state.selected_session = selected
 
-    if st.button("🔄 Refresh", width="stretch", key="_refresh_btn"):
+    if st.button("Refresh", width="stretch", key="_refresh_btn"):
         st.rerun()
 
     st.caption("Run `pixi run workflow` to generate new sessions")
-    return selected

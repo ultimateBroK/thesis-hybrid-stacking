@@ -17,7 +17,7 @@ from thesis.charts import (
 from thesis.dashboard.shared import render_chart
 
 
-def render_data_section(data: dict, session_dir: str = "") -> None:
+def render_data_section(data: dict, session_dir: str) -> None:
     """OHLCV candlestick + feature/label charts with date range filter."""
     st.markdown("> 🏠 Dashboard > **Data Exploration**")
     st.header("Data Exploration")
@@ -26,18 +26,17 @@ def render_data_section(data: dict, session_dir: str = "") -> None:
     features = data.get("features")
     labels = data.get("labels")
 
-    # ── OHLCV summary ──
+    # OHLCV summary
     if ohlcv is not None:
         st.caption(
             f"{len(ohlcv):,} bars | "
-            f"{ohlcv['timestamp'].cast(pl.Utf8).min()}"
-            f" → {ohlcv['timestamp'].cast(pl.Utf8).max()}"
+            f"{ohlcv['timestamp'].cast(pl.Utf8).min()} "
+            f"→ {ohlcv['timestamp'].cast(pl.Utf8).max()}"
         )
 
     if ohlcv is not None and len(ohlcv) > 0:
         st.subheader("Candlestick Chart")
 
-        # Parse timestamp
         ts_col = ohlcv["timestamp"]
         ts_parsed = (
             ts_col.str.to_datetime()
@@ -46,7 +45,6 @@ def render_data_section(data: dict, session_dir: str = "") -> None:
         )
 
         min_dt, max_dt = ts_parsed.min(), ts_parsed.max()
-        total_bars = len(ohlcv)
 
         # Date range filter (default: last 180 days)
         if min_dt is not None and max_dt is not None:
@@ -95,7 +93,7 @@ def render_data_section(data: dict, session_dir: str = "") -> None:
     else:
         st.info("No OHLCV data available.")
 
-    # ── Feature + Label charts ──
+    # Feature + Label charts
     if features is not None:
         c1, c2 = st.columns(2)
         with c1:

@@ -56,28 +56,12 @@ _CSS = """
 </style>
 """
 
-
-def _make_section_renderer(name: str, fn: object) -> tuple[str, object]:
-    """Auto-bind renderer: arity 1→(data), 2→(data,session_dir).
-
-    Exceptions hardcoded below.
-    """
-    import inspect
-
-    n_params = len(inspect.signature(fn).parameters)
-    if n_params == 1:
-        return (name, lambda d, _: fn(d))
-    if n_params == 2:
-        return (name, lambda d, s: fn(d, s))
-    return (name, lambda d, _, __: fn(d, _))
-
-
 _SECTION_RENDERERS: dict[str, tuple[str, object]] = {
-    "📊 Data": _make_section_renderer("Data Exploration", render_data_section),
-    "🧠 Model": _make_section_renderer("Model Performance", render_model_section),
-    "🏃 Training": _make_section_renderer("Training", render_training_section),
-    "💰 Backtest": _make_section_renderer("Backtest Results", render_backtest_section),
-    "📝 Reports": _make_section_renderer("Reports", render_reports_section),
+    "📊 Data": ("Data Exploration", render_data_section),
+    "🧠 Model": ("Model Performance", render_model_section),
+    "🏃 Training": ("Training", render_training_section),
+    "💰 Backtest": ("Backtest Results", render_backtest_section),
+    "📝 Reports": ("Reports", render_reports_section),
 }
 
 
@@ -96,8 +80,8 @@ def main() -> None:
     st.sidebar.markdown("### 📈 Thesis Dashboard")
     st.sidebar.caption("Hybrid Stacking — XAU/USD")
 
-    # Session selector (fragment: reruns every 30s)
-    with st.sidebar.expander("📁 Session", expanded=True):
+    # Session selector (auto-refreshes every 30s via @st.fragment)
+    with st.sidebar.expander("Session", expanded=True):
         selected = session_selector_fragment()
 
     if selected is None:
@@ -108,9 +92,9 @@ def main() -> None:
     sections = list(_SECTION_RENDERERS)
     current_section = st.session_state.get("nav_section", "📊 Data")
 
-    left_spacer, nav_center, right_spacer = st.columns([0.2, 0.6, 0.2])
+    _, nav_center, _ = st.columns([0.2, 0.6, 0.2])
     with nav_center:
-        nav_cols = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
+        nav_cols = st.columns(5)
         for i, sec in enumerate(sections):
             with nav_cols[i]:
                 btn_type = "primary" if sec == current_section else "secondary"
@@ -128,11 +112,11 @@ def main() -> None:
     metrics = data.get("metrics", {})
 
     # Sidebar: config summary + quick stats
-    with st.sidebar.expander("⚙️ Configuration", expanded=False):
+    with st.sidebar.expander("Configuration", expanded=False):
         render_config_summary(config)
 
     if metrics:
-        with st.sidebar.expander("📊 Quick Stats", expanded=False):
+        with st.sidebar.expander("Quick Stats", expanded=False):
             c1, c2 = st.columns(2)
             c1.metric("Return", f"{metrics.get('return_pct', 0):.2f}%")
             c2.metric("Win Rate", f"{metrics.get('win_rate_pct', 0):.2f}%")

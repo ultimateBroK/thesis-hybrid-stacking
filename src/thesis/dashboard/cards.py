@@ -6,13 +6,12 @@ import html
 
 from thesis.shared.zones import ZONE_COLORS, get_metric_zone, is_extreme_value
 
-# Extracted CSS to avoid long inline attribute soup
 CSS_LABEL = (
     "font-size: 0.7rem; color: inherit; opacity: 0.7; text-transform: uppercase;"
     " letter-spacing: 0.05em; margin-bottom: 4px;"
 )
 CSS_VALUE = "font-size: 1.5rem; font-weight: 700; color: inherit; line-height: 1.2;"
-CSS_REC = "font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px; line-height: 1.3;"
+CSS_REC = "font-size: 0.65rem; color: inherit; opacity: 0.6; margin-top: 4px;"
 
 
 def render_zoned_metric(
@@ -29,7 +28,7 @@ def render_zoned_metric(
 
     hex_color = ZONE_COLORS.get(color, "#6b7280")
     suffix = " ⚠️" if is_extreme else ""
-    # Escape all user-facing strings before HTML interpolation
+
     safe_label = html.escape(label)
     safe_value = html.escape(format_str.format(value))
     safe_unit = html.escape(unit)

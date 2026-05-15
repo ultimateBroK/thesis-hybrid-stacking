@@ -14,8 +14,8 @@ from thesis.dashboard.cards import render_metric_card
 from thesis.dashboard.shared import render_chart
 
 
-def render_model_section(data: dict, session_dir: str = "") -> None:
-    """Classification metrics, confusion matrix, confidence distribution, feature importance."""
+def render_model_section(data: dict, session_dir: str) -> None:
+    """Classification metrics, confusion matrix, confidence, feature importance."""
     st.markdown("> 🏠 Dashboard > **Model Performance**")
     st.header("Model Performance")
 
@@ -40,10 +40,11 @@ def render_model_section(data: dict, session_dir: str = "") -> None:
 
     # Directional accuracy: non-hold bars only
     non_hold_mask = (y_true != 0) & (y_pred != 0)
-    if non_hold_mask.sum() > 0:
-        dir_acc = float((y_true[non_hold_mask] == y_pred[non_hold_mask]).mean())
-    else:
-        dir_acc = 0.0
+    dir_acc = (
+        float((y_true[non_hold_mask] == y_pred[non_hold_mask]).mean())
+        if non_hold_mask.sum() > 0
+        else 0.0
+    )
     dir_baseline = 0.5
 
     # Per-class: recall, precision, F1
@@ -51,10 +52,17 @@ def render_model_section(data: dict, session_dir: str = "") -> None:
     for cls, name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
         true_mask = y_true == cls
         pred_mask = y_pred == cls
-        recall = float((y_pred[true_mask] == cls).mean()) if true_mask.sum() > 0 else 0.0
-        precision = float((y_true[pred_mask] == cls).mean()) if pred_mask.sum() > 0 else 0.0
-        f1 = (2 * precision * recall / (precision + recall)
-              if (precision + recall) > 0 else 0.0)
+        recall = (
+            float((y_pred[true_mask] == cls).mean()) if true_mask.sum() > 0 else 0.0
+        )
+        precision = (
+            float((y_true[pred_mask] == cls).mean()) if pred_mask.sum() > 0 else 0.0
+        )
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
         per_class[name] = {
             "true_count": int(true_mask.sum()),
             "pred_count": int(pred_mask.sum()),
@@ -69,18 +77,32 @@ def render_model_section(data: dict, session_dir: str = "") -> None:
         st.caption("Model prediction accuracy against test set labels")
         acc_cols = st.columns(4, gap="small")
         render_metric_card(
-            acc_cols[0], "Directional Accuracy", f"{dir_acc:.1%}",
-            f"+{(dir_acc - dir_baseline) * 100:.1f}pp vs random", "#3b82f6",
+            acc_cols[0],
+            "Directional Accuracy",
+            f"{dir_acc:.1%}",
+            f"+{(dir_acc - dir_baseline) * 100:.1f}pp vs random",
+            "#3b82f6",
         )
         render_metric_card(
-            acc_cols[1], "Exact-Match Accuracy", f"{exact_acc:.1%}", None, "#8b5cf6",
+            acc_cols[1],
+            "Exact-Match Accuracy",
+            f"{exact_acc:.1%}",
+            None,
+            "#8b5cf6",
         )
         render_metric_card(
-            acc_cols[2], "Directional Baseline", f"{dir_baseline:.1%}",
-            "Random guess baseline", "#6b7280",
+            acc_cols[2],
+            "Directional Baseline",
+            f"{dir_baseline:.1%}",
+            "Random guess baseline",
+            "#6b7280",
         )
         render_metric_card(
-            acc_cols[3], "Test Samples", f"{total:,}", None, "#10b981",
+            acc_cols[3],
+            "Test Samples",
+            f"{total:,}",
+            None,
+            "#10b981",
         )
 
     # Per-class recall/precision/F1

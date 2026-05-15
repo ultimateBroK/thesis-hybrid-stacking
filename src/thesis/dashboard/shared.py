@@ -11,9 +11,10 @@ from thesis.dashboard.cards import render_metric_card
 
 
 def render_chart(chart: object, height: str = "500px") -> None:
-    """Render pyecharts chart into Streamlit via streamlit-echarts."""
+    """Render pyecharts chart via streamlit-echarts."""
     try:
         from streamlit_echarts import st_pyecharts
+
         st_pyecharts(chart, height=height)
     except ImportError as e:
         st.warning(f"Chart render failed: {e}")
@@ -30,25 +31,19 @@ def trim_generated_visual_sections(content: str) -> str:
     return content[: m.start()].rstrip() if m else content
 
 
-def _cfg_attr(obj: object, key: str, default: str = "?") -> str:
-    """Get config attr safely; return default if missing."""
-    val = getattr(obj, key, None)
-    return str(val) if val is not None else default
-
-
 def render_config_summary(config: object) -> None:
-    """Sidebar: current experiment config — data, validation, model, labels, backtest."""
+    """Sidebar: current experiment config."""
     data = getattr(config, "data", None)
     val = getattr(config, "validation", None)
     model = getattr(config, "model", None)
     labels = getattr(config, "labels", None)
     bt = getattr(config, "backtest", None)
 
-    st.markdown(
-        f"**Data**: {data.symbol if data else '?'} {data.timeframe if data else '?'}  "
-        f"{date_only(getattr(data, 'data_range', None) and config.data_range.start)}"
-        f"→{date_only(getattr(data, 'data_range', None) and config.data_range.end)}"
-    )
+    if data:
+        data_range = getattr(data, "data_range", None)
+        start = date_only(data_range.start) if data_range else "?"
+        end = date_only(data_range.end) if data_range else "?"
+        st.markdown(f"**Data**: {data.symbol} {data.timeframe}  {start}→{end}")
     if val:
         st.markdown(
             f"**Walk-forward**: {val.method}, "
@@ -65,14 +60,14 @@ def render_config_summary(config: object) -> None:
     if labels:
         st.markdown(
             f"**Labels**: horizon={labels.horizon_bars}, "
-            f"TP={labels.atr_tp_multiplier}×ATR, "
-            f"SL={labels.atr_sl_multiplier}×ATR"
+            f"TP={labels.atr_tp_multiplier}xATR, "
+            f"SL={labels.atr_sl_multiplier}xATR"
         )
     if bt:
         st.markdown(
             f"**Backtest**: capital=${bt.initial_capital:,.0f}, "
             f"spread={bt.spread_ticks:g} ticks, "
-            f"conf≥{bt.confidence_threshold:.2f}"
+            f"conf>={bt.confidence_threshold:.2f}"
         )
 
 
