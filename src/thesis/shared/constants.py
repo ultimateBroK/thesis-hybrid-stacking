@@ -1,32 +1,10 @@
-"""Project-wide constants shared across pipeline stages.
+"""Project-wide constants.
 
 Single source of truth for column exclusion sets and other pipeline-level
-constants. Import from here to keep stages in sync.
+constants.
 """
 
-# Column exclusion sets
-
-#: Columns that are *never* model features — excluded from training,
-#: correlation filtering, and feature selection everywhere.
-#:
-#: Rationale per group:
-#:  - timestamp          → index / join key, not a feature
-#:  - label              → target variable (look-ahead)
-#:  - upper_barrier/lower_barrier/touched_bar/event_end/sample_weight →
-#:    label-derived metadata; not predictive features
-#:  - open/high/low/close/volume → raw OHLCV, excluded to avoid raw price leakage
-#:  - avg_spread/tick_count → microstructure columns kept for backtest
-#:    but not useful as ML features in their raw form
-#:  - atr_14 → label-barrier helper; normalized ATR is the model-facing feature
-#:  - log_returns → raw return input; excluded from tabular static features
-#:    to avoid unstable leakage-prone transformations
-#:
-#: Engineered features (core indicators, multi-timeframe 4H, trend distances,
-#: Bollinger bands, volume z-score, returns, range, and regime features) are
-#: intentionally NOT in this set — they are available to tabular models.
-#:
-#: NOTE: For feature column lists, use thesis.shared.feature_registry as the
-#: source of truth.
+# Columns never used as model features
 EXCLUDE_COLS: frozenset[str] = frozenset(
     [
         "timestamp",
@@ -43,21 +21,17 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "volume",
         "avg_spread",
         "tick_count",
-        "atr_14",  # Label-barrier helper; normalized ATR is model-facing
-        "log_returns",  # raw return input — not a static feature for LightGBM
+        "atr_14",
+        "log_returns",
     ]
 )
 
-# Private alias kept for safe backwards compatibility only.
-_EXCLUDE_COLS = EXCLUDE_COLS
+_EXCLUDE_COLS = EXCLUDE_COLS  # back-compat alias
 
-# Annualization constant for hourly XAU/USD-style markets.
-# Uses 24 hours × 5 trading days × 52 weeks; actual bar counts may vary by
-# broker holidays, market closures, and missing data.
+# Hourly bars per year (24h × 5d × 52w)
 H1_BARS_PER_YEAR: int = 24 * 5 * 52
 
-# Shared visualization palette (matplotlib + pyecharts)
-
+# Visualization palette
 CHART_COLORS: dict[str, str] = {
     "primary": "#2563EB",
     "secondary": "#7C3AED",
@@ -70,25 +44,11 @@ CHART_COLORS: dict[str, str] = {
     "flat": "#6B7280",
 }
 
-#: Alias for interactive chart modules (`charts/`) — same set as ``EXCLUDE_COLS``.
-EXCLUDED_FEATURE_COLS = EXCLUDE_COLS
+EXCLUDED_FEATURE_COLS = EXCLUDE_COLS  # alias for chart modules
 
 
 def timeframe_to_ms(timeframe: str) -> int:
-    """Parse a config timeframe string into milliseconds.
-
-    Supports ``H`` (hours), ``MIN`` / ``M`` (minutes), and ``D`` (day) suffixes.
-
-    Args:
-        timeframe: Timeframe string like ``"1H"``, ``"4H"``, ``"5MIN"``, ``"1D"``.
-
-    Returns:
-        Timeframe duration in milliseconds.
-
-    Raises:
-        ValueError: If the timeframe format is unsupported or the numeric
-            component is not positive.
-    """
+    """Parse timeframe string to milliseconds."""
     tf = timeframe.upper()
     if tf.endswith("H"):
         hours = int(tf[:-1])
@@ -111,81 +71,47 @@ def timeframe_to_ms(timeframe: str) -> int:
 
 
 # Labeling constants
-
-#: Sample weight minimum floor for average-uniqueness computation.
-#: Prevents numerical instability from near-zero weights before
-#: normalisation to mean 1. Values below this are clamped up.
-SAMPLE_WEIGHT_MIN: float = 0.05
-
-#: ATR quantile p-values for diagnostic logging in ``_log_atr_stats``.
-ATR_LOW_QUANTILE: float = 0.05
+SAMPLE_WEIGHT_MIN: float = 0.05  # floor for average-uniqueness computation
+ATR_LOW_QUANTILE: float = 0.05  # diagnostic logging quantiles
 ATR_HIGH_QUANTILE: float = 0.95
-
-#: Label profitability warning threshold (percentage).
-#: If *both* Long and Short profit percentages fall below this value a warning
-#: is emitted because the labels may not be economically viable after costs.
-LABEL_PROFITABILITY_WARN_PCT: float = 60.0
-
-#: Round-trip multiplier for commission / contract-size → price-unit cost.
-ROUNDTRIP_MULT: float = 2.0
-
-#: Special label value marking rows whose forward horizon exceeds available
-#: data.  These are dropped before training (see ``_filter_censored``).
-CENSORED_LABEL: int = -2
+LABEL_PROFITABILITY_WARN_PCT: float = 60.0  # warn if both long/short < this %
+ROUNDTRIP_MULT: float = 2.0  # commission → price-unit cost multiplier
+CENSORED_LABEL: int = -2  # rows with insufficient horizon
 
 # Distribution-shift weight clipping
-
-#: Minimum and maximum allowed per-class weight ratios when correcting
-#: distribution shift between training and validation label frequencies.
-DIST_SHIFT_CLIP_MIN: float = 0.5
+DIST_SHIFT_CLIP_MIN: float = 0.5  # min/max per-class weight ratios
 DIST_SHIFT_CLIP_MAX: float = 3.0
 
-# Feature engineering / numerical stability
+# Numerical stability
+FEATURE_EPS: float = 1e-10  # division safety in feature expressions
+STD_EPS: float = (
+    1e-8  # z-score denominators (larger to avoid amplifying near-constant series)
+)
 
-#: Small epsilon for division safety in feature expressions (e.g. ATR
-#: ratio, pivot position, log-return normalisation).
-FEATURE_EPS: float = 1e-10
+# Calibration
+ECE_N_BINS: int = 10  # confidence bins for Expected Calibration Error
+CALIB_LR: float = 0.01  # LBFGS learning rate for temperature-scaling
+CALIB_MAX_ITER: int = 100  # LBFGS max iterations
 
-#: Epsilon used in standard-deviation denominators (e.g. z-score, dataset
-#: standardisation) — larger than ``FEATURE_EPS`` to avoid amplifying
-#: near-constant series.
-STD_EPS: float = 1e-8
-
-
-#: Number of confidence bins for Expected Calibration Error (ECE).
-ECE_N_BINS: int = 10
-
-#: Learning rate for LBFGS temperature-scaling calibration.
-CALIB_LR: float = 0.01
-
-#: Maximum LBFGS iterations for temperature-scaling calibration.
-CALIB_MAX_ITER: int = 100
-
-# Default LightGBM tabular features. Keep user config minimal; override only in code.
+# Default LightGBM tabular features
 CORE_STATIC_FEATURES: tuple[str, ...] = (
-    # Trend
     "ema34_vs_ema89",
     "close_vs_ema_34",
     "adx_14",
     "ema_slope_20",
-    # Momentum
     "return_1h",
     "return_4h",
     "macd_hist_atr",
     "rsi_14",
-    # Volatility / Regime
     "atr_pct_close",
     "atr_ratio",
     "atr_percentile",
     "high_low_range_20",
-    # Position / Location
     "price_dist_ratio",
     "price_position_20",
     "pivot_position",
     "vwap",
-    # Candle Structure
     "candle_body_ratio",
-    # Session
     "sess_asia",
     "sess_london",
     "sess_ny_am",

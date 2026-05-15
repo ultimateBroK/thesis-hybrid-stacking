@@ -146,3 +146,4 @@ codedb.snapshot
 /data_download.py
 *_DIAGNOSTIC_REPORT.md
 review_verdict.md
+graphify-out/cache/

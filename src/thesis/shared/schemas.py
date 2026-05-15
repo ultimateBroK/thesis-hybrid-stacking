@@ -1,7 +1,7 @@
 """Column contract validation for pipeline stage boundaries.
 
-Also defines canonical TypedDict contracts for metric dictionaries
-passed between stages 5 (backtest) and 6 (reporting).
+TypedDict contracts for metric dictionaries passed between
+stage 5 (backtest) and stage 6 (reporting).
 """
 
 from __future__ import annotations
@@ -12,17 +12,12 @@ import pandera.polars as pa
 import polars as pl
 
 # ---------------------------------------------------------------------------
-# Canonical metric result contracts (stage 5 → stage 6 boundary)
+# Stage 5 → stage 6 metric contracts
 # ---------------------------------------------------------------------------
 
 
 class BacktestMetrics(TypedDict, total=False):
-    """Backtest result metrics — single source of truth.
-
-    Produced by ``stage_5_backtest.persistence._normalize_stats`` and
-    consumed by ``stage_6_reporting`` table/render logic.  All stages
-    must use these keys; new metrics go here first.
-    """
+    """Backtest result metrics. Produced by stage_5, consumed by stage_6."""
 
     return_pct: float
     max_drawdown_pct: float
@@ -40,7 +35,7 @@ class BacktestMetrics(TypedDict, total=False):
 
 
 class PerClassMetrics(TypedDict, total=False):
-    """Per-class (Short / Hold / Long) classification metrics."""
+    """Per-class (Short/Hold/Long) classification metrics."""
 
     true_count: int
     pred_count: int
@@ -50,13 +45,13 @@ class PerClassMetrics(TypedDict, total=False):
 
 
 class HighConfidenceMetrics(TypedDict, total=False):
-    """Metrics filtered to high-confidence predictions only."""
+    """High-confidence prediction subset metrics."""
 
     threshold: float
     count: int
-    pct_of_total: float  # 0–1 fraction
-    accuracy: float  # 0–1 fraction
-    directional_accuracy: float  # 0–1 fraction
+    pct_of_total: float
+    accuracy: float
+    directional_accuracy: float
 
 
 class RegressionAuxiliary(TypedDict, total=False):
@@ -68,11 +63,9 @@ class RegressionAuxiliary(TypedDict, total=False):
 
 
 class PredictionStats(TypedDict, total=False):
-    """Prediction statistics — single source of truth.
+    """Prediction statistics. Produced by stage_6, consumed by report renderers.
 
-    Produced by ``stage_6_reporting.generation._load_prediction_stats``
-    and consumed by report renderers.  ``regression_auxiliary`` is nested
-    (not flattened) to avoid top-level key collisions.
+    ``regression_auxiliary`` is nested to avoid top-level key collisions.
     """
 
     total: int
@@ -120,6 +113,11 @@ class ModelComparisonRow(TypedDict, total=False):
     source: str
 
 
+# ---------------------------------------------------------------------------
+# Schema validators
+# ---------------------------------------------------------------------------
+
+
 def _check_columns(df: pl.DataFrame, required: set[str], schema_name: str) -> None:
     missing = required - set(df.columns)
     if missing:
@@ -162,7 +160,7 @@ class OhlcvSchema:
 
     @classmethod
     def validate(cls, df: pl.DataFrame, config: object | None = None) -> None:
-        """Raise ValueError if required OHLCV columns are missing."""
+        """Raise ValueError if required OHLCV columns missing or invalid."""
         _check_columns(df, cls._COLS, cls.__name__)
         cls._SCHEMA.validate(df, lazy=True)
         _validate_monotonic_unique_timestamp(df, cls.__name__)
@@ -197,7 +195,7 @@ class FeaturesSchema:
 
     @classmethod
     def validate(cls, df: pl.DataFrame, config: object | None = None) -> None:
-        """Raise ValueError if structural or full feature columns are missing."""
+        """Raise ValueError if structural or feature columns missing."""
         _check_columns(df, cls._STRUCTURAL, cls.__name__)
         cls._STRUCTURAL_SCHEMA.validate(df, lazy=True)
         _validate_monotonic_unique_timestamp(df, cls.__name__)
@@ -247,7 +245,7 @@ class LabelsSchema:
 
     @classmethod
     def validate(cls, df: pl.DataFrame, config: object | None = None) -> None:
-        """Raise ValueError if label metadata or feature columns are missing."""
+        """Raise ValueError if label metadata or feature columns missing."""
         _check_columns(df, cls._STRUCTURAL, cls.__name__)
         cls._STRUCTURAL_SCHEMA.validate(df, lazy=True)
         _validate_monotonic_unique_timestamp(df, cls.__name__)
