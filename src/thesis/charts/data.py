@@ -1,4 +1,4 @@
-"""Data exploration chart builders."""
+"""Data exploration charts."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 from pyecharts import options as opts
-from pyecharts.charts import Bar, Grid, HeatMap, Kline, Pie, Tab
+from pyecharts.charts import Bar, HeatMap, Kline, Pie, Tab
 
 from thesis.charts.shared import COLORS, EXCLUDED_FEATURE_COLS
 
@@ -19,30 +19,12 @@ logger = logging.getLogger("thesis.charts")
 
 
 def _get_feature_cols(df: pl.DataFrame) -> list[str]:
-    """Return feature columns excluding non-feature metadata fields.
-
-    Args:
-        df: Input dataframe.
-
-    Returns:
-        Ordered list of feature column names.
-    """
+    """Feature cols — exclude metadata."""
     return [c for c in df.columns if c not in EXCLUDED_FEATURE_COLS]
 
 
 def _downsample_ohlcv(df: pl.DataFrame, max_bars: int) -> pl.DataFrame:
-    """Reduce an OHLCV DataFrame to at most ``max_bars`` rows.
-
-    Aggregates contiguous rows into fixed-size groups.
-
-    Args:
-        df: Input OHLCV time series with ``timestamp``, ``open``, ``high``,
-            ``low``, ``close``, and optionally ``volume``.
-        max_bars: Maximum number of bars to retain after downsampling.
-
-    Returns:
-        Aggregated OHLCV DataFrame with at most *max_bars* rows.
-    """
+    """Downsample OHLCV to max_bars rows."""
     stride = max(1, len(df) // max_bars)
     group_col = pl.int_range(0, len(df)) // stride
     agg_exprs = [
@@ -66,31 +48,16 @@ def build_candlestick_chart(
     df: pl.DataFrame,
     config: Config,
     max_bars: int = 3000,
-) -> tuple[Grid, dict]:
-    """Build an interactive OHLCV candlestick chart with stacked volume.
-
-    Expects *df* to contain columns: ``timestamp``, ``open``, ``high``,
-    ``low``, ``close``; ``volume`` is optional.  The chart is laid out as
-    price (top) and volume (bottom) with a visible slider and inside data zoom.
-    Downsamples *df* when its row count exceeds *max_bars*.
-
-    Args:
-        df: OHLCV data. ``timestamp`` may be temporal or UTF-8 strings.
-        config: Application configuration used for chart title.
-        max_bars: Maximum number of bars to render before downsampling.
-
-    Returns:
-        A tuple containing the pyecharts ``Grid`` chart and an info dict.
-    """
+) -> tuple[Kline, dict]:
+    """OHLCV candlestick + volume chart."""
     total_bars = len(df)
     if total_bars > max_bars:
         df = _downsample_ohlcv(df, max_bars)
         downsampled = True
         logger.info(
-            "Candlestick: downsampled %d -> %d bars (stride=%d)",
+            "Candlestick: downsampled %d -> %d bars",
             total_bars,
             len(df),
-            max(1, total_bars // max_bars),
         )
     else:
         downsampled = False
@@ -98,7 +65,6 @@ def build_candlestick_chart(
     n = len(df)
     logger.info("Candlestick: rendering %d bars", n)
 
-    # Format timestamps — detect whether data has intraday time
     ts_col = df["timestamp"]
     if ts_col.dtype == pl.Utf8:
         ts_col = ts_col.str.to_datetime()
@@ -109,7 +75,6 @@ def build_candlestick_chart(
     else:
         timestamps = ts_col.cast(pl.Utf8).to_list()
 
-    # ECharts candlestick format: [open, close, low, high]
     opens = df["open"].to_numpy().astype(float)
     closes = df["close"].to_numpy().astype(float)
     lows = df["low"].to_numpy().astype(float)
@@ -119,8 +84,9 @@ def build_candlestick_chart(
         for o, c, lo, hi in zip(opens, closes, lows, highs, strict=True)
     ]
 
-    # Volume with color
-    volumes = df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
+    volumes = (
+        df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
+    )
 
     kline = (
         Kline()
@@ -173,16 +139,6 @@ def build_candlestick_chart(
                     range_end=100,
                 ),
             ],
-            visualmap_opts=opts.VisualMapOpts(
-                is_show=False,
-                dimension=2,
-                series_index=5,
-                is_piecewise=True,
-                pieces=[
-                    {"value": 1, "color": COLORS["long"]},
-                    {"value": -1, "color": COLORS["short"]},
-                ],
-            ),
             axispointer_opts=opts.AxisPointerOpts(
                 is_show=True,
                 link=[{"xAxisIndex": "all"}],
@@ -197,9 +153,7 @@ def build_candlestick_chart(
         )
     )
 
-    # Volume bar chart - single series with color based on price direction
     if volumes is not None:
-        # Format: [index, volume, direction]
         volume_data = [
             [i, float(volumes[i]), 1 if closes[i] >= opens[i] else -1]
             for i in range(len(volumes))
@@ -243,7 +197,8 @@ def build_candlestick_chart(
     else:
         bar = Bar()
 
-    # Grid with clear separation between price and volume
+    from pyecharts.charts import Grid
+
     grid = (
         Grid(
             init_opts=opts.InitOpts(
@@ -273,14 +228,7 @@ def build_candlestick_chart(
 
 
 def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
-    """Build an interactive correlation heatmap for feature columns.
-
-    Args:
-        df: Feature dataframe used to compute pairwise correlations.
-
-    Returns:
-        A pyecharts ``HeatMap`` chart of the correlation matrix.
-    """
+    """Correlation heatmap for feature columns."""
     feature_cols = _get_feature_cols(df)
     if len(feature_cols) < 2:
         feature_cols = [
@@ -293,7 +241,6 @@ def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
     corr = numeric_df.corr().to_numpy()
     n = len(feature_cols)
 
-    # Flatten to [x, y, value] for pyecharts HeatMap
     data = []
     for i in range(n):
         for j in range(n):
@@ -332,14 +279,7 @@ def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
 
 
 def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
-    """Build a pie chart for triple-barrier label distribution.
-
-    Args:
-        df: Labels dataframe containing a ``label`` column.
-
-    Returns:
-        A pyecharts ``Pie`` chart.
-    """
+    """Pie chart for triple-barrier label distribution."""
     labels = df["label"].to_numpy()
     counts = {k: int((labels == k).sum()) for k in [-1, 0, 1]}
 
@@ -387,14 +327,7 @@ def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
 
 
 def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
-    """Build tabbed histograms for feature distributions.
-
-    Args:
-        df: Feature dataframe used to compute per-column histograms.
-
-    Returns:
-        A pyecharts ``Tab`` containing one histogram bar chart per feature.
-    """
+    """Tabbed histograms for feature distributions."""
     feature_cols = _get_feature_cols(df)
     tab = Tab()
 
@@ -404,7 +337,6 @@ def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
             continue
 
         counts, bin_edges = np.histogram(vals, bins=50)
-        # Use bin centers as labels
         bin_centers = [
             (bin_edges[i] + bin_edges[i + 1]) / 2 for i in range(len(counts))
         ]
@@ -433,7 +365,7 @@ def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
 
 
 def build_feature_distribution_chart(df: pl.DataFrame, feature_col: str) -> Bar:
-    """Build one compact histogram for a selected feature column."""
+    """Histogram for one feature column."""
     if feature_col not in df.columns:
         return Bar()
 

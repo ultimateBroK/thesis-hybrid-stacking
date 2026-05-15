@@ -1,4 +1,4 @@
-"""Shared chart constants and typing helpers."""
+"""Shared chart constants."""
 
 from __future__ import annotations
 

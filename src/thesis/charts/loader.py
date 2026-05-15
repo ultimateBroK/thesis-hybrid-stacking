@@ -1,4 +1,4 @@
-"""Session artifact loading for dashboard charts."""
+"""Session artifact loading."""
 
 from __future__ import annotations
 
@@ -16,15 +16,7 @@ logger = logging.getLogger("thesis.charts")
 
 
 def load_session_data(config: Config) -> dict[str, Any]:
-    """Load session artifacts required by interactive chart builders.
-
-    Args:
-        config: Runtime configuration containing artifact paths.
-
-    Returns:
-        Dictionary with loaded dataframes and JSON artifacts used across data,
-        model, and backtest chart tabs.
-    """
+    """Load session artifacts for chart builders."""
     data: dict[str, Any] = {}
 
     data["session_dir"] = config.paths.session_dir
@@ -37,27 +29,24 @@ def load_session_data(config: Config) -> dict[str, Any]:
         pl.read_parquet(features_path) if features_path.exists() else None
     )
 
-    # Test data (for manual backtesting)
     test_path = Path(config.paths.test_data)
     data["test"] = pl.read_parquet(test_path) if test_path.exists() else None
 
     labels_path = Path(config.paths.labels)
     data["labels"] = pl.read_parquet(labels_path) if labels_path.exists() else None
 
-    # Predictions
-    if config.paths.session_dir:
-        preds_path = (
-            Path(config.paths.session_dir) / "predictions" / "final_predictions.csv"
-        )
-    else:
-        preds_path = Path(config.paths.predictions)
+    preds_path = (
+        Path(config.paths.session_dir) / "predictions" / "final_predictions.csv"
+        if config.paths.session_dir
+        else Path(config.paths.predictions)
+    )
     data["predictions"] = pl.read_csv(preds_path) if preds_path.exists() else None
 
-    # Backtest results (JSON)
-    if config.paths.session_dir:
-        bt_path = Path(config.paths.session_dir) / "backtest" / "backtest_results.json"
-    else:
-        bt_path = Path(config.paths.backtest_results)
+    bt_path = (
+        Path(config.paths.session_dir) / "backtest" / "backtest_results.json"
+        if config.paths.session_dir
+        else Path(config.paths.backtest_results)
+    )
     if bt_path.exists():
         with open(bt_path) as f:
             bt = json.load(f)
@@ -69,11 +58,11 @@ def load_session_data(config: Config) -> dict[str, Any]:
         data["trades"] = []
         data["metrics"] = {}
 
-    # Feature importance (JSON)
-    if config.paths.session_dir:
-        fi_path = Path(config.paths.session_dir) / "reports" / "feature_importance.json"
-    else:
-        fi_path = Path("results/feature_importance.json")
+    fi_path = (
+        Path(config.paths.session_dir) / "reports" / "feature_importance.json"
+        if config.paths.session_dir
+        else Path("results/feature_importance.json")
+    )
     if fi_path.exists():
         with open(fi_path) as f:
             data["feature_importance"] = json.load(f)

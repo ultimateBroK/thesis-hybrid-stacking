@@ -1,4 +1,4 @@
-"""Model performance chart builders."""
+"""Model performance charts."""
 
 from __future__ import annotations
 
@@ -14,20 +14,11 @@ def build_confusion_matrix_chart(
     true: np.ndarray,
     pred: np.ndarray,
 ) -> HeatMap:
-    """Build a normalized confusion-matrix heatmap for 3-class labels.
-
-    Args:
-        true: Ground-truth labels encoded as ``-1``, ``0``, or ``1``.
-        pred: Predicted labels encoded as ``-1``, ``0``, or ``1``.
-
-    Returns:
-        A pyecharts ``HeatMap`` showing row-normalized confusion values.
-    """
+    """Normalized confusion matrix heatmap for 3-class labels."""
     labels_order = [-1, 0, 1]
     display_labels = ["Short (-1)", "Hold (0)", "Long (1)"]
     n = len(labels_order)
 
-    # Build raw confusion matrix
     cm = np.zeros((n, n), dtype=int)
     for t, p in zip(true, pred, strict=True):
         if t in labels_order and p in labels_order:
@@ -35,7 +26,6 @@ def build_confusion_matrix_chart(
             pi = labels_order.index(int(p))
             cm[ti, pi] += 1
 
-    # Normalize by row
     cm_norm = cm.astype(float)
     for i in range(n):
         row_sum = cm[i].sum()
@@ -67,25 +57,14 @@ def build_confusion_matrix_chart(
                 pos_top="center",
                 range_color=["#FFFFFF", "#93C5FD", "#2563EB"],
             ),
-            tooltip_opts=opts.TooltipOpts(
-                trigger="item",
-            ),
+            tooltip_opts=opts.TooltipOpts(trigger="item"),
         )
     )
     return chart
 
 
 def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
-    """Build grouped confidence-distribution bars for long/short predictions.
-
-    Args:
-        preds_df: Prediction dataframe containing predicted labels and class
-            probabilities.
-
-    Returns:
-        A pyecharts ``Bar`` chart with normalized long/short confidence
-        distributions, or an empty chart when required columns are missing.
-    """
+    """Long/short confidence distribution bars."""
     if "pred_label" not in preds_df.columns:
         return Bar()
     y_pred = preds_df["pred_label"].to_numpy()
@@ -102,13 +81,11 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
     long_vals = long_conf[y_pred == 1]
     short_vals = short_conf[y_pred == -1]
 
-    # Histogram bins - use 20 bins for cleaner visualization
     bins = np.linspace(0, 1, 21)
     long_counts, _ = np.histogram(long_vals, bins=bins)
     short_counts, _ = np.histogram(short_vals, bins=bins)
     bin_labels = [f"{bins[i]:.2f}" for i in range(len(bins) - 1)]
 
-    # Normalize to relative frequency (percentage) for comparison
     long_total = long_counts.sum()
     short_total = short_counts.sum()
     long_pct = (long_counts / long_total * 100) if long_total > 0 else long_counts
@@ -155,20 +132,11 @@ def build_feature_importance_chart(
     fi: dict[str, float],
     top_n: int = 20,
 ) -> Bar:
-    """Build a horizontal top-N feature-importance chart.
-
-    Args:
-        fi: Mapping from feature name to importance score.
-        top_n: Number of top-ranked features to display.
-
-    Returns:
-        A pyecharts ``Bar`` chart with stacked model/static feature contributions.
-    """
+    """Horizontal top-N feature importance chart."""
     items = sorted(fi.items(), key=lambda x: x[1], reverse=True)[:top_n]
     items = items[::-1]
     names = [n for n, _ in items]
 
-    # Split into model-derived and technical feature buckets
     static_values = [v if not n.startswith("model_") else 0 for n, v in items]
     model_values = [v if n.startswith("model_") else 0 for n, v in items]
 
@@ -205,7 +173,7 @@ def build_prediction_distribution_chart(
     true: np.ndarray,
     pred: np.ndarray,
 ) -> Bar:
-    """Build actual-vs-predicted label distribution bars."""
+    """Actual vs predicted label distribution bars."""
     labels = ["Short", "Hold", "Long"]
     label_values = [-1, 0, 1]
     actual_vals = [int((true == value).sum()) for value in label_values]

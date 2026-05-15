@@ -1,4 +1,4 @@
-"""Backtest chart builders."""
+"""Backtest charts."""
 
 from __future__ import annotations
 
@@ -17,16 +17,7 @@ def build_equity_drawdown_chart(
     metrics: dict,
     initial_capital: float = 10_000.0,
 ) -> Grid:
-    """Build an equity-curve chart with a drawdown subplot.
-
-    Args:
-        trades: Trade records containing at least ``pnl``, with optional times.
-        metrics: Backtest metrics used to annotate chart title.
-        initial_capital: Starting equity value.
-
-    Returns:
-        A pyecharts ``Grid`` containing equity and drawdown charts.
-    """
+    """Equity curve + drawdown subplot."""
     if not trades or initial_capital <= 0:
         return Grid()
 
@@ -119,15 +110,7 @@ def build_pnl_histogram_chart(
     trades: list[dict],
     metrics: dict,
 ) -> Bar:
-    """Build a histogram of winning and losing trade PnL values.
-
-    Args:
-        trades: Trade records containing numeric ``pnl`` values.
-        metrics: Backtest metrics used to annotate averages in chart title.
-
-    Returns:
-        A pyecharts ``Bar`` histogram with separate win/loss series.
-    """
+    """Win/loss PnL histogram."""
     if not trades:
         return Bar()
 
@@ -137,7 +120,6 @@ def build_pnl_histogram_chart(
 
     all_pnls = np.array(pnls)
     if all_pnls.min() == all_pnls.max():
-        # Constant PnL: create a single centred bin so the histogram still renders
         center = all_pnls.min()
         bins = np.array([center - 0.5, center + 0.5])
     else:
@@ -181,15 +163,7 @@ def _compute_monthly_returns(
     trades: list[dict],
     initial_capital: float = 10_000.0,
 ) -> dict[tuple[int, int], float]:
-    """Compute monthly percentage returns from sequential trades.
-
-    Args:
-        trades: Trade records containing ``pnl`` and ``exit_time`` values.
-        initial_capital: Starting equity before applying trade PnL.
-
-    Returns:
-        Mapping of ``(year, month)`` tuples to monthly return percentages.
-    """
+    """Monthly % returns from trades."""
     equity = initial_capital
     equity_by_month: dict[tuple[int, int], tuple[float, float]] = {}
 
@@ -219,35 +193,18 @@ def _compute_monthly_returns(
 
 
 def build_monthly_returns_heatmap(
-    trades: list[dict], initial_capital: float = 10_000.0
+    trades: list[dict],
+    initial_capital: float = 10_000.0,
 ) -> HeatMap:
-    """Build a year-by-month heatmap of monthly returns.
-
-    Args:
-        trades: Trade records containing ``pnl`` and ``exit_time`` values.
-        initial_capital: Starting equity used for return computation.
-
-    Returns:
-        A pyecharts ``HeatMap`` of monthly return percentages.
-    """
+    """Year-by-month heatmap of monthly returns."""
     monthly = _compute_monthly_returns(trades, initial_capital)
     if not monthly:
         return HeatMap()
 
     years = sorted(set(k[0] for k in monthly))
     month_names = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ]
 
     data = []
@@ -285,16 +242,7 @@ def build_rolling_sharpe_chart(
     trades: list[dict],
     window: int = 30,
 ) -> Line:
-    """Build a rolling annualized Sharpe-ratio line chart.
-
-    Args:
-        trades: Ordered trade list containing numeric ``pnl`` values.
-        window: Number of trades per rolling Sharpe window.
-
-    Returns:
-        A pyecharts ``Line`` chart, or an empty chart when insufficient trades
-        are available.
-    """
+    """Rolling annualized Sharpe ratio."""
     if len(trades) <= window:
         return Line()
 
@@ -310,7 +258,7 @@ def build_rolling_sharpe_chart(
         days = max((exit_ - entry).days, 1)
         trades_per_year = len(trades) / (days / 365.25)
     except (ValueError, TypeError, KeyError):
-        trades_per_year = 100  # Fallback
+        trades_per_year = 100
 
     annualization_factor = np.sqrt(trades_per_year)
 
@@ -366,22 +314,18 @@ def build_rolling_sharpe_chart(
 
 
 def build_duration_pnl_scatter(trades: list[dict]) -> Scatter:
-    """Build a scatter plot of trade duration versus PnL.
-
-    Args:
-        trades: Trade records with ``entry_time``, ``exit_time``, and ``pnl``
-            keys.
-
-    Returns:
-        A pyecharts ``Scatter`` chart with wins and losses as separate series.
-    """
+    """Trade duration vs PnL scatter plot."""
     win_data: list[list[float]] = []
     loss_data: list[list[float]] = []
 
     for t in trades:
         try:
-            entry = datetime.fromisoformat(str(t["entry_time"]).replace("Z", "+00:00"))
-            exit_ = datetime.fromisoformat(str(t["exit_time"]).replace("Z", "+00:00"))
+            entry = datetime.fromisoformat(
+                str(t["entry_time"]).replace("Z", "+00:00")
+            )
+            exit_ = datetime.fromisoformat(
+                str(t["exit_time"]).replace("Z", "+00:00")
+            )
             dur_hours = (exit_ - entry).total_seconds() / 3600
             dur = round(dur_hours, 2)
             pnl = round(t["pnl"], 2)

@@ -1,7 +1,11 @@
-"""Interactive ECharts chart builders for thesis visualization.
+"""Interactive ECharts chart builders.
 
-The public API is kept compatible with the former ``thesis.charts`` module,
-while implementations live in smaller domain modules.
+Split by domain:
+- shared: constants
+- loader: session artifact loading
+- data: OHLCV, features, labels charts
+- model: prediction, confusion, importance charts
+- backtest: equity, PnL, rolling Sharpe charts
 """
 
 from thesis.charts.backtest import (
