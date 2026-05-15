@@ -5,13 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from thesis.stage_4_training.baselines import (
-    always_predict_class,
-    compute_baseline_metrics,
-    majority_class_baseline,
+from thesis.shared.baselines import (
+    always_class,
+    compute_metrics,
+    majority_class,
     naive_direction,
     random_baseline,
-    run_all_baselines,
+    run_all,
 )
 
 # ---------------------------------------------------------------------------
@@ -46,13 +46,13 @@ class TestNaiveDirection:
 class TestAlwaysPredictClass:
     def test_returns_correct_class(self) -> None:
         y_true = np.array([-1, 0, 1, -1, 0])
-        result = always_predict_class(y_true, 1)
+        result = always_class(y_true, 1)
         assert len(result) == 5
         assert (result == 1).all()
 
     def test_different_class(self) -> None:
         y_true = np.zeros(10)
-        result = always_predict_class(y_true, -1)
+        result = always_class(y_true, -1)
         assert (result == -1).all()
 
 
@@ -65,19 +65,19 @@ class TestAlwaysPredictClass:
 class TestMajorityClassBaseline:
     def test_finds_most_common(self) -> None:
         y_true = np.array([0, 0, 0, 1, 1, -1])
-        preds, cls = majority_class_baseline(y_true)
+        preds, cls = majority_class(y_true)
         assert cls == 0
         assert (preds == 0).all()
 
     def test_tie_picks_first_sorted(self) -> None:
         y_true = np.array([-1, 1])
-        preds, cls = majority_class_baseline(y_true)
+        preds, cls = majority_class(y_true)
         # np.unique sorts → first in sorted order is -1
         assert cls == -1
 
     def test_single_class(self) -> None:
         y_true = np.array([1, 1, 1])
-        _, cls = majority_class_baseline(y_true)
+        _, cls = majority_class(y_true)
         assert cls == 1
 
 
@@ -116,19 +116,19 @@ class TestComputeBaselineMetrics:
     def test_perfect_prediction(self) -> None:
         y_true = np.array([-1, 0, 1, -1, 0, 1])
         y_pred = np.array([-1, 0, 1, -1, 0, 1])
-        metrics = compute_baseline_metrics(y_true, y_pred)
+        metrics = compute_metrics(y_true, y_pred)
         assert metrics["accuracy"] == 1.0
         assert metrics["macro_f1"] == 1.0
         assert metrics["directional_accuracy"] == 1.0
 
     def test_returns_expected_keys(self) -> None:
         y = np.array([0, 1, -1])
-        metrics = compute_baseline_metrics(y, y)
+        metrics = compute_metrics(y, y)
         assert set(metrics.keys()) == {"accuracy", "macro_f1", "directional_accuracy"}
 
 
 # ---------------------------------------------------------------------------
-# run_all_baselines
+# run_all
 # ---------------------------------------------------------------------------
 
 
@@ -142,7 +142,7 @@ class TestRunAllBaselines:
 
     def test_returns_expected_keys(self, sample_data: tuple) -> None:
         y_true, y_returns = sample_data
-        results = run_all_baselines(y_true, y_returns)
+        results = run_all(y_true, y_returns)
         expected = {
             "naive_direction",
             "always_long",
@@ -155,7 +155,7 @@ class TestRunAllBaselines:
 
     def test_each_baseline_has_metrics(self, sample_data: tuple) -> None:
         y_true, y_returns = sample_data
-        results = run_all_baselines(y_true, y_returns)
+        results = run_all(y_true, y_returns)
         for name, metrics in results.items():
             assert "accuracy" in metrics, f"{name} missing accuracy"
             assert "macro_f1" in metrics, f"{name} missing macro_f1"
@@ -165,13 +165,13 @@ class TestRunAllBaselines:
 
     def test_majority_class_includes_label(self, sample_data: tuple) -> None:
         y_true, y_returns = sample_data
-        results = run_all_baselines(y_true, y_returns)
+        results = run_all(y_true, y_returns)
         assert "majority_class_label" in results["majority_class"]
 
     def test_deterministic(self, sample_data: tuple) -> None:
         y_true, y_returns = sample_data
-        r1 = run_all_baselines(y_true, y_returns, seed=42)
-        r2 = run_all_baselines(y_true, y_returns, seed=42)
+        r1 = run_all(y_true, y_returns, seed=42)
+        r2 = run_all(y_true, y_returns, seed=42)
         for key in r1:
             for metric in ("accuracy", "macro_f1", "directional_accuracy"):
                 assert r1[key][metric] == r2[key][metric]

@@ -15,7 +15,7 @@ import polars as pl
 from polars.exceptions import ColumnNotFoundError
 
 from thesis.shared.config import Config
-from thesis.stage_4_training import baselines as baselines_mod
+from thesis.shared import baselines as baselines_mod
 from thesis.stage_6_reporting.benchmarks import model_label
 
 logger = logging.getLogger("thesis.report")

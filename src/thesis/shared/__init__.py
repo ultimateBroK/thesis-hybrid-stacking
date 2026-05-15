@@ -52,6 +52,14 @@ from thesis.shared.ui import (
     stage_header,
     stage_skip,
 )
+from thesis.shared.baselines import (
+    always_class,
+    compute_metrics,
+    majority_class,
+    naive_direction,
+    random_baseline,
+    run_all,
+)
 from thesis.shared.zones import ZONE_COLORS, get_metric_zone, is_extreme_value
 
 __all__ = [
@@ -102,4 +110,11 @@ __all__ = [
     "get_metric_zone",
     "is_extreme_value",
     "ZONE_COLORS",
+    # baselines
+    "naive_direction",
+    "always_class",
+    "majority_class",
+    "random_baseline",
+    "compute_metrics",
+    "run_all",
 ]

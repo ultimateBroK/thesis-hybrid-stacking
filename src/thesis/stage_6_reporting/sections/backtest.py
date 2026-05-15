@@ -10,7 +10,7 @@ import polars as pl
 from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.shared.config import Config
-from thesis.stage_4_training import baselines as baselines_mod
+from thesis.shared import baselines as baselines_mod
 from thesis.stage_6_reporting.sections.assess import (
     PRIORITY_ICON,
     PRIORITY_ORDER,
@@ -22,7 +22,7 @@ from thesis.stage_6_reporting.sections.assess import (
     get_zone_info,
     identify_primary_issue,
 )
-from thesis.stage_6_reporting.sections.data import _fmt_f2, _fmt_pct, _tbl_row
+from thesis.stage_6_reporting.md_format import _fmt_f2, _fmt_pct, _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
