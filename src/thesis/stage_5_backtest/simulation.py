@@ -1,7 +1,6 @@
-"""CFD backtest simulation via backtesting.py.
+"""CFD backtest via backtesting.py FractionalBacktest.
 
-SL/TP ATR multipliers must align with label barriers (same ATR multiple),
-otherwise model trained on different risk envelope than backtest executes.
+ATR SL/TP multipliers must match label barriers — same ATR multiple.
 """
 
 from __future__ import annotations
@@ -40,6 +39,7 @@ BacktestResult = tuple[BacktestMetrics, list[TradeRecord], object]
 
 
 def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
+    """Load predictions and price data for backtesting."""
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
         raise FileNotFoundError(f"Predictions not found: {preds_path}")
@@ -56,8 +56,7 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
     else:
         if test_path.exists() and not is_static:
             logger.warning(
-                "Static test file found (%s) but workflow is walk-forward "
-                "(method='%s') — ignoring stale test_data in favor of OOF predictions",
+                "Static test file found (%s) but walk-forward method='%s' — ignoring",
                 test_path,
                 config.validation.method,
             )
@@ -66,7 +65,7 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
                 f"Neither test data ({test_path}) nor labels ({labels_path}) found"
             )
         source = str(labels_path)
-        logger.info("Walk-forward mode: joining OOF predictions with labeled data")
+        logger.info("Walk-forward mode: OOF predictions + labeled data")
         with console.status(f"[cyan]Loading labels for backtest[/] {labels_path}"):
             test_df = pl.read_parquet(labels_path)
 
@@ -77,6 +76,7 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
 
 
 def _apply_oos_date_filter(pdf: pd.DataFrame, config: Config) -> pd.DataFrame:
+    """Filter backtest bars to OOS date range."""
     bc = config.backtest
     if bc.oob_start_date:
         start_ts = pd.Timestamp(bc.oob_start_date)
@@ -131,6 +131,7 @@ def _persist_backtest_results(
     bt_engine: object,
     config: Config,
 ) -> None:
+    """Write metrics JSON, trade-detail CSV, equity-curve CSV, Bokeh HTML."""
     out_path = Path(config.paths.backtest_results)
     _save_json_results(metrics, trades, out_path)
     if trades:
@@ -149,8 +150,8 @@ def _persist_backtest_results(
 def run_backtest(config: Config) -> None:
     """Run full CFD backtest from files in config.
 
-    Walk-forward: joins OOF predictions with labeled dataset.
-    Static: uses traditional test split file.
+    Walk-forward: OOF predictions + labeled dataset.
+    Static: traditional test split file.
     Writes metrics JSON, trade-detail CSV, equity-curve CSV, Bokeh HTML.
     """
     metrics, trades, bt_engine = compute_backtest(config)
@@ -167,16 +168,7 @@ def run_backtest_from_data(
     preds_df: pl.DataFrame,
     config: Config,
 ) -> BacktestResult:
-    """Run backtest using in-memory Polars DataFrames.
-
-    Args:
-        test_df: Market/test data with price columns and atr_14.
-        preds_df: Predictions with timestamp and pred_label.
-        config: Configuration with backtest, data, and paths sections.
-
-    Returns:
-        Tuple of (metrics dict, trades list).
-    """
+    """Run backtest using in-memory Polars DataFrames."""
     pdf = _prepare_df(test_df, preds_df)
     stats, bt = _run_fractional_backtest(pdf, config)
     metrics = _normalize_stats(stats)
@@ -212,13 +204,7 @@ def run_backtest_manual(
     daily_loss_limit: float = 0.03,
     min_bars_between_trades: int = 6,
 ) -> tuple[BacktestMetrics, list[TradeRecord]]:
-    """Run backtest with manual params (no Config required).
-
-    Designed for dashboards where params can be tuned without config file.
-
-    Returns:
-        Tuple of (metrics dict, trades list).
-    """
+    """Run backtest with manual params (no Config required)."""
     from thesis.stage_5_backtest.runners import (
         _compute_spread_rate,
         _create_fractional_backtest,

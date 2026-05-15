@@ -1,4 +1,4 @@
-"""Stage 5 backtest helpers (prep + runner)."""
+"""Stage 5 backtest helpers: data prep + FractionalBacktest runner."""
 
 from __future__ import annotations
 
@@ -23,11 +23,12 @@ def _validate_backtest_merge(
     test_source: str = "<in-memory test/features>",
     preds_source: str = "<in-memory predictions>",
 ) -> None:
+    """Validate prediction coverage after join. Fail if < 99%."""
     coverage = merged_rows / prediction_rows if prediction_rows else 0.0
     dropped = prediction_rows - merged_rows
     logger.info(
-        "Backtest merge: features_rows=%d predictions_rows=%d merged_rows=%d "
-        "coverage=%.2f%% dropped_predictions=%d",
+        "Backtest merge: features=%d predictions=%d merged=%d "
+        "coverage=%.2f%% dropped=%d",
         feature_rows,
         prediction_rows,
         merged_rows,
@@ -36,12 +37,9 @@ def _validate_backtest_merge(
     )
     if coverage < 0.99:
         raise ValueError(
-            "Backtest merge coverage below 99%: "
-            f"expected>=99.00%, actual={coverage * 100.0:.2f}%, "
-            f"features_rows={feature_rows}, predictions_rows={prediction_rows}, "
-            f"merged_rows={merged_rows}, dropped_predictions={dropped}, "
-            f"features_path={test_source}, predictions_path={preds_source}. "
-            "Check timestamp alignment before backtesting."
+            f"Backtest merge coverage {coverage * 100.0:.2f}% < 99%. "
+            f"features={test_source}, predictions={preds_source}. "
+            "Check timestamp alignment."
         )
 
 
@@ -52,6 +50,7 @@ def _prepare_df(
     test_source: str = "<in-memory test/features>",
     preds_source: str = "<in-memory predictions>",
 ) -> pd.DataFrame:
+    """Join test/feature data with predictions. Return pandas DataFrame."""
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
 
@@ -109,6 +108,7 @@ def _compute_spread_rate(
     tick_size: float,
     median_price: float,
 ) -> float:
+    """Convert spread+slippage ticks to fractional spread rate."""
     total_ticks = spread_ticks + slippage_ticks
     return total_ticks * tick_size / median_price
 
@@ -117,6 +117,7 @@ def _make_commission_fn(
     commission_per_lot: float,
     contract_size: float,
 ) -> Callable[[float, float], float]:
+    """Build per-trade commission function."""
     def commission_fn(order_size: float, price: float) -> float:  # noqa: ARG001
         lots = abs(order_size) / contract_size
         return lots * commission_per_lot
@@ -133,6 +134,7 @@ def _create_fractional_backtest(
     leverage: float | int,
     fractional_unit: float = 1.0,
 ) -> FractionalBacktest:
+    """Create FractionalBacktest instance with CFD settings."""
     return FractionalBacktest(
         pdf,
         MLSignalStrategy,
@@ -150,6 +152,7 @@ def _run_fractional_backtest(
     pdf: pd.DataFrame,
     config: Config,
 ) -> tuple[pd.Series, FractionalBacktest]:
+    """Run FractionalBacktest with config parameters. Return stats + engine."""
     bc = config.backtest
     dc = config.data
 

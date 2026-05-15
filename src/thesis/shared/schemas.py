@@ -102,7 +102,7 @@ class TradeRecord(TypedDict, total=False):
     pnl: float
     return_pct: float
     commission: float
-    duration: str
+    duration_sec: float
 
 
 class ModelComparisonRow(TypedDict, total=False):

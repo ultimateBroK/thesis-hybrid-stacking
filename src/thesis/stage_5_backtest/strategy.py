@@ -1,4 +1,4 @@
-"""ML signal trading strategy used in stage 5 backtests."""
+"""ML signal strategy. ATR stops, confidence gate, drawdown circuit breaker."""
 
 from __future__ import annotations
 
@@ -16,12 +16,7 @@ _MIN_ORDER_SIZE: int = 1
 
 
 def _calendar_day(value: object) -> object:
-    """Return market date anchored to 5PM New York (FX/CFD market close).
-
-    UTC conversion accounts for NY DST offsets (UTC-5 standard / UTC-4 DST).
-    Market day rolls at 5PM NY; adding 7 hours shifts to next-calendar-day 00:00 ET,
-    which is equivalent to next- calendar-day in UTC terms after TZ conversion.
-    """
+    """Return calendar date (NY market close = 5PM → next day boundary)."""
     ts = pd.Timestamp(value)
     if ts.tzinfo is None:
         ts = ts.tz_localize("UTC")
@@ -32,11 +27,10 @@ def _calendar_day(value: object) -> object:
 
 
 class MLSignalStrategy(Strategy):
-    """Trade on ML signals with ATR stops and simple risk gates.
+    """Trade ML signals. ATR stops/TPs, confidence filter, daily loss gate.
 
-    Signal shift: pred_label[i-1] → trade at open[i] (backtesting fills next bar).
-    Runtime config passed through bt.run() keyword arguments.
-    Class attrs are safety defaults; callers override via bt.run().
+    Signal shift: pred_label[i-1] → trade at open[i] (next bar fill).
+    Runtime config via bt.run() kwargs.
     """
 
     atr_stop_mult = 1.0
@@ -55,7 +49,7 @@ class MLSignalStrategy(Strategy):
     min_bars_between_trades = 0
 
     def init(self) -> None:
-        """Register indicators and initialise risk-management state."""
+        """Register indicators. Init risk state."""
         self._initial_capital = self.equity
 
         self.signals = self.I(lambda: self.data.pred_label, name="signals", plot=False)
@@ -85,9 +79,11 @@ class MLSignalStrategy(Strategy):
         self._current_date: object = None
 
     def _floor_atr(self, atr: float) -> float:
+        """Floor ATR at min_atr to prevent zero stops."""
         return max(atr, self.min_atr)
 
     def _update_risk_state(self) -> None:
+        """Update peak equity, drawdown cooldown, daily P&L."""
         eq = self.equity
         self._peak_equity = max(self._peak_equity, eq)
 
@@ -100,8 +96,7 @@ class MLSignalStrategy(Strategy):
                 self._dd_cutoff_breached = True
                 self._dd_cooldown_left = self.dd_cooldown_bars
                 logger.warning(
-                    "Drawdown circuit breaker triggered: %.1f%% drawdown "
-                    "exceeds %.1f%% cutoff — blocking new trades",
+                    "Drawdown circuit breaker triggered: %.1f%% > %.1f%% cutoff",
                     dd * 100,
                     self.max_drawdown_cutoff * 100,
                 )
@@ -112,6 +107,7 @@ class MLSignalStrategy(Strategy):
             self._daily_start_equity = eq
 
     def _is_trading_allowed(self) -> bool:
+        """Check all risk gates. Return True if new trades allowed."""
         if len(self.orders) > 0:
             return False
 
@@ -141,10 +137,11 @@ class MLSignalStrategy(Strategy):
         return True
 
     def _compute_lots(self, confidence: float | None) -> float:
+        """Return lot size clamped to min/max."""
         return max(self.min_lots, min(self.lots_per_trade, self.max_lots))
 
     def next(self) -> None:
-        """Evaluate latest model signal, place orders if appropriate."""
+        """Evaluate signal, place orders if risk gates pass."""
         if self._position_was_open and not self.position:
             self._last_exit_bar = len(self.data)
             self._position_was_open = False

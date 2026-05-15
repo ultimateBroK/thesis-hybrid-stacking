@@ -1,4 +1,4 @@
-"""Stage 5 backtest outputs (metrics, trades, charts)."""
+"""Stage 5 backtest outputs: metrics JSON, trades CSV, equity curve CSV, Bokeh HTML."""
 
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ _BT_KEY_MAP: dict[str, str] = {
 def _log_core_backtest_metrics(
     metrics: BacktestMetrics, initial_capital: float
 ) -> None:
+    """Log core backtest metrics."""
     logger.info("=== BACKTEST CORE METRICS ===")
     logger.info("  Initial Balance: %s", f"${initial_capital:,.0f}")
     for key, label, fmt in CORE_BACKTEST_METRICS:
@@ -59,6 +60,7 @@ def _log_core_backtest_metrics(
 
 
 def _normalize_stats(stats: pd.Series) -> BacktestMetrics:
+    """Map backtesting.py keys to canonical BacktestMetrics keys."""
     raw = stats.to_dict()
     out: dict[str, Any] = {}
     for bt_key, canonical_key in _BT_KEY_MAP.items():
@@ -73,6 +75,7 @@ def _trades_to_list(
     commission_per_lot: float,
     contract_size: float = _DEFAULT_CONTRACT_SIZE,
 ) -> list[TradeRecord]:
+    """Convert backtesting.py trades DataFrame to list of TradeRecord dicts."""
     if trades_df.empty:
         return []
     records = trades_df.reset_index(drop=True)
@@ -112,6 +115,7 @@ def _save_json_results(
     trades: list[TradeRecord],
     out_path: Path,
 ) -> None:
+    """Write backtest results to JSON."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
         json.dump({"metrics": metrics, "trades": trades}, f, indent=2, default=str)
@@ -119,6 +123,7 @@ def _save_json_results(
 
 
 def _save_trade_details_csv(trades: list[TradeRecord], out_dir: Path) -> None:
+    """Write per-trade detail CSV."""
     if not trades:
         return
     csv_path = out_dir / "trades_detail.csv"
@@ -135,6 +140,7 @@ def _save_equity_curve_csv(
     out_dir: Path,
     initial_capital: float,
 ) -> None:
+    """Write equity curve CSV (cumulative P&L with drawdown)."""
     if not trades:
         return
     eq_path = out_dir / "equity_curve.csv"
@@ -164,6 +170,7 @@ def _save_bokeh_chart(
     metrics: BacktestMetrics,
     session_dir: Path | None,
 ) -> None:
+    """Plot equity curve + drawdown + trades to HTML via Bokeh."""
     if not session_dir:
         return
     n_trades = int(metrics.get("num_trades", 0))
