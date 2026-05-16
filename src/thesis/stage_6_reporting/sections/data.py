@@ -49,7 +49,7 @@ def render_data_quality_section(
 
     dq_path = Path(config.paths.data_quality_json)
     if not dq_path.exists():
-        L.append("*Data quality JSON not found — stage 1 may not have run.*")
+        L.append("Data quality JSON not found. Stage 1 may not have run.")
         L.append("")
         return
 
@@ -58,14 +58,11 @@ def render_data_quality_section(
             dq = json.load(f)
     except (OSError, json.JSONDecodeError):
         logger.warning("Failed to load data quality JSON: %s", dq_path, exc_info=True)
-        L.append("*Data quality JSON could not be read.*")
+        L.append("Data quality JSON unreadable.")
         L.append("")
         return
 
-    L.append(
-        'This section addresses the thesis question: *"Is that because of data, '
-        'the result awful?"*'
-    )
+    L.append("Data quality check: does data explain poor results?")
     L.append("")
     L.append(_tbl_row("Metric", "Value"))
     L.append(_tbl_row("------", "-----"))
@@ -157,10 +154,9 @@ def render_label_design_section(
     L.append("")
     labels_cfg = config.labels
     L.append(
-        "Labels are generated using the **triple-barrier method**: for each "
-        "bar, ATR-scaled take-profit and stop-loss barriers are placed "
-        "symmetrically. The first barrier touched within the forward horizon "
-        "determines the class label."
+        "Labels: triple-barrier method. "
+        "ATR-scaled TP/SL placed symmetrically. "
+        "First barrier touched = class label."
     )
     L.append("")
     L.append(_tbl_row("Parameter", "Value"))
@@ -212,11 +208,7 @@ def render_validation_methodology_section(
         weeks = bars / (bars_per_year / 52)
         return f"{weeks:.1f}w" if weeks != int(weeks) else f"{int(weeks)}w"
 
-    L.append(
-        "Model evaluation uses a **walk-forward (anchored sliding-window)** "
-        "cross-validation scheme to prevent look-ahead bias and simulate "
-        "realistic deployment conditions."
-    )
+    L.append("Walk-forward sliding-window CV. Prevents look-ahead bias.")
     L.append("")
     L.append(_tbl_row("Parameter", "Value"))
     L.append(_tbl_row("---------", "-----"))
@@ -241,11 +233,8 @@ def render_validation_methodology_section(
     L.append(_tbl_row("Min train bars", f"{val_cfg.min_train_bars:,}"))
     L.append("")
     L.append(
-        "*The **purge** gap removes bars at the train/test boundary to prevent "
-        "label leakage from the forward-looking horizon. The **embargo** gap "
-        "adds an additional buffer after the purge to further isolate the test "
-        "set. Together they ensure strict temporal separation between training "
-        "and evaluation data.*"
+        "Purge gap: prevents label leakage at train/test boundary. "
+        "Embargo: extra buffer. Ensures strict temporal separation."
     )
     L.append("")
 

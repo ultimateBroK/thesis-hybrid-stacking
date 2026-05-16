@@ -66,9 +66,7 @@ def compute_missing_bar_stats(
     gaps_found = result["gap_count"]
     weekend_gaps = max(calendar.calendar_gap_count, weekend_heuristic)
     missing_ratio = (
-        (gaps_found - calendar.real_gap_count) / total_bars
-        if total_bars > 0
-        else 0.0
+        (gaps_found - calendar.real_gap_count) / total_bars if total_bars > 0 else 0.0
     )
 
     return {

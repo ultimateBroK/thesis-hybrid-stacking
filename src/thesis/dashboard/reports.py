@@ -12,7 +12,7 @@ from thesis.dashboard.cards import render_metric_card
 from thesis.dashboard.shared import render_chart, trim_generated_visual_sections
 
 
-def render_reports_section(session_dir: str) -> None:
+def render_reports_section(data: dict, session_dir: str) -> None:
     """Markdown report + equity image + walk-forward history + feature importance."""
     st.markdown("> 🏠 Dashboard > **Reports**")
 
@@ -31,7 +31,7 @@ def render_reports_section(session_dir: str) -> None:
     equity_png = reports_dir / "equity_curve.png"
     if equity_png.exists():
         st.subheader("Equity Curve")
-        st.image(str(equity_png), width="stretch")
+        st.image(str(equity_png), width='stretch')
 
     st.divider()
 

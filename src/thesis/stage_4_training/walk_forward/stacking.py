@@ -104,12 +104,21 @@ def _build_meta(name: str, config: Config, X: np.ndarray, y: np.ndarray) -> Any:
         ).fit(X, y)
     if name == "lightgbm":
         val_split = max(1, int(len(X) * 0.2))
-        if len(X) <= _MIN_SPLIT or len(X) - val_split < 2:
-            logger.warning("Meta LGBM validation too small; reusing train as val")
-            X_tr, y_tr, X_val, y_val = X, y, X, y
-        else:
-            X_tr, y_tr = X[:-val_split], y[:-val_split]
-            X_val, y_val = X[-val_split:], y[-val_split:]
+        if len(X) <= _MIN_SPLIT:
+            # Too small — disable early stopping, use conservative rounds
+            import lightgbm as lgb
+
+            return lgb.LGBMClassifier(
+                objective="multiclass",
+                num_class=len(np.unique(y)),
+                n_estimators=50,
+                class_weight="balanced",
+                random_state=config.workflow.random_seed,
+                n_jobs=-1,
+                verbose=-1,
+            ).fit(X, y)
+        X_tr, y_tr = X[:-val_split], y[:-val_split]
+        X_val, y_val = X[-val_split:], y[-val_split:]
         return _train_lgbm(
             X_tr,
             y_tr,
@@ -397,17 +406,28 @@ def _train_stacking_window(
         X_test = pipeline.transform(test_df.select(static_cols).to_pandas())
 
         # Refit bases on deployable train slice
+        # Split base train for early stopping — never use X_test as eval
+        _val_split = max(1, int(len(X_base) * 0.2))
+        X_tr_base, y_tr_base = X_base[:-_val_split], y_base[:-_val_split]
+        X_val_base, y_val_base = X_base[-_val_split:], y_base[-_val_split:]
+
         base_models: dict[str, Any] = {}
         for configured_name in config.model.stacking_base_models:
             short = _BASE_ALIASES.get(configured_name, configured_name)
             if configured_name == "lightgbm":
                 class_weights = (
-                    _compute_class_weights(y_base)
-                    if len(np.unique(y_base)) > 1
+                    _compute_class_weights(y_tr_base)
+                    if len(np.unique(y_tr_base)) > 1
                     else None
                 )
                 model = _train_lgbm(
-                    X_base, y_base, X_test, y_test, class_weights, config, selected
+                    X_tr_base,
+                    y_tr_base,
+                    X_val_base,
+                    y_val_base,
+                    class_weights,
+                    config,
+                    selected,
                 )
             else:
                 model = _fit_safe(_build_base(configured_name, config), X_base, y_base)
@@ -490,7 +510,7 @@ def _train_stacking_window(
             "base_models": list(base_models),
             "meta_model": config.model.stacking_meta_model,
             "base_model_accuracy": {
-                name: float((preds == y_test).mean())
+                name: float((preds.argmax(axis=1) == y_test).mean())
                 for name, preds in test_outputs.items()
             },
             "mean_base_prob_sum": float(
@@ -513,6 +533,12 @@ def _train_stacking_window(
         }
     )
 
+    # Base model predictions for comparison
+    base_preds = {
+        name: _CLASS_ORDER[preds.argmax(axis=1)].astype(np.int32).tolist()
+        for name, preds in test_outputs.items()
+    }
+
     return {
         "oof_chunk": oof_chunk,
         "bundle": {
@@ -532,6 +558,7 @@ def _train_stacking_window(
         "soft_vote_preds": soft_vote_preds.tolist(),
         "final_preds": final_preds.tolist(),
         "y_true": y_test.tolist(),
+        "base_preds": base_preds,
     }
 
 
@@ -567,6 +594,11 @@ def _save_results(
         _save_feature_importance(last["lgbm_model"], last["feature_cols"], config)
 
     # Model comparison payload
+    _BASE_COMPARE_NAMES = {
+        "logreg": "Logistic Regression",
+        "rf": "Random Forest",
+        "lgbm": "LightGBM",
+    }
     comparison: dict[str, dict[str, list[int]]] = {
         "hybrid_stacking": {"true": [], "pred": []}
     }
@@ -574,6 +606,11 @@ def _save_results(
         y_t = [int(x) for x in r["y_true"]]
         comparison["hybrid_stacking"]["true"].extend(y_t)
         comparison["hybrid_stacking"]["pred"].extend([int(x) for x in r["final_preds"]])
+        for short_name, preds_list in r.get("base_preds", {}).items():
+            key = _BASE_COMPARE_NAMES.get(short_name, short_name)
+            comparison.setdefault(key, {"true": [], "pred": []})
+            comparison[key]["true"].extend(y_t)
+            comparison[key]["pred"].extend([int(x) for x in preds_list])
 
     out_cmp = {
         name: _classification_summary(v["true"], v["pred"])

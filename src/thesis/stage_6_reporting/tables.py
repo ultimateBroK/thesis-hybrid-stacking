@@ -84,25 +84,24 @@ def calibration_summary_text(config: Config) -> str | None:
     if ece < ECE_WELL_CALIBRATED:
         quality = "well-calibrated"
         note = (
-            f"**Calibration**: ECE = {ece:.4f} — confidence scores are "
-            f"**{quality}** (ECE < {ECE_WELL_CALIBRATED:.2f})."
-            " Predicted probabilities closely match observed frequencies."
+            f"**Calibration**: ECE = {ece:.4f}. Confidence scores **{quality}** "
+            f"(ECE < {ECE_WELL_CALIBRATED:.2f}). "
+            "Probabilities match observed frequencies."
         )
     elif ece < ECE_MODERATELY_CALIBRATED:
         quality = "moderately calibrated"
         note = (
-            f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
+            f"**Calibration**: ECE = {ece:.4f}. Confidence scores **{quality}** "
             f"({ECE_WELL_CALIBRATED:.2f} <= ECE < {ECE_MODERATELY_CALIBRATED:.2f}). "
-            "Probabilities are somewhat aligned with outcomes; the model may be "
-            "slightly over- or under-confident in some bins."
+            "Probabilities somewhat aligned. Model over/under-confident in some bins."
         )
     else:
         quality = "poorly calibrated"
         note = (
-            f"**Calibration**: ECE = {ece:.4f} — confidence scores are **{quality}** "
-            f"(ECE >= {ECE_MODERATELY_CALIBRATED:.2f}). Predicted probabilities do not "
-            "reliably reflect true likelihoods. Consider temperature scaling or "
-            "isotonic regression."
+            f"**Calibration**: ECE = {ece:.4f}. Confidence scores **{quality}** "
+            f"(ECE >= {ECE_MODERATELY_CALIBRATED:.2f}). "
+            "Probabilities do not reflect true likelihoods. "
+            "Use temperature scaling or isotonic regression."
         )
 
     note += f" Brier score = {brier:.4f}, Log-loss = {logloss:.4f}."
@@ -120,7 +119,7 @@ def calibration_summary_text(config: Config) -> str | None:
 def exec_table(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
     """Key ML-first metrics with application-demo metrics second."""
     if not pred_stats and not metrics:
-        L.append("*No metrics available.*")
+        L.append("No metrics available.")
         return
 
     L.append(_tbl_row("Metric", "Value", "Zone"))
@@ -172,7 +171,7 @@ def exec_verdict(L: list[str], metrics: dict, pred_stats: dict | None) -> None:
     if not pred_stats:
         if not metrics:
             return
-        L.append("Prediction metrics are unavailable; only the application demo ran.")
+        L.append("Prediction metrics unavailable. Only application demo ran.")
         return
 
     render_ml_quality_paragraph(L, pred_stats)
@@ -434,18 +433,16 @@ def benchmark_comparison_table(L: list[str], metrics: dict, config: Config) -> N
     test_path = Path(config.paths.test_data)
     benchmarks = compute_benchmark_comparison(test_path, metrics, config)
     if not benchmarks:
-        L.append("*Test data unavailable — benchmark comparison skipped.*")
+        L.append("Test data unavailable. Benchmark comparison skipped.")
         L.append("")
         return
 
     L.append(
-        "*Benchmarks are rough directional references and are not "
-        "trading-cost-equivalent to the CFD backtest strategy.*"
+        "Benchmarks: rough directional references. Not CFD trading-cost-equivalent."
     )
     L.append(
-        "*Note: Benchmarks exclude transaction costs (spread, slippage, "
-        f"commission); not directly comparable to the {model_label(config)} model "
-        "which incurs all three.*"
+        f"Note: Benchmarks exclude transaction costs. Not directly comparable to "
+        f"{model_label(config)} (which incurs costs)."
     )
     L.append("")
     L.append(_tbl_row("Strategy", "Return", "Sharpe", "Max DD", "Win Rate", "Trades"))
@@ -490,7 +487,7 @@ def issues_list(
     recs: list[tuple[str, str]] = []
 
     if not metrics:
-        issues.append(("critical", "No backtest metrics — pipeline may have failed."))
+        issues.append(("critical", "No backtest metrics. Pipeline may have failed."))
         render_issues(L, issues, recs)
         return
 
@@ -498,13 +495,12 @@ def issues_list(
     if primary:
         issues.append(("critical", primary))
     else:
-        issues.append(("info", "No critical issues identified."))
+        issues.append(("info", "No critical issues."))
 
     recs.append(
         (
             "info",
-            "Consider walk-forward validation for production "
-            "readiness and robustness testing.",
+            "Use walk-forward validation for production readiness.",
         )
     )
 

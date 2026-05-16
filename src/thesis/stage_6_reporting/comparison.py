@@ -165,7 +165,7 @@ def build_model_comparison_rows(
                     n = min(len(y_true), len(bar_returns))
                     y_returns = bar_returns[-n:]
                     y_true = y_true[-n:]
-            baselines = baselines_mod.run_all_baselines(
+            baselines = baselines_mod.run_all(
                 y_true, y_returns, seed=config.workflow.random_seed
             )
             for baseline_key, label in (
@@ -182,8 +182,8 @@ def build_model_comparison_rows(
                         "directional_accuracy": m.get("directional_accuracy"),
                         "accuracy": m.get("accuracy"),
                         "macro_f1": m.get("macro_f1"),
-                        "long_f1": None,
-                        "short_f1": None,
+                        "long_f1": m.get("long_f1"),
+                        "short_f1": m.get("short_f1"),
                         "mae_return": None,
                         "rmse_return": None,
                         "r2_return": None,
@@ -217,10 +217,24 @@ def build_model_comparison_rows(
             if model_name.lower() in existing:
                 continue
             per_class = metrics.get("per_class", {})
+
+            # Infer directional_accuracy from per-class recall × support
+            dir_acc = metrics.get("directional_accuracy")
+            if dir_acc is None and per_class:
+                short_data = per_class.get("-1", {})
+                long_data = per_class.get("1", {})
+                short_correct = short_data.get("recall", 0) * short_data.get(
+                    "support", 0
+                )
+                long_correct = long_data.get("recall", 0) * long_data.get("support", 0)
+                total_dir = short_data.get("support", 0) + long_data.get("support", 0)
+                if total_dir > 0:
+                    dir_acc = (short_correct + long_correct) / total_dir
+
             rows.append(
                 {
                     "model": model_name,
-                    "directional_accuracy": metrics.get("directional_accuracy"),
+                    "directional_accuracy": dir_acc,
                     "accuracy": metrics.get("accuracy"),
                     "macro_f1": metrics.get("macro_f1"),
                     "long_f1": per_class.get("1", {}).get("f1"),

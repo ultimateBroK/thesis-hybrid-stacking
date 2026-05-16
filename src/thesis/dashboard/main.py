@@ -82,7 +82,8 @@ def main() -> None:
 
     # Session selector (auto-refreshes every 30s via @st.fragment)
     with st.sidebar.expander("Session", expanded=True):
-        selected = session_selector_fragment()
+        session_selector_fragment()
+        selected = st.session_state.get("selected_session")
 
     if selected is None:
         st.error("No session results found. Run `pixi run workflow` first.")
@@ -98,7 +99,9 @@ def main() -> None:
         for i, sec in enumerate(sections):
             with nav_cols[i]:
                 btn_type = "primary" if sec == current_section else "secondary"
-                if st.button(sec, key=f"nav_{sec}", type=btn_type, width="stretch"):
+                if st.button(
+                    sec, key=f"nav_{sec}", type=btn_type, width='stretch'
+                ):
                     st.session_state.nav_section = sec
                     st.rerun()
 

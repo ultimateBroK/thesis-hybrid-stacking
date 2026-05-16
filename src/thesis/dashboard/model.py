@@ -22,12 +22,12 @@ def render_model_section(data: dict, session_dir: str) -> None:
     preds = data.get("predictions")
     fi = data.get("feature_importance", {})
 
-    if not preds or len(preds) == 0:
+    if preds is None or preds.is_empty():
         st.info("No predictions data available.")
         return
 
     required = {"true_label", "pred_label"}
-    if not required.issubset(set(preds.columns)):
+    if preds is not None and not required.issubset(set(preds.columns)):
         st.warning(f"Predictions missing columns: {required - set(preds.columns)}")
         return
 

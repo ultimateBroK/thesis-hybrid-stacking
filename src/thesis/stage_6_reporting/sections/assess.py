@@ -64,10 +64,10 @@ def assess_model_quality(pred_stats: dict) -> tuple[str, str]:
         and dir_acc > QUALITY_DIR_ACC_GOOD
         and macro_f1 >= QUALITY_MACRO_F1_GOOD
     ):
-        return ("GOOD", "above baseline with directional edge")
+        return ("GOOD", "above baseline. directional edge")
     if dir_acc >= QUALITY_DIR_ACC_FAIR:
-        return ("FAIR", "slightly above baseline, marginal edge")
-    return ("POOR", "no reliable directional edge")
+        return ("FAIR", "above baseline. marginal edge")
+    return ("POOR", "no directional edge")
 
 
 def assess_trading_edge(metrics: dict) -> tuple[str, str]:
@@ -87,11 +87,11 @@ def derive_recommendation(ml_quality: str, trading_edge: str, metrics: dict) -> 
     """Derive deployability recommendation from ML quality and trading edge."""
     n_trades = int(metrics.get("num_trades", 0)) if metrics else 0
     if ml_quality == "POOR" or trading_edge == "NEGATIVE":
-        return "NOT DEPLOYABLE without fixes"
+        return "NOT DEPLOYABLE. Fix needed"
     if n_trades < MIN_TRADES_DEPLOYABLE:
-        return "NOT DEPLOYABLE — insufficient trades for validation"
+        return "NOT DEPLOYABLE. Insufficient trades"
     if ml_quality == "FAIR" and trading_edge == "MARGINAL":
-        return "DEPLOYABLE with caution — marginal edge"
+        return "DEPLOYABLE with caution. Marginal edge"
     if ml_quality == "GOOD" and trading_edge == "POSITIVE":
         return "DEPLOYABLE"
     return "DEPLOYABLE with caution"
@@ -111,60 +111,51 @@ def identify_primary_issue(metrics: dict, pred_stats: dict | None) -> str | None
     da = pred_stats.get("directional_accuracy", 0) if pred_stats else 0
 
     if nt == 0:
-        return "Zero trades executed — model produces no actionable signals"
+        return "Zero trades executed. No actionable signals"
     if nt > 0 and nt < MIN_TRADES_DEPLOYABLE:
-        return f"Only {nt} trades — statistically unreliable results"
+        return f"Only {nt} trades. Statistically unreliable"
     if sh < 0:
-        return f"Sharpe {sh:.2f} is negative — strategy underperforms risk-free rate"
+        return f"Sharpe {sh:.2f} negative. Underperforms risk-free rate"
     if dd > ISSUE_DD_CATASTROPHIC:
         return (
-            f"Max drawdown {dd:.1f}% > {ISSUE_DD_CATASTROPHIC:.0f}% — "
-            "catastrophic capital erosion"
+            f"Max drawdown {dd:.1f}% > {ISSUE_DD_CATASTROPHIC:.0f}%. "
+            "Catastrophic capital erosion"
         )
     if pf < EDGE_PF_NEGATIVE:
-        return (
-            f"Profit factor {pf:.2f} < {EDGE_PF_NEGATIVE:.1f} — "
-            "strategy loses money on average"
-        )
+        return f"Profit factor {pf:.2f} < {EDGE_PF_NEGATIVE:.1f}. Strategy loses money"
     if da > 0 and da < QUALITY_DIR_ACC_FAIR:
         return (
-            f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_FAIR:.0%} — "
-            "predicts worse than random"
+            f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_FAIR:.0%}. "
+            "Predicts worse than random"
         )
     if ret < ISSUE_RET_SEVERE_LOSS:
-        return f"Return {ret:.0f}% — severe capital loss"
+        return f"Return {ret:.0f}%. Severe capital loss"
     if pf < ISSUE_PF_MARGINAL_EDGE and pf >= EDGE_PF_NEGATIVE:
         return (
-            f"Profit factor {pf:.2f} < {ISSUE_PF_MARGINAL_EDGE:.1f} — "
-            "barely covers transaction costs"
+            f"Profit factor {pf:.2f} < {ISSUE_PF_MARGINAL_EDGE:.1f}. "
+            "Barely covers costs"
         )
     if sh < ISSUE_SHARPE_POOR and sh >= 0:
-        return f"Sharpe {sh:.2f} < {ISSUE_SHARPE_POOR:.1f} — poor risk-adjusted returns"
+        return f"Sharpe {sh:.2f} < {ISSUE_SHARPE_POOR:.1f}. Poor risk-adjusted returns"
     if dd > ISSUE_DD_ELEVATED and dd <= ISSUE_DD_CATASTROPHIC:
-        return f"Max drawdown {dd:.1f}% exceeds {ISSUE_DD_ELEVATED:.0f}% threshold"
+        return f"Max drawdown {dd:.1f}% > {ISSUE_DD_ELEVATED:.0f}%. Elevated"
     if nt >= MIN_TRADES_DEPLOYABLE and nt < ISSUE_TRADES_MARGINAL:
-        return f"Only {nt} trades — marginal sample size"
+        return f"Only {nt} trades. Marginal sample size"
     if sh < EDGE_SHARPE_MARGINAL and sh >= ISSUE_SHARPE_POOR:
         return (
-            f"Sharpe {sh:.2f} < {EDGE_SHARPE_MARGINAL:.1f} — "
-            "below professional threshold"
+            f"Sharpe {sh:.2f} < {EDGE_SHARPE_MARGINAL:.1f}. "
+            "Below professional threshold"
         )
     if ret > ISSUE_RET_SUSPICIOUS:
-        return f"Return {ret:.0f}% suspiciously high — verify for overfitting"
+        return f"Return {ret:.0f}%. Suspiciously high. Verify overfitting"
     if dd > ISSUE_DD_CFD_ELEVATED and dd <= ISSUE_DD_ELEVATED:
         return (
-            f"Max drawdown {dd:.1f}% > {ISSUE_DD_CFD_ELEVATED:.0f}% — "
-            "elevated for CFD trading"
+            f"Max drawdown {dd:.1f}% > {ISSUE_DD_CFD_ELEVATED:.0f}%. Elevated for CFD"
         )
     if wr < ISSUE_WIN_RATE_VIABILITY and wr >= 0:
-        return (
-            f"Win rate {wr:.1f}% < {ISSUE_WIN_RATE_VIABILITY:.0f}% — "
-            "below trading viability"
-        )
+        return f"Win rate {wr:.1f}% < {ISSUE_WIN_RATE_VIABILITY:.0f}%. Below viability"
     if da > 0 and da < QUALITY_DIR_ACC_GOOD:
-        return (
-            f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_GOOD:.0%} — unreliable"
-        )
+        return f"Directional accuracy {da:.1%} < {QUALITY_DIR_ACC_GOOD:.0%}. Unreliable"
     if pf < EDGE_PF_MARGINAL and pf >= ISSUE_PF_MARGINAL_EDGE:
-        return f"Profit factor {pf:.2f} < {EDGE_PF_MARGINAL:.1f} — marginal edge"
+        return f"Profit factor {pf:.2f} < {EDGE_PF_MARGINAL:.1f}. Marginal edge"
     return None

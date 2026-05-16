@@ -9,8 +9,9 @@ import numpy as np
 import polars as pl
 from polars.exceptions import ColumnNotFoundError, ComputeError
 
-from thesis.shared.config import Config
 from thesis.shared import baselines as baselines_mod
+from thesis.shared.config import Config
+from thesis.stage_6_reporting.md_format import _fmt_f2, _fmt_pct, _tbl_row
 from thesis.stage_6_reporting.sections.assess import (
     PRIORITY_ICON,
     PRIORITY_ORDER,
@@ -22,7 +23,6 @@ from thesis.stage_6_reporting.sections.assess import (
     get_zone_info,
     identify_primary_issue,
 )
-from thesis.stage_6_reporting.md_format import _fmt_f2, _fmt_pct, _tbl_row
 
 logger = logging.getLogger("thesis.report")
 
@@ -52,9 +52,8 @@ def render_metric_zones_section(
     L.append(heading)
     L.append("")
     L.append(
-        "*Each metric is classified into quality zones based on "
-        "industry-standard thresholds. "
-        "🔴 = poor/dangerous, 🟡 = marginal, 🟢 = good.*"
+        "Metric classified into quality zones. "
+        "🔴 = poor/dangerous, 🟡 = marginal, 🟢 = good."
     )
     L.append("")
 
@@ -102,7 +101,7 @@ def render_baseline_comparison_section(
 
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
-        L.append("*Predictions not available — baseline comparison skipped.*")
+        L.append("Predictions not available. Baseline comparison skipped.")
         L.append("")
         return
 
@@ -110,12 +109,12 @@ def render_baseline_comparison_section(
         df = pl.read_csv(preds_path)
     except (ComputeError, OSError):
         logger.warning("Failed to load predictions for baselines", exc_info=True)
-        L.append("*Predictions file could not be read.*")
+        L.append("Predictions file unreadable.")
         L.append("")
         return
 
     if "true_label" not in df.columns:
-        L.append("*true_label column missing — baseline comparison skipped.*")
+        L.append("true_label column missing. Baseline comparison skipped.")
         L.append("")
         return
 
@@ -138,19 +137,18 @@ def render_baseline_comparison_section(
         y_returns = y_true.astype(np.float64)
 
     try:
-        baselines = baselines_mod.run_all_baselines(
+        baselines = baselines_mod.run_all(
             y_true, y_returns, seed=config.workflow.random_seed
         )
     except (ValueError, TypeError):
         logger.warning("Failed to compute baselines", exc_info=True)
-        L.append("*Baseline computation failed.*")
+        L.append("Baseline computation failed.")
         L.append("")
         return
 
     L.append(
-        "*Baseline strategies computed on the same prediction labels as "
-        "reference. The model should outperform all baselines on "
-        "directional accuracy and macro F1.*"
+        "Baselines computed on same labels. "
+        "Model must beat all on directional accuracy and macro F1."
     )
     L.append("")
     L.append(_tbl_row("Strategy", "Accuracy", "Macro F1", "Dir. Accuracy"))
@@ -175,7 +173,7 @@ def render_issues(
     L.append("### Issues")
     L.append("")
     if not issues:
-        L.append("*No issues detected.*")
+        L.append("No issues detected.")
     else:
         sorted_issues = sorted(issues, key=lambda x: SEVERITY_ORDER.get(x[0], 9))
         for i, (severity, desc) in enumerate(sorted_issues, 1):
@@ -186,7 +184,7 @@ def render_issues(
     L.append("### Recommendations")
     L.append("")
     if not recs:
-        L.append("*No specific recommendations.*")
+        L.append("No recommendations.")
     else:
         sorted_recs = sorted(recs, key=lambda x: PRIORITY_ORDER.get(x[0], 9))
         for i, (priority, desc) in enumerate(sorted_recs, 1):
@@ -205,21 +203,21 @@ def render_ml_quality_paragraph(L: list[str], pred_stats: dict) -> None:
     gap = acc - baseline
     if gap < 0:
         ml_quality = "weak"
-        gate_msg = "Model is below majority baseline; predictive edge is not validated."
+        gate_msg = "Below baseline. Predictive edge not validated."
     elif acc > baseline + 0.05 and dir_acc > 0.55 and macro_f1 >= 0.45:
         ml_quality = "strong"
-        gate_msg = "Model is above baseline with directional edge."
+        gate_msg = "Above baseline. Directional edge present."
     elif dir_acc >= 0.50:
         ml_quality = "acceptable"
-        gate_msg = "Model is slightly above baseline with marginal directional edge."
+        gate_msg = "Slightly above baseline. Marginal directional edge."
     else:
         ml_quality = "weak"
-        gate_msg = "Model has no reliable directional edge."
+        gate_msg = "No reliable directional edge."
     L.append(
-        f"ML quality is **{ml_quality}**: exact accuracy {acc:.1%} vs "
-        f"majority baseline {baseline:.1%}, directional accuracy {dir_acc:.1%}, "
-        f"macro F1 {macro_f1:.3f}. {gate_msg} Backtest figures below are treated as an "
-        "application demo, not the primary proof of model quality."
+        f"ML quality **{ml_quality}**: exact {acc:.1%} vs "
+        f"baseline {baseline:.1%}, dir {dir_acc:.1%}, "
+        f"macro F1 {macro_f1:.3f}. {gate_msg} "
+        "Backtest = application demo. Not primary proof."
     )
 
 
@@ -248,7 +246,7 @@ def render_primary_issue(L: list[str], metrics: dict, pred_stats: dict | None) -
         if primary:
             L.append(f"**Primary issue:** {primary}.")
     else:
-        L.append("**Primary issue:** No backtest metrics — pipeline may have failed.")
+        L.append("**Primary issue:** No backtest metrics. Pipeline may have failed.")
 
     if not metrics:
         return
@@ -258,6 +256,6 @@ def render_primary_issue(L: list[str], metrics: dict, pred_stats: dict | None) -
     wr = metrics.get("win_rate_pct", 0)
     dd = abs(metrics.get("max_drawdown_pct", 0))
     L.append(
-        f"Application demo returned {ret:.1f}% over {n_trades} trades "
-        f"with Sharpe {sharpe:.2f}, win rate {wr:.1f}%, max drawdown {dd:.1f}%."
+        f"Application demo: {ret:.1f}% return, {n_trades} trades. "
+        f"Sharpe {sharpe:.2f}, win rate {wr:.1f}%, max DD {dd:.1f}%."
     )

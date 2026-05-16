@@ -42,13 +42,19 @@ def _discover_files(raw_dir: Path, ohlcv_path: Path) -> list[Path]:
 
 
 def _parse_dt(value: str, tz: str) -> pl.Expr:
-    """Config datetime string → timezone-aware Polars expr."""
+    """Config datetime string → tz-naive UTC Polars expr matching OHLCV dtype."""
     if not value:
         raise ValueError("datetime bound must not be empty")
     value = value.strip()
     if "T" not in value and " " not in value and ":" not in value:
         value = value + "T23:59:59"
-    return pl.lit(value).str.to_datetime(time_unit="us", time_zone=tz)
+    # Parse as tz-aware then convert to UTC and strip tz to match OHLCV column
+    return (
+        pl.lit(value)
+        .str.to_datetime(time_unit="ms", time_zone=tz)
+        .dt.convert_time_zone("UTC")
+        .dt.replace_time_zone(None)
+    )
 
 
 def _microprice(ticks: pl.DataFrame) -> pl.DataFrame:

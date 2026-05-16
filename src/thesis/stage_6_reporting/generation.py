@@ -168,9 +168,8 @@ def build_markdown(
     L.append("## Classification Results ★")
     L.append("")
     L.append(
-        "*Classification metrics are the primary evaluation criterion for "
-        "this thesis. Directional Accuracy and Macro F1 measure the model's "
-        "ability to predict market direction (Short / Hold / Long).*"
+        "Classification metrics = primary evaluation. "
+        "Directional Accuracy and Macro F1 measure direction prediction."
     )
     L.append("")
     accuracy_table(L, pred_stats, config)
@@ -180,11 +179,7 @@ def build_markdown(
 
     L.append("## Application Demo: Backtest")
     L.append("")
-    L.append(
-        "*Backtest results are presented as an application demo to illustrate "
-        "how classification signals *could* be translated into trades. "
-        "They are **not** the primary evaluation criterion.*"
-    )
+    L.append("Backtest = application demo only. Not primary evaluation criterion.")
     L.append("")
     backtest_params_table(L, config)
     backtest_metrics_table(L, metrics, config)
@@ -216,8 +211,7 @@ def build_model_evaluation_markdown(
     """Build compact evaluation-first markdown artifact."""
     lines: list[str] = ["# Model Evaluation", ""]
     lines.append(
-        "This file is the primary ML evidence artifact. "
-        "Backtest metrics are intentionally excluded."
+        "Primary ML evidence artifact. Backtest metrics intentionally excluded."
     )
     lines.append("")
     lines.append(f"- Model: {model_label(config)}")
@@ -225,7 +219,7 @@ def build_model_evaluation_markdown(
     lines.append("")
 
     if not pred_stats:
-        lines.append("*Prediction statistics unavailable.*")
+        lines.append("Prediction stats unavailable.")
         return "\n".join(lines)
 
     def pct(v, default=0.0):
@@ -243,7 +237,9 @@ def build_model_evaluation_markdown(
         f"| Directional Accuracy | {pct(pred_stats.get('directional_accuracy'))} |"
     )
     lines.append(f"| Macro F1 | {f4(pred_stats.get('macro_f1'))} |")
+    lines.append(f"| Weighted F1 | {f4(pred_stats.get('weighted_f1'))} |")
     lines.append(f"| Balanced Accuracy | {pct(pred_stats.get('balanced_accuracy'))} |")
+    lines.append(f"| Total Predictions | {pred_stats.get('total', 0):,} |")
     lines.append("")
 
     lines.append("## Per-Class Metrics")
@@ -258,6 +254,50 @@ def build_model_evaluation_markdown(
             f" | {pc.get('f1', 0.0):.4f} |"
         )
     lines.append("")
+
+    # Confusion Matrix
+    cm = pred_stats.get("confusion_matrix")
+    if cm:
+        lines.append("## Confusion Matrix")
+        lines.append("")
+        classes = [c for c in ("Short", "Hold", "Long") if c in cm]
+        lines.append("| True \\ Pred | " + " | ".join(classes) + " |")
+        lines.append("|---|" + "|".join("---:" for _ in classes) + "|")
+        for true_cls in classes:
+            row = cm.get(true_cls, {})
+            cells = [f"{row.get(pred_cls, 0):,}" for pred_cls in classes]
+            lines.append(f"| {true_cls} | " + " | ".join(cells) + " |")
+        lines.append("")
+
+    # Direction Confusion Matrix (Short/Long only)
+    dcm = pred_stats.get("direction_confusion_matrix")
+    if dcm:
+        lines.append("## Direction Confusion Matrix (Short/Long)")
+        lines.append("")
+        dir_classes = [c for c in ("Short", "Long") if c in dcm]
+        lines.append("| True \\ Pred | " + " | ".join(dir_classes) + " |")
+        lines.append("|---|" + "|".join("---:" for _ in dir_classes) + "|")
+        for true_cls in dir_classes:
+            row = dcm.get(true_cls, {})
+            cells = [f"{row.get(pred_cls, 0):,}" for pred_cls in dir_classes]
+            lines.append(f"| {true_cls} | " + " | ".join(cells) + " |")
+        lines.append("")
+
+    # High-Confidence Analysis
+    hc = pred_stats.get("high_confidence")
+    if hc:
+        lines.append("## High-Confidence Predictions")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        lines.append(f"| Confidence Threshold | {hc.get('threshold', 0):.2f} |")
+        lines.append(f"| Count | {hc.get('count', 0):,} |")
+        lines.append(f"| % of Total | {hc.get('pct_of_total', 0) * 100:.2f}% |")
+        lines.append(f"| Accuracy | {pct(hc.get('accuracy'))} |")
+        lines.append(
+            f"| Directional Accuracy | {pct(hc.get('directional_accuracy'))} |"
+        )
+        lines.append("")
 
     reg_aux = pred_stats.get("regression_auxiliary")
     if reg_aux:
@@ -290,7 +330,160 @@ def build_model_evaluation_markdown(
             f" | {cell(row, 'long_f1', 'f4')} | {cell(row, 'short_f1', 'f4')} |"
         )
     lines.append("")
+
+    # ── Evaluation Summary ─────────────────────────────────────────────
+    lines.append(_build_eval_summary(pred_stats, model_comparison_rows))
+
     return "\n".join(lines)
+
+
+def _build_eval_summary(
+    pred_stats: dict | None, model_comparison_rows: list[dict]
+) -> str:
+    """Generate contextual evaluation notes based on actual metrics."""
+    notes: list[str] = []
+    notes.append("## Evaluation Summary")
+    notes.append("")
+
+    # Extract key values
+    stack_row = next(
+        (r for r in model_comparison_rows if r.get("source") == "current_session"),
+        {},
+    )
+    stack_acc = stack_row.get("accuracy")
+    stack_dir = stack_row.get("directional_accuracy")
+    stack_row.get("macro_f1")
+
+    # Find best base model
+    base_models = [
+        r
+        for r in model_comparison_rows
+        if r.get("source") == "walk_forward_model_comparison"
+    ]
+    best_base = (
+        max(base_models, key=lambda r: r.get("accuracy") or 0) if base_models else {}
+    )
+
+    # Baselines
+    baselines = {
+        r["model"]: r
+        for r in model_comparison_rows
+        if r.get("source") == "derived_baseline"
+    }
+    random_row = baselines.get("Random Baseline", {})
+    baselines.get("Majority Baseline", {})
+
+    # --- Stacking vs best base model ---
+    if best_base and stack_acc is not None:
+        best_acc = best_base.get("accuracy", 0)
+        gap = (stack_acc - best_acc) * 100
+        best_name = best_base.get("model", "base model")
+        if gap < -1:
+            notes.append(
+                f"⚠️ **Stacking underperforms**: Hybrid Stacking accuracy "
+                f"({stack_acc * 100:.1f}%) trails best base model {best_name} "
+                f"({best_acc * 100:.1f}%) by **{abs(gap):.1f}pp**. "
+                f"Meta-learner degrades. Base models correlated. Redundant signals."
+            )
+        elif gap > 1:
+            notes.append(
+                f"✅ **Stacking improves over base models**: +{gap:.1f}pp vs "
+                f"best base ({best_name}). Meta-learner combines complementary signals."
+            )
+        else:
+            notes.append(
+                f"➡️ **Stacking ≈ best base model**: marginal difference ({gap:+.1f}pp) "
+                f"vs {best_name}. Adds complexity. No clear gain."
+            )
+        notes.append("")
+
+    # --- Directional accuracy vs random ---
+    if stack_dir is not None:
+        random_dir = random_row.get("directional_accuracy", 0.5)
+        lift = (stack_dir - random_dir) * 100
+        if lift > 5:
+            notes.append(
+                f"📊 **Directional edge**: "
+                f"{stack_dir * 100:.1f}% vs {random_dir * 100:.1f}% "
+                f"random baseline (+{lift:.1f}pp). "
+                f"Captures directional signal beyond coin-flip."
+            )
+        elif lift > 0:
+            notes.append(
+                f"📊 **Weak directional edge**: {stack_dir * 100:.1f}% vs "
+                f"{random_dir * 100:.1f}% random (+{lift:.1f}pp). "
+                f"Marginal. May not survive transaction costs."
+            )
+        else:
+            notes.append(
+                f"❌ **No directional edge**: {stack_dir * 100:.1f}% ≤ random baseline "
+                f"({random_dir * 100:.1f}%). Fails to predict market direction."
+            )
+        notes.append("")
+
+    # --- Hold class problem ---
+    if pred_stats:
+        per_class = pred_stats.get("per_class", {})
+        hold_f1 = per_class.get("Hold", {}).get("f1", 0)
+        hold_recall = per_class.get("Hold", {}).get("recall", 0)
+        if hold_f1 < 0.20:
+            notes.append(
+                f"🔍 **Hold class weakness**: Hold F1 = {hold_f1:.4f}, "
+                f"recall = {hold_recall:.1%}. Struggles to identify flat periods. "
+                f"Often misclassifies as Long/Short. "
+                f"Common with ATR-based labeling."
+            )
+            notes.append("")
+
+    # --- High-confidence ---
+    if pred_stats:
+        hc = pred_stats.get("high_confidence", {})
+        if hc and hc.get("count", 0) > 0:
+            hc_acc = hc.get("accuracy", 0)
+            if hc_acc < 0.20:
+                notes.append(
+                    f"🔴 **High-confidence paradox**: Only {hc.get('count', 0)} "
+                    f"predictions > {hc.get('threshold', 0):.0%} confidence. "
+                    f"Accuracy {hc_acc * 100:.1f}%. Worse than random. "
+                    f"Confidence not calibrated to correctness."
+                )
+                notes.append("")
+
+    # --- L/S imbalance ---
+    if pred_stats:
+        per_class = pred_stats.get("per_class", {})
+        long_n = per_class.get("Long", {}).get("support", 0)
+        short_n = per_class.get("Short", {}).get("support", 0)
+        if long_n > 0 and short_n > 0:
+            ls_ratio = long_n / short_n
+            if ls_ratio > 2 or ls_ratio < 0.5:
+                notes.append(
+                    f"⚖️ **Label imbalance**: Long/Short ratio = {ls_ratio:.2f}. "
+                    f"Class asymmetry biases model toward majority."
+                )
+                notes.append("")
+
+    # --- Overall verdict ---
+    notes.append("### Overall Assessment")
+    notes.append("")
+    if stack_acc is not None and best_base:
+        best_acc = best_base.get("accuracy", 0)
+        if stack_acc < best_acc:
+            notes.append(
+                "Hybrid stacking underperforms best base model. Issues: "
+                "(1) base models correlated, "
+                "(2) meta-learner too simple, "
+                "(3) 3-class ATR labels add noise to Hold. "
+                "Recommendations: use LightGBM solo, add confidence scores, "
+                "or switch to 2-class."
+            )
+        else:
+            notes.append(
+                "Hybrid stacking outperforms base models and baselines. "
+                "Meta-learner combines complementary signals."
+            )
+
+    return "\n".join(notes)
 
 
 class ReportData:

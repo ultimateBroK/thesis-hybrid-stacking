@@ -40,9 +40,10 @@ def render_config_summary(config: object) -> None:
     bt = getattr(config, "backtest", None)
 
     if data:
-        data_range = getattr(data, "data_range", None)
-        start = date_only(data_range.start) if data_range else "?"
-        end = date_only(data_range.end) if data_range else "?"
+        # data_range is a top-level Config attribute, not nested under data
+        dr = getattr(config, "data_range", None)
+        start = date_only(dr.start) if dr else "?"
+        end = date_only(dr.end) if dr else "?"
         st.markdown(f"**Data**: {data.symbol} {data.timeframe}  {start}→{end}")
     if val:
         st.markdown(
@@ -53,7 +54,7 @@ def render_config_summary(config: object) -> None:
         )
     if model:
         st.markdown(
-            f"**LightGBM**: {model.architecture}, "
+            f"**Model**: {model.architecture}, "
             f"objective={model.objective}, leaves={model.num_leaves}, "
             f"lr={model.learning_rate}"
         )

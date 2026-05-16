@@ -46,7 +46,7 @@ def _downsample_ohlcv(df: pl.DataFrame, max_bars: int) -> pl.DataFrame:
 
 def build_candlestick_chart(
     df: pl.DataFrame,
-    config: Config,
+    config: Config | None = None,
     max_bars: int = 3000,
 ) -> tuple[Kline, dict]:
     """OHLCV candlestick + volume chart."""
@@ -90,7 +90,7 @@ def build_candlestick_chart(
         Kline()
         .add_xaxis(xaxis_data=timestamps)
         .add_yaxis(
-            series_name=f"{config.data.symbol}",
+            series_name=f"{config.data.symbol}" if config else "XAUUSD",
             y_axis=kline_data,
             itemstyle_opts=opts.ItemStyleOpts(
                 color=COLORS["long"],
@@ -102,6 +102,8 @@ def build_candlestick_chart(
         .set_global_opts(
             title_opts=opts.TitleOpts(
                 title=f"{config.data.symbol} Candlestick ({config.data.timeframe})"
+                if config
+                else "Candlestick Chart"
             ),
             legend_opts=opts.LegendOpts(
                 is_show=False, pos_bottom=10, pos_left="center"

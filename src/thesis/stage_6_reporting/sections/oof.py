@@ -29,7 +29,7 @@ def render_oof_vs_oos_section(
     if not session_dir:
         L.append(heading)
         L.append("")
-        L.append("*Session directory unavailable — OOF/OOS comparison skipped.*")
+        L.append("Session directory unavailable. OOF/OOS comparison skipped.")
         L.append("")
         return
 
@@ -37,7 +37,7 @@ def render_oof_vs_oos_section(
     if not wf_path.exists():
         L.append(heading)
         L.append("")
-        L.append("*Walk-forward history unavailable — OOF/OOS comparison skipped.*")
+        L.append("Walk-forward history unavailable. OOF/OOS comparison skipped.")
         L.append("")
         return
 
@@ -53,7 +53,7 @@ def render_oof_vs_oos_section(
     if not window_details:
         L.append(heading)
         L.append("")
-        L.append("*No window details available — OOF/OOS comparison skipped.*")
+        L.append("No window details available. OOF/OOS comparison skipped.")
         L.append("")
         return
 
@@ -122,7 +122,9 @@ def render_oof_vs_oos_section(
                         end_s = parse_date(str(bt_end)[:19])
                         if start_s and end_s:
                             total_span = end_s - start_s
-                            mid_point = start_s + timedelta(seconds=total_span.total_seconds() / 2)
+                            mid_point = start_s + timedelta(
+                                seconds=total_span.total_seconds() / 2
+                            )
                             oos_start = mid_point.strftime("%Y-%m-%d %H:%M:%S")
                             oos_end = str(bt_end)[:19]
                 except (OSError, json.JSONDecodeError):
@@ -204,10 +206,7 @@ def render_oof_vs_oos_section(
     if oos_all_none and oof_accuracy is None and oof_macro_f1 is None:
         L.append(heading)
         L.append("")
-        L.append(
-            "*Insufficient data for OOF/OOS comparison — "
-            "no test predictions available.*"
-        )
+        L.append("Insufficient data. No test predictions available.")
         L.append("")
         return
 
@@ -217,12 +216,10 @@ def render_oof_vs_oos_section(
         f"OOS ({oos_start[:4]}–{oos_end[:4]})" if oos_start and oos_end else "OOS"
     )
     L.append(
-        f"*OOF (Out-Of-Fold) metrics are aggregated across all walk-forward "
-        f"cross-validation windows. OOS (Out-Of-Sample) metrics are from "
-        f"{'the later half of the backtest period' if oos_start else 'the test period'}"
+        f"OOF: aggregated across walk-forward windows. "
+        f"OOS: {'later half of backtest period' if oos_start else 'test period'}"
         f"{' (' + oos_start[:10] + ' to ' + oos_end[:10] + ')' if oos_start else ''}. "
-        "A meaningful gap between OOF and OOS suggests overfitting; close "
-        "alignment suggests the model generalizes well.*"
+        "Gap = overfitting signal. Tight = generalizes."
     )
     L.append("")
     L.append(_tbl_row("Metric", "OOF (Walk-Forward)", oos_label, "Delta"))
@@ -250,15 +247,13 @@ def render_oof_vs_oos_section(
     if oof_accuracy is not None and oos_accuracy is not None:
         gap = abs(oos_accuracy - oof_accuracy)
         if gap < 0.02:
-            note = "OOF-OOS alignment is tight (< 2pp) — model generalizes well."
+            note = "OOF-OOS tight (<2pp). Model generalizes."
         elif gap < 0.05:
-            note = (
-                "Moderate OOF-OOS gap (2-5pp) — acceptable but monitor for overfitting."
-            )
+            note = "OOF-OOS gap moderate (2-5pp). Monitor overfitting."
         else:
             note = (
-                "Large OOF-OOS gap (>=5pp) — possible overfitting; review "
-                "feature stability and window design."
+                "OOF-OOS gap large (>=5pp). Possible overfitting. "
+                "Review feature stability."
             )
         L.append(f"**Interpretation:** {note}")
         L.append("")

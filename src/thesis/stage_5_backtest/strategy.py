@@ -21,9 +21,8 @@ def _calendar_day(value: object) -> object:
     if ts.tzinfo is None:
         ts = ts.tz_localize("UTC")
     ts_ny = ts.tz_convert("America/New_York")
-    ny_offset_hours = ts_ny.utcoffset().total_seconds() / 3600
-    hours_to_midnight_ny = 24 - (17 + 7) + ny_offset_hours
-    return (ts_ny + pd.Timedelta(hours=hours_to_midnight_ny)).date()
+    # Shift 7h forward: 5PM → midnight, then truncate to date
+    return (ts_ny + pd.Timedelta(hours=7)).date()
 
 
 class MLSignalStrategy(Strategy):
@@ -165,10 +164,7 @@ class MLSignalStrategy(Strategy):
                 bars_held = len(self.data) - entry_bar
                 if bars_held >= self.horizon_bars:
                     self.position.close()
-                    direction = "long" if self.position.is_long else "short"
-                    self._entry_bar.pop(direction, None)
-                    self._last_exit_bar = len(self.data)
-                    self._position_was_open = False
+                    # Let normal exit detection at top of next() set _last_exit_bar
 
         if not self._is_trading_allowed():
             return

@@ -60,7 +60,7 @@ def compute_random_strategy(
     returns: np.ndarray, initial_capital: float, leverage: int, seed: int
 ) -> dict:
     """Random signal benchmark."""
-    rng = np.default_rng(seed)
+    rng = np.random.default_rng(seed)
     signals = rng.choice([-1, 1], size=len(returns))
     leveraged = returns * signals * leverage
 

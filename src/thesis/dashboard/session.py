@@ -56,7 +56,7 @@ def load_config(session_dir: str) -> dict:
     return {"config": config, "data": data}
 
 
-@st.fragment
+@st.fragment(run_every="30s")
 def session_selector_fragment() -> None:
     """Sidebar session picker. Auto-refreshes every interaction."""
     sessions = find_sessions()
@@ -99,12 +99,12 @@ def session_selector_fragment() -> None:
         "Select session",
         options=session_labels,
         index=idx,
-        key="_session_selectbox",
+        # Auto-generated key to prevent DuplicateElementKey in fragment
     )
     selected = session_names[session_labels.index(selected_label)]
     st.session_state.selected_session = selected
 
-    if st.button("Refresh", width="stretch", key="_refresh_btn"):
+    if st.button("Refresh", width='stretch'):
         st.rerun()
 
     st.caption("Run `pixi run workflow` to generate new sessions")

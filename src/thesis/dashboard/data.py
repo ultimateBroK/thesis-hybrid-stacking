@@ -34,7 +34,7 @@ def render_data_section(data: dict, session_dir: str) -> None:
             f"→ {ohlcv['timestamp'].cast(pl.Utf8).max()}"
         )
 
-    if ohlcv is not None and len(ohlcv) > 0:
+    if ohlcv is not None and not ohlcv.is_empty():
         st.subheader("Candlestick Chart")
 
         ts_col = ohlcv["timestamp"]
@@ -79,7 +79,7 @@ def render_data_section(data: dict, session_dir: str) -> None:
         else:
             ohlcv_filtered = ohlcv
 
-        if len(ohlcv_filtered) > 0:
+        if not ohlcv_filtered.is_empty():
             chart, info = build_candlestick_chart(ohlcv_filtered, None)
             render_chart(chart, height="700px")
 
