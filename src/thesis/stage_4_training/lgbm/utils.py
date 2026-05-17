@@ -12,9 +12,12 @@ from thesis.shared.config import Config
 
 logger = logging.getLogger("thesis")
 
+# Session dummies are binary 0/1 — tree models handle them as numeric natively.
+# No categorical_feature param needed; avoids LightGBM sklearn API param bugs.
+
 
 def _wrap_np(X: np.ndarray, feature_cols: list[str]) -> Any:
-    """Wrap matrix. Preserve feature names."""
+    """Wrap numpy matrix as DataFrame. Preserve feature names."""
     import pandas as pd
 
     return pd.DataFrame(X, columns=feature_cols)

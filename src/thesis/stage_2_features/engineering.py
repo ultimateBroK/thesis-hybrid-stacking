@@ -22,22 +22,29 @@ from thesis.stage_2_features.indicators import (
     add_atr,
     add_atr_percentile,
     add_atr_ratio,
+    add_bollinger_pctb,
+    add_calendar,
     add_ema_crossover,
     add_ema_slope,
     add_high_low_range,
+    add_lagged_features,
     add_log_returns,
     add_macd,
-    add_ohlcv_norm,
     add_pivot_position,
     add_price_action,
     add_price_dist_ratio,
     add_regime,
     add_rsi,
     add_session_dummies,
+    add_session_range,
+    add_sma_ratio,
+    add_stochastic,
     add_trend_regime,
     add_volatility_regime,
+    add_volume_momentum,
     add_volume_zscore,
     add_vwap,
+    add_williams_r,
 )
 
 logger = logging.getLogger("thesis.stage_2_features")
@@ -64,36 +71,49 @@ def generate_features(config: Config) -> None:
 
     # ATR first — many features divide by it
     df = add_atr(df, config)
-    df = add_rsi(df, config)
+
+    # ── trend ──
     df = add_adx(df, config)
-
-    # multi-timeframe ATR ratio + percentile
-    df = add_atr_ratio(df, config)
-    df = add_atr_percentile(df, config)
-
-    # EMA features — need ATR
     df = add_ema_slope(df, config)
     df = add_ema_crossover(df, config)
+    df = add_sma_ratio(df, config)
 
-    # price-action + VWAP/pivot (session-anchored)
-    df = add_price_action(df, config)
-    df = add_price_dist_ratio(df, config)
-    df = add_vwap(df)
-    df = add_pivot_position(df)
-    df = add_session_dummies(df)
-
-    # volume + returns — rolling, no cross-feature deps
-    df = add_volume_zscore(df, config)
-    df = add_log_returns(df, config)
-    df = add_high_low_range(df, config)
-
-    # MACD — needs ATR column
+    # ── momentum ──
+    df = add_rsi(df, config)
     df = add_macd(df, config)
+    df = add_stochastic(df, config)
+    df = add_williams_r(df, config)
 
-    # OHLCV z-score norm
-    df = add_ohlcv_norm(df, config)
+    # ── volatility ──
+    df = add_atr_ratio(df, config)
+    df = add_atr_percentile(df, config)
+    df = add_high_low_range(df, config)
+    df = add_bollinger_pctb(df, config)
 
-    # regime — config-gated
+    # ── mean-reversion / position ──
+    df = add_price_dist_ratio(df, config)
+    df = add_pivot_position(df)
+    df = add_vwap(df)
+
+    # ── price action ──
+    df = add_price_action(df, config)
+    df = add_session_range(df, config)
+
+    # ── returns ──
+    df = add_log_returns(df, config)
+
+    # ── volume / interaction ──
+    df = add_volume_zscore(df, config)
+    df = add_volume_momentum(df, config)
+
+    # ── session / calendar ──
+    df = add_session_dummies(df)
+    df = add_calendar(df, config)
+
+    # ── lagged (temporal memory) — MUST be after all indicators above ──
+    df = add_lagged_features(df, config)
+
+    # ── regime — config-gated ──
     if config.features.enable_regime_features:
         df = add_volatility_regime(df, config)
         df = add_trend_regime(df, config)

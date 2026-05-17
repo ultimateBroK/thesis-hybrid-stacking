@@ -35,7 +35,7 @@ macd_fast = 12                    # MACD fast EMA
 macd_slow = 26                    # MACD slow EMA
 macd_signal = 9                   # MACD signal line
 correlation_threshold = 0.75      # Drop features above this pairwise correlation
-# enable_regime_features = true   # Uncomment to enable regime features
+enable_regime_features = true     # Regime features enabled
 
 # ── Multi-timeframe features ─────────────────────────────────────────────────
 [features.multi_timeframe]
@@ -65,7 +65,7 @@ lgbm_expanded_features = false    # Whether to use expanded feature set for Ligh
 num_leaves = 31                   # Max leaves per tree
 max_depth = 6                     # Max tree depth
 learning_rate = 0.03              # Boosting learning rate
-n_estimators = 500                # Number of boosting rounds (early stopping finds best)
+n_estimators = 800                # Number of boosting rounds (early stopping finds best)
 min_child_samples = 40            # Min samples per leaf
 subsample = 0.80                  # Row subsample ratio
 subsample_freq = 5                # Subsample every N rounds
@@ -74,9 +74,9 @@ reg_alpha = 0.05                  # L1 regularization
 reg_lambda = 1.0                  # L2 regularization
 early_stopping_rounds = 30        # Stop if no improvement for N rounds
 stacking_base_models = ["logistic_regression", "random_forest", "lightgbm"]
-stacking_meta_model = "logistic_regression"
+stacking_meta_model = "lightgbm"
 stacking_meta_fraction = 0.20
-stacking_passthrough = false
+stacking_passthrough = true
 stacking_internal_folds = 5              # 0 = legacy 80/20 split; ≥2 = expanding-origin OOF
 stacking_internal_purge = 0              # 0 = auto (uses labels.horizon_bars)
 stacking_calibrate_base = false           # Apply Platt scaling to base model probabilities

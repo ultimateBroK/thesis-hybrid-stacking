@@ -403,3 +403,124 @@ def add_regime(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     adx_sig = ((pl.col(adx_cols[0]) - threshold) / threshold).clip(0, clip_max)
     slope_sig = pl.col(slope_cols[0]).sign()
     return df.with_columns((adx_sig * slope_sig).alias("regime_strength"))
+
+
+# ── Bollinger Bands ──
+
+
+def add_bollinger_pctb(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Bollinger %B: position within band [0,1], outside = overextension."""
+    mt = config.features.multi_timeframe
+    p = mt.bb_period
+    s = mt.bb_std
+    sma = pl.col("close").rolling_mean(window_size=p)
+    std = pl.col("close").rolling_std(window_size=p)
+    upper = sma + s * std
+    lower = sma - s * std
+    return df.with_columns(
+        ((pl.col("close") - lower) / (upper - lower + FEATURE_EPS)).alias("bb_pctb")
+    )
+
+
+# ── Stochastic Oscillator ──
+
+
+def add_stochastic(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Stochastic %K (14-period). Momentum within recent range."""
+    p = 14
+    lowest = pl.col("low").rolling_min(window_size=p)
+    highest = pl.col("high").rolling_max(window_size=p)
+    pct_k = 100.0 * (pl.col("close") - lowest) / (highest - lowest + FEATURE_EPS)
+    return df.with_columns(pct_k.alias("stoch_k"))
+
+
+# ── Williams %R ──
+
+
+def add_williams_r(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Williams %R: -100 (oversold) to 0 (overbought)."""
+    p = 14
+    highest = pl.col("high").rolling_max(window_size=p)
+    lowest = pl.col("low").rolling_min(window_size=p)
+    return df.with_columns(
+        (-100.0 * (highest - pl.col("close")) / (highest - lowest + FEATURE_EPS)).alias(
+            "williams_r"
+        )
+    )
+
+
+# ── SMA ratio (multi-scale trend context) ──
+
+
+def add_sma_ratio(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Close / SMA ratio for each configured SMA period."""
+    cols = []
+    for p in config.features.multi_timeframe.sma_periods:
+        sma = pl.col("close").rolling_mean(window_size=p)
+        cols.append(
+            (pl.col("close") / (sma + FEATURE_EPS)).alias(f"close_sma{p}_ratio")
+        )
+    return df.with_columns(cols)
+
+
+# ── Lagged features ──
+
+
+def add_lagged_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Lag-1 of key indicators. Trees need explicit lags for temporal patterns."""
+    p = config.features.rsi_period
+    return df.with_columns(
+        [
+            pl.col(f"rsi_{p}").shift(1).alias("rsi_lag1"),
+            pl.col(f"adx_{config.features.adx_period}").shift(1).alias("adx_lag1"),
+            pl.col(f"ema_slope_{config.features.ema_slope_period}")
+            .shift(1)
+            .alias("ema_slope_lag1"),
+            pl.col("return_1h").shift(1).alias("return_1h_lag1"),
+        ]
+    )
+
+
+# ── Calendar features ──
+
+
+def add_calendar(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Day of week (0=Mon, 4=Fri). Gold has strong seasonal patterns."""
+    ts = _ensure_utc(pl.col("timestamp"), df).dt.convert_time_zone(
+        config.data.market_tz
+    )
+    return df.with_columns(ts.dt.weekday().alias("day_of_week"))
+
+
+# ── Cross-session range (Asia consolidation → London/NY breakout) ──
+
+
+def add_session_range(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """ATR-normalized Asia session range. Precedes London/NY breakout."""
+    ny = (
+        _ensure_utc(pl.col("timestamp"), df)
+        .dt.convert_time_zone("America/New_York")
+        .dt.hour()
+    )
+    # Asia session: 18:00 NY (prev day) to 02:00 NY
+    is_asia = (ny >= 18) | (ny < 2)
+    p = config.features.atr_period
+    # Rolling high-low within Asia bars only, over last trading day (~24 bars)
+    asia_high = pl.when(is_asia).then(pl.col("high")).otherwise(None).forward_fill()
+    asia_low = pl.when(is_asia).then(pl.col("low")).otherwise(None).forward_fill()
+    asia_range = asia_high - asia_low
+    return df.with_columns(
+        (asia_range / (pl.col(f"atr_{p}") + FEATURE_EPS)).alias("asia_range_atr")
+    )
+
+
+# ── Volume × momentum interaction ──
+
+
+def add_volume_momentum(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Volume z-score × RSI. Captures high-volume overbought/oversold."""
+    p = config.features.rsi_period
+    rsi_norm = (pl.col(f"rsi_{p}") - 50.0) / 50.0  # normalize to -1..1
+    return df.with_columns(
+        (pl.col("volume_zscore_20") * rsi_norm).alias("vol_rsi_interaction")
+    )

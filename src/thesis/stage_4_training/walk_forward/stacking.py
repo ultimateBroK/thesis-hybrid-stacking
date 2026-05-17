@@ -236,7 +236,7 @@ def _expanding_origin_oof(
     train_df: pl.DataFrame,
     feature_cols: list[str],
     purge_bars: int,
-) -> tuple[dict[str, np.ndarray], np.ndarray, Any, list[str], list[str]]:
+) -> tuple[dict[str, np.ndarray], np.ndarray, Any, list[str], list[str], np.ndarray | None]:
     """Generate OOF meta features.
 
     Meta learner trains only on base out-of-sample outputs.
@@ -260,6 +260,7 @@ def _expanding_origin_oof(
 
     oof_parts: dict[str, list[np.ndarray]] = {}
     y_oof_parts: list[np.ndarray] = []
+    x_oof_parts: list[np.ndarray] = []
 
     for fi, fold in enumerate(internal):
         X_tr = X_full[fold.train_start_idx : fold.train_end_idx]
@@ -289,16 +290,18 @@ def _expanding_origin_oof(
             oof_parts.setdefault(short, []).append(proba)
 
         y_oof_parts.append(y_pr)
+        x_oof_parts.append(np.asarray(X_pr))
 
     if not oof_parts:
         raise ValueError("Expanding-origin OOF produced no predictions")
 
     meta_train_outputs = {n: np.concatenate(p, axis=0) for n, p in oof_parts.items()}
     y_meta = np.concatenate(y_oof_parts, axis=0).astype(np.int32)
+    X_meta_raw = np.concatenate(x_oof_parts, axis=0) if x_oof_parts else None
     logger.info(
         "  Expanding-origin OOF: %d meta rows from %d folds", len(y_meta), len(internal)
     )
-    return meta_train_outputs, y_meta, pipeline, selected, static_cols
+    return meta_train_outputs, y_meta, pipeline, selected, static_cols, X_meta_raw
 
 
 # Calibration
@@ -382,7 +385,7 @@ def _train_stacking_window(
                 purge_bars,
                 len(y_cal),
             )
-            meta_train_outputs, y_meta, pipeline, selected, static_cols = (
+            meta_train_outputs, y_meta, pipeline, selected, static_cols, X_meta_raw = (
                 _expanding_origin_oof(config, base_cal_df, feature_cols, purge_bars)
             )
             y_base = base_cal_df["label"].to_numpy().astype(np.int32)
@@ -395,7 +398,7 @@ def _train_stacking_window(
                 n_folds,
                 purge_bars,
             )
-            meta_train_outputs, y_meta, pipeline, selected, static_cols = (
+            meta_train_outputs, y_meta, pipeline, selected, static_cols, X_meta_raw = (
                 _expanding_origin_oof(config, train_df, feature_cols, purge_bars)
             )
             y_base = train_df["label"].to_numpy().astype(np.int32)
@@ -483,15 +486,22 @@ def _train_stacking_window(
             name: _aligned_proba(model, X_meta, selected)
             for name, model in base_models.items()
         }
+        X_meta_raw = np.asarray(X_meta) if config.model.stacking_passthrough else None
         diag_extra["stacking_mode"] = "single_holdout"
 
     # Soft-voting baseline
     soft_vote = np.mean(list(test_outputs.values()), axis=0)
     soft_vote_preds = _CLASS_ORDER[np.argmax(soft_vote, axis=1)]
 
-    # Meta model
+    # Meta model — optionally pass raw features through
     X_meta_stack, meta_names = _stack_features(meta_train_outputs)
     X_test_stack, _ = _stack_features(test_outputs)
+    passthrough = config.model.stacking_passthrough
+    if passthrough and X_meta_raw is not None:
+        X_meta_stack = np.hstack([X_meta_stack, X_meta_raw])
+        X_test_stack = np.hstack([X_test_stack, np.asarray(X_test)])
+        raw_names = [f"raw_{c}" for c in selected]
+        meta_names = meta_names + raw_names
     meta_model = _build_meta(
         config.model.stacking_meta_model, config, X_meta_stack, y_meta
     )

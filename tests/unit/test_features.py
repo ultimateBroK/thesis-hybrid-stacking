@@ -17,15 +17,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from helpers import create_synthetic_ohlcv
 
 from thesis.shared.config import Config
-from thesis.shared.constants import EXCLUDE_COLS
+from thesis.shared.constants import CORE_STATIC_FEATURES, EXCLUDE_COLS
 from thesis.stage_2_features.indicators import (
     add_adx,
     add_atr,
     add_atr_percentile,
     add_atr_ratio,
+    add_bollinger_pctb,
+    add_calendar,
     add_ema_crossover,
     add_ema_slope,
     add_high_low_range,
+    add_lagged_features,
     add_log_returns,
     add_macd,
     add_pivot_position,
@@ -34,8 +37,13 @@ from thesis.stage_2_features.indicators import (
     add_regime,
     add_rsi,
     add_session_dummies,
+    add_session_range,
+    add_sma_ratio,
+    add_stochastic,
+    add_volume_momentum,
     add_volume_zscore,
     add_vwap,
+    add_williams_r,
 )
 
 
@@ -53,22 +61,30 @@ def sample_config() -> Config:
 
 def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Apply the full feature pipeline to a DataFrame (mirrors generate_features)."""
-    df = add_rsi(df, config)
     df = add_atr(df, config)
+    df = add_rsi(df, config)
+    df = add_adx(df, config)
     df = add_atr_ratio(df, config)
+    df = add_atr_percentile(df, config)
+    df = add_ema_slope(df, config)
+    df = add_ema_crossover(df, config)
+    df = add_price_action(df, config)
     df = add_price_dist_ratio(df, config)
     df = add_vwap(df)
     df = add_pivot_position(df)
     df = add_session_dummies(df)
-    df = add_atr_percentile(df, config)
-    df = add_price_action(df, config)
-    df = add_ema_crossover(df, config)
     df = add_volume_zscore(df, config)
     df = add_log_returns(df, config)
     df = add_high_low_range(df, config)
-    df = add_adx(df, config)
-    df = add_ema_slope(df, config)
-    df = add_regime(df)
+    df = add_macd(df, config)
+    df = add_bollinger_pctb(df, config)
+    df = add_stochastic(df, config)
+    df = add_williams_r(df, config)
+    df = add_sma_ratio(df, config)
+    df = add_calendar(df, config)
+    df = add_session_range(df, config)
+    df = add_volume_momentum(df, config)
+    df = add_lagged_features(df, config)
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
     # NaN → Polars null, then forward-fill (mirrors production pipeline)
@@ -94,34 +110,8 @@ def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 # Expected compact production feature columns.
-# Keep in sync with CORE_STATIC_FEATURES in constants.py.
-EXPECTED_FEATURES: list[str] = [
-    "adx_14",
-    "atr_pct_close",
-    "atr_percentile",
-    "atr_ratio",
-    "candle_body_ratio",
-    "close_vs_ema_34",
-    "ema_slope_20",
-    "ema34_vs_ema89",
-    "high_low_range_20",
-    "lower_wick_ratio",
-    "macd_hist_atr",
-    "pivot_position",
-    "price_dist_ratio",
-    "price_position_20",
-    "regime_strength",
-    "return_1h",
-    "return_4h",
-    "rsi_14",
-    "sess_asia",
-    "sess_london",
-    "sess_ny_am",
-    "sess_ny_pm",
-    "upper_wick_ratio",
-    "vwap",
-    "volume_zscore_20",
-]
+# Derived from CORE_STATIC_FEATURES in constants.py.
+EXPECTED_FEATURES: list[str] = sorted(CORE_STATIC_FEATURES)
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +180,7 @@ def test_regime_strength_column(sample_config: Config) -> None:
     df = create_synthetic_ohlcv(n_rows=300)
     df = add_adx(df, sample_config)
     df = add_ema_slope(df, sample_config)
-    result = add_regime(df)
+    result = add_regime(df, sample_config)
 
     assert "regime_strength" in result.columns
     vals = result["regime_strength"].drop_nulls().to_numpy()
@@ -209,7 +199,7 @@ def test_regime_strength_sign_follows_ema_slope(sample_config: Config) -> None:
     df = create_synthetic_ohlcv(n_rows=300)
     df = add_adx(df, sample_config)
     df = add_ema_slope(df, sample_config)
-    result = add_regime(df)
+    result = add_regime(df, sample_config)
 
     slope = result["ema_slope_20"].drop_nulls()
     regime = result["regime_strength"].drop_nulls()
@@ -260,7 +250,7 @@ def test_regime_strength_ranging_flat(sample_config: Config) -> None:
     )
     df = add_adx(df, sample_config)
     df = add_ema_slope(df, sample_config)
-    result = add_regime(df)
+    result = add_regime(df, sample_config)
 
     adx = result["adx_14"].drop_nulls().to_numpy()
     regime = result["regime_strength"].drop_nulls().to_numpy()
@@ -963,7 +953,7 @@ def test_regime_features_no_leakage(sample_config: Config) -> None:
     mask = ~(np.isnan(full_vals) | np.isnan(prefix_vals))
     if mask.sum() > 0:
         assert np.allclose(full_vals[mask], prefix_vals[mask], atol=1e-10), (
-            "Regime features should be identical for prefix vs full series (no future leak)"
+            "Regime features should match prefix vs full (no future leak)"
         )
 
 
@@ -981,7 +971,8 @@ def test_full_feature_count_compact(sample_config: Config) -> None:
 
     feature_cols = sorted(c for c in result.columns if c not in EXCLUDE_COLS)
     assert len(feature_cols) == len(EXPECTED_FEATURES), (
-        f"Expected {len(EXPECTED_FEATURES)} features, got {len(feature_cols)}: {feature_cols}"
+        f"Expected {len(EXPECTED_FEATURES)}, "
+        f"got {len(feature_cols)}: {feature_cols}"
     )
 
 

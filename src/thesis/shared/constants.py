@@ -93,27 +93,47 @@ ECE_N_BINS: int = 10  # confidence bins for Expected Calibration Error
 CALIB_LR: float = 0.01  # LBFGS learning rate for temperature-scaling
 CALIB_MAX_ITER: int = 100  # LBFGS max iterations
 
-# Default LightGBM tabular features
+# Default LightGBM tabular features — grouped by category
 CORE_STATIC_FEATURES: tuple[str, ...] = (
+    # ── trend ──
     "ema34_vs_ema89",
     "close_vs_ema_34",
-    "adx_14",
+    "close_sma50_ratio",
     "ema_slope_20",
-    "return_1h",
-    "return_4h",
-    "macd_hist_atr",
+    "adx_14",
+    # ── momentum ──
     "rsi_14",
+    "macd_hist_atr",
+    "stoch_k",
+    "williams_r",
+    # ── volatility ──
     "atr_pct_close",
     "atr_ratio",
     "atr_percentile",
     "high_low_range_20",
+    "bb_pctb",
+    # ── mean-reversion / position ──
     "price_dist_ratio",
     "price_position_20",
     "pivot_position",
     "vwap",
+    # ── price action ──
     "candle_body_ratio",
+    "asia_range_atr",
+    # ── returns ──
+    "return_1h",
+    "return_4h",
+    # ── volume / interaction ──
+    "vol_rsi_interaction",
+    # ── lagged (temporal memory) ──
+    "rsi_lag1",
+    "adx_lag1",
+    "ema_slope_lag1",
+    "return_1h_lag1",
+    # ── session / calendar ──
     "sess_asia",
     "sess_london",
     "sess_ny_am",
     "sess_ny_pm",
+    "day_of_week",
 )
