@@ -56,6 +56,7 @@ def compute_labels(
 
             if upper_hit and lower_hit:
                 ambiguous_count += 1
+                label = CENSORED_LABEL
                 hit_offset = j - i
                 break
             if upper_hit:

@@ -131,14 +131,7 @@ def run_pipeline(config: Config) -> None:
     # Stage 3: Triple-barrier directional labels.
     _run_stage(3, config, "run_label_generation", config.paths.labels, generate_labels)
 
-    # Stage 4: Walk-forward LightGBM or Hybrid Stacking.
-    logger.info(
-        "Using %s (%s architecture)",
-        "walk-forward sliding window"
-        if config.validation.method == "sliding"
-        else "fixed train/val/test split",
-        config.model.architecture,
-    )
+    # Stage 4: Walk-forward Hybrid Stacking.
     if config.workflow.run_model_training:
         stage_header(4)
         train_walk_forward(config)

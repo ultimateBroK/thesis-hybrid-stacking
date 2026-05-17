@@ -1,4 +1,8 @@
-"""Stacking trainer. Base learners feed meta learner."""
+"""Stacking trainer. Base learners feed meta learner.
+
+Simplified: single-holdout only (80/20 chronological split).
+No OOF folds, no calibration, no passthrough.
+"""
 
 from __future__ import annotations
 
@@ -42,11 +46,14 @@ _BASE_ALIASES = {
     "random_forest": "rf",
     "lightgbm": "lgbm",
 }
-_MIN_SPLIT = 4
-_MIN_CAL = 50
+_BASE_COMPARE_NAMES = {
+    "logreg": "Logistic Regression",
+    "rf": "Random Forest",
+    "lgbm": "LightGBM",
+}
 
 
-# Base model registry
+# ── Base model registry ─────────────────────────────────────────────────────
 
 
 def _build_base(name: str, config: Config) -> Any:
@@ -84,7 +91,7 @@ def _fit_safe(model: Any, X: np.ndarray, y: np.ndarray) -> Any:
     return model
 
 
-# Meta model registry
+# ── Meta model registry ─────────────────────────────────────────────────────
 
 
 def _build_meta(name: str, config: Config, X: np.ndarray, y: np.ndarray) -> Any:
@@ -104,8 +111,7 @@ def _build_meta(name: str, config: Config, X: np.ndarray, y: np.ndarray) -> Any:
         ).fit(X, y)
     if name == "lightgbm":
         val_split = max(1, int(len(X) * 0.2))
-        if len(X) <= _MIN_SPLIT:
-            # Too small — disable early stopping, use conservative rounds
+        if len(X) <= 4:
             import lightgbm as lgb
 
             return lgb.LGBMClassifier(
@@ -131,7 +137,7 @@ def _build_meta(name: str, config: Config, X: np.ndarray, y: np.ndarray) -> Any:
     raise ValueError(f"Unsupported meta model: {name!r}")
 
 
-# Probability helpers
+# ── Probability helpers ──────────────────────────────────────────────────────
 
 
 def _aligned_proba(
@@ -201,144 +207,7 @@ def _classification_summary(y_true: list[int], y_pred: list[int]) -> dict[str, A
     }
 
 
-# Expanding-origin OOF
-
-
-def _internal_folds(
-    train_len: int, n_folds: int, purge_bars: int
-) -> list[WalkForwardWindow]:
-    """Build internal expanding-origin folds.
-
-    Purge gap keeps meta features out-of-sample.
-    """
-    fold_size = train_len // n_folds
-    boundaries = [i * fold_size for i in range(n_folds)] + [train_len]
-    folds: list[WalkForwardWindow] = []
-    for i in range(1, n_folds):
-        pred_start = boundaries[i]
-        pred_end = boundaries[i + 1]
-        adj_train_end = max(0, pred_start - purge_bars)
-        adj_test_start = min(pred_start + purge_bars, pred_end)
-        if adj_train_end > 0 and adj_test_start < pred_end:
-            folds.append(
-                WalkForwardWindow(
-                    train_start_idx=0,
-                    train_end_idx=adj_train_end,
-                    test_start_idx=adj_test_start,
-                    test_end_idx=pred_end,
-                )
-            )
-    return folds
-
-
-def _expanding_origin_oof(
-    config: Config,
-    train_df: pl.DataFrame,
-    feature_cols: list[str],
-    purge_bars: int,
-) -> tuple[dict[str, np.ndarray], np.ndarray, Any, list[str], list[str], np.ndarray | None]:
-    """Generate OOF meta features.
-
-    Meta learner trains only on base out-of-sample outputs.
-    """
-    n_folds = config.model.stacking_internal_folds
-    if n_folds < 2:
-        raise ValueError("Need at least 2 folds for OOF stacking")
-
-    internal = _internal_folds(len(train_df), n_folds, purge_bars)
-    if not internal:
-        raise ValueError(
-            f"Expanding-origin produced 0 usable folds from {len(train_df)} rows"
-        )
-
-    y_full = train_df["label"].to_numpy().astype(np.int32)
-    static_cols = select_static_cols(config, train_df, feature_cols)
-    pipeline, selected = fit_static_feature_pipeline(
-        config, train_df, static_cols, y_full
-    )
-    X_full = pipeline.transform(train_df.select(static_cols).to_pandas())
-
-    oof_parts: dict[str, list[np.ndarray]] = {}
-    y_oof_parts: list[np.ndarray] = []
-    x_oof_parts: list[np.ndarray] = []
-
-    for fi, fold in enumerate(internal):
-        X_tr = X_full[fold.train_start_idx : fold.train_end_idx]
-        y_tr = y_full[fold.train_start_idx : fold.train_end_idx]
-        X_pr = X_full[fold.test_start_idx : fold.test_end_idx]
-        y_pr = y_full[fold.test_start_idx : fold.test_end_idx]
-
-        if len(np.unique(y_tr)) < 2:
-            logger.warning("  Internal fold %d: single-class train, skipping", fi)
-            continue
-
-        for configured_name in config.model.stacking_base_models:
-            short = _BASE_ALIASES.get(configured_name, configured_name)
-            if configured_name == "lightgbm":
-                model = _train_lgbm(
-                    X_tr,
-                    y_tr,
-                    X_pr,
-                    y_pr,
-                    _compute_class_weights(y_tr),
-                    config,
-                    selected,
-                )
-            else:
-                model = _fit_safe(_build_base(configured_name, config), X_tr, y_tr)
-            proba = _aligned_proba(model, X_pr, selected)
-            oof_parts.setdefault(short, []).append(proba)
-
-        y_oof_parts.append(y_pr)
-        x_oof_parts.append(np.asarray(X_pr))
-
-    if not oof_parts:
-        raise ValueError("Expanding-origin OOF produced no predictions")
-
-    meta_train_outputs = {n: np.concatenate(p, axis=0) for n, p in oof_parts.items()}
-    y_meta = np.concatenate(y_oof_parts, axis=0).astype(np.int32)
-    X_meta_raw = np.concatenate(x_oof_parts, axis=0) if x_oof_parts else None
-    logger.info(
-        "  Expanding-origin OOF: %d meta rows from %d folds", len(y_meta), len(internal)
-    )
-    return meta_train_outputs, y_meta, pipeline, selected, static_cols, X_meta_raw
-
-
-# Calibration
-
-
-def _calibrate_models(
-    base_models: dict[str, Any],
-    X_cal: np.ndarray,
-    y_cal: np.ndarray,
-    n_models: int,
-) -> dict[str, Any]:
-    """Calibrate base probabilities with sigmoid.
-
-    Skip when calibration rows too few.
-    """
-    from sklearn.calibration import CalibratedClassifierCV
-    from sklearn.frozen import FrozenEstimator
-
-    if len(y_cal) < _MIN_CAL * n_models:
-        logger.warning(
-            "  Calibration set too small (%d rows for %d models) — skipping",
-            len(y_cal),
-            n_models,
-        )
-        return dict(base_models)
-
-    calibrated = {}
-    for name, model in base_models.items():
-        frozen = FrozenEstimator(model)
-        cal = CalibratedClassifierCV(estimator=frozen, method="sigmoid")
-        cal.fit(X_cal, y_cal)
-        calibrated[name] = cal
-        logger.info("  %s: calibrated on %d rows", name, len(y_cal))
-    return calibrated
-
-
-# Train one outer window
+# ── Train one outer window ──────────────────────────────────────────────────
 
 
 def _train_stacking_window(
@@ -350,158 +219,102 @@ def _train_stacking_window(
     *,
     is_regression: bool = False,
 ) -> dict[str, Any] | None:
-    """Train/predict one stacking window."""
+    """Train/predict one stacking window.
+
+    Protocol: chronological 80/20 split inside train window.
+      - base_df = train[:80%]  → fit base models
+      - meta_df = train[80%:]  → base predict_proba → meta features
+      - meta model trains on meta features
+      - base models refit on full train
+      - predict test set via base→meta pipeline
+    """
     train_df = df.slice(window.train_start_idx, window.train_len)
     test_df = df.slice(window.test_start_idx, window.test_len)
     if train_df.is_empty() or test_df.is_empty():
         return None
 
     y_test = test_df["label"].to_numpy().astype(np.int32)
-    n_folds = config.model.stacking_internal_folds
-    do_cal = (
-        config.model.stacking_calibrate_base
-        and config.model.stacking_calibration_fraction > 0.0
+    meta_frac = config.model.stacking_meta_fraction
+    base_rows = int(round(len(train_df) * (1 - meta_frac)))
+    base_df, meta_df = (
+        train_df.slice(0, base_rows),
+        train_df.slice(base_rows, len(train_df) - base_rows),
     )
-    cal_frac = config.model.stacking_calibration_fraction
+    y_base = base_df["label"].to_numpy().astype(np.int32)
+    y_meta = meta_df["label"].to_numpy().astype(np.int32)
 
-    diag_extra: dict[str, Any] = {}
+    logger.info(
+        "Window %d: single-holdout base=%d meta=%d test=%d",
+        w_idx + 1,
+        len(base_df),
+        len(meta_df),
+        len(test_df),
+    )
 
-    # OOF path
-    if n_folds >= 2:
-        purge_bars = config.model.stacking_internal_purge
-        if purge_bars <= 0:
-            purge_bars = config.labels.horizon_bars
+    static_cols = select_static_cols(config, train_df, feature_cols)
+    pipeline, selected = fit_static_feature_pipeline(
+        config, base_df, static_cols, y_base
+    )
 
-        if do_cal:
-            # Chronological base/calibration split
-            cal_rows = max(1, int(round(len(train_df) * cal_frac)))
-            base_cal_df = train_df.slice(0, len(train_df) - cal_rows)
-            cal_df = train_df.slice(len(train_df) - cal_rows, cal_rows)
-            y_cal = cal_df["label"].to_numpy().astype(np.int32)
-            logger.info(
-                "Window %d: OOF (%d folds, purge=%d) + calibration (%d rows)",
-                w_idx + 1,
-                n_folds,
-                purge_bars,
-                len(y_cal),
+    X_base = pipeline.transform(base_df.select(static_cols).to_pandas())
+    X_meta = pipeline.transform(meta_df.select(static_cols).to_pandas())
+    X_test = pipeline.transform(test_df.select(static_cols).to_pandas())
+
+    # ── Fit base models on base_df ──────────────────────────────────────────
+    base_models: dict[str, Any] = {}
+    for configured_name in config.model.stacking_base_models:
+        short = _BASE_ALIASES.get(configured_name, configured_name)
+        if configured_name == "lightgbm":
+            _val_split = max(1, int(len(X_base) * 0.2))
+            X_tr, y_tr = X_base[:-_val_split], y_base[:-_val_split]
+            X_val, y_val = X_base[-_val_split:], y_base[-_val_split:]
+            class_weights = (
+                _compute_class_weights(y_tr) if len(np.unique(y_tr)) > 1 else None
             )
-            meta_train_outputs, y_meta, pipeline, selected, static_cols, X_meta_raw = (
-                _expanding_origin_oof(config, base_cal_df, feature_cols, purge_bars)
+            model = _train_lgbm(
+                X_tr, y_tr, X_val, y_val, class_weights, config, selected
             )
-            y_base = base_cal_df["label"].to_numpy().astype(np.int32)
-            X_base = pipeline.transform(base_cal_df.select(static_cols).to_pandas())
-            X_cal = pipeline.transform(cal_df.select(static_cols).to_pandas())
         else:
-            logger.info(
-                "Window %d: expanding-origin OOF (%d folds, purge=%d)",
-                w_idx + 1,
-                n_folds,
-                purge_bars,
-            )
-            meta_train_outputs, y_meta, pipeline, selected, static_cols, X_meta_raw = (
-                _expanding_origin_oof(config, train_df, feature_cols, purge_bars)
-            )
-            y_base = train_df["label"].to_numpy().astype(np.int32)
-            X_base = pipeline.transform(train_df.select(static_cols).to_pandas())
-            X_cal = None
-            y_cal = None
-
-        X_test = pipeline.transform(test_df.select(static_cols).to_pandas())
-
-        # Refit bases on deployable train slice
-        # Split base train for early stopping — never use X_test as eval
-        _val_split = max(1, int(len(X_base) * 0.2))
-        X_tr_base, y_tr_base = X_base[:-_val_split], y_base[:-_val_split]
-        X_val_base, y_val_base = X_base[-_val_split:], y_base[-_val_split:]
-
-        base_models: dict[str, Any] = {}
-        for configured_name in config.model.stacking_base_models:
-            short = _BASE_ALIASES.get(configured_name, configured_name)
-            if configured_name == "lightgbm":
-                class_weights = (
-                    _compute_class_weights(y_tr_base)
-                    if len(np.unique(y_tr_base)) > 1
-                    else None
-                )
-                model = _train_lgbm(
-                    X_tr_base,
-                    y_tr_base,
-                    X_val_base,
-                    y_val_base,
-                    class_weights,
-                    config,
-                    selected,
-                )
-            else:
-                model = _fit_safe(_build_base(configured_name, config), X_base, y_base)
-            base_models[short] = model
-
-        if do_cal and X_cal is not None and y_cal is not None:
-            base_models = _calibrate_models(
-                base_models, X_cal, y_cal, len(config.model.stacking_base_models)
-            )
-            diag_extra["calibration"] = {
-                "calibrated": True,
-                "n_calibration": len(y_cal),
-            }
-
-        test_outputs = {
-            name: _aligned_proba(model, X_test, selected)
-            for name, model in base_models.items()
-        }
-        diag_extra["stacking_mode"] = "expanding_origin_oof"
-        diag_extra["internal_folds"] = n_folds
-
-    # Legacy single-holdout path
-    else:
-        meta_frac = config.model.stacking_meta_fraction
-        base_rows = int(round(len(train_df) * (1 - meta_frac)))
-        base_df, meta_df = (
-            train_df.slice(0, base_rows),
-            train_df.slice(base_rows, len(train_df) - base_rows),
-        )
-        y_base = base_df["label"].to_numpy().astype(np.int32)
-        y_meta = meta_df["label"].to_numpy().astype(np.int32)
-
-        static_cols = select_static_cols(config, train_df, feature_cols)
-        pipeline, selected = fit_static_feature_pipeline(
-            config, base_df, static_cols, y_base
-        )
-
-        X_base = pipeline.transform(base_df.select(static_cols).to_pandas())
-        X_meta = pipeline.transform(meta_df.select(static_cols).to_pandas())
-        X_test = pipeline.transform(test_df.select(static_cols).to_pandas())
-
-        base_models = {}
-        for configured_name in config.model.stacking_base_models:
-            short = _BASE_ALIASES.get(configured_name, configured_name)
             model = _fit_safe(_build_base(configured_name, config), X_base, y_base)
-            base_models[short] = model
+        base_models[short] = model
 
-        test_outputs = {
-            name: _aligned_proba(model, X_test, selected)
-            for name, model in base_models.items()
-        }
-        meta_train_outputs = {
-            name: _aligned_proba(model, X_meta, selected)
-            for name, model in base_models.items()
-        }
-        X_meta_raw = np.asarray(X_meta) if config.model.stacking_passthrough else None
-        diag_extra["stacking_mode"] = "single_holdout"
+    # ── Base predict meta_df → meta features ────────────────────────────────
+    meta_train_outputs = {
+        name: _aligned_proba(model, X_meta, selected)
+        for name, model in base_models.items()
+    }
+    test_outputs = {
+        name: _aligned_proba(model, X_test, selected)
+        for name, model in base_models.items()
+    }
 
-    # Soft-voting baseline
+    # ── Refit base models on full train for deployment ──────────────────────
+    y_full_train = train_df["label"].to_numpy().astype(np.int32)
+    X_full_train = pipeline.transform(train_df.select(static_cols).to_pandas())
+    for configured_name in config.model.stacking_base_models:
+        short = _BASE_ALIASES.get(configured_name, configured_name)
+        if configured_name == "lightgbm":
+            _val_split = max(1, int(len(X_full_train) * 0.2))
+            X_tr, y_tr = X_full_train[:-_val_split], y_full_train[:-_val_split]
+            X_val, y_val = X_full_train[-_val_split:], y_full_train[-_val_split:]
+            class_weights = (
+                _compute_class_weights(y_tr) if len(np.unique(y_tr)) > 1 else None
+            )
+            base_models[short] = _train_lgbm(
+                X_tr, y_tr, X_val, y_val, class_weights, config, selected
+            )
+        else:
+            base_models[short] = _fit_safe(
+                _build_base(configured_name, config), X_full_train, y_full_train
+            )
+
+    # ── Soft-voting baseline ────────────────────────────────────────────────
     soft_vote = np.mean(list(test_outputs.values()), axis=0)
     soft_vote_preds = _CLASS_ORDER[np.argmax(soft_vote, axis=1)]
 
-    # Meta model — optionally pass raw features through
+    # ── Meta model ──────────────────────────────────────────────────────────
     X_meta_stack, meta_names = _stack_features(meta_train_outputs)
     X_test_stack, _ = _stack_features(test_outputs)
-    passthrough = config.model.stacking_passthrough
-    if passthrough and X_meta_raw is not None:
-        X_meta_stack = np.hstack([X_meta_stack, X_meta_raw])
-        X_test_stack = np.hstack([X_test_stack, np.asarray(X_test)])
-        raw_names = [f"raw_{c}" for c in selected]
-        meta_names = meta_names + raw_names
     meta_model = _build_meta(
         config.model.stacking_meta_model, config, X_meta_stack, y_meta
     )
@@ -509,7 +322,7 @@ def _train_stacking_window(
     threshold = config.model.prediction_confidence_threshold
     final_preds = _apply_confidence_threshold(final_proba, threshold)
 
-    # Diagnostics
+    # ── Diagnostics ─────────────────────────────────────────────────────────
     diag = _window_diagnostics(
         w_idx + 1, train_df, test_df, train_df["label"].to_numpy(), y_test
     )
@@ -519,6 +332,7 @@ def _train_stacking_window(
             "meta_train_rows": len(y_meta),
             "base_models": list(base_models),
             "meta_model": config.model.stacking_meta_model,
+            "stacking_mode": "single_holdout",
             "base_model_accuracy": {
                 name: float((preds.argmax(axis=1) == y_test).mean())
                 for name, preds in test_outputs.items()
@@ -528,7 +342,6 @@ def _train_stacking_window(
             ),
         }
     )
-    diag.update(diag_extra)
 
     _add_prediction_diagnostics(
         diag, final_preds, y_test, final_proba, confidence_threshold=threshold
@@ -543,7 +356,6 @@ def _train_stacking_window(
         }
     )
 
-    # Base model predictions for comparison
     base_preds = {
         name: _CLASS_ORDER[preds.argmax(axis=1)].astype(np.int32).tolist()
         for name, preds in test_outputs.items()
@@ -572,7 +384,7 @@ def _train_stacking_window(
     }
 
 
-# Save
+# ── Save ─────────────────────────────────────────────────────────────────────
 
 
 def _save_results(
@@ -604,11 +416,6 @@ def _save_results(
         _save_feature_importance(last["lgbm_model"], last["feature_cols"], config)
 
     # Model comparison payload
-    _BASE_COMPARE_NAMES = {
-        "logreg": "Logistic Regression",
-        "rf": "Random Forest",
-        "lgbm": "LightGBM",
-    }
     comparison: dict[str, dict[str, list[int]]] = {
         "hybrid_stacking": {"true": [], "pred": []}
     }
@@ -634,14 +441,6 @@ def _save_results(
     cmp_path.parent.mkdir(parents=True, exist_ok=True)
     cmp_path.write_text(json.dumps(out_cmp, indent=2))
 
-    n_folds = config.model.stacking_internal_folds
-    stacking_mode = "expanding_origin_oof" if n_folds >= 2 else "single_holdout"
-    purge_bars = (
-        config.model.stacking_internal_purge
-        if config.model.stacking_internal_purge > 0
-        else config.labels.horizon_bars
-    )
-
     _save_training_history(
         config,
         {
@@ -650,15 +449,9 @@ def _save_results(
                 "artifact_strategy": "last_walk_forward_window",
                 "validation_protocol": {
                     "outer_windows": "bar_based_walk_forward_with_purge_embargo",
-                    "stacking_mode": stacking_mode,
-                    **(
-                        {"internal_folds": n_folds, "internal_purge": purge_bars}
-                        if stacking_mode == "expanding_origin_oof"
-                        else {
-                            "base_meta_split": "chronological",
-                            "meta_fraction": config.model.stacking_meta_fraction,
-                        }
-                    ),
+                    "stacking_mode": "single_holdout",
+                    "base_meta_split": "chronological",
+                    "meta_fraction": config.model.stacking_meta_fraction,
                 },
                 "base_models": config.model.stacking_base_models,
                 "meta_model": config.model.stacking_meta_model,
@@ -690,7 +483,7 @@ def _save_results(
     )
 
 
-# Entry point
+# ── Entry point ──────────────────────────────────────────────────────────────
 
 
 def train_stacking_walk_forward(config: Config) -> None:
