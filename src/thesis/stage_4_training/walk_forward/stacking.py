@@ -501,12 +501,26 @@ def train_stacking_walk_forward(config: Config) -> None:
     )
 
 
+def _load_labeled_data(config: Config) -> tuple[pl.DataFrame, bool]:
+    """Load labels parquet. Returns (df, is_regression)."""
+    path = Path(config.paths.labels)
+    if not path.exists():
+        raise FileNotFoundError(f"Labels not found: {path}")
+
+    df = pl.read_parquet(path)
+    logger.info("Loaded labels: %d rows", len(df))
+
+    from thesis.stage_4_training.walk_forward.targets import compute_regression_target
+
+    df, is_regression = compute_regression_target(df, config)
+    return df, is_regression
+
+
 def _prepare_for_stacking(
     config: Config,
 ) -> tuple[pl.DataFrame, list[WalkForwardWindow], list[str], dict[str, Any]]:
     """Prepare stacking data. Multiclass only."""
     from thesis.stage_4_training.validation import generate_windows
-    from thesis.stage_4_training.walk_forward.lgbm import _load_labeled_data
 
     df, is_reg = _load_labeled_data(config)
     if is_reg:
