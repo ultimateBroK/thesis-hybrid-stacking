@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from thesis.stage_4_training.walk_forward.stacking import _aligned_proba
+from thesis.models.stacking import _aligned_proba
 
 
 @pytest.mark.unit

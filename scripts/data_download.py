@@ -485,8 +485,8 @@ def run_download(
 
     if cfg is not None:
         data_cfg = cfg.data
-        start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
+        start_dt = datetime.strptime(cfg.data_range.start, "%Y-%m-%d")
+        end_dt = datetime.strptime(cfg.data_range.end, "%Y-%m-%d")
         _defaults = {
             "start_year": start_dt.year,
             "start_month": start_dt.month,
@@ -636,8 +636,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if cfg is not None:
         data_cfg = cfg.data
-        _start_dt = datetime.strptime(data_cfg.start_date, "%Y-%m-%d")
-        _end_dt = datetime.strptime(data_cfg.end_date, "%Y-%m-%d")
+        _start_dt = datetime.strptime(cfg.data_range.start, "%Y-%m-%d")
+        _end_dt = datetime.strptime(cfg.data_range.end, "%Y-%m-%d")
         _def_start_year = _start_dt.year
         _def_start_month = _start_dt.month
         _def_end_year = _end_dt.year

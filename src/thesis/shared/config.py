@@ -175,11 +175,9 @@ class BacktestConfig:
 class WorkflowConfig:
     """Stage toggles, caching, and reproducibility settings."""
 
-    run_data_pipeline: bool = True
-    run_feature_engineering: bool = True
-    run_label_generation: bool = True
-    run_model_training: bool = True
-    run_backtest: bool = True
+    run_data: bool = True
+    run_dataset: bool = True
+    run_models: bool = True
     run_reporting: bool = True
     cache_invalidation: str = "path"
     force_rerun: bool = False
@@ -197,14 +195,13 @@ class PathsConfig:
     ohlcv: str = "data/processed/ohlcv.parquet"
     features: str = "data/processed/features.parquet"
     labels: str = "data/processed/labels.parquet"
-    train_data: str = "data/processed/train.parquet"
-    val_data: str = "data/processed/val.parquet"
-    test_data: str = "data/processed/test.parquet"
+    ml_dataset: str = "data/modeling/ml_dataset.parquet"
     model: str = "models/lightgbm_model.pkl"
     predictions: str = "data/predictions/final_predictions.csv"
-    backtest_results: str = "results/backtest_results.json"
     report: str = "results/thesis_report.md"
-    data_quality_json: str = "data/processed/data_quality.json"
+    backtest_results: str = "backtest/backtest_results.json"
+    data_quality_json: str = "data/processed/data_summary.json"
+    test_data: str = ""
     session_dir: str = ""
 
 

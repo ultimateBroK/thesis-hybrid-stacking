@@ -12,18 +12,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.shared.config import Config, LabelsConfig, LGBMConfig
-from thesis.shared.constants import CENSORED_LABEL
-from thesis.stage_3_labels import (
-    compute_average_uniqueness,
-    compute_event_end,
-)
-from thesis.stage_3_labels.labeling import (
+from thesis.dataset.build_labels import (
     _attach_label_columns,
     _compute_triple_barrier,
     _drop_censored_and_nan,
+    compute_average_uniqueness,
+    compute_event_end,
 )
-from thesis.stage_4_training.walk_forward.targets import compute_regression_target
+from thesis.models.train import compute_regression_target
+from thesis.shared.config import Config, LabelsConfig, LGBMConfig
+from thesis.shared.constants import CENSORED_LABEL
 
 
 @pytest.mark.unit
@@ -138,7 +136,7 @@ def test_same_bar_both_hit_counted_as_ambiguous_hold() -> None:
         min_atr=0.0001,
     )
 
-    assert labels[0] == 0
+    assert labels[0] == -2  # CENSORED_LABEL for ambiguous same-bar hit
     assert touched_bars[0] == 1
     assert ambiguous_count == 1
 

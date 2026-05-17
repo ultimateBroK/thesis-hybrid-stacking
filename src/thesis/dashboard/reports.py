@@ -8,11 +8,26 @@ from pathlib import Path
 import streamlit as st
 
 from thesis.charts import build_feature_importance_chart
+from thesis.dashboard.backtest import render_backtest_section
 from thesis.dashboard.cards import render_metric_card
 from thesis.dashboard.shared import render_chart, trim_generated_visual_sections
 
 
-def render_reports_section(data: dict, session_dir: str) -> None:
+def render_reports_section(data: dict, config: object, session_dir: str) -> None:
+    """Markdown report + equity image + walk-forward history + feature importance."""
+    st.markdown("> 🏠 Dashboard > **Reports**")
+
+    # Sub-tabs: Reports content + Application Demo
+    report_tab, demo_tab = st.tabs(["📝 Report", "🎯 Application Demo"])
+
+    with report_tab:
+        _render_report_content(data, session_dir)
+
+    with demo_tab:
+        render_backtest_section(data, config, session_dir)
+
+
+def _render_report_content(data: dict, session_dir: str) -> None:
     """Markdown report + equity image + walk-forward history + feature importance."""
     st.markdown("> 🏠 Dashboard > **Reports**")
 
@@ -31,7 +46,7 @@ def render_reports_section(data: dict, session_dir: str) -> None:
     equity_png = reports_dir / "equity_curve.png"
     if equity_png.exists():
         st.subheader("Equity Curve")
-        st.image(str(equity_png), width='stretch')
+        st.image(str(equity_png), width="stretch")
 
     st.divider()
 

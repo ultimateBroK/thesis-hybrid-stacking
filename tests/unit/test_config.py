@@ -109,7 +109,7 @@ class TestCacheHash:
         cfg_a = Config()
         cfg_b = Config()
 
-        for stage in [1, 2, 3, 4, 5]:
+        for stage in [1, 2, 3, 4]:
             assert _cache_hash(cfg_a, stage) == _cache_hash(cfg_b, stage)
 
     def test_stage_hash_ignores_unmapped_sections(self) -> None:
@@ -118,29 +118,26 @@ class TestCacheHash:
         cfg = Config()
         h_base = _cache_hash(cfg, stage)
 
-        cfg_label_alt = Config()
-        cfg_label_alt.labels.atr_tp_multiplier = 999.0
-        assert h_base == _cache_hash(cfg_label_alt, stage)
-
+        # Stage 2 maps features + labels, so model changes are ignored
         cfg_model_alt = Config()
         cfg_model_alt.model.learning_rate = 0.999
         assert h_base == _cache_hash(cfg_model_alt, stage)
 
     def test_unmapped_stage_has_empty_hash(self) -> None:
         """Stages without mapped sections should not hash."""
-        assert _cache_hash(Config(), stage_num=6) == ""
+        assert _cache_hash(Config(), stage_num=5) == ""
 
-    def test_stage_4_tracks_training_sections(self) -> None:
+    def test_stage_3_tracks_training_sections(self) -> None:
         """Training hash should track tabular model and stacking edits."""
         cfg_a = Config()
 
         cfg_b = Config()
         cfg_b.model.num_leaves = 999
-        assert _cache_hash(cfg_a, 4) != _cache_hash(cfg_b, 4)
+        assert _cache_hash(cfg_a, 3) != _cache_hash(cfg_b, 3)
 
         cfg_c = Config()
         cfg_c.model.stacking_meta_fraction = 0.25
-        assert _cache_hash(cfg_a, 4) != _cache_hash(cfg_c, 4)
+        assert _cache_hash(cfg_a, 3) != _cache_hash(cfg_c, 3)
 
 
 @pytest.mark.unit

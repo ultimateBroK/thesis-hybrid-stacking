@@ -17,7 +17,7 @@ from thesis.charts import (
 from thesis.dashboard.shared import render_chart
 
 
-def render_data_section(data: dict, session_dir: str) -> None:
+def render_data_section(data: dict, config: object, session_dir: str) -> None:
     """OHLCV candlestick + feature/label charts with date range filter."""
     st.markdown("> 🏠 Dashboard > **Data Exploration**")
     st.header("Data Exploration")

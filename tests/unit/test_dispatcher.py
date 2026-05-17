@@ -1,4 +1,7 @@
-"""Tests for walk-forward dispatcher — architecture routing."""
+"""Tests for walk-forward dispatcher — architecture routing.
+
+After refactor, train_walk_forward always delegates to stacking.
+"""
 
 from __future__ import annotations
 
@@ -6,30 +9,25 @@ from unittest.mock import patch
 
 import pytest
 
+from thesis.models.train import train_walk_forward
 from thesis.shared.config import Config
-from thesis.stage_4_training.walk_forward.dispatcher import train_walk_forward
 
 
 @pytest.mark.unit
 class TestDispatcher:
-    @patch("thesis.stage_4_training.walk_forward.dispatcher.train_lgbm_walk_forward")
-    def test_lgbm_architecture_routes_correctly(self, mock_lgbm) -> None:
+    @patch("thesis.models.stacking.train_stacking_walk_forward")
+    def test_always_routes_to_stacking(self, mock_stacking) -> None:
         config = Config()
-        config.model.architecture = "lgbm"
-        train_walk_forward(config)
-        mock_lgbm.assert_called_once_with(config, expanded_features=False)
-
-    @patch(
-        "thesis.stage_4_training.walk_forward.dispatcher.train_stacking_walk_forward"
-    )
-    def test_stacking_architecture_routes_correctly(self, mock_stacking) -> None:
-        config = Config()
-        config.model.architecture = "stacking"
         train_walk_forward(config)
         mock_stacking.assert_called_once_with(config)
 
+    @pytest.mark.skip(reason="lgbm routing removed — always stacking now")
+    def test_lgbm_architecture_routes_correctly(self) -> None:
+        pass
+
     def test_unsupported_architecture_raises(self) -> None:
+        """train_walk_forward no longer routes by architecture — always stacking."""
         config = Config()
         config.model.architecture = "unknown_arch"
-        with pytest.raises(ValueError, match="Unsupported model.architecture"):
-            train_walk_forward(config)
+        # No longer raises — always uses stacking
+        train_walk_forward(config)

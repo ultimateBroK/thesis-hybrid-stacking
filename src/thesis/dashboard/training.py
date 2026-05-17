@@ -11,7 +11,7 @@ import streamlit as st
 from thesis.dashboard.cards import render_metric_card
 
 
-def render_training_section(data: dict, session_dir: str) -> None:
+def render_training_section(data: dict, config: object, session_dir: str) -> None:
     """Training history metrics + per-window accuracy + full pipeline log."""
     st.markdown("> 🏠 Dashboard > **Training**")
     st.header("Training History")

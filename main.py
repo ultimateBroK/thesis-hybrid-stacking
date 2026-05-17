@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Main entry point — simplified thesis pipeline (6-stage contract).
+"""Main entry point — thesis pipeline (4-stage contract).
 
 Stages:
-    1 — Data Preparation
-    2 — Feature Engineering
-    3 — Label Generation
-    4 — Model Training
-    5 — Backtest
-    6 — Reporting & Ablation
+    1 — Data Preparation + Feature Engineering
+    2 — Dataset Assembly
+    3 — Model Training
+    4 — Reporting
 
 Execution contract:
-    --stage N  means "start at Stage N and continue through Stage 6".
+    --stage N  means "start at Stage N and continue through Stage 4".
     No --stage means the same as --stage 1 (i.e., run all stages).
-    Therefore --stage 3 skips only Stages 1–2, --stage 5 skips 1–4, etc.
-    Stage 1 is just Stage 1 — there is no "full run" pseudo-stage.
 
 Usage:
     python main.py [--config CONFIG] [--session SESSION] [--stage N] [--force]
@@ -21,9 +17,9 @@ Usage:
 Options:
     --session SESSION   Continue from an existing session directory name
                         (e.g., XAUUSD_H1_20260418_143052)
-    --stage N           Start at Stage N and continue through Stage 6 (1–6).
-                        Skipping stages before N. Default: --stage 1 (all).
-    --force             Force re-run all stages (or stage with --stage)
+    --stage N           Start at Stage N and continue through Stage 4 (1–4).
+                        Default: --stage 1 (all).
+    --force             Force re-run all stages
 """
 
 import argparse
@@ -46,10 +42,7 @@ if (PROJECT_ROOT / "src").exists():
 
 from thesis.shared.config import load_config  # noqa: E402
 from thesis.pipeline import run_pipeline  # noqa: E402
-from thesis.shared.session_paths import (  # noqa: E402
-    configure_session_paths,
-    load_config_for_session,
-)
+from thesis.shared.utils import console, stage_header, stage_skip  # noqa: E402
 
 
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
@@ -96,7 +89,17 @@ def _find_session(session_name: str) -> Path | None:
 
 def _load_session_config(session_dir: Path) -> object:
     """Load configuration from an existing session directory (snapshot + paths)."""
-    return load_config_for_session(session_dir)
+    snapshot = session_dir / "config" / "config_snapshot.toml"
+    if snapshot.exists():
+        config = load_config(snapshot)
+    else:
+        config = load_config("config.toml")
+    config.paths.session_dir = str(session_dir)
+    config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
+    config.paths.predictions = str(session_dir / "predictions" / "final_predictions.csv")
+    config.paths.report = str(session_dir / "reports" / "thesis_report.md")
+    config.paths.backtest_results = str(session_dir / "backtest" / "backtest_results.json")
+    return config
 
 
 def _apply_force_flag(config: object, force: bool) -> object:
@@ -107,19 +110,15 @@ def _apply_force_flag(config: object, force: bool) -> object:
 
 
 def _apply_stage_flags(config: object, stage: int | None) -> object:
-    """Apply CLI stage skip contract after config/session config is loaded."""
+    """Apply CLI stage skip contract — 4-stage model."""
     if stage is None:
         return config
-    if stage > 1:
-        config.workflow.run_data_pipeline = False
-    if stage > 2:
-        config.workflow.run_feature_engineering = False
-    if stage > 3:
-        config.workflow.run_label_generation = False
-    if stage > 4:
-        config.workflow.run_model_training = False
-    if stage > 5:
-        config.workflow.run_backtest = False
+    if stage >= 2:
+        config.workflow.run_data = False
+    if stage >= 3:
+        config.workflow.run_dataset = False
+    if stage >= 4:
+        config.workflow.run_models = False
     return config
 
 
@@ -143,10 +142,10 @@ def main() -> None:
     parser.add_argument(
         "--stage",
         type=int,
-        choices=[1, 2, 3, 4, 5, 6],
+        choices=[1, 2, 3, 4],
         default=None,
         help=(
-            "Start at Stage N and continue through Stage 6. "
+            "Start at Stage N and continue through Stage 4. "
             "Stage 3 means skip only Stages 1–2. "
             "No --stage means the same as --stage 1 (run all)."
         ),
@@ -185,7 +184,11 @@ def main() -> None:
 
         # Update config paths to point to session directory
         config.workflow.session_timestamp = session_ts
-        configure_session_paths(config, session_dir)
+        config.paths.session_dir = str(session_dir)
+        config.paths.model = str(session_dir / "models" / "lightgbm_model.pkl")
+        config.paths.predictions = str(session_dir / "predictions" / "final_predictions.csv")
+        config.paths.report = str(session_dir / "reports" / "thesis_report.md")
+        config.paths.backtest_results = str(session_dir / "backtest" / "backtest_results.json")
 
         # Create session subdirectories
         for subdir in [
@@ -193,8 +196,8 @@ def main() -> None:
             "models",
             "predictions",
             "reports",
-            "backtest",
             "logs",
+            "backtest",
         ]:
             (session_dir / subdir).mkdir(parents=True, exist_ok=True)
 

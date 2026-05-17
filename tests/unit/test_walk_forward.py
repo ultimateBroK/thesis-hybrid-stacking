@@ -11,28 +11,26 @@ import numpy as np
 import polars as pl
 import pytest
 
-from thesis.shared.config import Config
-from thesis.stage_4_training.walk_forward.artifacts import _build_wf_history
-from thesis.stage_4_training.walk_forward.diagnostics import (
-    _add_prediction_diagnostics,
-    _per_class_metrics,
-    _counts,
-    _pct,
-    _dates,
-    _window_diagnostics,
-)
-from thesis.stage_4_training.walk_forward.feature_pipeline import (
-    select_static_cols,
-)
-from thesis.stage_4_training.walk_forward.predictions import (
+from thesis.models.evaluate import (
     _add_confidence_columns,
+    _add_prediction_diagnostics,
     _align_proba,
+    _build_wf_history,
+    _counts,
+    _dates,
     _label_suffix,
+    _pct,
+    _per_class_metrics,
+    _validate_predictions,
+    _window_diagnostics,
+    _write_prediction_manifest,
     one_hot_proba,
     proba_columns,
-    _validate_predictions,
-    _write_prediction_manifest,
 )
+from thesis.models.train import (
+    select_static_cols,
+)
+from thesis.shared.config import Config
 
 
 def _make_oof_df(n_rows: int = 20) -> pl.DataFrame:

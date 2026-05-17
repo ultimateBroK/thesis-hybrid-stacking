@@ -1,383 +1,345 @@
-## Target: small but still “Hybrid Stacking”
+## Chốt hướng tối ưu
 
-Keep only this spine:
+Tôi khuyên bạn chuyển từ **6-stage production-style pipeline** sang **4-stage academic ML pipeline**:
 
 ```text
-1. Load OHLCV
-2. Build features
-3. Build triple-barrier labels
-4. Walk-forward split
-5. Train base models
-6. Train meta model
-7. Evaluate
-8. Backtest demo
-9. Report
+Stage 1: Dataset Preparation
+Stage 2: Feature & Label Engineering
+Stage 3: Model Training & Evaluation
+Stage 4: Result Analysis & Thesis Report
 ```
 
-Everything else is optional noise.
+Backtest không nên là một stage chính nữa. Nên đưa nó xuống thành:
+
+```text
+optional_demo/backtest_demo.py
+```
+
+hoặc một section nhỏ trong report: **“Ứng dụng minh họa tín hiệu vào giao dịch”**.
+
+Lý do: đồ án CNTT cần chứng minh bạn hiểu **quy trình ML, thiết kế dữ liệu, mô hình, validation, metric, so sánh baseline**, không cần chứng minh hệ thống giao dịch có lời.
 
 ---
 
-## What to remove / freeze first
+## Kết cấu stage nên đổi thành thế này
 
-### 1. Remove architecture switching
+### Stage 1 — Dataset Preparation
 
-Current idea:
+Gộp từ `stage_1_data`.
+
+Nhiệm vụ chỉ nên là:
 
 ```text
-architecture = "stacking" or "lgbm"
-dispatcher.py
-lgbm path
-stacking path
+Raw XAU/USD data
+→ resample/clean thành OHLCV H1
+→ kiểm tra thiếu dữ liệu cơ bản
+→ lưu dataset chuẩn
 ```
 
-For your thesis, topic is fixed: **Hybrid Stacking**.
+Giữ lại:
 
-So make Stage 4 only one path:
+* đọc dữ liệu;
+* chuẩn hóa timestamp;
+* tạo OHLCV H1;
+* basic missing/gap check.
 
-```python
-train_hybrid_stacking(config)
+Nên bỏ hoặc giảm:
+
+* outlier analysis quá sâu;
+* nhiều data quality report phụ;
+* session path/caching quá production-style.
+
+Output nên đơn giản:
+
+```text
+data/processed/xauusd_h1.parquet
+reports/data_summary.json
 ```
 
-No dispatcher. No architecture switch. No `lgbm_expanded_features`.
-
-Keep individual LightGBM/RF/LogReg only as **baseline comparison inside the same training file**, not as separate architecture.
+Hiện architecture đang mô tả Stage 1 là raw ticks → OHLCV, có `ohlcv.parquet` và data quality json. Phần này đúng, chỉ cần làm gọn. ([GitHub][2])
 
 ---
 
-### 2. Remove advanced stacking modes
+### Stage 2 — Feature & Label Engineering
 
-Keep only **one** stacking protocol:
+Gộp `stage_2_features` và `stage_3_labels`.
 
-```text
-Outer walk-forward
-Inside each train window:
-  chronological split:
-    80% base-train
-    20% meta-train
-```
+Đây là điều chỉnh quan trọng nhất.
 
-Delete or ignore:
+Hiện tại bạn tách features và triple-barrier labels thành hai stage riêng. Về production thì ổn, nhưng với đồ án CNTT, nên gộp thành một stage vì cả hai đều thuộc **xây dựng bộ dữ liệu học máy**.
 
 ```text
-expanding-origin internal OOF folds
-calibration
-passthrough raw features
-soft-vote extras
-FrozenEstimator
-internal purge knobs
+OHLCV H1
+→ technical features
+→ triple-barrier labels
+→ final ML dataset
 ```
 
-Use this simple logic:
+Giữ lại feature groups chính:
 
-```python
-base_df = train_df[:80%]
-meta_df = train_df[80%:]
+* trend: EMA, ADX;
+* momentum: return, RSI, MACD;
+* volatility: ATR;
+* position: price position, VWAP/pivot nếu muốn;
+* session: Asia/London/NY nếu bạn giải thích được.
 
-base models train on base_df
-base models predict meta_df
-meta model trains on base predictions
-base models refit on full train_df
-base models predict test_df
-meta model predicts final test labels
+Repo hiện có khoảng 21 causal features, chia theo trend, momentum, volatility, position, candle, session. ([GitHub][2]) Cấu trúc này ổn, nhưng nên **chốt 12–16 feature dễ bảo vệ**, không nên ham nhiều.
+
+Nên bỏ hoặc giảm:
+
+* các feature “trông có vẻ trading quá” nhưng khó giải thích;
+* feature quality validation quá nhiều;
+* Pandera schema nếu nó làm code rối;
+* profitability check trong labeling.
+
+Triple-barrier label vẫn nên giữ vì nó làm đề tài có tính học thuật hơn so với “next close up/down”. Hiện Stage 3 của bạn dùng upper/lower barrier theo ATR và horizon forward; nhãn gồm Long, Hold, Short, Censored. ([GitHub][2]) Đây là phần đáng giữ.
+
+Nhưng tôi khuyên đổi tên từ:
+
+```text
+Stage 3: Label Generation
 ```
 
-This is easy to draw, easy to explain, easy to defend.
+thành:
+
+```text
+Label Construction for Supervised Learning
+```
+
+Nghe học thuật hơn, ít giống bot trade hơn.
+
+Output:
+
+```text
+data/modeling/ml_dataset.parquet
+reports/label_distribution.json
+reports/feature_list.json
+```
 
 ---
 
-### 3. Remove feature-selection pipeline complexity
+### Stage 3 — Model Training & Evaluation
 
-Current:
+Gộp trọng tâm từ `stage_4_training`.
 
-```text
-DropDuplicateFeatures
-DropCorrelatedFeatures
-RobustScaler
-SelectKBest
-fallback pipeline
-selected feature names
-```
+Đây phải là trái tim của đồ án.
 
-Small version:
+Pipeline nên là:
 
 ```text
-select fixed feature list
-fill/drop NaN
-RobustScaler only for Logistic Regression
-no feature selection
+Input: ml_dataset.parquet
+
+Baselines:
+- Majority Class
+- Logistic Regression
+- Random Forest
+- LightGBM
+
+Main model:
+- Hybrid Stacking:
+  Logistic Regression + Random Forest + LightGBM
+  → Meta Logistic Regression
+
+Validation:
+- Chronological split hoặc walk-forward đơn giản
+
+Metrics:
+- Accuracy
+- Macro F1
+- Precision/Recall/F1 per class
+- Confusion matrix
 ```
 
-LightGBM and Random Forest do not need scaling.
+Hiện repo đang đúng tinh thần này: base learners gồm Logistic Regression, Random Forest, LightGBM; meta learner là Logistic Regression trên class-probability outputs của base learners. ([GitHub][2]) Định nghĩa stacking chính thống cũng là dùng output của các estimator làm input cho final estimator. ([Scikit-learn][3])
 
-Use fixed features:
+Nhưng nên giảm bớt complexity:
+
+Nên giữ:
+
+* walk-forward validation;
+* base/model comparison;
+* confusion matrix;
+* Macro F1;
+* per-class metrics;
+* feature importance.
+
+Nên cân nhắc bỏ hoặc đưa vào appendix:
+
+* distribution-shift weights;
+* sample weights nếu code đang làm rối;
+* calibration ECE/Brier nếu chưa cần;
+* quá nhiều baseline random/always class nếu report bị loãng;
+* nhiều artifact persistence.
+
+Với đồ án, tôi khuyên chỉ giữ 4 mô hình so sánh:
 
 ```text
-return_1h / log_returns
-return_4h
-return_24h
-rsi_14
-atr_14
-adx_14
-macd
-macd_signal
-ema_slope
-ema_cross
-bb_pctb
-hour
-day_of_week
+1. Logistic Regression
+2. Random Forest
+3. LightGBM
+4. Hybrid Stacking
 ```
 
-No dynamic feature registry unless needed.
+Thêm Majority Class làm baseline tối thiểu là đủ.
 
 ---
 
-### 4. Make labels brutally clear
+### Stage 4 — Result Analysis & Thesis Report
 
-Keep triple-barrier, but remove unnecessary extras.
+Gộp `stage_6_reporting`, bỏ bớt tính “dashboard”.
 
-Keep:
-
-```text
-label
-upper_barrier
-lower_barrier
-event_end
-```
-
-Optional but useful:
+Nhiệm vụ:
 
 ```text
-touched_bar
-```
-
-Remove/freeze:
-
-```text
-sample_weight
-average_uniqueness
-label profitability warning
-many diagnostics
-```
-
-For thesis, average uniqueness is nice but not necessary. It makes code sound quant-pro, but it increases defense burden.
-
----
-
-### 5. Reduce reporting
-
-Keep 4 outputs only:
-
-```text
-predictions.parquet / predictions.csv
 metrics.json
-model_comparison.json
-report.md
+confusion_matrix.png
+model_comparison.csv
+feature_importance.png
+final_report.md
 ```
 
-Stop generating too many charts/files unless already stable.
-
-Report only:
+Report nên trả lời 5 câu hỏi:
 
 ```text
-label distribution
-walk-forward windows
-classification metrics
-confusion matrix
-model comparison
-backtest demo
+1. Dữ liệu dùng là gì?
+2. Nhãn Short/Hold/Long được tạo như thế nào?
+3. Hybrid Stacking hoạt động ra sao?
+4. Mô hình có tốt hơn baseline không?
+5. Hạn chế và hướng phát triển là gì?
 ```
+
+Hiện Stage 6 của bạn đang có nhiều section: executive summary, config, data quality, label methodology, validation, classification metrics, calibration. ([GitHub][2]) Cái này tốt, nhưng nên cắt xuống thành report học thuật gọn, tránh cảm giác “tool quá to so với đồ án”.
 
 ---
 
-## Suggested new small folder structure
+## Stage nên bỏ / hạ cấp
+
+### Nên hạ cấp Stage 5 Backtest
+
+Hiện backtest đang có confidence filter, position sizing, drawdown cutoff, daily loss limit, cooldown, ATR stop-loss/take-profit, spread, slippage, commission. ([GitHub][2]) Đây là phần dễ làm hội đồng lệch hướng hỏi về trading/risk management thay vì ML.
+
+Nên đổi từ:
+
+```text
+src/thesis/stage_5_backtest/
+```
+
+thành:
+
+```text
+src/thesis/demo/backtest_demo.py
+```
+
+Trong thesis chỉ ghi:
+
+> Backtest được sử dụng như minh họa ứng dụng đầu ra mô hình, không phải tiêu chí chính để đánh giá chất lượng mô hình.
+
+Không nên để backtest là stage chính trong pipeline bảo vệ.
+
+---
+
+## Cấu trúc thư mục tôi khuyên dùng
 
 ```text
 src/thesis/
-  config.py
-  data.py
-  features.py
-  labels.py
-  validation.py
-  hybrid_stacking.py
-  metrics.py
-  backtest.py
-  report.py
-  pipeline.py
+  data/
+    prepare_dataset.py
+
+  dataset/
+    build_features.py
+    build_labels.py
+    build_ml_dataset.py
+
+  models/
+    baselines.py
+    stacking.py
+    train.py
+    evaluate.py
+
+  reporting/
+    metrics.py
+    plots.py
+    report.py
+
+  demo/
+    backtest_demo.py
+
+  shared/
+    config.py
+    constants.py
+    utils.py
+
+main.py
+config.toml
 ```
 
-That is enough.
-
-Current 6-stage folders look professional, but for ADHD + deadline, they create too many doors.
-
----
-
-## Minimum viable Hybrid Stacking file
-
-One file should contain the core model:
+Nhìn sẽ “CNTT + ML” hơn nhiều so với:
 
 ```text
-src/thesis/hybrid_stacking.py
+stage_1_data
+stage_2_features
+stage_3_labels
+stage_4_training
+stage_5_backtest
+stage_6_reporting
 ```
 
-Functions:
-
-```python
-def train_hybrid_stacking(df, feature_cols, config):
-    windows = make_walk_forward_windows(...)
-    all_preds = []
-
-    for window in windows:
-        result = train_one_window(df, window, feature_cols, config)
-        all_preds.append(result)
-
-    return concat_predictions(all_preds)
-```
-
-```python
-def train_one_window(df, window, feature_cols, config):
-    train_df = ...
-    test_df = ...
-
-    base_df, meta_df = chronological_split(train_df, meta_fraction=0.2)
-
-    base_models = {
-        "logreg": LogisticRegression(...),
-        "rf": RandomForestClassifier(...),
-        "lgbm": LGBMClassifier(...),
-    }
-
-    fit base models on base_df
-
-    meta_X = predict_proba(base_models, meta_df)
-    meta_y = meta_df["label"]
-
-    meta_model = LogisticRegression(...)
-    fit meta_model on meta_X, meta_y
-
-    refit base models on full train_df
-
-    test_meta_X = predict_proba(base_models, test_df)
-    final_pred = meta_model.predict(test_meta_X)
-
-    also save base model predictions for comparison
-```
-
-That is your thesis. Everything else is support.
+Tên `stage_*` không sai, nhưng hơi giống production data pipeline. Với thesis, tên theo domain học thuật dễ bảo vệ hơn.
 
 ---
 
-## Do this in order
+## Những thứ nên giữ để “đúng đề tài”
 
-### Step 1 — Freeze current branch
-
-```bash
-git checkout hybrid-refactor
-git checkout -b hybrid-small
-```
-
-Do not destroy old work.
-
----
-
-### Step 2 — Make one simple config
-
-```toml
-[model]
-stacking_meta_fraction = 0.20
-stacking_meta_model = "logistic_regression"
-stacking_passthrough = false
-stacking_internal_folds = 0
-stacking_calibrate_base = false
-prediction_confidence_threshold = 0.0
-```
-
-This already forces simpler behavior in your current code.
+| Thành phần                   |        Giữ không? | Lý do                           |
+| ---------------------------- | ----------------: | ------------------------------- |
+| XAU/USD H1                   |               Giữ | Đúng bài toán CFD vàng          |
+| Short/Hold/Long              |               Giữ | Phù hợp “tín hiệu giao dịch”    |
+| Triple-barrier labeling      |               Giữ | Có tính học thuật               |
+| Causal features              |               Giữ | Tránh leakage                   |
+| Walk-forward validation      |               Giữ | Rất quan trọng với time series  |
+| Logistic Regression baseline |               Giữ | Dễ giải thích                   |
+| Random Forest                |               Giữ | Đại diện bagging/tree           |
+| LightGBM                     |               Giữ | Đại diện boosting               |
+| Meta Logistic Regression     |               Giữ | Là lõi stacking                 |
+| Backtest phức tạp            |            Hạ cấp | Dễ làm lệch trọng tâm           |
+| Dashboard                    |  Bỏ hoặc appendix | Không cần cho bảo vệ ML         |
+| Calibration/ECE/Brier        |          Optional | Hay nhưng không bắt buộc        |
+| Distribution-shift weights   |          Bỏ trước | Khó bảo vệ nếu hội đồng hỏi sâu |
+| Sample uniqueness weights    | Optional/appendix | Học thuật nhưng dễ làm rối      |
 
 ---
 
-### Step 3 — Delete by disabling first, not physically deleting
+## Tên đề tài nên giữ như này
 
-Before deleting files, make pipeline call only:
+**“Ứng dụng mô hình Hybrid Stacking trong dự báo tín hiệu giao dịch CFD vàng”**
 
-```text
-generate_data
-generate_features
-generate_labels
-train_stacking_walk_forward
-run_backtest
-generate_report
-```
+Phạm vi nghiên cứu nên ghi rõ:
 
-No architecture dispatcher.
+> Đề tài tập trung vào xây dựng và đánh giá mô hình phân loại tín hiệu Short/Hold/Long cho XAU/USD khung H1. Kết quả được đánh giá chủ yếu bằng các chỉ số Machine Learning như Accuracy, Macro F1, Precision, Recall và Confusion Matrix. Backtest nếu có chỉ đóng vai trò minh họa ứng dụng, không phải bằng chứng chính về lợi nhuận giao dịch.
+
+Câu này rất quan trọng. Nó khóa phạm vi, tránh bị hỏi lan man về chiến lược giao dịch.
 
 ---
 
-### Step 4 — Fix label ambiguity
+## Việc nên làm ngay theo thứ tự
 
-This is the one code change I would do before simplification.
+1. **Đổi narrative trước, chưa cần sửa code ngay**
+   README/docs phải nói rõ: đây là supervised ML classification thesis, không phải trading bot.
 
-Ambiguous TP+SL in same candle should not become Hold.
+2. **Ẩn hoặc hạ cấp backtest**
+   Không để backtest đứng ngang hàng với training/evaluation.
 
-Make it censored/drop.
+3. **Gộp Stage 2 + Stage 3 trong docs**
+   Code có thể vẫn tách file, nhưng trong báo cáo gọi chung là “Dataset Construction”.
 
----
+4. **Giảm report metric**
+   Chỉ giữ bảng so sánh model, confusion matrix, Macro F1, per-class F1, feature importance.
 
-### Step 5 — Only then physically clean folders
+5. **Chốt mô hình chính**
+   Hybrid Stacking = LR + RF + LightGBM → Meta LR. Không thêm GRU/LSTM nữa.
 
-After results run, remove unused files.
+Một câu chốt: **đừng làm đồ án thành “hệ thống giao dịch vàng”; hãy làm nó thành “nghiên cứu ML phân loại tín hiệu giao dịch vàng”.** Đây là hướng dễ bảo vệ hơn, đúng ngành CNTT hơn, và phù hợp codebase hiện tại nhất.
 
-Do **not** start by deleting. That creates chaos.
-
----
-
-## What to keep
-
-Keep these because they defend thesis:
-
-```text
-triple-barrier labeling
-walk-forward validation
-purge / embargo
-base models
-meta model
-baseline comparison
-classification report
-backtest demo
-```
-
-## What to cut
-
-Cut these because they bloat code:
-
-```text
-architecture dispatcher
-LightGBM separate architecture path
-expanded feature mode
-internal OOF stacking
-calibration
-passthrough raw features
-feature-engine DropCorrelated/SelectKBest pipeline
-average uniqueness weights
-too many report artifacts
-too many cache modes
-over-detailed session machinery
-```
-
----
-
-## Caveman final
-
-Do not make project “smarter.”
-
-Make it **straighter**.
-
-```text
-Hybrid stacking only.
-One validation method.
-One label method.
-One feature list.
-One report.
-```
-
-Small code. Clear defense. Better chance to finish.
+[1]: https://raw.githubusercontent.com/ultimateBroK/thesis-hybrid/hybrid-refactor/README.md "raw.githubusercontent.com"
+[2]: https://github.com/ultimateBroK/thesis-hybrid/blob/hybrid-refactor/docs/ARCHITECTURE.md "thesis-hybrid/docs/ARCHITECTURE.md at hybrid-refactor · ultimateBroK/thesis-hybrid · GitHub"
+[3]: https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.StackingClassifier.html?utm_source=chatgpt.com "StackingClassifier"

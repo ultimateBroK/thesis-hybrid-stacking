@@ -35,7 +35,7 @@ def test_forbidden_cols_not_in_features() -> None:
 @pytest.mark.unit
 def test_no_negative_shift_in_features_source() -> None:
     """Feature code must not use shift(-n) (future-looking shift)."""
-    import thesis.stage_2_features.engineering as feat_mod
+    import thesis.dataset.build_features as feat_mod
 
     source = inspect.getsource(feat_mod)
     tree = ast.parse(textwrap.dedent(source))
@@ -55,7 +55,7 @@ def test_no_negative_shift_in_features_source() -> None:
 @pytest.mark.unit
 def test_no_center_true_in_rolling_features() -> None:
     """Feature code must not use center=True in rolling/ewm operations (uses future)."""
-    import thesis.stage_2_features.engineering as feat_mod
+    import thesis.dataset.build_features as feat_mod
 
     source = inspect.getsource(feat_mod)
     tree = ast.parse(textwrap.dedent(source))

@@ -1,4 +1,4 @@
-"""Backtest Results: zone metrics, equity curve, PnL charts, downloads."""
+"""Application Demo: zone metrics, equity curve, PnL charts, downloads."""
 
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from thesis.dashboard.shared import render_chart, render_trade_direction_summary
 
 def render_backtest_section(data: dict, config: object, session_dir: str) -> None:
     """Zone KPIs, equity/drawdown, PnL histograms, monthly heatmap, CSV downloads."""
-    st.markdown("> 🏠 Dashboard > **Backtest Results**")
-    st.header("Backtest Results")
+    st.markdown("> 🏠 Dashboard > **Reports** > Application Demo")
+    st.header("Application Demo")
 
     bt = data.get("backtest_results")
     trades = data.get("trades", [])

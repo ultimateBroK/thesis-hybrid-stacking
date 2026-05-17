@@ -41,24 +41,13 @@ from thesis.shared.constants import (
     SAMPLE_WEIGHT_MIN,
     STD_EPS,
 )
-from thesis.shared.session_paths import (
-    configure_session_paths,
-    load_config_for_session,
-)
-from thesis.shared.ui import (
+from thesis.shared.utils import (
     STAGE_LABELS,
     STAGE_STYLES,
+    SimpleConsole,
     console,
     stage_header,
     stage_skip,
-)
-from thesis.shared.baselines import (
-    always_class,
-    compute_metrics,
-    majority_class,
-    naive_direction,
-    random_baseline,
-    run_all,
 )
 from thesis.shared.zones import ZONE_COLORS, get_metric_zone, is_extreme_value
 
@@ -97,10 +86,8 @@ __all__ = [
     "CALIB_LR",
     "CALIB_MAX_ITER",
     "CORE_STATIC_FEATURES",
-    # session_paths
-    "configure_session_paths",
-    "load_config_for_session",
-    # ui
+    # ui (from utils)
+    "SimpleConsole",
     "console",
     "STAGE_STYLES",
     "STAGE_LABELS",
@@ -110,11 +97,4 @@ __all__ = [
     "get_metric_zone",
     "is_extreme_value",
     "ZONE_COLORS",
-    # baselines
-    "naive_direction",
-    "always_class",
-    "majority_class",
-    "random_baseline",
-    "compute_metrics",
-    "run_all",
 ]

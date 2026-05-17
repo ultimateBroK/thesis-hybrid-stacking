@@ -6,7 +6,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from thesis.dashboard.backtest import render_backtest_section
 from thesis.dashboard.data import render_data_section
 from thesis.dashboard.model import render_model_section
 from thesis.dashboard.reports import render_reports_section
@@ -60,7 +59,6 @@ _SECTION_RENDERERS: dict[str, tuple[str, object]] = {
     "📊 Data": ("Data Exploration", render_data_section),
     "🧠 Model": ("Model Performance", render_model_section),
     "🏃 Training": ("Training", render_training_section),
-    "💰 Backtest": ("Backtest Results", render_backtest_section),
     "📝 Reports": ("Reports", render_reports_section),
 }
 
@@ -89,19 +87,17 @@ def main() -> None:
         st.error("No session results found. Run `pixi run workflow` first.")
         return
 
-    # Nav: 5 buttons, current section highlighted
+    # Nav: 4 buttons, current section highlighted
     sections = list(_SECTION_RENDERERS)
     current_section = st.session_state.get("nav_section", "📊 Data")
 
     _, nav_center, _ = st.columns([0.2, 0.6, 0.2])
     with nav_center:
-        nav_cols = st.columns(5)
+        nav_cols = st.columns(4)
         for i, sec in enumerate(sections):
             with nav_cols[i]:
                 btn_type = "primary" if sec == current_section else "secondary"
-                if st.button(
-                    sec, key=f"nav_{sec}", type=btn_type, width='stretch'
-                ):
+                if st.button(sec, key=f"nav_{sec}", type=btn_type, width="stretch"):
                     st.session_state.nav_section = sec
                     st.rerun()
 
@@ -128,10 +124,7 @@ def main() -> None:
 
     # Dispatch section renderer
     _name, renderer = _SECTION_RENDERERS[section]
-    if section == "💰 Backtest":
-        renderer(data, config, session_path)
-    else:
-        renderer(data, session_path)
+    renderer(data, config, session_path)
 
 
 main()

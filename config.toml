@@ -1,5 +1,11 @@
 # Public experiment configuration.
 # Hidden defaults live in src/thesis/shared/config.py.
+#
+# Pipeline stages (4):
+#   1. Data     – ingest & clean raw market data
+#   2. Dataset  – features + labels → ML-ready dataset
+#   3. Models   – walk-forward training & prediction
+#   4. Reporting – backtest, metrics, visualisation
 
 # ── Data source ──────────────────────────────────────────────────────────────
 [data]
@@ -105,8 +111,16 @@ dd_cooldown_bars = 12              # Cooldown after max drawdown trigger
 max_open_positions = 1             # Concurrent position limit
 daily_loss_limit = 0.03            # Halt if daily loss exceeds 3% of equity
 
-# ── Workflow controls ───────────────────────────────────────────────────────
+# ── Artifact paths ──────────────────────────────────────────────────────────
+[paths]
+ml_dataset = "data/modeling/ml_dataset.parquet"
+
+# ── Workflow controls (4 stages) ────────────────────────────────────────────
 [workflow]
+run_data = true                     # Stage 1: ingest & clean
+run_dataset = true                  # Stage 2: features + labels → ML dataset
+run_models = true                   # Stage 3: walk-forward training & prediction
+run_reporting = true                # Stage 4: backtest, metrics, visualisation
 force_rerun = false                # Ignore cached intermediates
 random_seed = 2024                 # Global reproducibility seed
 n_jobs = -1                        # Parallel workers (-1 = all cores)

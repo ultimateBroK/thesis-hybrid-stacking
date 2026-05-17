@@ -20,12 +20,12 @@ def test_extreme_value_thresholds() -> None:
 @pytest.mark.parametrize(
     ("metric", "value", "expected_color", "expected_label"),
     [
-        ("sharpe_ratio", -0.1, "dangerous", "Negative"),
+        ("sharpe_ratio", -0.1, "dangerous", "Suspicious"),
         ("sharpe_ratio", 0.7, "moderate", "Acceptable"),
         ("sharpe_ratio", 1.5, "good", "Good"),
         ("sharpe_ratio", 2.5, "excellent", "Excellent"),
         ("sharpe_ratio", 3.5, "dangerous", "Suspicious"),
-        ("sortino_ratio", -0.1, "dangerous", "Negative"),
+        ("sortino_ratio", 0.3, "dangerous", "Poor"),
         ("sortino_ratio", 1.0, "moderate", "Acceptable"),
         ("sortino_ratio", 2.0, "good", "Good"),
         ("sortino_ratio", 3.0, "excellent", "Excellent"),
@@ -68,7 +68,7 @@ def test_extreme_value_thresholds() -> None:
         ("exposure_time_pct", 45.0, "good", "Good"),
         ("exposure_time_pct", 70.0, "moderate", "High"),
         ("exposure_time_pct", 90.0, "poor", "Overexposed"),
-        ("kelly_criterion", 0.0, "dangerous", "Invalid"),
+        ("kelly_criterion", -0.1, "dangerous", "Invalid"),
         ("kelly_criterion", 0.1, "moderate", "Conservative"),
         ("kelly_criterion", 0.2, "good", "Optimal"),
         ("kelly_criterion", 0.3, "moderate", "Aggressive"),

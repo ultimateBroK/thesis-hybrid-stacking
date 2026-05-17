@@ -14,7 +14,7 @@ from thesis.dashboard.cards import render_metric_card
 from thesis.dashboard.shared import render_chart
 
 
-def render_model_section(data: dict, session_dir: str) -> None:
+def render_model_section(data: dict, config: object, session_dir: str) -> None:
     """Classification metrics, confusion matrix, confidence, feature importance."""
     st.markdown("> 🏠 Dashboard > **Model Performance**")
     st.header("Model Performance")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from thesis.stage_6_reporting.model_metrics import (
+from thesis.reporting.metrics import (
     accuracy,
     balanced_accuracy,
     compute_all_classification_metrics,
@@ -274,7 +274,7 @@ class TestHighConfidenceAccuracy:
         # Only last 2 pass threshold
         assert result["count"] == 2
         assert result["accuracy"] == 1.0
-        assert abs(result["pct_of_total"] - 2 / 3 * 100) < 1e-6
+        assert abs(result["pct_of_total"] - 2 / 3) < 1e-6
 
     def test_none_above_threshold(self) -> None:
         y_true = np.array([0])
@@ -370,7 +370,7 @@ class TestComputeAll:
 # Regression helpers
 # ---------------------------------------------------------------------------
 
-from thesis.stage_6_reporting.model_metrics import (
+from thesis.reporting.metrics import (
     compute_proxy_return,
     compute_regression_auxiliary,
     mae,

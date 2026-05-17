@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from thesis.shared.baselines import (
+from thesis.models.baselines import (
     always_class,
     compute_metrics,
     majority_class,
@@ -124,7 +124,13 @@ class TestComputeBaselineMetrics:
     def test_returns_expected_keys(self) -> None:
         y = np.array([0, 1, -1])
         metrics = compute_metrics(y, y)
-        assert set(metrics.keys()) == {"accuracy", "macro_f1", "directional_accuracy"}
+        assert set(metrics.keys()) == {
+            "accuracy",
+            "macro_f1",
+            "directional_accuracy",
+            "short_f1",
+            "long_f1",
+        }
 
 
 # ---------------------------------------------------------------------------

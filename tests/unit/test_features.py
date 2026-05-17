@@ -16,9 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helpers import create_synthetic_ohlcv
 
-from thesis.shared.config import Config
-from thesis.shared.constants import CORE_STATIC_FEATURES, EXCLUDE_COLS
-from thesis.stage_2_features.indicators import (
+from thesis.dataset.indicators import (
     add_adx,
     add_atr,
     add_atr_percentile,
@@ -45,6 +43,8 @@ from thesis.stage_2_features.indicators import (
     add_vwap,
     add_williams_r,
 )
+from thesis.shared.config import Config
+from thesis.shared.constants import CORE_STATIC_FEATURES, EXCLUDE_COLS
 
 
 @pytest.fixture
@@ -613,7 +613,7 @@ def test_4h_no_future_leakage(sample_config: Config) -> None:
 @pytest.mark.skip(reason="Multi-timeframe features removed in refactor")
 def test_4h_join_is_backward(sample_config: Config) -> None:
     """Verify join_asof uses backward strategy — no 1H bar sees a 4H value from the future."""
-    from thesis.stage_2_features.engineering import _compute_4h_indicators
+    from thesis.dataset.build_features import _compute_4h_indicators
 
     df = create_synthetic_ohlcv(n_rows=100)
     df_4h = _resample_to_4h(df)
@@ -971,8 +971,7 @@ def test_full_feature_count_compact(sample_config: Config) -> None:
 
     feature_cols = sorted(c for c in result.columns if c not in EXCLUDE_COLS)
     assert len(feature_cols) == len(EXPECTED_FEATURES), (
-        f"Expected {len(EXPECTED_FEATURES)}, "
-        f"got {len(feature_cols)}: {feature_cols}"
+        f"Expected {len(EXPECTED_FEATURES)}, got {len(feature_cols)}: {feature_cols}"
     )
 
 

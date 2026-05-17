@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from thesis.shared.config import Config
-from thesis.shared.constants import CORE_STATIC_FEATURES
-from thesis.shared.feature_registry import (
+from thesis.shared.constants import (
+    CORE_STATIC_FEATURES,
     OHLCV_RAW_COLS,
     build_exclude_cols,
     build_feature_output_cols,

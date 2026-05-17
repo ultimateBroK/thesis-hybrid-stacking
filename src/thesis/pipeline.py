@@ -1,4 +1,4 @@
-"""Pipeline: data → features → labels → train → backtest → report."""
+"""Pipeline: data → dataset → models → reporting."""
 
 from __future__ import annotations
 
@@ -9,25 +9,24 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from thesis.data.prepare_dataset import prepare_dataset
+from thesis.dataset.build_features import build_features
+from thesis.dataset.build_labels import build_labels
+from thesis.dataset.build_ml_dataset import build_ml_dataset
+from thesis.demo.backtest_demo import run_backtest_demo
+from thesis.models.train import train_walk_forward
+from thesis.reporting.report import generate_report
 from thesis.shared.config import Config
-from thesis.shared.ui import console, stage_header, stage_skip
-from thesis.stage_1_data import generate_data
-from thesis.stage_2_features import generate_features
-from thesis.stage_3_labels import generate_labels
-from thesis.stage_4_training.walk_forward import train_walk_forward
-from thesis.stage_5_backtest import run_backtest
-from thesis.stage_6_reporting import generate_report
+from thesis.shared.utils import console, stage_header, stage_skip
 
 logger = logging.getLogger("thesis.pipeline")
 
 # Config sections used for cache fingerprinting per stage.
 _STAGE_CONFIG_SECTIONS: dict[int, list[str]] = {
     1: ["data"],
-    2: ["features"],
-    3: ["labels"],
-    4: ["model", "validation"],
-    5: ["backtest", "labels"],
-    6: [],
+    2: ["features", "labels"],
+    3: ["model", "validation"],
+    4: [],
 }
 
 
@@ -103,46 +102,38 @@ def _run_stage(
         effective.touch()
 
 
-def _run_backtest_with_barrier_guard(config: Config) -> None:
-    """Backtest only when label and execution ATR barriers match."""
-    label_tp = config.labels.atr_tp_multiplier
-    label_sl = config.labels.atr_sl_multiplier
-    backtest_tp = config.backtest.atr_tp_multiplier
-    backtest_sl = config.backtest.atr_stop_multiplier
-    if label_tp != backtest_tp or label_sl != backtest_sl:
-        raise ValueError(
-            f"Label/Backtest ATR mismatch: labels(tp={label_tp}, sl={label_sl}) "
-            f"!= backtest(tp={backtest_tp}, sl={backtest_sl}). "
-            "Training target and execution exits must measure same event."
-        )
-    run_backtest(config)
+def _run_dataset_stage(config: Config) -> None:
+    """Feature engineering → label generation → ML dataset assembly."""
+    build_features(config)
+    build_labels(config)
+    build_ml_dataset(config)
+
+
+def _run_reporting_stage(config: Config) -> None:
+    """Backtest simulation → report generation."""
+    # Run backtest and save results JSON
+    bt_path = Path(config.paths.backtest_results)
+    if not bt_path.exists() or config.workflow.force_rerun:
+        logger.info("Running backtest simulation")
+        run_backtest_demo(config)
+    else:
+        logger.info("Backtest results cached: %s", bt_path)
+    generate_report(config)
 
 
 def run_pipeline(config: Config) -> None:
-    """Run full pipeline: data → features → labels → train → backtest → report."""
-    # Stage 1: OHLCV from raw ticks.
-    _run_stage(1, config, "run_data_pipeline", config.paths.ohlcv, generate_data)
+    """Run full pipeline: data → dataset → models → reporting."""
+    # Stage 1: Data preparation (download + OHLCV aggregation).
+    _run_stage(1, config, "run_data", config.paths.ohlcv, prepare_dataset)
 
-    # Stage 2: Technical indicators.
-    _run_stage(
-        2, config, "run_feature_engineering", config.paths.features, generate_features
-    )
+    # Stage 2: Feature & label engineering + ML dataset assembly.
+    _run_stage(2, config, "run_dataset", config.paths.ml_dataset, _run_dataset_stage)
 
-    # Stage 3: Triple-barrier directional labels.
-    _run_stage(3, config, "run_label_generation", config.paths.labels, generate_labels)
+    # Stage 3: Walk-forward model training & evaluation.
+    _run_stage(3, config, "run_models", config.paths.model, train_walk_forward)
 
-    # Stage 4: Walk-forward Hybrid Stacking.
-    if config.workflow.run_model_training:
-        stage_header(4)
-        train_walk_forward(config)
-    else:
-        stage_skip(4, "disabled")
-
-    # Stage 5: Optional backtest simulation.
-    _run_stage(5, config, "run_backtest", None, _run_backtest_with_barrier_guard)
-
-    # Stage 6: Markdown + HTML artefacts.
-    _run_stage(6, config, "run_reporting", None, generate_report)
+    # Stage 4: Backtest + report generation.
+    _run_stage(4, config, "run_reporting", None, _run_reporting_stage)
 
     console.print()
     console.rule("[bold green]Pipeline Complete[/]")

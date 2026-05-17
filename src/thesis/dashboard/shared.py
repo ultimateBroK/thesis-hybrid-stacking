@@ -38,6 +38,7 @@ def render_config_summary(config: object) -> None:
     model = getattr(config, "model", None)
     labels = getattr(config, "labels", None)
     bt = getattr(config, "backtest", None)
+    wf = getattr(config, "workflow", None)
 
     if data:
         # data_range is a top-level Config attribute, not nested under data
@@ -70,6 +71,12 @@ def render_config_summary(config: object) -> None:
             f"spread={bt.spread_ticks:g} ticks, "
             f"conf>={bt.confidence_threshold:.2f}"
         )
+    if wf:
+        flags = []
+        for key in ("run_data", "run_dataset", "run_models", "run_reporting"):
+            if getattr(wf, key, False):
+                flags.append(key.replace("run_", ""))
+        st.markdown(f"**Pipeline stages**: {', '.join(flags) if flags else 'none'}")
 
 
 def render_trade_direction_summary(trades: list[dict]) -> None:

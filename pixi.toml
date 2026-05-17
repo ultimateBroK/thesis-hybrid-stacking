@@ -70,6 +70,7 @@ nodejs = ">=22,<26"
 pandera = ">=0.31.1,<0.32"
 pandas_market_calendars = ">=5.3.2,<6"
 structlog = ">=25.5.0,<26"
+seaborn = ">=0.13.2,<0.14"
 
 [pypi-dependencies]
 backtesting = ">=0.6.5, <0.7"

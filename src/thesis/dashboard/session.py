@@ -48,10 +48,24 @@ def parse_session_meta(name: str) -> dict[str, str]:
 @st.cache_data(ttl=60)
 def load_config(session_dir: str) -> dict:
     """Load config + chart data for session. Cached 60s."""
-    from thesis.charts import load_session_data
-    from thesis.shared.session_paths import load_config_for_session
+    from pathlib import Path
 
-    config = load_config_for_session(session_dir)
+    from thesis.charts import load_session_data
+    from thesis.shared.config import load_config as _load_config
+
+    sd = Path(session_dir)
+    snapshot = sd / "config" / "config_snapshot.toml"
+    config = (
+        _load_config(snapshot) if snapshot.exists() else _load_config("config.toml")
+    )
+
+    # Wire session paths (same as shared.session_paths.configure_session_paths)
+    config.paths.session_dir = str(sd)
+    config.paths.model = str(sd / "models" / "lightgbm_model.pkl")
+    config.paths.predictions = str(sd / "predictions" / "final_predictions.csv")
+    config.paths.backtest_results = str(sd / "backtest" / "backtest_results.json")
+    config.paths.report = str(sd / "reports" / "thesis_report.md")
+
     data = load_session_data(config)
     return {"config": config, "data": data}
 
@@ -104,7 +118,7 @@ def session_selector_fragment() -> None:
     selected = session_names[session_labels.index(selected_label)]
     st.session_state.selected_session = selected
 
-    if st.button("Refresh", width='stretch'):
+    if st.button("Refresh", width="stretch"):
         st.rerun()
 
     st.caption("Run `pixi run workflow` to generate new sessions")
