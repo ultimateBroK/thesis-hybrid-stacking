@@ -21,8 +21,6 @@ import numpy as np
 
 logger = logging.getLogger("thesis.reporting.figures")
 
-# ── Style ────────────────────────────────────────────────────────────────────
-
 for _s in ("seaborn-v0_8-white", "seaborn-white", "ggplot"):
     try:
         plt.style.use(_s)
@@ -48,7 +46,20 @@ def _save(fig: plt.Figure, path: Path, fmt: str = "png", dpi: int = 180) -> None
     logger.info("Saved: %s", path)
 
 
-# ── 1. Label Distribution ───────────────────────────────────────────────────
+def _load_label_counts(labels_path: Path) -> dict[str, int]:
+    import polars as pl
+
+    try:
+        df = pl.read_parquet(labels_path, columns=["label"])
+        counts = {}
+        for val, name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
+            counts[name] = int((df["label"] == val).sum())
+        return counts
+    except Exception:
+        logger.warning(
+            "Failed to load label counts from %s", labels_path, exc_info=True
+        )
+        return {}
 
 
 def export_label_distribution(
@@ -56,7 +67,7 @@ def export_label_distribution(
     output_path: Path,
     dpi: int = 180,
 ) -> None:
-    """Bar chart: Short / Hold / Long counts with percentage annotations."""
+    """Bar chart: Short / Hold / Long counts."""
     names = ["Short", "Hold", "Long"]
     counts = [label_counts.get(n, 0) for n in names]
     total = sum(counts) or 1
@@ -82,9 +93,6 @@ def export_label_distribution(
     _save(fig, output_path, dpi=dpi)
 
 
-# ── 2. Model Comparison ─────────────────────────────────────────────────────
-
-
 def export_model_comparison(
     comparison_rows: list[dict[str, Any]],
     metric: str = "accuracy",
@@ -102,14 +110,10 @@ def export_model_comparison(
     title = (
         "Accuracy Comparison (%)" if metric == "accuracy" else "Macro F1 Comparison (%)"
     )
-    colors = []
-    for v in values:
-        if v == 0:
-            colors.append("#bdc3c7")
-        elif v == max(values):
-            colors.append("#2ecc71")
-        else:
-            colors.append("#3498db")
+    colors = [
+        "#bdc3c7" if v == 0 else "#2ecc71" if v == max(values) else "#3498db"
+        for v in values
+    ]
 
     width = max(8, len(models) * 2.2)
     fig, ax = plt.subplots(figsize=(width, 5))
@@ -130,9 +134,6 @@ def export_model_comparison(
     ax.set_ylim(0, max(values) * 1.15 if max(values) > 0 else 1)
     ax.grid(False)
     _save(fig, output_path, dpi=dpi)
-
-
-# ── 3. Confusion Matrix ─────────────────────────────────────────────────────
 
 
 def export_confusion_matrix(
@@ -170,16 +171,13 @@ def export_confusion_matrix(
     _save(fig, output_path, dpi=dpi)
 
 
-# ── 4. Feature Importance ───────────────────────────────────────────────────
-
-
 def export_feature_importance(
     importance: dict[str, float],
     output_path: Path = Path("feature_importance.png"),
     top_n: int = 15,
     dpi: int = 180,
 ) -> None:
-    """Horizontal bar chart — top N features, top 1 at top."""
+    """Horizontal bar chart: top N features."""
     if not importance:
         return
     ranked = sorted(importance.items(), key=lambda x: x[1], reverse=True)[:top_n]
@@ -193,9 +191,6 @@ def export_feature_importance(
     ax.set_xlabel("Importance")
     ax.grid(False)
     _save(fig, output_path, dpi=dpi)
-
-
-# ── 5. Equity Curve ─────────────────────────────────────────────────────────
 
 
 def export_equity_curve(
@@ -227,25 +222,84 @@ def export_equity_curve(
     _save(fig, output_path, dpi=dpi)
 
 
-# ── Orchestrator ─────────────────────────────────────────────────────────────
-
-
-def _load_label_counts(labels_path: Path) -> dict[str, int]:
-    """Count labels from parquet file."""
-    import polars as pl
-
-    try:
-        df = pl.read_parquet(labels_path, columns=["label"])
-        counts = {}
-        for val, name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
-            c = int((df["label"] == val).sum())
-            counts[name] = c
-        return counts
-    except Exception:
-        logger.warning(
-            "Failed to load label counts from %s", labels_path, exc_info=True
+def _export_label_dist_if_available(charts_dir: Path, config: Any, dpi: int) -> None:
+    labels_path = Path(config.paths.labels) if hasattr(config, "paths") else None
+    if not labels_path or not labels_path.exists():
+        return
+    label_counts = _load_label_counts(labels_path)
+    if label_counts:
+        export_label_distribution(
+            label_counts, charts_dir / "01_label_distribution.png", dpi=dpi
         )
-        return {}
+
+
+def _export_model_cmp_if_available(
+    session_dir: Path, charts_dir: Path, dpi: int
+) -> None:
+    comparison_csv = session_dir / "reports" / "model_comparison.csv"
+    if not comparison_csv.exists():
+        return
+    import pandas as pd
+
+    df = pd.read_csv(comparison_csv)
+    rows = df.to_dict("records")
+    export_model_comparison(
+        rows, "accuracy", charts_dir / "02_accuracy_comparison.png", dpi=dpi
+    )
+    export_model_comparison(
+        rows, "macro_f1", charts_dir / "03_macro_f1_comparison.png", dpi=dpi
+    )
+
+
+def _export_cm_if_available(
+    charts_dir: Path, artifacts: dict[str, Any], dpi: int
+) -> None:
+    cm = artifacts.get("confusion_matrix") if artifacts else None
+    if cm:
+        export_confusion_matrix(
+            cm, output_path=charts_dir / "04_confusion_matrix.png", dpi=dpi
+        )
+
+
+def _export_fi_if_available(
+    session_dir: Path, charts_dir: Path, top_n: int, dpi: int
+) -> None:
+    fi_path = session_dir / "reports" / "feature_importance.json"
+    if not fi_path.exists():
+        return
+    try:
+        importance = json.loads(fi_path.read_text())
+        export_feature_importance(
+            importance, charts_dir / "05_feature_importance.png", top_n=top_n, dpi=dpi
+        )
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to load feature importance", exc_info=True)
+
+
+def _export_equity_if_available(
+    session_dir: Path, charts_dir: Path, config: Any, dpi: int
+) -> None:
+    bt_path = Path(config.paths.backtest_results) if hasattr(config, "paths") else None
+    if not bt_path or not bt_path.exists():
+        return
+    try:
+        bt = json.loads(bt_path.read_text())
+        trades = bt.get("trades", [])
+        cap = config.backtest.initial_capital
+        export_equity_curve(trades, cap, charts_dir / "06_equity_curve.png", dpi=dpi)
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to load backtest for equity curve", exc_info=True)
+
+
+def _write_chart_manifest(charts_dir: Path, dpi: int) -> None:
+    manifest = {
+        "charts": sorted(
+            p.name for p in charts_dir.iterdir() if p.suffix in (".png", ".svg")
+        ),
+        "dpi": dpi,
+    }
+    (charts_dir / "chart_manifest.json").write_text(json.dumps(manifest, indent=2))
+    logger.info("Chart export complete: %s", charts_dir)
 
 
 def export_all_figures(
@@ -255,78 +309,15 @@ def export_all_figures(
     dpi: int = 180,
     top_n_features: int = 15,
 ) -> Path:
-    """Export all report charts to ``session_dir / charts/``.
-
-    Returns the charts directory path.
-    """
+    """Export all report charts to session_dir/reports/charts/."""
     charts_dir = session_dir / "reports" / "charts"
     charts_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Label distribution
-    labels_path = Path(config.paths.labels) if hasattr(config, "paths") else None
-    if labels_path and labels_path.exists():
-        label_counts = _load_label_counts(labels_path)
-        if label_counts:
-            export_label_distribution(
-                label_counts, charts_dir / "01_label_distribution.png", dpi=dpi
-            )
+    _export_label_dist_if_available(charts_dir, config, dpi)
+    _export_model_cmp_if_available(session_dir, charts_dir, dpi)
+    _export_cm_if_available(charts_dir, artifacts or {}, dpi)
+    _export_fi_if_available(session_dir, charts_dir, top_n_features, dpi)
+    _export_equity_if_available(session_dir, charts_dir, config, dpi)
+    _write_chart_manifest(charts_dir, dpi)
 
-    # 2–3. Model comparison (accuracy + macro f1)
-    comparison_csv = session_dir / "reports" / "model_comparison.csv"
-    if comparison_csv.exists():
-        import pandas as pd
-
-        df = pd.read_csv(comparison_csv)
-        rows = df.to_dict("records")
-        export_model_comparison(
-            rows, "accuracy", charts_dir / "02_accuracy_comparison.png", dpi=dpi
-        )
-        export_model_comparison(
-            rows, "macro_f1", charts_dir / "03_macro_f1_comparison.png", dpi=dpi
-        )
-
-    # 4. Confusion matrix
-    if artifacts and artifacts.get("confusion_matrix"):
-        export_confusion_matrix(
-            artifacts["confusion_matrix"],
-            output_path=charts_dir / "04_confusion_matrix.png",
-            dpi=dpi,
-        )
-
-    # 5. Feature importance
-    fi_path = session_dir / "reports" / "feature_importance.json"
-    if fi_path.exists():
-        try:
-            importance = json.loads(fi_path.read_text())
-            export_feature_importance(
-                importance,
-                charts_dir / "05_feature_importance.png",
-                top_n=top_n_features,
-                dpi=dpi,
-            )
-        except (OSError, json.JSONDecodeError):
-            logger.warning("Failed to load feature importance", exc_info=True)
-
-    # 6. Equity curve
-    bt_path = Path(config.paths.backtest_results) if hasattr(config, "paths") else None
-    if bt_path and bt_path.exists():
-        try:
-            bt = json.loads(bt_path.read_text())
-            trades = bt.get("trades", [])
-            cap = config.backtest.initial_capital
-            export_equity_curve(
-                trades, cap, charts_dir / "06_equity_curve.png", dpi=dpi
-            )
-        except (OSError, json.JSONDecodeError):
-            logger.warning("Failed to load backtest for equity curve", exc_info=True)
-
-    # Manifest
-    manifest = {
-        "charts": sorted(
-            p.name for p in charts_dir.iterdir() if p.suffix in (".png", ".svg")
-        ),
-        "dpi": dpi,
-    }
-    (charts_dir / "chart_manifest.json").write_text(json.dumps(manifest, indent=2))
-    logger.info("Chart export complete: %s", charts_dir)
     return charts_dir

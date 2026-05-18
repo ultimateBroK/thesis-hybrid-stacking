@@ -20,16 +20,7 @@ from thesis.shared.config import Config
 
 logger = logging.getLogger("thesis.demo.backtest")
 
-# ---------------------------------------------------------------------------
-# Types — plain dicts, no TypedDict
-# ---------------------------------------------------------------------------
-
 BacktestResult = tuple[dict, list[dict], object]
-"""(metrics_dict, trades_list, bt_engine)."""
-
-# ---------------------------------------------------------------------------
-# Strategy — inlined from stage_5_backtest/strategy.py
-# ---------------------------------------------------------------------------
 
 _MIN_ATR_FLOOR = 0.0001
 _DEFAULT_CONTRACT_SIZE = 100.0
@@ -94,6 +85,14 @@ class MLSignalStrategy(Strategy):
         self._daily_start_equity: float = self.equity
         self._current_date: object = None
 
+    def record_recent_exit(self) -> None:
+        """Track bar index when a position closes."""
+        if self._position_was_open and not self.position:
+            self._last_exit_bar = len(self.data)
+            self._position_was_open = False
+            self._entry_bar.pop("long", None)
+            self._entry_bar.pop("short", None)
+
     def _update_risk_state(self) -> None:
         eq = self.equity
         self._peak_equity = max(self._peak_equity, eq)
@@ -109,6 +108,28 @@ class MLSignalStrategy(Strategy):
         if self._current_date != bar_date:
             self._current_date = bar_date
             self._daily_start_equity = eq
+
+    def has_enough_history(self) -> bool:
+        """Check minimum bars for signal lookup."""
+        return len(self.signals) >= _MIN_BARS_FOR_SIGNAL
+
+    def read_trade_signal(self) -> tuple[int, float]:
+        """Read and normalize the ML signal, compute ATR."""
+        raw_signal = float(self.signals[-2])
+        if raw_signal in (-1, 0, 1):
+            signal = int(raw_signal)
+        else:
+            signal = 1 if raw_signal > 0 else (-1 if raw_signal < 0 else 0)
+        atr = max(float(self.atr[-1]), self.min_atr)
+        return signal, atr
+
+    def close_expired_position(self) -> None:
+        """Close position if horizon bars exceeded."""
+        if self.horizon_bars <= 0 or not self.position:
+            return
+        entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
+        if entry_bar is not None and (len(self.data) - entry_bar) >= self.horizon_bars:
+            self.position.close()
 
     def _is_trading_allowed(self) -> bool:
         if len(self.orders) > 0:
@@ -133,41 +154,23 @@ class MLSignalStrategy(Strategy):
                 return False
         return True
 
-    def next(self) -> None:
-        """Evaluate signal, place orders if risk gates pass."""
-        if self._position_was_open and not self.position:
-            self._last_exit_bar = len(self.data)
-            self._position_was_open = False
-            self._entry_bar.pop("long", None)
-            self._entry_bar.pop("short", None)
-        self._update_risk_state()
-        if len(self.signals) < _MIN_BARS_FOR_SIGNAL:
-            return
-        raw_signal = float(self.signals[-2])
-        if raw_signal in (-1, 0, 1):
-            signal = int(raw_signal)
-        else:
-            signal = 1 if raw_signal > 0 else (-1 if raw_signal < 0 else 0)
-        atr = max(float(self.atr[-1]), self.min_atr)
-        if self.horizon_bars > 0 and self.position:
-            entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
-            if (
-                entry_bar is not None
-                and (len(self.data) - entry_bar) >= self.horizon_bars
-            ):
-                self.position.close()
+    def can_open_trade(self, signal: int) -> bool:
+        """Check risk gates and confidence threshold."""
         if not self._is_trading_allowed():
-            return
-        confidence: float | None = None
+            return False
         if self.confidence_threshold > 0 and self._has_proba:
             if signal == 1:
                 confidence = float(self.proba_long[-2])
             elif signal == -1:
                 confidence = float(self.proba_short[-2])
             else:
-                return
+                return False
             if confidence < self.confidence_threshold:
-                return
+                return False
+        return True
+
+    def open_trade(self, signal: int, atr: float) -> None:
+        """Place buy/sell order with ATR-based SL/TP."""
         lots = max(self.min_lots, min(self.lots_per_trade, self.max_lots))
         size = max(_MIN_ORDER_SIZE, round(lots * self.contract_size))
         if signal == 1 and not self.position:
@@ -191,10 +194,18 @@ class MLSignalStrategy(Strategy):
             self.sell(size=size, sl=sl, tp=tp)
             self._position_was_open = True
 
+    def next(self) -> None:
+        """Evaluate signal, place orders if risk gates pass."""
+        self.record_recent_exit()
+        self._update_risk_state()
+        if not self.has_enough_history():
+            return
+        signal, atr = self.read_trade_signal()
+        self.close_expired_position()
+        if not self.can_open_trade(signal):
+            return
+        self.open_trade(signal, atr)
 
-# ---------------------------------------------------------------------------
-# Runners — inlined from stage_5_backtest/runners.py
-# ---------------------------------------------------------------------------
 
 _BT_KEY_MAP: dict[str, str] = {
     "Return [%]": "return_pct",
@@ -220,7 +231,6 @@ def _prepare_df(
     test_source: str = "<in-memory>",
     preds_source: str = "<in-memory>",
 ) -> pd.DataFrame:
-    """Join test/feature data with predictions. Return pandas DataFrame."""
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     if "pred_label" not in preds.columns:
@@ -266,7 +276,6 @@ def _prepare_df(
 
 
 def _normalize_stats(stats: pd.Series) -> dict:
-    """Map backtesting.py keys to canonical metric keys."""
     raw = stats.to_dict()
     return {v: raw[k] for k, v in _BT_KEY_MAP.items() if k in raw}
 
@@ -276,7 +285,6 @@ def _trades_to_list(
     commission_per_lot: float,
     contract_size: float = _DEFAULT_CONTRACT_SIZE,
 ) -> list[dict]:
-    """Convert trades DataFrame to list of plain dicts."""
     if trades_df.empty:
         return []
     result: list[dict] = []
@@ -308,15 +316,12 @@ def _compute_spread_rate(
     tick_size: float,
     median_price: float,
 ) -> float:
-    """Convert spread+slippage ticks to fractional spread rate."""
     return (spread_ticks + slippage_ticks) * tick_size / median_price
 
 
 def _make_commission_fn(
     commission_per_lot: float, contract_size: float
 ) -> Callable[[float, float], float]:
-    """Build per-trade commission function."""
-
     def commission_fn(order_size: float, _price: float) -> float:
         return abs(order_size) / contract_size * commission_per_lot
 
@@ -326,7 +331,6 @@ def _make_commission_fn(
 def _run_fractional_backtest(
     pdf: pd.DataFrame, config: Config
 ) -> tuple[pd.Series, FractionalBacktest]:
-    """Run FractionalBacktest with config parameters."""
     bc, dc = config.backtest, config.data
     median_price = float(pdf["Close"].median())
     spread = _compute_spread_rate(
@@ -362,13 +366,7 @@ def _run_fractional_backtest(
     return stats, bt
 
 
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
-
-
 def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
-    """Load predictions and price data for backtesting."""
     preds_path = Path(config.paths.predictions)
     if not preds_path.exists():
         raise FileNotFoundError(f"Predictions not found: {preds_path}")
@@ -393,7 +391,6 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
         test_source=source,
         preds_source=str(preds_path),
     )
-
     # OOS date filter
     bc = config.backtest
     if bc.oob_start_date:
@@ -403,16 +400,8 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
     return pdf, source
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def compute_backtest(config: Config) -> BacktestResult:
-    """Load data, run FractionalBacktest, return (metrics, trades, bt).
-
-    No files written.
-    """
+    """Load data, run FractionalBacktest, return (metrics, trades, bt)."""
     pdf, _ = _load_backtest_data(config)
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
     stats, bt = _run_fractional_backtest(pdf, config)
@@ -426,15 +415,9 @@ def compute_backtest(config: Config) -> BacktestResult:
 
 
 def run_backtest_demo(config: Config) -> BacktestResult:
-    """Run CFD backtest from config, save simple JSON results.
-
-    Loads predictions + OHLCV, runs simulation,
-    writes ``backtest_results.json``.
-    Returns (metrics_dict, trades_list, bt_engine).
-    """
+    """Run CFD backtest from config, save JSON results."""
     metrics, trades, bt = compute_backtest(config)
 
-    # Simple JSON persistence
     out_path = Path(config.paths.backtest_results)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:

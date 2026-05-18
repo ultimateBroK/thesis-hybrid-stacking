@@ -61,7 +61,7 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> str:
 
 
 def load_prediction_stats(preds_path: Path) -> dict | None:
-    """Load final prediction CSV and compute classification statistics."""
+    """Load prediction CSV and compute classification statistics."""
     if not preds_path.exists():
         return None
     try:
@@ -142,7 +142,12 @@ def build_model_comparison_rows(
             baselines = baselines_mod.run_all(
                 y_true, y_returns, seed=config.workflow.random_seed
             )
-            for baseline_key, label in (("majority_class", "Majority Baseline"),):
+            for baseline_key, label in (
+                (  # noqa: FURB126
+                    "majority_class",
+                    "Majority Baseline",
+                ),
+            ):
                 if baseline_key not in baselines:
                     continue
                 m = baselines[baseline_key]
@@ -209,13 +214,11 @@ def _build_thesis_report(
 ) -> str:
     L: list[str] = []
 
-    # Header
     L.append("# Báo cáo thí nghiệm — Hybrid Stacking dự báo tín hiệu XAU/USD")
     L.append("")
     L.append(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
     L.append("")
 
-    # 1. Mục tiêu
     L.append("## 🎯 1. Mục tiêu")
     L.append("")
     L.append(
@@ -224,7 +227,6 @@ def _build_thesis_report(
     L.append("Trọng tâm: đánh giá mô hình ML, không phải hệ thống giao dịch tự động.")
     L.append("")
 
-    # 2. Pipeline
     L.append("## 🧱 2. Pipeline tổng quan")
     L.append("")
     L.append("```")
@@ -237,7 +239,6 @@ def _build_thesis_report(
     L.append("```")
     L.append("")
 
-    # 3. Dữ liệu
     L.append("## 📦 3. Dữ liệu")
     L.append("")
     dq_path = Path(config.paths.data_quality_json)
@@ -262,7 +263,6 @@ def _build_thesis_report(
         L.append("Data quality JSON not found.")
     L.append("")
 
-    # 4. Thiết kế nhãn
     L.append("## 🏷️ 4. Thiết kế nhãn")
     L.append("")
     L.append("Triple-barrier labeling:")
@@ -295,7 +295,6 @@ def _build_thesis_report(
             logger.warning("Failed to load labels", exc_info=True)
     L.append("")
 
-    # 5. Mô hình
     L.append("## 🤖 5. Mô hình")
     L.append("")
     L.append("Hybrid Stacking:")
@@ -316,7 +315,6 @@ def _build_thesis_report(
     L.append("```")
     L.append("")
 
-    # 6. Validation
     L.append("## 🧪 6. Đánh giá")
     L.append("")
     L.append("Walk-forward validation (sliding window):")
@@ -333,7 +331,6 @@ def _build_thesis_report(
     )
     L.append("")
 
-    # 7. Kết quả chính
     L.append("## 📊 7. Kết quả chính")
     L.append("")
     if pred_stats:
@@ -369,7 +366,6 @@ def _build_thesis_report(
         L.append("Không có kết quả dự đoán.")
     L.append("")
 
-    # 8. Phân tích lỗi
     L.append("## 🔍 8. Phân tích lỗi")
     L.append("")
     if pred_stats:
@@ -391,7 +387,6 @@ def _build_thesis_report(
         L.append("Không có dữ liệu phân tích.")
     L.append("")
 
-    # 9. Backtest demo
     L.append("## 💼 9. Backtest demo")
     L.append("")
     L.append("*Backtest chỉ là minh họa ứng dụng, không phải bằng chứng chính.*")
@@ -412,7 +407,6 @@ def _build_thesis_report(
         L.append("Không có kết quả backtest.")
     L.append("")
 
-    # 10. Kết luận
     L.append("## ✅ 10. Kết luận")
     L.append("")
     L.append("Dự án đã xây dựng pipeline ML hoàn chỉnh:")
@@ -442,7 +436,6 @@ def _build_model_evaluation(
     L.append(f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
     L.append("")
 
-    # 1. Thông tin thí nghiệm
     L.append("## 1. Thông tin thí nghiệm")
     L.append("")
     L.append(
@@ -459,7 +452,6 @@ def _build_model_evaluation(
     )
     L.append("")
 
-    # 2. Kết quả chính
     L.append("## 2. Kết quả chính")
     L.append("")
     if pred_stats:
@@ -492,7 +484,6 @@ def _build_model_evaluation(
         L.append("Không có kết quả.")
     L.append("")
 
-    # 3. Kết quả theo class
     L.append("## 3. Kết quả theo class")
     L.append("")
     if pred_stats:
@@ -527,7 +518,6 @@ def _build_model_evaluation(
         )
     L.append("")
 
-    # 4. So sánh mô hình
     L.append("## 4. So sánh mô hình")
     L.append("")
     L.append(_md_table(["Model", "Accuracy", "Macro F1", "Ghi chú"], []))
@@ -552,7 +542,6 @@ def _build_model_evaluation(
         L.append(f"| {model} | {acc} | {f1} | {note} |")
     L.append("")
 
-    # 5. Nhận xét ngắn
     L.append("## 5. Nhận xét ngắn")
     L.append("")
     if pred_stats:
@@ -573,7 +562,6 @@ def _build_model_evaluation(
         L.append("- Không có dữ liệu dự đoán.")
     L.append("")
 
-    # 6. Hướng thử tiếp
     L.append("## 6. Hướng thử tiếp")
     L.append("")
     L.append("1. Thử bài toán 2 class: Short / Long.")
@@ -585,7 +573,7 @@ def _build_model_evaluation(
 
 
 def write_model_comparison_csv(out_dir: Path, rows: list[dict[str, Any]]) -> Path:
-    """Write model comparison rows to CSV and return output path."""
+    """Write model comparison rows to CSV."""
     import pandas as pd
 
     csv_path = out_dir / "model_comparison.csv"
@@ -616,58 +604,80 @@ def _setup_matplotlib() -> None:
     )
 
 
-def generate_report(config: Config) -> None:
-    """Generate thesis report and model evaluation in new Vietnamese-first format."""
-    _setup_matplotlib()
+def _prepare_report_dir(config: Config) -> Path:
     out_dir = (
         Path(config.paths.session_dir) / "reports"
         if config.paths.session_dir
         else Path("results")
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-    report_path = Path(config.paths.report)
+    return out_dir
+
+
+def _load_backtest_metrics(config: Config) -> dict:
     bt_path = Path(config.paths.backtest_results)
+    if not bt_path.exists():
+        return {}
+    with console.status("[cyan]Loading backtest results[/]"):
+        bt = json.loads(bt_path.read_text())
+    return bt.get("metrics", {})
 
-    metrics: dict = {}
-    if bt_path.exists():
-        with console.status("[cyan]Loading backtest results[/]"):
-            with open(bt_path) as f:
-                bt = json.load(f)
-            metrics = bt.get("metrics", {})
 
+def _load_report_inputs(config: Config) -> tuple[dict | None, list[dict[str, Any]]]:
     with console.status("[cyan]Building reports[/]"):
         pred_stats = load_prediction_stats(Path(config.paths.predictions))
         model_comparison_rows = build_model_comparison_rows(config, pred_stats)
+    return pred_stats, model_comparison_rows
 
+
+def _write_report_artifacts(
+    config: Config,
+    out_dir: Path,
+    metrics: dict,
+    pred_stats: dict | None,
+    model_comparison_rows: list[dict[str, Any]],
+) -> None:
     thesis_md = _build_thesis_report(config, metrics, pred_stats, model_comparison_rows)
     model_eval_md = _build_model_evaluation(config, pred_stats, model_comparison_rows)
 
+    report_path = Path(config.paths.report)
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(thesis_md)
+    report_path.write_text(thesis_md, encoding="utf-8")
     logger.info("Thesis report saved: %s", report_path)
 
     model_eval_path = out_dir / "model_evaluation.md"
-    with model_eval_path.open("w", encoding="utf-8") as f:
-        f.write(model_eval_md)
+    model_eval_path.write_text(model_eval_md, encoding="utf-8")
     logger.info("Model evaluation saved: %s", model_eval_path)
 
     metrics_json_path = out_dir / "metrics.json"
-    with metrics_json_path.open("w", encoding="utf-8") as f:
-        json.dump(pred_stats or {}, f, indent=2, ensure_ascii=False)
+    metrics_json_path.write_text(
+        json.dumps(pred_stats or {}, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     logger.info("Metrics saved: %s", metrics_json_path)
 
     model_cmp_csv = write_model_comparison_csv(out_dir, model_comparison_rows)
     logger.info("Model comparison saved: %s", model_cmp_csv)
 
-    # Static chart export for thesis report
-    if config.report_figures.enabled:
-        with console.status("[cyan]Exporting report figures[/]"):
-            cm_dict = pred_stats.get("confusion_matrix") if pred_stats else None
-            export_all_figures(
-                session_dir=Path(config.paths.session_dir),
-                config=config,
-                artifacts={"confusion_matrix": cm_dict} if cm_dict else {},
-                dpi=config.report_figures.dpi,
-                top_n_features=config.report_figures.top_n_features,
-            )
+
+def _maybe_export_figures(config: Config, pred_stats: dict | None) -> None:
+    if not config.report_figures.enabled:
+        return
+    with console.status("[cyan]Exporting report figures[/]"):
+        cm_dict = pred_stats.get("confusion_matrix") if pred_stats else None
+        export_all_figures(
+            session_dir=Path(config.paths.session_dir),
+            config=config,
+            artifacts={"confusion_matrix": cm_dict} if cm_dict else {},
+            dpi=config.report_figures.dpi,
+            top_n_features=config.report_figures.top_n_features,
+        )
+
+
+def generate_report(config: Config) -> None:
+    """Generate thesis report and model evaluation."""
+    _setup_matplotlib()
+    out_dir = _prepare_report_dir(config)
+    metrics = _load_backtest_metrics(config)
+    pred_stats, model_comparison_rows = _load_report_inputs(config)
+    _write_report_artifacts(config, out_dir, metrics, pred_stats, model_comparison_rows)
+    _maybe_export_figures(config, pred_stats)

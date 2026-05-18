@@ -21,7 +21,6 @@ from thesis.shared.utils import console, stage_header, stage_skip
 
 logger = logging.getLogger("thesis.pipeline")
 
-# Config sections used for cache fingerprinting per stage.
 _STAGE_CONFIG_SECTIONS: dict[int, list[str]] = {
     1: ["data"],
     2: ["features", "labels"],
@@ -31,7 +30,6 @@ _STAGE_CONFIG_SECTIONS: dict[int, list[str]] = {
 
 
 def _cache_hash(config: Config, stage_num: int) -> str:
-    """8-char SHA-256 fingerprint of stage-relevant config sections."""
     sections = _STAGE_CONFIG_SECTIONS.get(stage_num, [])
     if not sections:
         return ""
@@ -52,13 +50,6 @@ def _resolve_cache_path(
     config: Config,
     stage_num: int,
 ) -> Path | None:
-    """Return cache Path or None (disabled).
-
-    ``invalidation`` controls strategy:
-    - ``path``: use base path directly
-    - ``hash``: embed config fingerprint into stem
-    - ``none``: caching disabled, always recompute
-    """
     if base is None or invalidation == "none":
         return None
 
@@ -77,17 +68,13 @@ def _run_stage(
     cache_path: str | Path | None,
     work_fn: callable,
 ) -> None:
-    """Execute stage if enabled, skip on cache hit unless force_rerun."""
     flag = getattr(config.workflow, flag_name, False)
     if not flag:
         stage_skip(stage_num, "disabled")
         return
 
     effective = _resolve_cache_path(
-        cache_path,
-        config.workflow.cache_invalidation,
-        config,
-        stage_num,
+        cache_path, config.workflow.cache_invalidation, config, stage_num
     )
 
     if effective is not None and not config.workflow.force_rerun and effective.exists():
@@ -97,42 +84,37 @@ def _run_stage(
     stage_header(stage_num)
     work_fn(config)
 
-    # Touch cache marker so later runs skip.
     if effective is not None and not effective.exists():
         effective.touch()
 
 
 def _run_dataset_stage(config: Config) -> None:
-    """Minimal features → triple-barrier labels → ML dataset assembly."""
     build_features(config)
     build_labels(config)
     build_ml_dataset(config)
 
 
+def _maybe_run_backtest_demo(config: Config) -> None:
+    if not config.workflow.run_backtest_demo:
+        return
+    bt_path = Path(config.paths.backtest_results)
+    if not bt_path.exists() or config.workflow.force_rerun:
+        logger.info("Running backtest demo")
+        run_backtest_demo(config)
+    else:
+        logger.info("Backtest results cached: %s", bt_path)
+
+
 def _run_reporting_stage(config: Config) -> None:
-    """Report generation + optional application demo."""
-    if config.workflow.run_backtest_demo:
-        bt_path = Path(config.paths.backtest_results)
-        if not bt_path.exists() or config.workflow.force_rerun:
-            logger.info("Running backtest demo")
-            run_backtest_demo(config)
-        else:
-            logger.info("Backtest results cached: %s", bt_path)
+    _maybe_run_backtest_demo(config)
     generate_report(config)
 
 
 def run_pipeline(config: Config) -> None:
-    """Run full pipeline: data → dataset → models → reporting."""
-    # Stage 1: Market data preparation (raw ticks -> OHLCV+ bars).
+    """Run full pipeline: data -> dataset -> models -> reporting."""
     _run_stage(1, config, "run_data", config.paths.ohlcv, prepare_dataset)
-
-    # Stage 2: ML dataset construction (features -> labels -> dataset).
     _run_stage(2, config, "run_dataset", config.paths.ml_dataset, _run_dataset_stage)
-
-    # Stage 3: Walk-forward model training & evaluation.
     _run_stage(3, config, "run_models", config.paths.model, train_walk_forward)
-
-    # Stage 4: Report generation + optional application demo.
     _run_stage(4, config, "run_reporting", None, _run_reporting_stage)
 
     console.print()
