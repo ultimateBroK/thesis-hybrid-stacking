@@ -1,0 +1,270 @@
+"""Walk-forward model experiment for Stage 3."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import logging
+from typing import Any
+
+import numpy as np
+import polars as pl
+
+from thesis.models.artifacts import proba_columns
+from thesis.models.baselines import compute_metrics
+from thesis.models.estimators import (
+    CLASS_ORDER,
+    build_base_models,
+    fit_model,
+    predict_proba_aligned,
+)
+from thesis.models.stacking import HybridStackingClassifier
+from thesis.models.validation import WalkForwardWindow
+from thesis.shared.config import Config
+
+logger = logging.getLogger("thesis")
+
+
+@dataclass(frozen=True)
+class WindowDataset:
+    """Feature/label arrays for one walk-forward window."""
+
+    train_x: np.ndarray
+    train_y: np.ndarray
+    test_x: np.ndarray
+    test_y: np.ndarray
+    test_timestamps: np.ndarray
+
+
+@dataclass(frozen=True)
+class ModelPrediction:
+    """Predicted labels and probabilities from one model."""
+
+    model_name: str
+    pred_label: np.ndarray
+    pred_proba: np.ndarray
+
+
+@dataclass(frozen=True)
+class WindowResult:
+    """Training and evaluation output for one window."""
+
+    window_index: int
+    predictions: list[ModelPrediction]
+    metrics: dict[str, dict[str, float]]
+    final_model: Any
+    final_lightgbm_model: Any | None
+    train_rows: int
+    test_rows: int
+
+
+@dataclass(frozen=True)
+class ModelExperiment:
+    """Aggregated Stage 3 experiment output."""
+
+    feature_cols: list[str]
+    window_results: list[WindowResult]
+    model_comparison: dict[str, dict[str, Any]]
+    oof_predictions: pl.DataFrame
+    final_model: Any
+    final_lightgbm_model: Any | None
+    training_history: dict[str, Any]
+    walk_forward_history: dict[str, Any]
+
+
+def _model_display_name(name: str) -> str:
+    return {
+        "logistic_regression": "Logistic Regression",
+        "random_forest": "Random Forest",
+        "lightgbm": "LightGBM",
+        "hybrid_stacking": "Hybrid Stacking",
+    }.get(name, name)
+
+
+def slice_window_dataset(
+    dataset: pl.DataFrame,
+    feature_cols: list[str],
+    window: WalkForwardWindow,
+) -> WindowDataset:
+    """Extract train/test arrays for one walk-forward window."""
+    train_df = dataset.slice(window.train_start_idx, window.train_len)
+    test_df = dataset.slice(window.test_start_idx, window.test_len)
+    return WindowDataset(
+        train_x=train_df.select(feature_cols).to_numpy(),
+        train_y=train_df["label"].to_numpy().astype(np.int32),
+        test_x=test_df.select(feature_cols).to_numpy(),
+        test_y=test_df["label"].to_numpy().astype(np.int32),
+        test_timestamps=test_df["timestamp"].to_numpy(),
+    )
+
+
+def train_models_for_window(
+    data: WindowDataset,
+    feature_cols: list[str],
+    config: Config,
+) -> dict[str, Any]:
+    """Fit LR, RF, LightGBM, and Hybrid Stacking."""
+    models = {
+        name: fit_model(model, data.train_x, data.train_y, feature_cols)
+        for name, model in build_base_models(config).items()
+    }
+    models["hybrid_stacking"] = HybridStackingClassifier(config, feature_cols).fit(
+        data.train_x,
+        data.train_y,
+    )
+    return models
+
+
+def predict_models_for_window(
+    models: dict[str, Any],
+    data: WindowDataset,
+    feature_cols: list[str],
+) -> list[ModelPrediction]:
+    """Predict all trained models on the window test slice."""
+    predictions: list[ModelPrediction] = []
+    for name, model in models.items():
+        proba = predict_proba_aligned(model, data.test_x, feature_cols)
+        predictions.append(
+            ModelPrediction(
+                model_name=name,
+                pred_label=CLASS_ORDER[np.argmax(proba, axis=1)].astype(np.int32),
+                pred_proba=proba,
+            )
+        )
+    return predictions
+
+
+def evaluate_window_predictions(
+    predictions: list[ModelPrediction],
+    y_true: np.ndarray,
+) -> dict[str, dict[str, float]]:
+    """Compute core classification metrics for each model."""
+    return {p.model_name: compute_metrics(y_true, p.pred_label) for p in predictions}
+
+
+def run_one_window(
+    dataset: pl.DataFrame,
+    feature_cols: list[str],
+    window: WalkForwardWindow,
+    window_index: int,
+    config: Config,
+) -> WindowResult:
+    """Train and evaluate one walk-forward window."""
+    data = slice_window_dataset(dataset, feature_cols, window)
+    models = train_models_for_window(data, feature_cols, config)
+    predictions = predict_models_for_window(models, data, feature_cols)
+    hybrid_pred = next(p for p in predictions if p.model_name == "hybrid_stacking")
+    logger.info(
+        "Window %d: train=%d test=%d hybrid_acc=%.4f",
+        window_index,
+        len(data.train_y),
+        len(data.test_y),
+        compute_metrics(data.test_y, hybrid_pred.pred_label)["accuracy"],
+    )
+    return WindowResult(
+        window_index=window_index,
+        predictions=predictions,
+        metrics=evaluate_window_predictions(predictions, data.test_y),
+        final_model=models["hybrid_stacking"],
+        final_lightgbm_model=models.get("lightgbm"),
+        train_rows=len(data.train_y),
+        test_rows=len(data.test_y),
+    )
+
+
+def _combine_model_metrics(results: list[WindowResult]) -> dict[str, dict[str, Any]]:
+    model_names = {p.model_name for r in results for p in r.predictions}
+    return {
+        name: {
+            metric: float(np.mean([r.metrics[name][metric] for r in results]))
+            for metric in ("accuracy", "macro_f1", "directional_accuracy")
+        }
+        for name in sorted(model_names)
+    }
+
+
+def _build_predictions_frame(
+    dataset: pl.DataFrame,
+    windows: list[WalkForwardWindow],
+    results: list[WindowResult],
+) -> pl.DataFrame:
+    chunks: list[pl.DataFrame] = []
+    for window, result in zip(windows, results):
+        test_df = dataset.slice(window.test_start_idx, window.test_len)
+        pred = next(p for p in result.predictions if p.model_name == "hybrid_stacking")
+        chunks.append(
+            pl.DataFrame(
+                {
+                    "timestamp": test_df["timestamp"],
+                    "true_label": test_df["label"].to_numpy().astype(np.int32),
+                    "pred_label": pred.pred_label,
+                    **proba_columns(pred.pred_proba, CLASS_ORDER),
+                }
+            )
+        )
+    return pl.concat(chunks).sort("timestamp")
+
+
+def _build_training_history(
+    results: list[WindowResult],
+    feature_cols: list[str],
+    config: Config,
+) -> dict[str, Any]:
+    return {
+        "architecture": "hybrid_stacking",
+        "validation_protocol": "walk_forward_with_chronological_meta_split",
+        "base_models": ["logistic_regression", "random_forest", "lightgbm"],
+        "meta_model": "logistic_regression",
+        "meta_fraction": config.model.stacking_meta_fraction,
+        "n_features": len(feature_cols),
+        "windows": len(results),
+        "last_window_accuracy": results[-1].metrics["hybrid_stacking"]["accuracy"],
+    }
+
+
+def _build_walk_forward_history(
+    windows: list[WalkForwardWindow],
+    results: list[WindowResult],
+) -> dict[str, Any]:
+    return {
+        "num_windows": len(windows),
+        "total_oof_predictions": sum(r.test_rows for r in results),
+        "window_details": [
+            {
+                "window": result.window_index,
+                "train_start_idx": window.train_start_idx,
+                "train_end_idx": window.train_end_idx,
+                "test_start_idx": window.test_start_idx,
+                "test_end_idx": window.test_end_idx,
+                "train_rows": result.train_rows,
+                "test_rows": result.test_rows,
+                "accuracy": result.metrics["hybrid_stacking"]["accuracy"],
+            }
+            for window, result in zip(windows, results)
+        ],
+    }
+
+
+def run_model_experiment(
+    dataset: pl.DataFrame,
+    feature_cols: list[str],
+    windows: list[WalkForwardWindow],
+    config: Config,
+) -> ModelExperiment:
+    """Run full Stage 3 classification experiment."""
+    results = [
+        run_one_window(dataset, feature_cols, window, idx + 1, config)
+        for idx, window in enumerate(windows)
+    ]
+    if not results:
+        raise RuntimeError("No model experiment windows produced results")
+    comparison = _combine_model_metrics(results)
+    return ModelExperiment(
+        feature_cols=feature_cols,
+        window_results=results,
+        model_comparison=comparison,
+        oof_predictions=_build_predictions_frame(dataset, windows, results),
+        final_model=results[-1].final_model,
+        final_lightgbm_model=results[-1].final_lightgbm_model,
+        training_history=_build_training_history(results, feature_cols, config),
+        walk_forward_history=_build_walk_forward_history(windows, results),
+    )

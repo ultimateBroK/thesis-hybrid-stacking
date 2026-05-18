@@ -6,55 +6,10 @@ import numpy as np
 import pytest
 
 from thesis.models.baselines import (
-    always_class,
     compute_metrics,
     majority_class,
-    naive_direction,
-    random_baseline,
     run_all,
 )
-
-# ---------------------------------------------------------------------------
-# naive_direction
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestNaiveDirection:
-    def test_known_returns(self) -> None:
-        y_returns = np.array([0.5, -0.3, 0.0, 0.1, -0.2])
-        result = naive_direction(y_returns)
-        # First has no predecessor → 0, then sign of previous bar
-        np.testing.assert_array_equal(result, [0, 1, -1, 0, 1])
-
-    def test_all_positive(self) -> None:
-        y_returns = np.array([1.0, 2.0, 3.0])
-        result = naive_direction(y_returns)
-        np.testing.assert_array_equal(result, [0, 1, 1])
-
-    def test_single_element(self) -> None:
-        result = naive_direction(np.array([0.5]))
-        np.testing.assert_array_equal(result, [0])
-
-
-# ---------------------------------------------------------------------------
-# always_predict_class
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestAlwaysPredictClass:
-    def test_returns_correct_class(self) -> None:
-        y_true = np.array([-1, 0, 1, -1, 0])
-        result = always_class(y_true, 1)
-        assert len(result) == 5
-        assert (result == 1).all()
-
-    def test_different_class(self) -> None:
-        y_true = np.zeros(10)
-        result = always_class(y_true, -1)
-        assert (result == -1).all()
-
 
 # ---------------------------------------------------------------------------
 # majority_class_baseline
@@ -63,47 +18,27 @@ class TestAlwaysPredictClass:
 
 @pytest.mark.unit
 class TestMajorityClassBaseline:
+    """Majority-class baseline tests."""
+
     def test_finds_most_common(self) -> None:
+        """Most frequent class is predicted."""
         y_true = np.array([0, 0, 0, 1, 1, -1])
         preds, cls = majority_class(y_true)
         assert cls == 0
         assert (preds == 0).all()
 
     def test_tie_picks_first_sorted(self) -> None:
+        """Ties follow numpy sorted class order."""
         y_true = np.array([-1, 1])
         preds, cls = majority_class(y_true)
         # np.unique sorts → first in sorted order is -1
         assert cls == -1
 
     def test_single_class(self) -> None:
+        """Single-class input returns that class."""
         y_true = np.array([1, 1, 1])
         _, cls = majority_class(y_true)
         assert cls == 1
-
-
-# ---------------------------------------------------------------------------
-# random_baseline
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestRandomBaseline:
-    def test_deterministic_with_seed(self) -> None:
-        r1 = random_baseline(20, seed=7)
-        r2 = random_baseline(20, seed=7)
-        np.testing.assert_array_equal(r1, r2)
-
-    def test_different_seeds_differ(self) -> None:
-        r1 = random_baseline(100, seed=1)
-        r2 = random_baseline(100, seed=2)
-        assert not np.array_equal(r1, r2)
-
-    def test_custom_classes(self) -> None:
-        result = random_baseline(50, classes=[0, 1], seed=42)
-        assert set(result.tolist()) <= {0, 1}
-
-    def test_correct_length(self) -> None:
-        assert len(random_baseline(10)) == 10
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +48,10 @@ class TestRandomBaseline:
 
 @pytest.mark.unit
 class TestComputeBaselineMetrics:
+    """Baseline metric tests."""
+
     def test_perfect_prediction(self) -> None:
+        """Perfect predictions score 1.0."""
         y_true = np.array([-1, 0, 1, -1, 0, 1])
         y_pred = np.array([-1, 0, 1, -1, 0, 1])
         metrics = compute_metrics(y_true, y_pred)
@@ -122,6 +60,7 @@ class TestComputeBaselineMetrics:
         assert metrics["directional_accuracy"] == 1.0
 
     def test_returns_expected_keys(self) -> None:
+        """Metrics expose expected report keys."""
         y = np.array([0, 1, -1])
         metrics = compute_metrics(y, y)
         assert set(metrics.keys()) == {
@@ -140,26 +79,23 @@ class TestComputeBaselineMetrics:
 
 @pytest.mark.unit
 class TestRunAllBaselines:
+    """Baseline runner tests."""
+
     @pytest.fixture()
     def sample_data(self) -> tuple[np.ndarray, np.ndarray]:
+        """Small label and return fixture."""
         y_true = np.array([1, -1, 0, 1, -1, 0, 1, 0])
         y_returns = np.array([0.5, -0.3, 0.0, 0.2, -0.1, 0.0, 0.4, -0.2])
         return y_true, y_returns
 
     def test_returns_expected_keys(self, sample_data: tuple) -> None:
+        """Runner returns majority baseline only."""
         y_true, y_returns = sample_data
         results = run_all(y_true, y_returns)
-        expected = {
-            "naive_direction",
-            "always_long",
-            "always_short",
-            "always_hold",
-            "majority_class",
-            "random",
-        }
-        assert set(results.keys()) == expected
+        assert set(results.keys()) == {"majority_class"}
 
     def test_each_baseline_has_metrics(self, sample_data: tuple) -> None:
+        """Baseline output includes core metrics."""
         y_true, y_returns = sample_data
         results = run_all(y_true, y_returns)
         for name, metrics in results.items():
@@ -170,11 +106,13 @@ class TestRunAllBaselines:
             )
 
     def test_majority_class_includes_label(self, sample_data: tuple) -> None:
+        """Majority class label is persisted."""
         y_true, y_returns = sample_data
         results = run_all(y_true, y_returns)
         assert "majority_class_label" in results["majority_class"]
 
     def test_deterministic(self, sample_data: tuple) -> None:
+        """Majority baseline is deterministic."""
         y_true, y_returns = sample_data
         r1 = run_all(y_true, y_returns, seed=42)
         r2 = run_all(y_true, y_returns, seed=42)

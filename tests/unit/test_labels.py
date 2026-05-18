@@ -19,8 +19,6 @@ from thesis.dataset.build_labels import (
     compute_average_uniqueness,
     compute_event_end,
 )
-from thesis.models.train import compute_regression_target
-from thesis.shared.config import Config, LabelsConfig, LGBMConfig
 from thesis.shared.constants import CENSORED_LABEL
 
 
@@ -58,7 +56,7 @@ def test_labels_in_valid_set() -> None:
 @pytest.mark.unit
 @pytest.mark.data
 def test_upper_lower_barrier_relationship() -> None:
-    """Test that upper_barrier > close and lower_barrier < close for each bar (the bug fix!)."""
+    """Upper barrier sits above close and lower barrier below close."""
     n = 50
     close = np.linspace(1800, 1900, n)
     high = close + 5
@@ -444,110 +442,9 @@ def test_asymmetric_barriers_tp_sl_ratio() -> None:
         )
 
 
-# ── Regression tail censoring ───────────────────────────────────────────
-
-
-def _make_regression_config(horizon_bars: int = 5) -> Config:
-    """Build a minimal Config with regression objective and a given horizon."""
-    cfg = Config()
-    cfg.labels = LabelsConfig(horizon_bars=horizon_bars)
-    cfg.model = LGBMConfig(objective="regression")
-    return cfg
-
-
-def _make_labeled_df(
-    n: int = 30,
-    close_start: float = 100.0,
-    close_step: float = 1.0,
-) -> pl.DataFrame:
-    """Build a minimal labeled Polars DataFrame for regression testing.
-
-    Creates a monotonically increasing close series and dummy columns
-    required by ``compute_regression_target``.
-    """
-    close = np.linspace(close_start, close_start + close_step * (n - 1), n)
-    return pl.DataFrame(
-        {
-            "close": close,
-            "label": np.full(n, 0, dtype=np.int32),
-            "event_end": np.arange(n, dtype=np.int32),
-            "timestamp": np.arange(n, dtype=np.int64),
-        }
-    )
-
-
 @pytest.mark.unit
 class TestRegressionTailCensoring:
-    """Tests for regression-target computation and tail censoring."""
-
-    # ── 1. horizon_bars NaN rows ───────────────────────────────────────
-
-    def test_regression_drops_horizon_bars_nan_rows(self) -> None:
-        """Regression-mode drops exactly ``horizon_bars`` censored tail rows."""
-        horizon = 7
-        n = 50
-        df_in = _make_labeled_df(n=n)
-        cfg = _make_regression_config(horizon_bars=horizon)
-
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is True
-        assert len(result_df) == n - horizon, (
-            f"Expected {n - horizon} rows after dropping {horizon} censored rows, "
-            f"got {len(result_df)}"
-        )
-        # No NaN regression_target should remain in the result
-        assert result_df["regression_target"].is_nan().sum() == 0
-
-    # ── 2. Non-zero regression target ──────────────────────────────────
-
-    def test_regression_target_nonzero_for_valid_rows(self) -> None:
-        """Regression target mean is non-zero for a trending price series."""
-        horizon = 5
-        n = 100
-        df_in = _make_labeled_df(n=n, close_step=0.5)  # trending up
-        cfg = _make_regression_config(horizon_bars=horizon)
-
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is True
-        mean_target = result_df["regression_target"].mean()
-        assert mean_target is not None
-        assert mean_target > 0.0, (
-            f"Expected positive mean regression target for uptrend, got {mean_target}"
-        )
-        std_target = result_df["regression_target"].std()
-        assert std_target is not None and std_target > 0.0, (
-            "Expected non-zero std for regression target"
-        )
-
-    def test_regression_target_nonzero_for_volatile_series(self) -> None:
-        """Regression target is non-zero even for a volatile non-monotonic series."""
-        rng = np.random.default_rng(42)
-        n = 100
-        horizon = 5
-        close = 100.0 + rng.standard_normal(n).cumsum() * 2.0
-        df_in = pl.DataFrame(
-            {
-                "close": close,
-                "label": np.full(n, 0, dtype=np.int32),
-                "event_end": np.arange(n, dtype=np.int32),
-                "timestamp": np.arange(n, dtype=np.int64),
-            }
-        )
-
-        cfg = _make_regression_config(horizon_bars=horizon)
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is True
-        # The mean could be positive or negative, but it should not be zero
-        mean_target = result_df["regression_target"].mean()
-        assert mean_target is not None
-        assert abs(mean_target) > 1e-10, (
-            "Expected non-zero mean regression target for volatile series"
-        )
-
-    # ── 3. _drop_censored_and_nan removes NaN regression_target ──────────────
+    """Tests for censored-label cleanup."""
 
     def test_drop_censored_and_nan_removes_label_censored(self) -> None:
         """_drop_censored_and_nan drops rows where label == CENSORED_LABEL (-2)."""
@@ -595,7 +492,7 @@ class TestRegressionTailCensoring:
         )
 
     def test_drop_censored_and_nan_preserves_valid_rows(self) -> None:
-        """_drop_censored_and_nan leaves rows without censored labels or NaN target untouched."""
+        """Valid rows stay untouched."""
         n = 20
         reg_target = np.full(n, 0.03, dtype=np.float64)
         df_in = pl.DataFrame(
@@ -615,95 +512,3 @@ class TestRegressionTailCensoring:
         np.testing.assert_allclose(
             result_df["regression_target"].to_numpy(), reg_target, rtol=1e-12
         )
-
-    # ── 4. compute_regression_target correctness ──────────────────────
-
-    def testcompute_regression_target_correct_forward_returns(self) -> None:
-        """compute_regression_target computes exact forward returns."""
-        horizon = 4
-        n = 20
-        close = np.arange(100.0, 100.0 + n, 1.0, dtype=np.float64)
-        df_in = pl.DataFrame(
-            {
-                "close": close,
-                "label": np.full(n, 0, dtype=np.int32),
-                "event_end": np.arange(n, dtype=np.int32),
-                "timestamp": np.arange(n, dtype=np.int64),
-            }
-        )
-
-        cfg = _make_regression_config(horizon_bars=horizon)
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is True
-        reg_result = result_df["regression_target"].to_numpy()
-        close_orig = close[: n - horizon]
-
-        # Manual computation: reg_target[i] = (close[i+h] - close[i]) / close[i]
-        expected = (close[horizon:] - close_orig) / close_orig
-        np.testing.assert_allclose(reg_result, expected, rtol=1e-12)
-
-    def testcompute_regression_target_zero_return_for_flat_prices(self) -> None:
-        """compute_regression_target yields near-zero returns for flat prices."""
-        horizon = 3
-        n = 30
-        close = np.full(n, 50.0, dtype=np.float64)
-        df_in = pl.DataFrame(
-            {
-                "close": close,
-                "label": np.full(n, 0, dtype=np.int32),
-                "event_end": np.arange(n, dtype=np.int32),
-                "timestamp": np.arange(n, dtype=np.int64),
-            }
-        )
-
-        cfg = _make_regression_config(horizon_bars=horizon)
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is True
-        reg_result = result_df["regression_target"].to_numpy()
-        np.testing.assert_allclose(reg_result, np.zeros(n - horizon), atol=1e-15)
-
-    def testcompute_regression_target_full_horizon_censored(self) -> None:
-        """When horizon equals data length, all rows are censored (empty result)."""
-        horizon = 10
-        n = 10
-        df_in = _make_labeled_df(n=n)
-        cfg = _make_regression_config(horizon_bars=horizon)
-
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is True
-        assert len(result_df) == 0, (
-            f"All rows should be censored when horizon={horizon} == n={n}"
-        )
-
-    def test_non_regression_objective_noop(self) -> None:
-        """When the model objective is NOT regression, compute_regression_target is a no-op."""
-        n = 30
-        df_in = _make_labeled_df(n=n)
-        cfg = Config()
-        cfg.labels = LabelsConfig(horizon_bars=5)
-        cfg.model = LGBMConfig(objective="multiclass")  # LGBM not regression
-
-        result_df, is_regression = compute_regression_target(df_in, cfg)
-
-        assert is_regression is False
-        assert "regression_target" not in result_df.columns
-        assert len(result_df) == n, (
-            f"Expected no rows dropped for non-regression objective, "
-            f"got {len(result_df)}"
-        )
-
-    def test_regression_missing_close_raises(self) -> None:
-        """Regression mode raises ValueError when 'close' column is absent."""
-        df_in = pl.DataFrame(
-            {
-                "label": np.full(10, 0, dtype=np.int32),
-                "timestamp": np.arange(10, dtype=np.int64),
-            }
-        )
-        cfg = _make_regression_config(horizon_bars=3)
-
-        with pytest.raises(ValueError, match="close"):
-            compute_regression_target(df_in, cfg)
