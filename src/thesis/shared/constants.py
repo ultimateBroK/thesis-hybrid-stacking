@@ -158,11 +158,7 @@ LABEL_META_COLS: list[str] = [
 # ── Regime feature column names (only active when enable_regime_features=True) ──
 
 _REGIME_INDICATOR_FEATURES: list[str] = ["volatility_regime", "trend_regime"]
-_REGIME_LABEL_PRIOR_FEATURES: list[str] = [
-    "label_prior_long_lag1",
-    "label_prior_short_lag1",
-]
-REGIME_FEATURES: list[str] = _REGIME_INDICATOR_FEATURES + _REGIME_LABEL_PRIOR_FEATURES
+REGIME_FEATURES: list[str] = list(_REGIME_INDICATOR_FEATURES)
 
 
 def get_regime_feature_cols(config) -> list[str]:
@@ -196,9 +192,7 @@ def build_feature_output_cols(config) -> list[str]:
     Combines OHLCV raw columns, label helpers, and model-facing tabular
     features into a sorted, deduplicated list.
 
-    Note: regime label-prior features (label_prior_long_lag1, etc.) are NOT
-    included here because they depend on labels which don't exist at feature
-    engineering time.  They are added dynamically in stage_4.
+    Note: Stage 3 only consumes model-facing features produced by Stage 2.
     """
     regime_indicator_cols = (
         _REGIME_INDICATOR_FEATURES

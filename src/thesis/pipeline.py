@@ -103,7 +103,7 @@ def _run_stage(
 
 
 def _run_dataset_stage(config: Config) -> None:
-    """Feature engineering → label generation → ML dataset assembly."""
+    """Minimal features → triple-barrier labels → ML dataset assembly."""
     build_features(config)
     build_labels(config)
     build_ml_dataset(config)
@@ -123,10 +123,10 @@ def _run_reporting_stage(config: Config) -> None:
 
 def run_pipeline(config: Config) -> None:
     """Run full pipeline: data → dataset → models → reporting."""
-    # Stage 1: Data preparation (download + OHLCV aggregation).
+    # Stage 1: Market data preparation (raw ticks -> OHLCV+ bars).
     _run_stage(1, config, "run_data", config.paths.ohlcv, prepare_dataset)
 
-    # Stage 2: Feature & label engineering + ML dataset assembly.
+    # Stage 2: ML dataset construction (features -> labels -> dataset).
     _run_stage(2, config, "run_dataset", config.paths.ml_dataset, _run_dataset_stage)
 
     # Stage 3: Walk-forward model training & evaluation.

@@ -45,8 +45,8 @@ STAGE_STYLES: dict[int, str] = {
 }
 
 STAGE_LABELS: dict[int, str] = {
-    1: "Data Preparation",
-    2: "Feature & Label Engineering",
+    1: "Market Data Preparation",
+    2: "ML Dataset Construction",
     3: "Model Training & Evaluation",
     4: "Report Generation",
 }
