@@ -1,170 +1,125 @@
-"""Tests for report rendering helpers."""
+"""Tests for compact report rendering helpers."""
 
 from __future__ import annotations
 
 import pytest
 
 from thesis.reporting.report import (
-    _assess_model_quality,
-    _assess_trading_edge,
-    _benchmark_comparison_table,
-    _config_table,
-    _derive_recommendation,
-    _exec_verdict,
-    _identify_primary_issue,
+    _build_model_evaluation,
+    _build_thesis_report,
+    _md_table,
+    build_model_comparison_rows,
     model_label,
 )
 from thesis.shared.config import Config
 
 
 @pytest.mark.unit
-def test_config_table_shows_walk_forward_for_sliding_validation() -> None:
-    config = Config()
-    config.validation.method = "sliding"
-    L: list[str] = []
-    _config_table(L, config)
-    assert any("walk-forward" in line.lower() for line in L)
-
-
-@pytest.mark.unit
-def test_exec_verdict_returns_expected_keys() -> None:
-    metrics = {
-        "accuracy": 0.6,
-        "macro_f1": 0.55,
-        "directional_accuracy": 0.65,
-        "win_rate_pct": 50.0,
-        "sharpe_ratio": 1.0,
-        "max_drawdown_pct": -20.0,
-        "profit_factor": 1.2,
-        "return_pct": 5.0,
-        "equity_final": 10500,
-        "sortino_ratio": 1.3,
-        "calmar_ratio": 0.8,
-        "expectancy_pct": 0.5,
-        "avg_trade_pct": 0.3,
-        "num_trades": 100,
-    }
-    pred_stats = {
-        "accuracy": 0.6,
-        "macro_f1": 0.55,
-        "directional_accuracy": 0.65,
-        "per_class": {"Long": {"f1": 0.7}, "Short": {"f1": 0.5}},
-        "majority_baseline": 0.4,
-    }
-    L: list[str] = []
-    _exec_verdict(L, metrics, pred_stats)
-    assert len(L) > 0
-
-
-@pytest.mark.unit
 def test_model_label_stacking() -> None:
+    """Stacking architecture renders as Hybrid Stacking."""
     config = Config()
     config.model.architecture = "stacking"
-    assert "Stacking" in model_label(config) or "Hybrid" in model_label(config)
+
+    assert model_label(config) == "Hybrid Stacking"
 
 
 @pytest.mark.unit
 def test_model_label_lgbm() -> None:
+    """LightGBM architecture renders as LightGBM."""
     config = Config()
     config.model.architecture = "lgbm"
-    label = model_label(config)
-    assert "LightGBM" in label or "LGBM" in label or label  # just ensure no crash
+
+    assert model_label(config) == "LightGBM"
 
 
 @pytest.mark.unit
-class TestAssessModelQuality:
-    def test_good_model(self) -> None:
-        pred_stats = {
-            "accuracy": 0.7,
-            "macro_f1": 0.65,
-            "directional_accuracy": 0.7,
-            "per_class": {"Long": {"f1": 0.7}, "Short": {"f1": 0.6}},
-            "majority_baseline": 0.4,
-        }
-        quality, detail = _assess_model_quality(pred_stats)
-        assert "good" in quality.lower() or "acceptable" in quality.lower() or quality
+def test_md_table_renders_header_and_rows() -> None:
+    """Markdown table helper renders header and body rows."""
+    table = _md_table(["Metric", "Value"], [["Accuracy", "36.43%"]])
 
-    def test_poor_model(self) -> None:
-        pred_stats = {
-            "accuracy": 0.35,
-            "macro_f1": 0.2,
-            "directional_accuracy": 0.3,
-            "per_class": {"Long": {"f1": 0.1}, "Short": {"f1": 0.1}},
-            "majority_baseline": 0.4,
-        }
-        quality, detail = _assess_model_quality(pred_stats)
-        assert quality  # just ensure no crash
+    assert "| Metric | Value |" in table
+    assert "| Accuracy | 36.43% |" in table
 
 
 @pytest.mark.unit
-class TestAssessTradingEdge:
-    def test_profitable(self) -> None:
-        metrics = {
-            "sharpe_ratio": 1.5,
-            "profit_factor": 1.8,
-            "return_pct": 15.0,
-            "win_rate_pct": 55.0,
-            "max_drawdown_pct": -10.0,
-        }
-        edge, detail = _assess_trading_edge(metrics)
-        assert edge
+def test_model_comparison_includes_main_five_models() -> None:
+    """Comparison excludes noisy baselines and keeps core models."""
+    config = Config()
+    config.model.architecture = "stacking"
+    pred_stats = {
+        "accuracy": 0.3643,
+        "macro_f1": 0.3357,
+        "directional_accuracy": 0.5026,
+    }
 
-    def test_unprofitable(self) -> None:
-        metrics = {
-            "sharpe_ratio": -0.5,
-            "profit_factor": 0.8,
-            "return_pct": -10.0,
-            "win_rate_pct": 40.0,
-            "max_drawdown_pct": -30.0,
-        }
-        edge, detail = _assess_trading_edge(metrics)
-        assert edge
+    rows = build_model_comparison_rows(config, pred_stats)
+    names = [row["model"] for row in rows]
+
+    assert "Hybrid Stacking" in names
+    assert "Logistic Regression" in names
+    assert "Random Forest" in names
+    assert "LightGBM" in names
+    assert "Naive Direction" not in names
+    assert "Random Baseline" not in names
 
 
 @pytest.mark.unit
-class TestDeriveRecommendation:
-    def test_returns_string(self) -> None:
-        rec = _derive_recommendation("good", "strong", {})
-        assert isinstance(rec, str)
-
-
-@pytest.mark.unit
-class TestIdentifyPrimaryIssue:
-    def test_with_metrics(self) -> None:
-        metrics = {
-            "accuracy": 0.35,
-            "sharpe_ratio": -1.0,
-            "profit_factor": 0.5,
+def test_model_evaluation_uses_compact_vietnamese_format() -> None:
+    """Model evaluation follows compact report recommendation."""
+    config = Config()
+    pred_stats = {
+        "total": 23752,
+        "accuracy": 0.3643,
+        "majority_baseline": 0.4901,
+        "macro_f1": 0.3357,
+        "directional_accuracy": 0.5026,
+        "balanced_accuracy": 0.4017,
+        "per_class": {
+            "Short": {"precision": 0.4388, "recall": 0.3263, "f1": 0.3743},
+            "Hold": {"precision": 0.1268, "recall": 0.5037, "f1": 0.2026},
+            "Long": {"precision": 0.5042, "recall": 0.3750, "f1": 0.4301},
+        },
+    }
+    rows = [
+        {
+            "model": "Hybrid Stacking",
+            "accuracy": 0.3643,
+            "macro_f1": 0.3357,
+            "source": "current_session",
         }
-        issue = _identify_primary_issue(metrics, None)
-        assert issue is None or isinstance(issue, str)
+    ]
+
+    report = _build_model_evaluation(config, pred_stats, rows)
+
+    assert "# 📊 Model Evaluation — Hybrid Stacking" in report
+    assert "## 4. So sánh mô hình" in report
+    assert "Naive Direction" not in report
+    assert "Random Baseline" not in report
+    assert "High-confidence" not in report
 
 
 @pytest.mark.unit
-@pytest.mark.skip(reason="render sections require full config setup")
-class TestRenderSections:
-    def test_render_data_quality_section(self) -> None:
-        pass
+def test_thesis_report_excludes_calibration_main_section() -> None:
+    """Thesis report excludes calibration/generalization sections."""
+    config = Config()
+    metrics = {
+        "return_pct": 11.6,
+        "max_drawdown_pct": -4.0,
+        "num_trades": 275,
+        "profit_factor": 1.28,
+    }
+    pred_stats = {
+        "accuracy": 0.3643,
+        "majority_baseline": 0.4901,
+        "macro_f1": 0.3357,
+        "directional_accuracy": 0.5026,
+        "per_class": {"Hold": {"f1": 0.2026}},
+    }
 
-    def test_render_metric_zones_section(self) -> None:
-        pass
+    report = _build_thesis_report(config, metrics, pred_stats, [])
 
-    def test_render_oof_vs_oos_section(self) -> None:
-        pass
-
-
-@pytest.mark.unit
-class TestBenchmarkComparisonTable:
-    def test_benchmark_comparison_table_does_not_crash(self) -> None:
-        config = Config()
-        metrics = {
-            "accuracy": 0.6,
-            "sharpe_ratio": 0.5,
-            "profit_factor": 1.0,
-            "return_pct": 3.0,
-            "win_rate_pct": 50.0,
-            "max_drawdown_pct": -15.0,
-        }
-        L: list[str] = []
-        _benchmark_comparison_table(L, metrics, config)
-        # Just check it doesn't crash
+    assert "# Báo cáo thí nghiệm" in report
+    assert "## 🎯 1. Mục tiêu" in report
+    assert "## 💼 9. Backtest demo" in report
+    assert "Calibration" not in report
+    assert "Generalization" not in report
