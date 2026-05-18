@@ -10,7 +10,7 @@ import numpy as np
 import polars as pl
 
 from thesis.models.artifacts import proba_columns
-from thesis.models.baselines import compute_metrics, majority_class
+from thesis.models.baselines import compute_metrics, predict_majority_label
 from thesis.models.estimators import (
     CLASS_ORDER,
     build_base_models,
@@ -142,8 +142,7 @@ def evaluate_window_predictions(
 ) -> dict[str, dict[str, float]]:
     """Compute core classification metrics for each model plus majority baseline."""
     metrics = {p.model_name: compute_metrics(y_true, p.pred_label) for p in predictions}
-    maj_pred, maj_label = majority_class(train_y)
-    baseline_pred = np.full(len(y_true), maj_label, dtype=np.int32)
+    baseline_pred, maj_label = predict_majority_label(train_y, len(y_true))
     metrics["majority_baseline"] = compute_metrics(y_true, baseline_pred)
     metrics["majority_baseline"]["majority_class_label"] = maj_label
     return metrics

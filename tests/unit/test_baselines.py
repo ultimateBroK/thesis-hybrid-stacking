@@ -7,38 +7,52 @@ import pytest
 
 from thesis.models.baselines import (
     compute_metrics,
-    majority_class,
+    majority_label,
+    predict_majority_label,
     run_all,
 )
 
 # ---------------------------------------------------------------------------
-# majority_class_baseline
+# majority_label
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestMajorityClassBaseline:
-    """Majority-class baseline tests."""
+class TestMajorityLabel:
+    """Majority label extraction tests."""
 
     def test_finds_most_common(self) -> None:
-        """Most frequent class is predicted."""
+        """Most frequent class is returned."""
         y_true = np.array([0, 0, 0, 1, 1, -1])
-        preds, cls = majority_class(y_true)
-        assert cls == 0
-        assert (preds == 0).all()
+        assert majority_label(y_true) == 0
 
     def test_tie_picks_first_sorted(self) -> None:
         """Ties follow numpy sorted class order."""
         y_true = np.array([-1, 1])
-        preds, cls = majority_class(y_true)
-        # np.unique sorts → first in sorted order is -1
-        assert cls == -1
+        assert majority_label(y_true) == -1
 
     def test_single_class(self) -> None:
         """Single-class input returns that class."""
         y_true = np.array([1, 1, 1])
-        _, cls = majority_class(y_true)
-        assert cls == 1
+        assert majority_label(y_true) == 1
+
+
+@pytest.mark.unit
+class TestPredictMajorityLabel:
+    """Majority prediction from train labels tests."""
+
+    def test_predicts_correct_count(self) -> None:
+        """Prediction array length matches n_rows."""
+        preds, label = predict_majority_label(np.array([0, 0, 1]), 5)
+        assert len(preds) == 5
+        assert label == 0
+        assert (preds == 0).all()
+
+    def test_uses_train_majority(self) -> None:
+        """Label comes from train, not test."""
+        preds, label = predict_majority_label(np.array([-1, -1, 1]), 3)
+        assert label == -1
+        assert (preds == -1).all()
 
 
 # ---------------------------------------------------------------------------

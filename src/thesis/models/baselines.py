@@ -8,11 +8,18 @@ import numpy.typing as npt
 from thesis.reporting.metrics import accuracy, directional_accuracy, macro_f1
 
 
-def majority_class(y_true: npt.NDArray) -> tuple[npt.NDArray, int]:
-    """Predict majority class. Class imbalance floor."""
-    vals, counts = np.unique(y_true, return_counts=True)
-    maj = int(vals[np.argmax(counts)])
-    return np.full(len(y_true), maj, dtype=np.int8), maj
+def majority_label(y: npt.NDArray) -> int:
+    """Return the most frequent class label."""
+    vals, counts = np.unique(y, return_counts=True)
+    return int(vals[np.argmax(counts)])
+
+
+def predict_majority_label(
+    y_train: npt.NDArray, n_rows: int
+) -> tuple[npt.NDArray, int]:
+    """Predict majority class from train labels for n_rows test rows."""
+    label = majority_label(y_train)
+    return np.full(n_rows, label, dtype=np.int32), label
 
 
 def _per_class_f1(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict[str, float]:
@@ -45,7 +52,7 @@ def run_all(
     seed: int | None = None,
 ) -> dict[str, dict]:
     """Run thesis baseline: majority class only."""
-    maj_pred, maj_cls = majority_class(y_true)
+    maj_pred, maj_cls = predict_majority_label(y_true, len(y_true))
     metrics = compute_metrics(y_true, maj_pred)
     metrics["majority_class_label"] = maj_cls
     return {"majority_class": metrics}

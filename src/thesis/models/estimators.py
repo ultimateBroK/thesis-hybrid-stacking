@@ -130,6 +130,11 @@ def build_base_models(config: Config) -> dict[str, Any]:
     }
 
 
+def is_lightgbm_model(model: Any) -> bool:
+    """Check if model is a LightGBM classifier."""
+    return model.__class__.__name__ == "LGBMClassifier"
+
+
 def fit_lightgbm(
     model: Any,
     X: np.ndarray,
@@ -154,7 +159,7 @@ def fit_model(
         from sklearn.dummy import DummyClassifier
 
         return DummyClassifier(strategy="most_frequent").fit(X, y)
-    if feature_cols and model.__class__.__name__ == "LGBMClassifier":
+    if feature_cols and is_lightgbm_model(model):
         return fit_lightgbm(model, X, y, feature_cols)
     return model.fit(X, y)
 

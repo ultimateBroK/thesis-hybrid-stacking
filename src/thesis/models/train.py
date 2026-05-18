@@ -9,23 +9,15 @@ import polars as pl
 
 from thesis.models.artifacts import save_model_experiment
 from thesis.models.experiment import run_model_experiment
-from thesis.models.validation import (
-    WalkForwardWindow,
-    build_walk_forward_windows,
-    generate_windows,
-    log_windows,
-)
+from thesis.models.validation import build_walk_forward_windows
 from thesis.shared.config import Config
 
 logger = logging.getLogger("thesis")
 
 __all__ = [
-    "WalkForwardWindow",
     "build_walk_forward_windows",
     "choose_model_features",
-    "generate_windows",
     "load_model_dataset",
-    "log_windows",
     "train_walk_forward",
 ]
 
