@@ -111,6 +111,13 @@ dd_cooldown_bars = 12              # Cooldown after max drawdown trigger
 max_open_positions = 1             # Concurrent position limit
 daily_loss_limit = 0.03            # Halt if daily loss exceeds 3% of equity
 
+# ── Report figure exports ──────────────────────────────────────────────────
+[report_figures]
+enabled = true                        # Export static charts for thesis report
+format = "png"                        # Output format (png / svg)
+dpi = 180                             # Chart resolution
+top_n_features = 15                   # Top-N features in importance chart
+
 # ── Artifact paths ──────────────────────────────────────────────────────────
 [paths]
 ml_dataset = "data/modeling/ml_dataset.parquet"

@@ -16,13 +16,8 @@ import polars as pl
 from polars.exceptions import ColumnNotFoundError, ComputeError
 
 from thesis.models import baselines as baselines_mod
+from thesis.reporting.figures import export_all_figures
 from thesis.reporting.metrics import compute_all_classification_metrics
-from thesis.reporting.plots import (
-    load_feature_importance,
-    plot_confusion_matrix,
-    plot_equity_curve,
-    plot_feature_importance,
-)
 from thesis.shared.config import Config
 from thesis.shared.constants import H1_BARS_PER_YEAR
 from thesis.shared.utils import console
@@ -634,44 +629,15 @@ def generate_report(config: Config) -> None:
     bt_path = Path(config.paths.backtest_results)
 
     metrics: dict = {}
-    trades: list[dict] = []
     if bt_path.exists():
         with console.status("[cyan]Loading backtest results[/]"):
             with open(bt_path) as f:
                 bt = json.load(f)
             metrics = bt.get("metrics", {})
-            trades = bt.get("trades", [])
-
-    with console.status("[cyan]Rendering report charts[/]"):
-        fi_path = (
-            Path(config.paths.session_dir) / "reports" / "feature_importance.json"
-            if config.paths.session_dir
-            else out_dir.parent / "feature_importance.json"
-        )
-        feature_importance = load_feature_importance(fi_path)
-        plot_equity_curve(
-            trades, config.backtest.initial_capital, out_dir / "equity_curve.png"
-        )
-        plot_feature_importance(feature_importance, out_dir / "feature_importance.png")
 
     with console.status("[cyan]Building reports[/]"):
         pred_stats = load_prediction_stats(Path(config.paths.predictions))
         model_comparison_rows = build_model_comparison_rows(config, pred_stats)
-
-        if pred_stats and pred_stats.get("confusion_matrix"):
-            preds_path = Path(config.paths.predictions)
-            if preds_path.exists():
-                try:
-                    df = pl.read_csv(preds_path)
-                    if "true_label" in df.columns and "pred_label" in df.columns:
-                        plot_confusion_matrix(
-                            df["true_label"].to_numpy(),
-                            df["pred_label"].to_numpy(),
-                            labels=["Short", "Hold", "Long"],
-                            output_path=out_dir / "confusion_matrix.png",
-                        )
-                except (ComputeError, ColumnNotFoundError):
-                    logger.warning("Failed to render confusion matrix", exc_info=True)
 
     thesis_md = _build_thesis_report(config, metrics, pred_stats, model_comparison_rows)
     model_eval_md = _build_model_evaluation(config, pred_stats, model_comparison_rows)
@@ -693,3 +659,15 @@ def generate_report(config: Config) -> None:
 
     model_cmp_csv = write_model_comparison_csv(out_dir, model_comparison_rows)
     logger.info("Model comparison saved: %s", model_cmp_csv)
+
+    # Static chart export for thesis report
+    if config.report_figures.enabled:
+        with console.status("[cyan]Exporting report figures[/]"):
+            cm_dict = pred_stats.get("confusion_matrix") if pred_stats else None
+            export_all_figures(
+                session_dir=Path(config.paths.session_dir),
+                config=config,
+                artifacts={"confusion_matrix": cm_dict} if cm_dict else {},
+                dpi=config.report_figures.dpi,
+                top_n_features=config.report_figures.top_n_features,
+            )

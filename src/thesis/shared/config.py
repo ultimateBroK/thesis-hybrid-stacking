@@ -187,6 +187,16 @@ class WorkflowConfig:
 
 
 @dataclass
+class ReportFiguresConfig:
+    """Static chart export settings for thesis report."""
+
+    enabled: bool = True
+    format: str = "png"
+    dpi: int = 180
+    top_n_features: int = 15
+
+
+@dataclass
 class PathsConfig:
     """Default artifact paths."""
 
@@ -216,6 +226,7 @@ class Config:
     labels: LabelsConfig = field(default_factory=LabelsConfig)
     model: LGBMConfig = field(default_factory=LGBMConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
+    report_figures: ReportFiguresConfig = field(default_factory=ReportFiguresConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
@@ -228,6 +239,7 @@ _SECTION_MAP: dict[str, type] = {
     "labels": LabelsConfig,
     "model": LGBMConfig,
     "backtest": BacktestConfig,
+    "report_figures": ReportFiguresConfig,
     "workflow": WorkflowConfig,
     "paths": PathsConfig,
 }
