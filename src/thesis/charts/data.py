@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 from pyecharts import options as opts
-from pyecharts.charts import Bar, HeatMap, Kline, Pie, Tab
+from pyecharts.charts import Bar, HeatMap, Kline
 
 from thesis.charts.shared import COLORS, EXCLUDED_FEATURE_COLS
 
@@ -278,90 +278,40 @@ def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
     return chart
 
 
-def build_label_distribution_chart(df: pl.DataFrame) -> Pie:
-    """Pie chart for triple-barrier label distribution."""
+def build_label_distribution_chart(df: pl.DataFrame) -> Bar:
+    """Bar chart for triple-barrier label distribution."""
     labels = df["label"].to_numpy()
     counts = {k: int((labels == k).sum()) for k in [-1, 0, 1]}
+    total = max(sum(counts.values()), 1)
 
-    data_pairs = [
-        ("Short (-1)", counts.get(-1, 0)),
-        ("Hold (0)", counts.get(0, 0)),
-        ("Long (1)", counts.get(1, 0)),
-    ]
+    names = ["Short (-1)", "Hold (0)", "Long (1)"]
+    values = [counts.get(k, 0) for k in [-1, 0, 1]]
+    percentages = [round(v / total * 100, 2) for v in values]
 
     chart = (
-        Pie(init_opts=opts.InitOpts(height="500px"))
-        .add(
-            series_name="Labels",
-            data_pair=data_pairs,
-            radius="75%",
-            label_opts=opts.LabelOpts(
-                formatter="{name|{b}}\n{count|{c}} {per|{d}%}",
-                position="outside",
-                rich={
-                    "name": {
-                        "fontSize": 14,
-                        "fontWeight": "bold",
-                        "padding": [0, 0, 4, 0],
-                    },
-                    "count": {
-                        "fontSize": 12,
-                        "color": "#666",
-                    },
-                    "per": {
-                        "fontSize": 12,
-                        "fontWeight": "bold",
-                        "color": "#333",
-                    },
-                },
-            ),
+        Bar(init_opts=opts.InitOpts(height="500px"))
+        .add_xaxis(names)
+        .add_yaxis(
+            series_name="Count",
+            y_axis=values,
+            label_opts=opts.LabelOpts(is_show=True, position="top"),
+            itemstyle_opts=opts.ItemStyleOpts(color=COLORS["primary"]),
         )
-        .set_colors([COLORS["short"], COLORS["flat"], COLORS["long"]])
+        .add_yaxis(
+            series_name="Percent",
+            y_axis=percentages,
+            label_opts=opts.LabelOpts(is_show=True, position="top", formatter="{c}%"),
+            itemstyle_opts=opts.ItemStyleOpts(color=COLORS["secondary"]),
+        )
         .set_global_opts(
             title_opts=opts.TitleOpts(title="Triple-Barrier Label Distribution"),
-            legend_opts=opts.LegendOpts(pos_left="left", orient="vertical"),
-            tooltip_opts=opts.TooltipOpts(trigger="item", formatter="{b}: {c} ({d}%)"),
+            xaxis_opts=opts.AxisOpts(name="Label"),
+            yaxis_opts=opts.AxisOpts(name="Count / Percent"),
+            tooltip_opts=opts.TooltipOpts(trigger="axis"),
+            legend_opts=opts.LegendOpts(),
         )
     )
     return chart
-
-
-def build_feature_distributions_chart(df: pl.DataFrame) -> Tab:
-    """Tabbed histograms for feature distributions."""
-    feature_cols = _get_feature_cols(df)
-    tab = Tab()
-
-    for col in feature_cols:
-        vals = df[col].drop_nulls().to_numpy()
-        if vals.size == 0:
-            continue
-
-        counts, bin_edges = np.histogram(vals, bins=50)
-        bin_centers = [
-            (bin_edges[i] + bin_edges[i + 1]) / 2 for i in range(len(counts))
-        ]
-        x_labels = [f"{v:.2f}" for v in bin_centers]
-
-        bar = (
-            Bar(init_opts=opts.InitOpts(height="400px"))
-            .add_xaxis(x_labels)
-            .add_yaxis(
-                series_name=col,
-                y_axis=counts.tolist(),
-                label_opts=opts.LabelOpts(is_show=False),
-                itemstyle_opts=opts.ItemStyleOpts(color=COLORS["primary"]),
-            )
-            .set_global_opts(
-                title_opts=opts.TitleOpts(title=f"Distribution: {col}"),
-                xaxis_opts=opts.AxisOpts(name=col),
-                yaxis_opts=opts.AxisOpts(name="Count"),
-                tooltip_opts=opts.TooltipOpts(trigger="axis"),
-                datazoom_opts=[opts.DataZoomOpts(type_="inside")],
-            )
-        )
-        tab.add(bar, col)
-
-    return tab
 
 
 def build_feature_distribution_chart(df: pl.DataFrame, feature_col: str) -> Bar:
@@ -400,6 +350,5 @@ __all__ = [
     "build_correlation_heatmap",
     "build_label_distribution_chart",
     "build_feature_distribution_chart",
-    "build_feature_distributions_chart",
     "_get_feature_cols",
 ]

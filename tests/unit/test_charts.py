@@ -5,7 +5,7 @@ import polars as pl
 import pytest
 
 pytest.importorskip("pyecharts")
-from pyecharts.charts import Bar, Grid, HeatMap, Line, Pie, Scatter, Tab
+from pyecharts.charts import Bar, Grid, HeatMap
 
 from thesis.charts import (
     EXCLUDED_FEATURE_COLS,
@@ -13,14 +13,10 @@ from thesis.charts import (
     build_confidence_distribution_chart,
     build_confusion_matrix_chart,
     build_correlation_heatmap,
-    build_duration_pnl_scatter,
     build_equity_drawdown_chart,
-    build_feature_distributions_chart,
     build_feature_importance_chart,
     build_label_distribution_chart,
-    build_monthly_returns_heatmap,
-    build_pnl_histogram_chart,
-    build_rolling_sharpe_chart,
+    build_model_comparison_chart,
 )
 from thesis.shared.config import Config
 
@@ -191,15 +187,21 @@ def test_build_correlation_heatmap(sample_features: pl.DataFrame) -> None:
 @pytest.mark.unit
 def test_build_label_distribution_chart(sample_labels: pl.DataFrame) -> None:
     chart = build_label_distribution_chart(sample_labels)
-    assert isinstance(chart, Pie)
+    assert isinstance(chart, Bar)
     opts = chart.dump_options()
     assert isinstance(opts, str)
 
 
 @pytest.mark.unit
-def test_build_feature_distributions_chart(sample_features: pl.DataFrame) -> None:
-    chart = build_feature_distributions_chart(sample_features)
-    assert isinstance(chart, Tab)
+def test_build_model_comparison_chart() -> None:
+    """Model comparison renders accuracy and Macro-F1 bars."""
+    rows = [
+        {"model": "Majority", "accuracy": 0.5, "macro_f1": 0.22},
+        {"model": "Hybrid Stacking", "accuracy": 0.6, "macro_f1": 0.42},
+    ]
+    chart = build_model_comparison_chart(rows)
+    assert isinstance(chart, Bar)
+    assert "Hybrid Stacking" in chart.dump_options()
 
 
 # ---------------------------------------------------------------------------
@@ -247,39 +249,6 @@ def test_build_equity_drawdown_chart(sample_trades: list) -> None:
     assert isinstance(opts, str)
 
 
-@pytest.mark.unit
-def test_build_pnl_histogram_chart(sample_trades: list) -> None:
-    metrics = {"avg_win": 100.0, "avg_loss": -50.0}
-    chart = build_pnl_histogram_chart(sample_trades, metrics)
-    assert isinstance(chart, Bar)
-    opts = chart.dump_options()
-    assert isinstance(opts, str)
-
-
-@pytest.mark.unit
-def test_build_monthly_returns_heatmap(sample_trades: list) -> None:
-    chart = build_monthly_returns_heatmap(sample_trades)
-    assert isinstance(chart, HeatMap)
-    opts = chart.dump_options()
-    assert isinstance(opts, str)
-
-
-@pytest.mark.unit
-def test_build_rolling_sharpe_chart(sample_trades: list) -> None:
-    chart = build_rolling_sharpe_chart(sample_trades, window=10)
-    assert isinstance(chart, Line)
-    opts = chart.dump_options()
-    assert isinstance(opts, str)
-
-
-@pytest.mark.unit
-def test_build_duration_pnl_scatter(sample_trades: list) -> None:
-    chart = build_duration_pnl_scatter(sample_trades)
-    assert isinstance(chart, Scatter)
-    opts = chart.dump_options()
-    assert isinstance(opts, str)
-
-
 # ---------------------------------------------------------------------------
 # Test: Edge cases
 # ---------------------------------------------------------------------------
@@ -310,20 +279,6 @@ def test_build_candlestick_empty(sample_config: Config) -> None:
     assert isinstance(chart, Grid)
     assert isinstance(info, dict)
     assert info["total_bars"] == 0
-
-
-@pytest.mark.unit
-def test_build_rolling_sharpe_too_few_trades() -> None:
-    """Fewer trades than window should return empty Line."""
-    trades = [
-        {
-            "pnl": 100.0,
-            "entry_time": "2024-01-01T10:00:00Z",
-            "exit_time": "2024-01-01T14:00:00Z",
-        }
-    ]
-    chart = build_rolling_sharpe_chart(trades, window=30)
-    assert isinstance(chart, Line)
 
 
 @pytest.mark.unit
@@ -439,3 +394,42 @@ class TestLoadSessionData:
 
         result = load_session_data(config)
         assert result["feature_importance"]["rsi"] == 10
+
+    def test_missing_parquet_during_read_does_not_crash(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = str(tmp_path / "ohlcv.parquet")
+        config.paths.features = str(tmp_path / "features.parquet")
+        config.paths.test_data = str(tmp_path / "test.parquet")
+        config.paths.labels = str(tmp_path / "labels.parquet")
+        config.paths.predictions = str(tmp_path / "nonexistent.csv")
+        config.paths.backtest_results = str(tmp_path / "nonexistent.json")
+        (tmp_path / "test.parquet").touch()
+
+        def fail_read_parquet(path):
+            if str(path).endswith("test.parquet"):
+                raise FileNotFoundError(path)
+            return pl.DataFrame({"a": [1]})
+
+        monkeypatch.setattr(pl, "read_parquet", fail_read_parquet)
+
+        result = load_session_data(config)
+        assert result["test"] is None
+
+    def test_dot_paths_are_ignored(self, tmp_path) -> None:
+        config = Config()
+        config.paths.session_dir = str(tmp_path)
+        config.paths.ohlcv = "."
+        config.paths.features = "."
+        config.paths.test_data = "."
+        config.paths.labels = "."
+        config.paths.predictions = "."
+        config.paths.backtest_results = "."
+
+        result = load_session_data(config)
+        assert result["ohlcv"] is None
+        assert result["features"] is None
+        assert result["test"] is None
+        assert result["labels"] is None

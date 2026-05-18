@@ -1,4 +1,4 @@
-"""Data Exploration: candlestick, feature correlations, label distributions."""
+"""Dataset section: data, labels, and feature overview."""
 
 from __future__ import annotations
 
@@ -19,23 +19,33 @@ from thesis.dashboard.shared import render_chart
 
 def render_data_section(data: dict, config: object, session_dir: str) -> None:
     """OHLCV candlestick + feature/label charts with date range filter."""
-    st.markdown("> 🏠 Dashboard > **Data Exploration**")
-    st.header("Data Exploration")
+    st.markdown("> Home > **Dataset**")
+    st.header("Dataset")
 
     ohlcv = data.get("ohlcv")
     features = data.get("features")
     labels = data.get("labels")
 
-    # OHLCV summary
+    label_count = len(labels) if labels is not None else 0
+    feature_cols = (
+        [c for c in features.columns if c not in EXCLUDED_FEATURE_COLS]
+        if features is not None
+        else []
+    )
     if ohlcv is not None:
-        st.caption(
-            f"{len(ohlcv):,} bars | "
-            f"{ohlcv['timestamp'].cast(pl.Utf8).min()} "
-            f"→ {ohlcv['timestamp'].cast(pl.Utf8).max()}"
-        )
+        cols = st.columns(4, gap="small")
+        cols[0].metric("Total bars", f"{len(ohlcv):,}")
+        start = ohlcv["timestamp"].cast(pl.Utf8).min()
+        end = ohlcv["timestamp"].cast(pl.Utf8).max()
+        cols[1].metric("Date range", f"{start} -> {end}")
+        cols[2].metric("Features", f"{len(feature_cols):,}")
+        cols[3].metric("Labels", f"{label_count:,}")
 
     if ohlcv is not None and not ohlcv.is_empty():
-        st.subheader("Candlestick Chart")
+        st.subheader("Dataset Overview")
+        st.caption(
+            "Candlestick sample. Use date filter to inspect raw OHLCV cleanliness."
+        )
 
         ts_col = ohlcv["timestamp"]
         ts_parsed = (
@@ -93,22 +103,18 @@ def render_data_section(data: dict, config: object, session_dir: str) -> None:
     else:
         st.info("No OHLCV data available.")
 
-    # Feature + Label charts
+    st.subheader("Label Construction")
+    if labels is not None and "label" in labels.columns:
+        render_chart(build_label_distribution_chart(labels), height="500px")
+    else:
+        st.info("No labels data.")
+
+    st.subheader("Feature Engineering")
     if features is not None:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("Feature Correlation")
-            render_chart(build_correlation_heatmap(features), height="600px")
-        with c2:
-            st.subheader("Label Distribution")
-            if labels is not None and "label" in labels.columns:
-                render_chart(build_label_distribution_chart(labels), height="500px")
-            else:
-                st.info("No labels data.")
+        render_chart(build_correlation_heatmap(features), height="600px")
 
         # Per-feature histogram
         st.subheader("Feature Distributions")
-        feature_cols = [c for c in features.columns if c not in EXCLUDED_FEATURE_COLS]
         st.caption(f"{len(feature_cols)} model-facing columns.")
         if feature_cols:
             selected = st.selectbox(

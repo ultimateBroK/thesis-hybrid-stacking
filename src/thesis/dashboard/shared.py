@@ -6,9 +6,6 @@ import re
 
 import streamlit as st
 
-from thesis.charts import COLORS
-from thesis.dashboard.cards import render_metric_card
-
 
 def render_chart(chart: object, height: str = "500px") -> None:
     """Render pyecharts chart via streamlit-echarts."""
@@ -77,29 +74,3 @@ def render_config_summary(config: object) -> None:
             if getattr(wf, key, False):
                 flags.append(key.replace("run_", ""))
         st.markdown(f"**Pipeline stages**: {', '.join(flags) if flags else 'none'}")
-
-
-def render_trade_direction_summary(trades: list[dict]) -> None:
-    """Sidebar expander: long/short trade counts and PnL."""
-    if not trades:
-        return
-
-    long_trades = [t for t in trades if t.get("direction") == "long"]
-    short_trades = [t for t in trades if t.get("direction") == "short"]
-    long_pnl = sum(float(t.get("pnl", 0)) for t in long_trades)
-    short_pnl = sum(float(t.get("pnl", 0)) for t in short_trades)
-
-    with st.expander("Direction summary", expanded=False):
-        cols = st.columns(4, gap="small")
-        render_metric_card(
-            cols[0], "Long Trades", f"{len(long_trades):,}", None, COLORS["long"]
-        )
-        render_metric_card(
-            cols[1], "Short Trades", f"{len(short_trades):,}", None, COLORS["short"]
-        )
-        render_metric_card(
-            cols[2], "Long PnL", f"${long_pnl:,.0f}", None, COLORS["long"]
-        )
-        render_metric_card(
-            cols[3], "Short PnL", f"${short_pnl:,.0f}", None, COLORS["short"]
-        )

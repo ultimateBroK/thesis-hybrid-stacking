@@ -15,6 +15,33 @@ if TYPE_CHECKING:
 logger = logging.getLogger("thesis.charts")
 
 
+def _read_parquet(path: Path) -> pl.DataFrame | None:
+    """Read parquet if available; stale paths should not crash dashboard."""
+    if not _is_artifact_file(path):
+        return None
+    try:
+        return pl.read_parquet(path)
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning("Dashboard artifact unreadable: %s (%s)", path, exc)
+        return None
+
+
+def _read_csv(path: Path) -> pl.DataFrame | None:
+    """Read CSV if available; stale paths should not crash dashboard."""
+    if not _is_artifact_file(path):
+        return None
+    try:
+        return pl.read_csv(path)
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning("Dashboard artifact unreadable: %s (%s)", path, exc)
+        return None
+
+
+def _is_artifact_file(path: Path) -> bool:
+    """True only for concrete files; ignore empty/default directory paths."""
+    return path not in {Path(""), Path(".")} and path.is_file()
+
+
 def load_session_data(config: Config) -> dict[str, Any]:
     """Load session artifacts for chart builders."""
     data: dict[str, Any] = {}
@@ -22,25 +49,23 @@ def load_session_data(config: Config) -> dict[str, Any]:
     data["session_dir"] = config.paths.session_dir
 
     ohlcv_path = Path(config.paths.ohlcv)
-    data["ohlcv"] = pl.read_parquet(ohlcv_path) if ohlcv_path.exists() else None
+    data["ohlcv"] = _read_parquet(ohlcv_path)
 
     features_path = Path(config.paths.features)
-    data["features"] = (
-        pl.read_parquet(features_path) if features_path.exists() else None
-    )
+    data["features"] = _read_parquet(features_path)
 
     test_path = Path(config.paths.test_data)
-    data["test"] = pl.read_parquet(test_path) if test_path.exists() else None
+    data["test"] = _read_parquet(test_path)
 
     labels_path = Path(config.paths.labels)
-    data["labels"] = pl.read_parquet(labels_path) if labels_path.exists() else None
+    data["labels"] = _read_parquet(labels_path)
 
     preds_path = (
         Path(config.paths.session_dir) / "predictions" / "final_predictions.csv"
         if config.paths.session_dir
         else Path(config.paths.predictions)
     )
-    data["predictions"] = pl.read_csv(preds_path) if preds_path.exists() else None
+    data["predictions"] = _read_csv(preds_path)
 
     bt_path = (
         Path(config.paths.session_dir) / "backtest" / "backtest_results.json"
@@ -68,6 +93,15 @@ def load_session_data(config: Config) -> dict[str, Any]:
             data["feature_importance"] = json.load(f)
     else:
         data["feature_importance"] = {}
+
+    comparison_csv = Path(config.paths.session_dir) / "reports" / "model_comparison.csv"
+    if config.paths.session_dir and comparison_csv.exists():
+        comparison = _read_csv(comparison_csv)
+        data["model_comparison"] = (
+            comparison.to_dicts() if comparison is not None else []
+        )
+    else:
+        data["model_comparison"] = []
 
     logger.info("Session data loaded from %s", config.paths.session_dir or "default")
     return data

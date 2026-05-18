@@ -169,35 +169,45 @@ def build_feature_importance_chart(
     return chart
 
 
-def build_prediction_distribution_chart(
-    true: np.ndarray,
-    pred: np.ndarray,
-) -> Bar:
-    """Actual vs predicted label distribution bars."""
-    labels = ["Short", "Hold", "Long"]
-    label_values = [-1, 0, 1]
-    actual_vals = [int((true == value).sum()) for value in label_values]
-    predicted_vals = [int((pred == value).sum()) for value in label_values]
+def build_model_comparison_chart(rows: list[dict]) -> Bar:
+    """Accuracy/Macro-F1 comparison across baseline and model variants."""
+    usable = [
+        r
+        for r in rows
+        if r.get("accuracy") is not None or r.get("macro_f1") is not None
+    ]
+    if not usable:
+        return Bar()
+
+    names = [str(r.get("model", "Model")) for r in usable]
+    accuracy = [
+        round(float(r["accuracy"]) * 100, 2) if r.get("accuracy") is not None else None
+        for r in usable
+    ]
+    macro_f1 = [
+        round(float(r["macro_f1"]) * 100, 2) if r.get("macro_f1") is not None else None
+        for r in usable
+    ]
 
     return (
-        Bar(init_opts=opts.InitOpts(height="400px"))
-        .add_xaxis(labels)
+        Bar(init_opts=opts.InitOpts(height="420px"))
+        .add_xaxis(names)
         .add_yaxis(
-            series_name="Actual",
-            y_axis=actual_vals,
+            series_name="Accuracy (%)",
+            y_axis=accuracy,
             itemstyle_opts=opts.ItemStyleOpts(color=COLORS["primary"]),
             label_opts=opts.LabelOpts(is_show=True, position="top"),
         )
         .add_yaxis(
-            series_name="Predicted",
-            y_axis=predicted_vals,
+            series_name="Macro F1 (%)",
+            y_axis=macro_f1,
             itemstyle_opts=opts.ItemStyleOpts(color=COLORS["secondary"]),
             label_opts=opts.LabelOpts(is_show=True, position="top"),
         )
         .set_global_opts(
-            title_opts=opts.TitleOpts(title="Actual vs Predicted Label Distribution"),
-            xaxis_opts=opts.AxisOpts(name="Label"),
-            yaxis_opts=opts.AxisOpts(name="Count"),
+            title_opts=opts.TitleOpts(title="Model Comparison"),
+            xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=20)),
+            yaxis_opts=opts.AxisOpts(name="Score (%)", max_=100),
             tooltip_opts=opts.TooltipOpts(trigger="axis"),
             legend_opts=opts.LegendOpts(),
         )
@@ -208,5 +218,5 @@ __all__ = [
     "build_confusion_matrix_chart",
     "build_confidence_distribution_chart",
     "build_feature_importance_chart",
-    "build_prediction_distribution_chart",
+    "build_model_comparison_chart",
 ]
