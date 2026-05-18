@@ -146,6 +146,7 @@ codedb.snapshot
 /data_download.py
 *_DIAGNOSTIC_REPORT.md
 review_verdict.md
+src/thesis/graphify-out/
 graphify-out/cache/
 graphify-out/manifest.json    # mtime-based, breaks after git clone
 graphify-out/cost.json        # local only
