@@ -50,8 +50,10 @@ def load_config(session_dir: str) -> dict:
     """Load config + chart data for session. Cached 60s."""
     from pathlib import Path
 
-    from thesis.charts import load_session_data
     from thesis.shared.config import load_config as _load_config
+    from thesis.visualization.artifacts import (
+        load_dashboard_artifacts as load_session_data,
+    )
 
     sd = Path(session_dir)
     snapshot = sd / "config" / "config_snapshot.toml"

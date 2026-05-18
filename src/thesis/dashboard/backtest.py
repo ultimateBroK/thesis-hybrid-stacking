@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import streamlit as st
 
 from thesis.charts import build_equity_drawdown_chart
@@ -9,8 +11,7 @@ from thesis.dashboard.cards import render_zoned_metric
 from thesis.dashboard.shared import render_chart
 
 
-def render_backtest_section(data: dict, config: object, session_dir: str) -> None:
-    """Render a minimal backtest demo, not a trading-performance dashboard."""
+def show_backtest_disclaimer() -> None:
     st.markdown("> Home > **Demo**")
     st.header("Application Demo")
     st.info(
@@ -18,14 +19,20 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
         "Do not use it as primary evidence that the ML model is good or bad."
     )
 
+
+def extract_backtest_components(
+    data: dict[str, Any],
+) -> dict[str, Any] | None:
     bt = data.get("backtest_results")
-    trades = data.get("trades", [])
-    metrics = data.get("metrics", {})
-
     if not bt:
-        st.info("No backtest results available.")
-        return
+        return None
+    return {
+        "trades": data.get("trades", []),
+        "metrics": data.get("metrics", {}),
+    }
 
+
+def render_backtest_kpi_cards(metrics: dict, config: object) -> None:
     with st.container(border=True):
         st.subheader("Backtest Demo Summary")
         kpi_cols = st.columns(4, gap="small")
@@ -66,6 +73,12 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
         )
         st.caption(f"Initial capital: ${config.backtest.initial_capital:,.0f}")
 
+
+def render_backtest_equity(
+    trades: list[dict],
+    metrics: dict,
+    config: object,
+) -> None:
     st.subheader("Equity Curve + Drawdown")
     render_chart(
         build_equity_drawdown_chart(
@@ -75,6 +88,19 @@ def render_backtest_section(data: dict, config: object, session_dir: str) -> Non
         ),
         height="600px",
     )
+
+
+def render_backtest_section(data: dict, config: object, session_dir: str) -> None:
+    """Render a minimal backtest demo, not a trading-performance dashboard."""
+    show_backtest_disclaimer()
+
+    components = extract_backtest_components(data)
+    if components is None:
+        st.info("No backtest results available.")
+        return
+
+    render_backtest_kpi_cards(components["metrics"], config)
+    render_backtest_equity(components["trades"], components["metrics"], config)
 
 
 __all__ = ["render_backtest_section"]

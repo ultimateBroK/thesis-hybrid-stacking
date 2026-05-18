@@ -7,7 +7,7 @@ import pandas as pd
 from pyecharts import options as opts
 from pyecharts.charts import Grid, Line
 
-from thesis.charts.shared import COLORS
+from thesis.visualization.style import COLORS
 
 
 def build_equity_drawdown_chart(

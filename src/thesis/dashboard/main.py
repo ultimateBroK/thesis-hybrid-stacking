@@ -8,16 +8,12 @@ import streamlit as st
 
 from thesis.dashboard.backtest import render_backtest_section
 from thesis.dashboard.data import render_data_section
-from thesis.dashboard.model import (
-    compute_prediction_summary,
-    render_evaluation_section,
-    render_model_section,
-)
+from thesis.dashboard.model import render_evaluation_section, render_model_section
 from thesis.dashboard.reports import render_reports_section
 from thesis.dashboard.session import load_config, session_selector_fragment
 from thesis.dashboard.shared import render_config_summary
+from thesis.visualization.summaries import compute_prediction_summary
 
-# AMOLED glass — metric cards, hover glow
 _CSS = """
 <style>
     .stMetric {
@@ -68,43 +64,45 @@ _SECTION_RENDERERS: dict[str, tuple[str, object]] = {
 }
 
 
-def main() -> None:
-    """Render dashboard: sidebar, nav, load session, dispatch section."""
+def configure_dashboard_page() -> None:
+    """Set page config, CSS, sidebar header."""
     st.set_page_config(
         page_title="ML Result Viewer — XAU/USD Hybrid Stacking",
         page_icon="📊",
         layout="wide",
         initial_sidebar_state="expanded",
     )
-
     st.markdown(_CSS, unsafe_allow_html=True)
-
-    # Sidebar header
     st.sidebar.markdown("### ML Result Viewer")
     st.sidebar.caption("XAU/USD Hybrid Stacking")
 
-    # Session selector (auto-refreshes every 30s via @st.fragment)
+
+def select_session() -> str | None:
+    """Render session selector, return chosen session name."""
     with st.sidebar.expander("Session", expanded=True):
         session_selector_fragment()
-        selected = st.session_state.get("selected_session")
+        return st.session_state.get("selected_session")
 
-    if selected is None:
-        st.error("No session results found. Run `pixi run workflow` first.")
-        return
 
-    # Nav: ML-first result viewer sections.
+def show_missing_session_message() -> None:
+    """Show error when no session exists."""
+    st.error("No session results found. Run `pixi run workflow` first.")
+
+
+def select_dashboard_section() -> str:
+    """Render nav buttons, return selected section key."""
     sections = list(_SECTION_RENDERERS)
-    current_section = st.session_state.get("nav_section", "📦 Dataset")
-    if current_section not in _SECTION_RENDERERS:
-        current_section = "📦 Dataset"
-        st.session_state.nav_section = current_section
+    current = st.session_state.get("nav_section", "📦 Dataset")
+    if current not in _SECTION_RENDERERS:
+        current = "📦 Dataset"
+        st.session_state.nav_section = current
 
     _, nav_center, _ = st.columns([0.2, 0.6, 0.2])
     with nav_center:
         nav_cols = st.columns(len(sections))
         for i, sec in enumerate(sections):
             with nav_cols[i]:
-                btn_type = "primary" if sec == current_section else "secondary"
+                btn_type = "primary" if sec == current else "secondary"
                 if st.button(sec, key=f"nav_{sec}", type=btn_type, width="stretch"):
                     st.session_state.nav_section = sec
                     st.rerun()
@@ -112,14 +110,25 @@ def main() -> None:
     section = st.session_state.get("nav_section", "📦 Dataset")
     if section not in _SECTION_RENDERERS:
         section = "📦 Dataset"
+    return section
 
-    # Load session data
-    session_path = str(Path("results") / selected)
+
+def load_dashboard_session(selected_session: str) -> dict:
+    """Load config + artifacts for a session."""
+    session_path = str(Path("results") / selected_session)
     loaded = load_config(session_path)
-    config = loaded["config"]
-    data = loaded["data"]
+    return {
+        "config": loaded["config"],
+        "data": loaded["data"],
+        "session_path": session_path,
+    }
 
-    # Sidebar: config summary + quick stats
+
+def render_dashboard_sidebar(session: dict) -> None:
+    """Sidebar: config summary + ML quick stats."""
+    config = session["config"]
+    data = session["data"]
+
     with st.sidebar.expander("Configuration", expanded=False):
         render_config_summary(config)
 
@@ -132,9 +141,26 @@ def main() -> None:
             c1.metric("Directional", f"{ml_metrics['directional_accuracy']:.1%}")
             c2.metric("Predictions", f"{ml_metrics['total_predictions']:,}")
 
-    # Dispatch section renderer
-    _name, renderer = _SECTION_RENDERERS[section]
-    renderer(data, config, session_path)
+
+def render_dashboard_section(section: str, session: dict) -> None:
+    """Dispatch to the section renderer."""
+    _, renderer = _SECTION_RENDERERS[section]
+    renderer(session["data"], session["config"], session["session_path"])
+
+
+def main() -> None:
+    """Render dashboard: sidebar, nav, load session, dispatch section."""
+    configure_dashboard_page()
+    selected_session = select_session()
+
+    if selected_session is None:
+        show_missing_session_message()
+        return
+
+    section = select_dashboard_section()
+    session = load_dashboard_session(selected_session)
+    render_dashboard_sidebar(session)
+    render_dashboard_section(section, session)
 
 
 if __name__ == "__main__":

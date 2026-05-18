@@ -1,4 +1,4 @@
-"""Model performance charts."""
+"""Model performance charts (pyecharts)."""
 
 from __future__ import annotations
 
@@ -7,37 +7,29 @@ import polars as pl
 from pyecharts import options as opts
 from pyecharts.charts import Bar, HeatMap
 
-from thesis.charts.shared import COLORS
+from thesis.visualization.chart_data import compute_normalized_confusion_matrix
+from thesis.visualization.style import COLORS
+
+REQUIRED_CONFIDENCE_COLUMNS = frozenset(
+    {"pred_label", "pred_proba_class_1", "pred_proba_class_minus1"}
+)
 
 
-def build_confusion_matrix_chart(
-    true: np.ndarray,
-    pred: np.ndarray,
+def _has_confidence_columns(preds_df: pl.DataFrame) -> bool:
+    return REQUIRED_CONFIDENCE_COLUMNS.issubset(preds_df.columns)
+
+
+def render_confusion_matrix_heatmap(
+    matrix: np.ndarray,
+    display_labels: list[str],
 ) -> HeatMap:
-    """Normalized confusion matrix heatmap for 3-class labels."""
-    labels_order = [-1, 0, 1]
-    display_labels = ["Short (-1)", "Hold (0)", "Long (1)"]
-    n = len(labels_order)
-
-    cm = np.zeros((n, n), dtype=int)
-    for t, p in zip(true, pred, strict=True):
-        if t in labels_order and p in labels_order:
-            ti = labels_order.index(int(t))
-            pi = labels_order.index(int(p))
-            cm[ti, pi] += 1
-
-    cm_norm = cm.astype(float)
-    for i in range(n):
-        row_sum = cm[i].sum()
-        if row_sum > 0:
-            cm_norm[i] = cm[i] / row_sum
-
+    n = len(display_labels)
     data = []
     for i in range(n):
         for j in range(n):
-            data.append([j, i, round(float(cm_norm[i, j]), 3)])
+            data.append([j, i, round(float(matrix[i, j]), 3)])
 
-    chart = (
+    return (
         HeatMap(init_opts=opts.InitOpts(height="500px"))
         .add_xaxis(display_labels)
         .add_yaxis(
@@ -60,21 +52,24 @@ def build_confusion_matrix_chart(
             tooltip_opts=opts.TooltipOpts(trigger="item"),
         )
     )
-    return chart
 
 
-def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
-    """Long/short confidence distribution bars."""
-    if "pred_label" not in preds_df.columns:
-        return Bar()
+def build_confusion_matrix_chart(
+    true: np.ndarray,
+    pred: np.ndarray,
+) -> HeatMap:
+    """Normalized confusion matrix heatmap for 3-class labels."""
+    matrix, labels = compute_normalized_confusion_matrix(true, pred)
+    return render_confusion_matrix_heatmap(matrix, labels)
+
+
+def _compute_confidence_histograms(
+    preds_df: pl.DataFrame,
+) -> tuple[np.ndarray, np.ndarray, list[str]] | None:
+    if not _has_confidence_columns(preds_df):
+        return None
+
     y_pred = preds_df["pred_label"].to_numpy()
-
-    if "pred_proba_class_1" not in preds_df.columns:
-        return Bar()
-
-    if "pred_proba_class_minus1" not in preds_df.columns:
-        return Bar()
-
     long_conf = preds_df["pred_proba_class_1"].to_numpy()
     short_conf = preds_df["pred_proba_class_minus1"].to_numpy()
 
@@ -90,8 +85,18 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
     short_total = short_counts.sum()
     long_pct = (long_counts / long_total * 100) if long_total > 0 else long_counts
     short_pct = (short_counts / short_total * 100) if short_total > 0 else short_counts
+    return long_pct, short_pct, bin_labels
 
-    chart = (
+
+def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
+    """Long/short confidence distribution bars."""
+    result = _compute_confidence_histograms(preds_df)
+    if result is None:
+        return Bar()
+
+    long_pct, short_pct, bin_labels = result
+
+    return (
         Bar(init_opts=opts.InitOpts(height="500px"))
         .add_xaxis(bin_labels)
         .add_yaxis(
@@ -109,7 +114,8 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
         .set_global_opts(
             title_opts=opts.TitleOpts(title="Prediction Confidence Distribution"),
             xaxis_opts=opts.AxisOpts(
-                name="Confidence", axislabel_opts=opts.LabelOpts(rotate=30)
+                name="Confidence",
+                axislabel_opts=opts.LabelOpts(rotate=30),
             ),
             yaxis_opts=opts.AxisOpts(name="Relative Frequency (%)"),
             tooltip_opts=opts.TooltipOpts(trigger="axis"),
@@ -125,7 +131,6 @@ def build_confidence_distribution_chart(preds_df: pl.DataFrame) -> Bar:
             ],
         )
     )
-    return chart
 
 
 def build_feature_importance_chart(
@@ -140,7 +145,7 @@ def build_feature_importance_chart(
     static_values = [v if not n.startswith("model_") else 0 for n, v in items]
     model_values = [v if n.startswith("model_") else 0 for n, v in items]
 
-    chart = (
+    return (
         Bar(init_opts=opts.InitOpts(height="600px"))
         .add_xaxis(names)
         .add_yaxis(
@@ -166,7 +171,6 @@ def build_feature_importance_chart(
             legend_opts=opts.LegendOpts(),
         )
     )
-    return chart
 
 
 def build_model_comparison_chart(rows: list[dict]) -> Bar:
@@ -215,8 +219,8 @@ def build_model_comparison_chart(rows: list[dict]) -> Bar:
 
 
 __all__ = [
-    "build_confusion_matrix_chart",
     "build_confidence_distribution_chart",
+    "build_confusion_matrix_chart",
     "build_feature_importance_chart",
     "build_model_comparison_chart",
 ]

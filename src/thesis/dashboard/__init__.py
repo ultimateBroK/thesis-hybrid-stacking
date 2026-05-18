@@ -18,8 +18,10 @@ from thesis.dashboard.shared import (
     trim_generated_visual_sections,
 )
 from thesis.dashboard.training import render_training_section
+from thesis.visualization.summaries import compute_prediction_summary
 
 __all__ = [
+    "compute_prediction_summary",
     "render_backtest_section",
     "render_data_section",
     "render_model_section",
