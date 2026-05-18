@@ -92,8 +92,8 @@
     "hash": "66a1c27ecaa130af931487d7d1327bce"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/shared/config.py": {
-    "mtime": 1779087808.0626037,
-    "hash": "2d50bceff33165ad54f9c40e868d6090"
+    "mtime": 1779101938.0424237,
+    "hash": "0111f19e5affb0cc504851b1c7e8f25e"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/data/__init__.py": {
     "mtime": 1779049512.7644715,
@@ -160,8 +160,12 @@
     "hash": "79fa82b23b848d2575d6b9449af486f3"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/reporting/report.py": {
-    "mtime": 1779089867.060497,
-    "hash": "1b98542e8b6952f393875a8a33511d3f"
+    "mtime": 1779102379.7657254,
+    "hash": "4f72d8e28b07d0d8bbb1e60ab4b1b317"
+  },
+  "/home/ultimatebrok/Downloads/thesis/src/thesis/reporting/figures.py": {
+    "mtime": 1779103307.7937775,
+    "hash": "2e9636b87376b59a2c1496acdc07c9df"
   },
   "/home/ultimatebrok/Downloads/thesis/src/thesis/demo/__init__.py": {
     "mtime": 1779049262.607454,
@@ -351,18 +355,6 @@
     "mtime": 1779047173.3840518,
     "hash": "44ccc1d146fb31ccbdd9115ea3327131"
   },
-  "/home/ultimatebrok/Downloads/thesis/SHRINK.md": {
-    "mtime": 1779047746.1829545,
-    "hash": "8eb86e8111e3510cd8a45962840f36d1"
-  },
-  "/home/ultimatebrok/Downloads/thesis/REPORT.md": {
-    "mtime": 1779087859.7974007,
-    "hash": "fd23d56c38f816bef88cfa4bfd3f5820"
-  },
-  "/home/ultimatebrok/Downloads/thesis/DASHBOARD.md": {
-    "mtime": 1779097088.8954725,
-    "hash": "b4eae06c218b96cd7c9fddd9deef1e15"
-  },
   "/home/ultimatebrok/Downloads/thesis/results/COMPARISON.md": {
     "mtime": 1779047173.4450285,
     "hash": "2e86cff2051391ccbfc508a890ced947"
@@ -391,105 +383,13 @@
     "mtime": 1778955557.725478,
     "hash": "80b625797efb8853fee4cdeb45a19fa7"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_130702/reports/thesis_report.md": {
-    "mtime": 1778998117.8700125,
-    "hash": "fc5f80ef96e6f9c9402e49184a08c8c7"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/thesis_report.md": {
+    "mtime": 1779103398.3244162,
+    "hash": "3b1a289fd04f6ad40d15b54757c5b201"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_130702/reports/model_evaluation.md": {
-    "mtime": 1778998117.8701775,
-    "hash": "12e539ec359621653d16f7c61062713a"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_130702/backtest/backtest_chart.html": {
-    "mtime": 1778998117.1371639,
-    "hash": "52e99e67da9aeeb39eebfe4e8ced738d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_163633/reports/thesis_report.md": {
-    "mtime": 1779010680.4267893,
-    "hash": "2878e833f4db6f362cab0eb23571af69"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_163633/reports/model_evaluation.md": {
-    "mtime": 1779010680.42703,
-    "hash": "be5b05f28cfafc676306e4b690cea44f"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_163633/backtest/backtest_chart.html": {
-    "mtime": 1779010679.7537942,
-    "hash": "906a5bdf60b68650aec686eb8886f1da"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_232403/reports/thesis_report.md": {
-    "mtime": 1779035178.3683214,
-    "hash": "3d5996a48a774d2f15d40a0980932aae"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_232403/reports/model_evaluation.md": {
-    "mtime": 1779035178.3684523,
-    "hash": "e6281de2478eea422a3f8844952ad8f4"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_232403/backtest/backtest_chart.html": {
-    "mtime": 1779035177.1800625,
-    "hash": "a8241f889739cf908ec716da4baf84c5"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_004952/reports/thesis_report.md": {
-    "mtime": 1779040344.0742054,
-    "hash": "2e59b40024a2d03db9fd1b6a4f82779e"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_004952/reports/model_evaluation.md": {
-    "mtime": 1779040344.074422,
-    "hash": "4cffd8acfbecb33ffdce29fc0804de86"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_004952/backtest/backtest_chart.html": {
-    "mtime": 1779040343.1168048,
-    "hash": "581033923b9ca92e1996b46e319771a4"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_012102/reports/thesis_report.md": {
-    "mtime": 1779042156.2244067,
-    "hash": "afdbaa01d3cbdc29c658c36a82883ada"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_012102/reports/model_evaluation.md": {
-    "mtime": 1779042156.2246192,
-    "hash": "a2939306ba1ac60fe9c98df4c59b56e9"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_012102/backtest/backtest_chart.html": {
-    "mtime": 1779042155.474118,
-    "hash": "f69292a89b64b5d87afdb9fc19945331"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040359/reports/thesis_report.md": {
-    "mtime": 1779052163.2361045,
-    "hash": "174d65b6fc10a90cfd7f4e19f0da423c"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040359/reports/model_evaluation.md": {
-    "mtime": 1779052163.236309,
-    "hash": "d431240dac0831c0091cc0d0824ac498"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040938/reports/thesis_report.md": {
-    "mtime": 1779052292.3660405,
-    "hash": "7535dcc0185ef23cfd4b3b53a88fd847"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040938/reports/model_evaluation.md": {
-    "mtime": 1779052292.3661668,
-    "hash": "3d375f09c2c0d928dd6082c524dfd0a6"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_132101/reports/thesis_report.md": {
-    "mtime": 1779085382.2670643,
-    "hash": "38038573b9da39af0167c699b51f4ffa"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_132101/reports/model_evaluation.md": {
-    "mtime": 1779085382.267201,
-    "hash": "ec92dad40ee1a611e400aeaf9ddfd712"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_135808/reports/thesis_report.md": {
-    "mtime": 1779087558.8624701,
-    "hash": "9609a19fb3eaed27d2f1651e6bbf163c"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_135808/reports/model_evaluation.md": {
-    "mtime": 1779087558.862732,
-    "hash": "f464cc5d4792b9ac17a0b21745b8b1fc"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_165519/reports/thesis_report.md": {
-    "mtime": 1779098260.4891434,
-    "hash": "8fe55e43a0cc865d295a9bc7db8ab260"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_165519/reports/model_evaluation.md": {
-    "mtime": 1779098260.4893627,
-    "hash": "79d4c3416529bc23be44aa87486f38cf"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/model_evaluation.md": {
+    "mtime": 1779103398.3245966,
+    "hash": "9f98a7e9943731a9ec30ca4aeb1f23e2"
   },
   "/home/ultimatebrok/Downloads/thesis/docs/ARCHITECTURE.md": {
     "mtime": 1779047173.3861573,
@@ -1575,105 +1475,29 @@
     "mtime": 1778955558.3934896,
     "hash": "db79952b91bb03550976465255314131"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_130702/reports/equity_curve.png": {
-    "mtime": 1778998117.480894,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/charts/01_label_distribution.png": {
+    "mtime": 1779103398.4324625,
+    "hash": "131daa513b4e10ea9e1af8a9983b3da7"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_130702/reports/feature_importance.png": {
-    "mtime": 1778998117.5698938,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/charts/02_accuracy_comparison.png": {
+    "mtime": 1779103398.4994617,
+    "hash": "9d437a9e4ab8966bb555d0564e949e43"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_163633/reports/equity_curve.png": {
-    "mtime": 1779010680.0646143,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/charts/03_macro_f1_comparison.png": {
+    "mtime": 1779103398.550461,
+    "hash": "8d884e7b50a8adb431aac45d684c28bd"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_163633/reports/feature_importance.png": {
-    "mtime": 1779010680.1326127,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/charts/04_confusion_matrix.png": {
+    "mtime": 1779103398.6344602,
+    "hash": "aeb62cdf5825e6fccfe224300b6d9b61"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_232403/reports/equity_curve.png": {
-    "mtime": 1779035177.9322052,
-    "hash": "d3e8c1bc5be9db2a0bff6b6fcdb03599"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/charts/05_feature_importance.png": {
+    "mtime": 1779103398.6964593,
+    "hash": "5ee7a9c3b01e8b2686ca3e4f0f6b43ab"
   },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260517_232403/reports/feature_importance.png": {
-    "mtime": 1779035178.0232043,
-    "hash": "dba3e0ec8338db604bc18b4c6aa46011"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_004952/reports/equity_curve.png": {
-    "mtime": 1779040343.6211874,
-    "hash": "f1f77a12e71024f14cc2e4f973cb18d1"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_004952/reports/feature_importance.png": {
-    "mtime": 1779040343.7091887,
-    "hash": "fcd372d8ec807ce794bac141967f6ab2"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_012102/reports/equity_curve.png": {
-    "mtime": 1779042155.8108919,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_012102/reports/feature_importance.png": {
-    "mtime": 1779042155.8988912,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040359/reports/equity_curve.png": {
-    "mtime": 1779052163.0019403,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040359/reports/feature_importance.png": {
-    "mtime": 1779052163.0769398,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040359/reports/confusion_matrix.png": {
-    "mtime": 1779052163.1599393,
-    "hash": "53b2ce3da655b2aa2a20d20276ff1378"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040938/reports/equity_curve.png": {
-    "mtime": 1779052292.1261926,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040938/reports/feature_importance.png": {
-    "mtime": 1779052292.202192,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_040938/reports/confusion_matrix.png": {
-    "mtime": 1779052292.2971914,
-    "hash": "53b2ce3da655b2aa2a20d20276ff1378"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_132101/reports/equity_curve.png": {
-    "mtime": 1779085382.0544655,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_132101/reports/feature_importance.png": {
-    "mtime": 1779085382.1364636,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_132101/reports/confusion_matrix.png": {
-    "mtime": 1779085382.2244613,
-    "hash": "53b2ce3da655b2aa2a20d20276ff1378"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_135808/reports/equity_curve.png": {
-    "mtime": 1779087558.7083256,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_135808/reports/feature_importance.png": {
-    "mtime": 1779087558.779324,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_135808/reports/confusion_matrix.png": {
-    "mtime": 1779087558.8583221,
-    "hash": "53b2ce3da655b2aa2a20d20276ff1378"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_165519/reports/equity_curve.png": {
-    "mtime": 1779098260.2074413,
-    "hash": "b94604d94732b86fec02e8eddcd9b38d"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_165519/reports/feature_importance.png": {
-    "mtime": 1779098260.3214412,
-    "hash": "f96ac2f8f88bf78286308cd2bde2b3a3"
-  },
-  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_165519/reports/confusion_matrix.png": {
-    "mtime": 1779098260.485441,
-    "hash": "53b2ce3da655b2aa2a20d20276ff1378"
+  "/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/charts/06_equity_curve.png": {
+    "mtime": 1779103398.8214579,
+    "hash": "5c10768b7d55a486e62f9b800714974a"
   },
   "/home/ultimatebrok/Downloads/thesis/docs/_build/html/_static/file.png": {
     "mtime": 1740956636.0,

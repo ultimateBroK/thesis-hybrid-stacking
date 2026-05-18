@@ -1,0 +1,15 @@
+/home/ultimatebrok/Downloads/thesis/htmlcov/z_a8a23f6b9e23c491_train_py.html
+/home/ultimatebrok/Downloads/thesis/htmlcov/z_7c70626fa9582dee___init___py.html
+/home/ultimatebrok/Downloads/thesis/htmlcov/z_7c70626fa9582dee_metrics_py.html
+/home/ultimatebrok/Downloads/thesis/htmlcov/z_7c70626fa9582dee_plots_py.html
+/home/ultimatebrok/Downloads/thesis/htmlcov/z_7c70626fa9582dee_report_py.html
+/home/ultimatebrok/Downloads/thesis/htmlcov/z_277e5a87068de70e_utils_py.html
+/home/ultimatebrok/Downloads/thesis/results/COMPARISON.md
+/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/thesis_report.md
+/home/ultimatebrok/Downloads/thesis/results/XAUUSD_1H_20260518_182200/reports/model_evaluation.md
+/home/ultimatebrok/Downloads/thesis/results/best_accuracy_h48_acc498/backtest/backtest_chart.html
+/home/ultimatebrok/Downloads/thesis/results/best_accuracy_h48_acc498/reports/thesis_report.md
+/home/ultimatebrok/Downloads/thesis/results/best_accuracy_h48_acc498/reports/model_evaluation.md
+/home/ultimatebrok/Downloads/thesis/results/best_backtest_h24_sharpe019/backtest/backtest_chart.html
+/home/ultimatebrok/Downloads/thesis/results/best_backtest_h24_sharpe019/reports/thesis_report.md
+/home/ultimatebrok/Downloads/thesis/results/best_backtest_h24_sharpe019/reports/model_evaluation.md
