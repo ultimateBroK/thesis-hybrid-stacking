@@ -309,11 +309,6 @@ def load_config(config_path: str | Path = "config.toml") -> Config:
     with open(config_path, "rb") as f:
         raw: dict[str, Any] = tomllib.load(f)
 
-    legacy_mt = raw.pop("multi_timeframe", None)
-    if legacy_mt is not None:
-        features = raw.setdefault("features", {})
-        features.setdefault("multi_timeframe", legacy_mt)
-
     unknown_sections = sorted(set(raw) - set(_SECTION_MAP))
     if unknown_sections:
         logger.warning(

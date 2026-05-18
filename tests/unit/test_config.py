@@ -62,32 +62,6 @@ timeframe_typo = "1H"
 
 
 @pytest.mark.unit
-def test_legacy_top_level_multi_timeframe_is_migrated_without_warning(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Old session snapshots used top-level [multi_timeframe]; keep them readable."""
-    config_path = tmp_path / "legacy_config.toml"
-    config_path.write_text(
-        """
-[features]
-rsi_period = 14
-
-[multi_timeframe]
-atr_short_period = 7
-return_lookbacks = [1, 2]
-""".strip(),
-        encoding="utf-8",
-    )
-
-    with caplog.at_level("WARNING", logger="thesis.config"):
-        cfg = load_config(config_path)
-
-    assert cfg.features.multi_timeframe.atr_short_period == 7
-    assert cfg.features.multi_timeframe.return_lookbacks == [1, 2]
-    assert "Ignoring unknown config section" not in caplog.text
-
-
-@pytest.mark.unit
 class TestCacheHash:
     """Stage cache fingerprints."""
 

@@ -30,6 +30,14 @@ def _read_ohlcv_bars(config: Config) -> pl.DataFrame:
         return pl.read_parquet(ohlcv_path)
 
 
+def _require_model_features(df: pl.DataFrame, config: Config) -> None:
+    """Fail if configured model features are missing after feature creation."""
+    required = set(get_static_feature_cols(config))
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(f"Missing configured model features: {missing}")
+
+
 def _select_feature_output(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Keep registered feature, helper, and label-input columns only."""
     if "return_1h" in df.columns and "log_returns" not in df.columns:
@@ -141,6 +149,7 @@ def build_features(config: Config) -> None:
     _validate_ohlcv_input(df, config)
 
     df = create_model_features(df, config)
+    _require_model_features(df, config)
     df = _select_feature_output(df, config)
     model_cols = sorted(
         c for c in df.columns if c in set(get_static_feature_cols(config))

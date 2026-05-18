@@ -28,8 +28,6 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
     ]
 )
 
-_EXCLUDE_COLS = EXCLUDE_COLS  # back-compat alias
-
 # Hourly bars per year (24h × 5d × 52w)
 H1_BARS_PER_YEAR: int = 24 * 5 * 52
 
@@ -46,7 +44,7 @@ CHART_COLORS: dict[str, str] = {
     "flat": "#6B7280",
 }
 
-EXCLUDED_FEATURE_COLS = EXCLUDE_COLS  # alias for chart modules
+EXCLUDED_FEATURE_COLS = EXCLUDE_COLS
 
 
 def timeframe_to_ms(timeframe: str) -> int:

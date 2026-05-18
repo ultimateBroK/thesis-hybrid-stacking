@@ -21,28 +21,16 @@ from thesis.dataset.indicators import (
     add_adx,
     add_atr,
     add_atr_percentile,
-    add_atr_ratio,
-    add_bollinger_pctb,
-    add_calendar,
     add_ema_crossover,
     add_ema_slope,
     add_high_low_range,
-    add_lagged_features,
     add_log_returns,
     add_macd,
-    add_pivot_position,
-    add_price_action,
-    add_price_dist_ratio,
     add_regime,
     add_rsi,
     add_session_dummies,
-    add_session_range,
-    add_sma_ratio,
-    add_stochastic,
-    add_volume_momentum,
     add_volume_zscore,
     add_vwap,
-    add_williams_r,
 )
 from thesis.shared.config import Config
 from thesis.shared.constants import CORE_STATIC_FEATURES, EXCLUDE_COLS
@@ -303,31 +291,6 @@ def test_macd_histogram_only(sample_config: Config) -> None:
 
 @pytest.mark.unit
 @pytest.mark.features
-def test_atr_ratio_positive(sample_config: Config) -> None:
-    """Test atr_ratio > 0 (ratio of short to long ATR)."""
-    df = create_synthetic_ohlcv(n_rows=200)
-    df = add_atr(df, sample_config)
-    result = add_atr_ratio(df, sample_config)
-
-    assert "atr_ratio" in result.columns
-    values = result["atr_ratio"].drop_nulls().to_numpy()
-    assert len(values) > 0
-    assert np.all(values > 0)
-
-
-@pytest.mark.unit
-@pytest.mark.features
-def test_price_dist_ratio_exists(sample_config: Config) -> None:
-    """Test price_dist_ratio is computed."""
-    df = create_synthetic_ohlcv(n_rows=200)
-    df = add_atr(df, sample_config)
-    result = add_price_dist_ratio(df, sample_config)
-
-    assert "price_dist_ratio" in result.columns
-
-
-@pytest.mark.unit
-@pytest.mark.features
 def test_atr_percentile_bounded(sample_config: Config) -> None:
     """Test atr_percentile is within [0, 1]."""
     df = create_synthetic_ohlcv(n_rows=200)
@@ -339,41 +302,6 @@ def test_atr_percentile_bounded(sample_config: Config) -> None:
     assert len(values) > 0
     assert np.all(values >= 0.0)
     assert np.all(values <= 1.0)
-
-
-# ---------------------------------------------------------------------------
-# Pivot position tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.features
-def test_pivot_position_bounded(sample_config: Config) -> None:
-    """Test pivot_position is clipped to [0, 1]."""
-    df = create_synthetic_ohlcv(n_rows=200)
-    result = add_pivot_position(df)
-
-    assert "pivot_position" in result.columns
-    values = result["pivot_position"].drop_nulls().to_numpy()
-    assert len(values) > 0
-    assert np.all(values >= 0.0)
-    assert np.all(values <= 1.0)
-
-
-@pytest.mark.unit
-@pytest.mark.features
-def test_pivot_position_no_lookahead(sample_config: Config) -> None:
-    """Test that pivot uses previous day's levels (shifted by 1)."""
-    df = create_synthetic_ohlcv(n_rows=200)
-    result = add_pivot_position(df)
-
-    # First few rows should have null pivots (no previous day data)
-    # The exact count depends on how trading day aligns with calendar day
-    first_few = result.head(24)
-    # At least some of the first day's rows should be null
-    assert first_few["pivot_position"].null_count() > 0, (
-        "First trading day should have null pivots"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -434,18 +362,13 @@ def test_all_features_together(sample_config: Config) -> None:
     """Test that all indicators can be applied together producing core features."""
     df = create_synthetic_ohlcv(n_rows=200)
 
-    # Apply all feature functions in order
     df = add_rsi(df, sample_config)
     df = add_atr(df, sample_config)
     df = add_macd(df, sample_config)
-    df = add_atr_ratio(df, sample_config)
-    df = add_price_dist_ratio(df, sample_config)
     df = add_vwap(df)
-    df = add_pivot_position(df)
     df = add_session_dummies(df)
     df = add_atr_percentile(df, sample_config)
 
-    # Fill nulls like the main function does
     df = df.fill_null(strategy="forward").fill_null(0.0)
 
     expected_features = [
@@ -454,9 +377,6 @@ def test_all_features_together(sample_config: Config) -> None:
         "atr_pct_close",
         "macd_hist",
         "macd_hist_atr",
-        "atr_ratio",
-        "price_dist_ratio",
-        "pivot_position",
         "vwap",
         "atr_percentile",
         "sess_asia",
@@ -468,7 +388,6 @@ def test_all_features_together(sample_config: Config) -> None:
     for col in expected_features:
         assert col in df.columns, f"Missing feature column: {col}"
 
-    # Check no nulls remain after filling
     for col in expected_features:
         null_count = df[col].null_count()
         assert null_count == 0, f"Column {col} has {null_count} nulls"
