@@ -8,35 +8,7 @@ from pathlib import Path
 
 import polars as pl
 
-from thesis.dataset.indicators import (
-    add_adx,
-    add_atr,
-    add_atr_percentile,
-    add_atr_ratio,
-    add_bollinger_pctb,
-    add_calendar,
-    add_ema_crossover,
-    add_ema_slope,
-    add_high_low_range,
-    add_lagged_features,
-    add_log_returns,
-    add_macd,
-    add_pivot_position,
-    add_price_action,
-    add_price_dist_ratio,
-    add_regime,
-    add_rsi,
-    add_session_dummies,
-    add_session_range,
-    add_sma_ratio,
-    add_stochastic,
-    add_trend_regime,
-    add_volatility_regime,
-    add_volume_momentum,
-    add_volume_zscore,
-    add_vwap,
-    add_williams_r,
-)
+from thesis.dataset.feature_blocks import create_model_features
 from thesis.shared.config import Config
 from thesis.shared.constants import (
     build_feature_output_cols,
@@ -48,100 +20,37 @@ from thesis.shared.utils import console
 logger = logging.getLogger("thesis.dataset.build_features")
 
 
-# -- public --
-
-
-def build_features(config: Config) -> None:
-    """Load OHLCV -> chain indicators -> validate -> save parquet + feature list.
-
-    CRITICAL: indicator order matters. ATR must come first (many features divide by it).
-    """
+def _read_ohlcv_bars(config: Config) -> pl.DataFrame:
+    """Load Stage 1 OHLCV+ bars."""
     ohlcv_path = Path(config.paths.ohlcv)
     if not ohlcv_path.exists():
         raise FileNotFoundError(f"OHLCV not found: {ohlcv_path}")
-
     logger.info("Loading OHLCV: %s", ohlcv_path)
     with console.status(f"Loading OHLCV {ohlcv_path}"):
-        df = pl.read_parquet(ohlcv_path)
-    logger.info("Input bars: %d", len(df))
-    _validate_ohlcv_input(df, config)
+        return pl.read_parquet(ohlcv_path)
 
-    # ATR first -- many features divide by it
-    df = add_atr(df, config)
 
-    # -- trend --
-    df = add_adx(df, config)
-    df = add_ema_slope(df, config)
-    df = add_ema_crossover(df, config)
-    df = add_sma_ratio(df, config)
-
-    # -- momentum --
-    df = add_rsi(df, config)
-    df = add_macd(df, config)
-    df = add_stochastic(df, config)
-    df = add_williams_r(df, config)
-
-    # -- volatility --
-    df = add_atr_ratio(df, config)
-    df = add_atr_percentile(df, config)
-    df = add_high_low_range(df, config)
-    df = add_bollinger_pctb(df, config)
-
-    # -- mean-reversion / position --
-    df = add_price_dist_ratio(df, config)
-    df = add_pivot_position(df)
-    df = add_vwap(df)
-
-    # -- price action --
-    df = add_price_action(df, config)
-    df = add_session_range(df, config)
-
-    # -- returns --
-    df = add_log_returns(df, config)
-
-    # -- volume / interaction --
-    df = add_volume_zscore(df, config)
-    df = add_volume_momentum(df, config)
-
-    # -- session / calendar --
-    df = add_session_dummies(df)
-    df = add_calendar(df, config)
-
-    # -- lagged (temporal memory) -- MUST be after all indicators above --
-    df = add_lagged_features(df, config)
-
-    # -- regime -- config-gated --
-    if config.features.enable_regime_features:
-        df = add_volatility_regime(df, config)
-        df = add_trend_regime(df, config)
-        df = add_regime(df, config)
-
-    # backward compat: return_1h -> log_returns
+def _select_feature_output(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Keep registered feature, helper, and label-input columns only."""
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
-
-    # keep only registered feature columns
     desired = build_feature_output_cols(config)
     existing = [c for c in desired if c in df.columns]
-    df = df.select(existing)
-    model_cols = sorted(
-        c for c in df.columns if c in set(get_static_feature_cols(config))
-    )
-    df = _drop_warmup_rows(df, model_cols)
-    _validate_feature_quality(df, config)
+    return df.select(existing)
 
+
+def _write_feature_artifacts(
+    df: pl.DataFrame, config: Config, model_cols: list[str]
+) -> None:
+    """Save features parquet and model-facing feature list."""
     out_path = Path(config.paths.features)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_path)
-
     _save_feature_list(out_path, model_cols)
     logger.info(
         "Features saved: %s (%d columns, %d rows)", out_path, len(df.columns), len(df)
     )
     logger.info("Feature columns (%d): %s", len(model_cols), model_cols)
-
-
-# -- validation --
 
 
 def _validate_ohlcv_input(df: pl.DataFrame, config: Config) -> None:
@@ -223,3 +132,20 @@ def _save_feature_list(features_path: Path, feature_cols: list[str]) -> None:
     list_path = features_path.with_suffix(".feature_list.json")
     with open(list_path, "w") as f:
         json.dump(feature_cols, f, indent=2)
+
+
+def build_features(config: Config) -> None:
+    """Stage 2 feature orchestration: read -> create -> clean -> write."""
+    df = _read_ohlcv_bars(config)
+    logger.info("Input bars: %d", len(df))
+    _validate_ohlcv_input(df, config)
+
+    df = create_model_features(df, config)
+    df = _select_feature_output(df, config)
+    model_cols = sorted(
+        c for c in df.columns if c in set(get_static_feature_cols(config))
+    )
+    df = _drop_warmup_rows(df, model_cols)
+    _validate_feature_quality(df, config)
+
+    _write_feature_artifacts(df, config, model_cols)

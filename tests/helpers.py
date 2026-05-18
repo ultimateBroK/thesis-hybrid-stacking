@@ -66,7 +66,10 @@ def create_synthetic_ohlcv(
     opens = closes * (1 + np.random.normal(0, 0.0005, n_rows))
     highs = np.maximum(opens, closes) * (1 + np.abs(np.random.normal(0, 0.001, n_rows)))
     lows = np.minimum(opens, closes) * (1 - np.abs(np.random.normal(0, 0.001, n_rows)))
-    volumes = np.random.randint(1000, 10000, n_rows).astype(float)
+    bid_volumes = np.random.randint(500, 5000, n_rows).astype(float)
+    ask_volumes = np.random.randint(500, 5000, n_rows).astype(float)
+    volumes = bid_volumes + ask_volumes
+    avg_spreads = np.random.uniform(0.01, 0.08, n_rows)
 
     return pl.DataFrame(
         {
@@ -76,6 +79,13 @@ def create_synthetic_ohlcv(
             "low": lows,
             "close": closes,
             "volume": volumes,
+            "tick_count": np.random.randint(50, 500, n_rows).astype(float),
+            "avg_spread": avg_spreads,
+            "bid_volume": bid_volumes,
+            "ask_volume": ask_volumes,
+            "volume_imbalance": (bid_volumes - ask_volumes)
+            / (bid_volumes + ask_volumes + 1e-10),
+            "spread_pct_close": avg_spreads / closes,
         }
     )
 
@@ -128,6 +138,7 @@ def create_synthetic_features(
         "atr_pct_close": atr_vals / df["close"].to_numpy(),
         "atr_ratio": rng.uniform(0.5, 1.5, n_rows),
         "atr_percentile": rng.uniform(0, 1, n_rows),
+        "close_vs_vwap_atr": rng.normal(0, 0.5, n_rows),
         "ema_slope_20": rng.normal(0, 0.001, n_rows),
         "regime_strength": rng.uniform(-1, 1, n_rows),
         "ema34_vs_ema89": rng.normal(0, 0.01, n_rows),
@@ -140,6 +151,9 @@ def create_synthetic_features(
         "lower_wick_ratio": rng.uniform(0, 0.3, n_rows),
         "high_low_range_20": rng.uniform(0.005, 0.03, n_rows),
         "volume_zscore_20": rng.normal(0, 1, n_rows),
+        "tick_count_zscore_20": rng.normal(0, 1, n_rows),
+        "volume_imbalance": rng.uniform(-1, 1, n_rows),
+        "spread_pct_close": rng.uniform(0.000001, 0.0001, n_rows),
         "vwap": df["close"].to_numpy() + rng.normal(0, 0.2, n_rows),
         "sess_asia": rng.integers(0, 2, n_rows).astype(float),
         "sess_london": rng.integers(0, 2, n_rows).astype(float),

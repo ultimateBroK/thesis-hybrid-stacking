@@ -21,6 +21,8 @@ EXCLUDE_COLS: frozenset[str] = frozenset(
         "volume",
         "avg_spread",
         "tick_count",
+        "bid_volume",
+        "ask_volume",
         "atr_14",
         "log_returns",
     ]
@@ -95,47 +97,30 @@ CALIB_MAX_ITER: int = 100  # LBFGS max iterations
 
 # Default LightGBM tabular features — grouped by category
 CORE_STATIC_FEATURES: tuple[str, ...] = (
-    # ── trend ──
-    "ema34_vs_ema89",
-    "close_vs_ema_34",
-    "close_sma50_ratio",
-    "ema_slope_20",
-    "adx_14",
-    # ── momentum ──
-    "rsi_14",
-    "macd_hist_atr",
-    "stoch_k",
-    "williams_r",
-    # ── volatility ──
-    "atr_pct_close",
-    "atr_ratio",
-    "atr_percentile",
-    "high_low_range_20",
-    "bb_pctb",
-    # ── mean-reversion / position ──
-    "price_dist_ratio",
-    "price_position_20",
-    "pivot_position",
-    "vwap",
-    # ── price action ──
-    "candle_body_ratio",
-    "asia_range_atr",
-    # ── returns ──
+    # Momentum
     "return_1h",
     "return_4h",
-    # ── volume / interaction ──
-    "vol_rsi_interaction",
-    # ── lagged (temporal memory) ──
-    "rsi_lag1",
-    "adx_lag1",
-    "ema_slope_lag1",
-    "return_1h_lag1",
-    # ── session / calendar ──
-    "sess_asia",
+    "rsi_14",
+    "macd_hist_atr",
+    # Trend
+    "ema34_vs_ema89",
+    "close_vs_ema_34",
+    "adx_14",
+    # Volatility
+    "atr_pct_close",
+    "atr_percentile",
+    "high_low_range_20",
+    # Position
+    "price_position_20",
+    "close_vs_vwap_atr",
+    # Time/session
+    "day_of_week",
     "sess_london",
     "sess_ny_am",
-    "sess_ny_pm",
-    "day_of_week",
+    # Tick-derived
+    "spread_pct_close",
+    "tick_count_zscore_20",
+    "volume_imbalance",
 )
 
 # ---------------------------------------------------------------------------
@@ -152,7 +137,12 @@ CORE_STATIC_FEATURES: tuple[str, ...] = (
 OHLCV_RAW_COLS: list[str] = ["timestamp", "open", "high", "low", "close", "volume"]
 """Core OHLCV columns present in the raw data source."""
 
-OHLCV_OPTIONAL_COLS: list[str] = ["tick_count", "avg_spread"]
+OHLCV_OPTIONAL_COLS: list[str] = [
+    "tick_count",
+    "avg_spread",
+    "bid_volume",
+    "ask_volume",
+]
 """Optional columns that may accompany OHLCV data."""
 
 LABEL_META_COLS: list[str] = [

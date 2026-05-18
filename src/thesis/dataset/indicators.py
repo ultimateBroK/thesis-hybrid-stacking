@@ -232,6 +232,16 @@ def add_vwap(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def add_close_vs_vwap(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """ATR-normalized close distance from VWAP."""
+    atr = pl.col(f"atr_{config.features.atr_period}")
+    return df.with_columns(
+        ((pl.col("close") - pl.col("vwap")) / (atr + FEATURE_EPS)).alias(
+            "close_vs_vwap_atr"
+        )
+    )
+
+
 def add_pivot_position(df: pl.DataFrame) -> pl.DataFrame:
     """Position within prior day R1-S1 range, clipped [0,1]."""
     td = _ny_trading_day(df)
@@ -310,6 +320,18 @@ def add_volume_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     return df.with_columns(
         ((pl.col("volume") - vol_mean) / (vol_std + FEATURE_EPS)).alias(
             "volume_zscore_20"
+        )
+    )
+
+
+def add_tick_count_zscore(df: pl.DataFrame, config: Config) -> pl.DataFrame:
+    """Rolling z-score of bar tick counts."""
+    n = config.features.multi_timeframe.volume_zscore_period
+    tick_mean = pl.col("tick_count").rolling_mean(window_size=n)
+    tick_std = pl.col("tick_count").rolling_std(window_size=n)
+    return df.with_columns(
+        ((pl.col("tick_count") - tick_mean) / (tick_std + STD_EPS)).alias(
+            "tick_count_zscore_20"
         )
     )
 

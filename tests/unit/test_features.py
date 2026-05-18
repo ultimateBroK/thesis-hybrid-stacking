@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from helpers import create_synthetic_ohlcv
 
+from thesis.dataset.feature_blocks import create_model_features
 from thesis.dataset.indicators import (
     add_adx,
     add_atr,
@@ -61,30 +62,7 @@ def sample_config() -> Config:
 
 def _build_all_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
     """Apply the full feature pipeline to a DataFrame (mirrors generate_features)."""
-    df = add_atr(df, config)
-    df = add_rsi(df, config)
-    df = add_adx(df, config)
-    df = add_atr_ratio(df, config)
-    df = add_atr_percentile(df, config)
-    df = add_ema_slope(df, config)
-    df = add_ema_crossover(df, config)
-    df = add_price_action(df, config)
-    df = add_price_dist_ratio(df, config)
-    df = add_vwap(df)
-    df = add_pivot_position(df)
-    df = add_session_dummies(df)
-    df = add_volume_zscore(df, config)
-    df = add_log_returns(df, config)
-    df = add_high_low_range(df, config)
-    df = add_macd(df, config)
-    df = add_bollinger_pctb(df, config)
-    df = add_stochastic(df, config)
-    df = add_williams_r(df, config)
-    df = add_sma_ratio(df, config)
-    df = add_calendar(df, config)
-    df = add_session_range(df, config)
-    df = add_volume_momentum(df, config)
-    df = add_lagged_features(df, config)
+    df = create_model_features(df, config)
     if "return_1h" in df.columns and "log_returns" not in df.columns:
         df = df.with_columns(pl.col("return_1h").alias("log_returns"))
     # NaN → Polars null, then forward-fill (mirrors production pipeline)

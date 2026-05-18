@@ -342,8 +342,21 @@ def _aggregate_file(file_path: Path, group_every: str) -> pl.DataFrame:
             pl.col("microprice").min().alias("low"),
             pl.col("microprice").last().alias("close"),
             pl.col("volume").sum().alias("volume"),
+            pl.col("bid_volume").sum().alias("bid_volume"),
+            pl.col("ask_volume").sum().alias("ask_volume"),
             pl.col("microprice").count().alias("tick_count"),
             (pl.col("ask") - pl.col("bid")).mean().alias("avg_spread"),
+        )
+        .with_columns(
+            [
+                (
+                    (pl.col("bid_volume") - pl.col("ask_volume"))
+                    / (pl.col("bid_volume") + pl.col("ask_volume") + FEATURE_EPS)
+                ).alias("volume_imbalance"),
+                (pl.col("avg_spread") / (pl.col("close") + FEATURE_EPS)).alias(
+                    "spread_pct_close"
+                ),
+            ]
         )
         .drop_nulls()
     )
