@@ -110,14 +110,14 @@ def _run_dataset_stage(config: Config) -> None:
 
 
 def _run_reporting_stage(config: Config) -> None:
-    """Backtest simulation → report generation."""
-    # Run backtest and save results JSON
-    bt_path = Path(config.paths.backtest_results)
-    if not bt_path.exists() or config.workflow.force_rerun:
-        logger.info("Running backtest simulation")
-        run_backtest_demo(config)
-    else:
-        logger.info("Backtest results cached: %s", bt_path)
+    """Report generation + optional application demo."""
+    if config.workflow.run_backtest_demo:
+        bt_path = Path(config.paths.backtest_results)
+        if not bt_path.exists() or config.workflow.force_rerun:
+            logger.info("Running backtest demo")
+            run_backtest_demo(config)
+        else:
+            logger.info("Backtest results cached: %s", bt_path)
     generate_report(config)
 
 
@@ -132,7 +132,7 @@ def run_pipeline(config: Config) -> None:
     # Stage 3: Walk-forward model training & evaluation.
     _run_stage(3, config, "run_models", config.paths.model, train_walk_forward)
 
-    # Stage 4: Backtest + report generation.
+    # Stage 4: Report generation + optional application demo.
     _run_stage(4, config, "run_reporting", None, _run_reporting_stage)
 
     console.print()

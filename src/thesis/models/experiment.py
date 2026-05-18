@@ -10,7 +10,7 @@ import numpy as np
 import polars as pl
 
 from thesis.models.artifacts import proba_columns
-from thesis.models.baselines import compute_metrics
+from thesis.models.baselines import compute_metrics, majority_class
 from thesis.models.estimators import (
     CLASS_ORDER,
     build_base_models,
@@ -55,6 +55,8 @@ class WindowResult:
     final_lightgbm_model: Any | None
     train_rows: int
     test_rows: int
+    test_timestamps: np.ndarray
+    test_y: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -136,9 +138,15 @@ def predict_models_for_window(
 def evaluate_window_predictions(
     predictions: list[ModelPrediction],
     y_true: np.ndarray,
+    train_y: np.ndarray,
 ) -> dict[str, dict[str, float]]:
-    """Compute core classification metrics for each model."""
-    return {p.model_name: compute_metrics(y_true, p.pred_label) for p in predictions}
+    """Compute core classification metrics for each model plus majority baseline."""
+    metrics = {p.model_name: compute_metrics(y_true, p.pred_label) for p in predictions}
+    maj_pred, maj_label = majority_class(train_y)
+    baseline_pred = np.full(len(y_true), maj_label, dtype=np.int32)
+    metrics["majority_baseline"] = compute_metrics(y_true, baseline_pred)
+    metrics["majority_baseline"]["majority_class_label"] = maj_label
+    return metrics
 
 
 def run_one_window(
@@ -163,39 +171,60 @@ def run_one_window(
     return WindowResult(
         window_index=window_index,
         predictions=predictions,
-        metrics=evaluate_window_predictions(predictions, data.test_y),
+        metrics=evaluate_window_predictions(predictions, data.test_y, data.train_y),
         final_model=models["hybrid_stacking"],
         final_lightgbm_model=models.get("lightgbm"),
         train_rows=len(data.train_y),
         test_rows=len(data.test_y),
+        test_timestamps=data.test_timestamps,
+        test_y=data.test_y,
     )
 
 
 def _combine_model_metrics(results: list[WindowResult]) -> dict[str, dict[str, Any]]:
+    """Compute metrics on full OOF predictions instead of per-window mean."""
     model_names = {p.model_name for r in results for p in r.predictions}
-    return {
-        name: {
-            metric: float(np.mean([r.metrics[name][metric] for r in results]))
-            for metric in ("accuracy", "macro_f1", "directional_accuracy")
-        }
-        for name in sorted(model_names)
-    }
+    model_names.add("majority_baseline")
+    comparison: dict[str, dict[str, Any]] = {}
+    for name in sorted(model_names):
+        all_true: list[np.ndarray] = []
+        all_pred: list[np.ndarray] = []
+        for r in results:
+            if name == "majority_baseline":
+                maj_label = r.metrics.get("majority_baseline", {}).get(
+                    "majority_class_label", 0
+                )
+                all_true.append(r.test_y)
+                all_pred.append(np.full(len(r.test_y), maj_label, dtype=np.int32))
+            else:
+                pred = next((p for p in r.predictions if p.model_name == name), None)
+                if pred is None:
+                    continue
+                all_true.append(r.test_y)
+                all_pred.append(pred.pred_label)
+        if all_true:
+            y_true = np.concatenate(all_true)
+            y_pred = np.concatenate(all_pred)
+            m = compute_metrics(y_true, y_pred)
+            comparison[name] = {
+                "accuracy": m["accuracy"],
+                "macro_f1": m["macro_f1"],
+                "directional_accuracy": m["directional_accuracy"],
+            }
+    return comparison
 
 
 def _build_predictions_frame(
-    dataset: pl.DataFrame,
-    windows: list[WalkForwardWindow],
     results: list[WindowResult],
 ) -> pl.DataFrame:
     chunks: list[pl.DataFrame] = []
-    for window, result in zip(windows, results):
-        test_df = dataset.slice(window.test_start_idx, window.test_len)
+    for result in results:
         pred = next(p for p in result.predictions if p.model_name == "hybrid_stacking")
         chunks.append(
             pl.DataFrame(
                 {
-                    "timestamp": test_df["timestamp"],
-                    "true_label": test_df["label"].to_numpy().astype(np.int32),
+                    "timestamp": result.test_timestamps,
+                    "true_label": result.test_y,
                     "pred_label": pred.pred_label,
                     **proba_columns(pred.pred_proba, CLASS_ORDER),
                 }
@@ -262,7 +291,7 @@ def run_model_experiment(
         feature_cols=feature_cols,
         window_results=results,
         model_comparison=comparison,
-        oof_predictions=_build_predictions_frame(dataset, windows, results),
+        oof_predictions=_build_predictions_frame(results),
         final_model=results[-1].final_model,
         final_lightgbm_model=results[-1].final_lightgbm_model,
         training_history=_build_training_history(results, feature_cols, config),

@@ -10,7 +10,7 @@ import polars as pl
 from sklearn.metrics import precision_recall_fscore_support
 
 from thesis.models.artifacts import proba_columns
-from thesis.models.estimators import CLASS_ORDER, align_proba
+from thesis.models.estimators import CLASS_ORDER
 from thesis.reporting.metrics import accuracy, directional_accuracy, macro_f1
 
 __all__ = [
@@ -106,6 +106,3 @@ def model_comparison_table(metrics: dict[str, dict[str, Any]]) -> pl.DataFrame:
         for name, values in metrics.items()
     ]
     return pl.DataFrame(rows).sort("model") if rows else pl.DataFrame()
-
-
-_align_proba = align_proba

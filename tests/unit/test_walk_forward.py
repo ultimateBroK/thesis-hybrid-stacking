@@ -6,8 +6,8 @@ import numpy as np
 import polars as pl
 import pytest
 
+from thesis.models.estimators import align_proba
 from thesis.models.evaluate import (
-    _align_proba,
     classification_metrics,
     confusion_matrix,
     model_comparison_table,
@@ -15,14 +15,14 @@ from thesis.models.evaluate import (
     per_class_metrics,
     proba_columns,
 )
-from thesis.models.train import select_static_cols
+from thesis.models.train import choose_model_features
 from thesis.models.validation import WalkForwardWindow, generate_windows
 from thesis.shared.config import Config
 
 
 @pytest.mark.unit
-class TestSelectStaticFeatureCols:
-    """Feature whitelist selection tests."""
+class TestChooseModelFeatures:
+    """Feature selection from config whitelist tests."""
 
     def test_uses_config_whitelist(self) -> None:
         """Configured static feature columns win when present."""
@@ -30,25 +30,24 @@ class TestSelectStaticFeatureCols:
         config.features.static_feature_cols = ["rsi_14", "adx_14"]
         df = pl.DataFrame({"rsi_14": [1.0], "adx_14": [2.0], "extra": [3.0]})
 
-        assert select_static_cols(config, df, ["extra"]) == ["rsi_14", "adx_14"]
+        assert choose_model_features(df, config) == ["rsi_14", "adx_14"]
 
-    def test_fallback_when_config_cols_missing(self) -> None:
-        """Candidate columns are fallback when config columns are absent."""
+    def test_raises_when_no_configured_features_found(self) -> None:
+        """Raises ValueError when no configured features exist in dataset."""
         config = Config()
         config.features.static_feature_cols = ["nonexistent"]
         df = pl.DataFrame({"a": [1.0], "b": [2.0]})
 
-        assert select_static_cols(config, df, ["a", "b"]) == ["a", "b"]
+        with pytest.raises(ValueError, match="No configured model features"):
+            choose_model_features(df, config)
 
-    def test_fallback_filters_to_available(self) -> None:
-        """Fallback keeps only columns present in dataset."""
+    def test_filters_to_available_columns(self) -> None:
+        """Only columns present in both config and dataset are kept."""
         config = Config()
-        config.features.static_feature_cols = ["nonexistent"]
-        df = pl.DataFrame({"a": [1.0], "c": [3.0]})
+        config.features.static_feature_cols = ["a", "b", "nonexistent"]
+        df = pl.DataFrame({"a": [1.0], "c": [3.0], "b": [2.0]})
 
-        result = select_static_cols(config, df, ["a", "b", "c"])
-
-        assert result == ["a", "c"]
+        assert choose_model_features(df, config) == ["a", "b"]
 
 
 @pytest.mark.unit
@@ -118,7 +117,7 @@ class TestProbabilityHelpers:
         """Estimator probability columns align to [-1, 0, 1]."""
         proba = np.array([[0.1, 0.2, 0.7], [0.3, 0.4, 0.3]])
 
-        result = _align_proba(proba, [0, 1, -1])
+        result = align_proba(proba, [0, 1, -1])
 
         assert result.shape == (2, 3)
         np.testing.assert_allclose(result[:, 0], [0.7, 0.3])
@@ -128,7 +127,7 @@ class TestProbabilityHelpers:
         """Missing class probabilities become zero-filled columns."""
         proba = np.array([[0.6, 0.4], [0.3, 0.7]])
 
-        result = _align_proba(proba, [0, 1])
+        result = align_proba(proba, [0, 1])
 
         assert result.shape == (2, 3)
         np.testing.assert_allclose(result[:, 0], [0.0, 0.0])

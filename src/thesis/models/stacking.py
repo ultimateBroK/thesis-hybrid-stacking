@@ -8,19 +8,11 @@ import numpy as np
 
 from thesis.models.estimators import (
     CLASS_ORDER,
-    align_proba,
-    compute_class_weights,
     fit_base_models,
     predict_base_probabilities,
     predict_proba_aligned,
-    wrap_feature_matrix,
 )
 from thesis.shared.config import Config
-
-_compute_class_weights = compute_class_weights
-_aligned_proba = predict_proba_aligned
-_align_proba = align_proba
-_wrap_np = wrap_feature_matrix
 
 
 def chronological_meta_split(

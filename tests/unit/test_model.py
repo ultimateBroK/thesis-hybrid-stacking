@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from thesis.models.stacking import _compute_class_weights
+from thesis.models.estimators import compute_class_weights
 from thesis.shared.config import Config
 
 
@@ -55,11 +55,11 @@ def synthetic_classification_data():
 
 @pytest.mark.unit
 @pytest.mark.models
-def test_compute_class_weights_returns_dict(synthetic_classification_data) -> None:
-    """Test _compute_class_weights returns dict with classes as keys."""
+def testcompute_class_weights_returns_dict(synthetic_classification_data) -> None:
+    """Test compute_class_weights returns dict with classes as keys."""
     X, y = synthetic_classification_data
 
-    weights = _compute_class_weights(y)
+    weights = compute_class_weights(y)
 
     assert isinstance(weights, dict)
     unique_classes = np.unique(y)
@@ -71,11 +71,11 @@ def test_compute_class_weights_returns_dict(synthetic_classification_data) -> No
 
 @pytest.mark.unit
 @pytest.mark.models
-def test_compute_class_weights_balanced(synthetic_classification_data) -> None:
+def testcompute_class_weights_balanced(synthetic_classification_data) -> None:
     """Test that class weights are approximately balanced."""
     X, y = synthetic_classification_data
 
-    weights = _compute_class_weights(y)
+    weights = compute_class_weights(y)
 
     class_counts = {cls: np.sum(y == cls) for cls in np.unique(y)}
     max_count = max(class_counts.values())
@@ -88,11 +88,11 @@ def test_compute_class_weights_balanced(synthetic_classification_data) -> None:
 
 @pytest.mark.unit
 @pytest.mark.models
-def test_compute_class_weights_single_class() -> None:
+def testcompute_class_weights_single_class() -> None:
     """Test class weights with single class."""
     y = np.ones(100)
 
-    weights = _compute_class_weights(y)
+    weights = compute_class_weights(y)
 
     assert isinstance(weights, dict)
     assert 1 in weights
@@ -105,7 +105,7 @@ def test_class_weights_with_imbalanced_data() -> None:
     """Test class weights with highly imbalanced data."""
     y = np.array([1] * 90 + [0] * 5 + [-1] * 5)
 
-    weights = _compute_class_weights(y)
+    weights = compute_class_weights(y)
 
     # Minority classes should have higher weights
     assert weights[0] > weights[1]
@@ -303,10 +303,10 @@ class TestWrapNp:
     def test_wraps_as_dataframe(self) -> None:
         import pandas as pd
 
-        from thesis.models.stacking import _wrap_np
+        from thesis.models.estimators import wrap_feature_matrix
 
         X = np.array([[1, 2], [3, 4]])
-        result = _wrap_np(X, ["a", "b"])
+        result = wrap_feature_matrix(X, ["a", "b"])
         assert isinstance(result, pd.DataFrame)
         assert list(result.columns) == ["a", "b"]
         assert result.shape == (2, 2)

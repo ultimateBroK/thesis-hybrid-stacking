@@ -179,6 +179,7 @@ class WorkflowConfig:
     run_dataset: bool = True
     run_models: bool = True
     run_reporting: bool = True
+    run_backtest_demo: bool = True
     cache_invalidation: str = "path"
     force_rerun: bool = False
     random_seed: int = 2024

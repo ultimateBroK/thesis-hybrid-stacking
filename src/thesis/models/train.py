@@ -26,7 +26,6 @@ __all__ = [
     "generate_windows",
     "load_model_dataset",
     "log_windows",
-    "select_static_cols",
     "train_walk_forward",
 ]
 
@@ -48,16 +47,6 @@ def choose_model_features(df: pl.DataFrame, config: Config) -> list[str]:
     if not features:
         raise ValueError("No configured model features found in ML dataset")
     return features
-
-
-def select_static_cols(
-    config: Config,
-    df: pl.DataFrame,
-    candidates: list[str],
-) -> list[str]:
-    """Compatibility wrapper for tests and old callers."""
-    selected = [c for c in config.features.static_feature_cols if c in df.columns]
-    return selected or [c for c in candidates if c in df.columns]
 
 
 def train_walk_forward(config: Config) -> None:

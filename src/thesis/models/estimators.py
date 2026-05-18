@@ -130,6 +130,19 @@ def build_base_models(config: Config) -> dict[str, Any]:
     }
 
 
+def fit_lightgbm(
+    model: Any,
+    X: np.ndarray,
+    y: np.ndarray,
+    feature_cols: list[str],
+) -> Any:
+    """Fit LightGBM with class weights and named feature matrix."""
+    return model.set_params(class_weight=compute_class_weights(y)).fit(
+        wrap_feature_matrix(X, feature_cols),
+        y,
+    )
+
+
 def fit_model(
     model: Any,
     X: np.ndarray,
@@ -141,11 +154,8 @@ def fit_model(
         from sklearn.dummy import DummyClassifier
 
         return DummyClassifier(strategy="most_frequent").fit(X, y)
-    if feature_cols is not None and model.__class__.__name__ == "LGBMClassifier":
-        return model.set_params(class_weight=compute_class_weights(y)).fit(
-            wrap_feature_matrix(X, feature_cols),
-            y,
-        )
+    if feature_cols and model.__class__.__name__ == "LGBMClassifier":
+        return fit_lightgbm(model, X, y, feature_cols)
     return model.fit(X, y)
 
 
