@@ -10,7 +10,6 @@ Artifact loading and data preparation live in thesis.visualization.
 
 from thesis.charts.backtest import build_equity_drawdown_chart
 from thesis.charts.data import (
-    _get_feature_cols,
     build_candlestick_chart,
     build_correlation_heatmap,
     build_feature_distribution_chart,
@@ -38,5 +37,4 @@ __all__ = [
     "build_feature_importance_chart",
     "build_model_comparison_chart",
     "build_equity_drawdown_chart",
-    "_get_feature_cols",
 ]
