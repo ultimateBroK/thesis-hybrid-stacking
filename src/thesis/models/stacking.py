@@ -71,7 +71,7 @@ class HybridStackingClassifier:
         base_X, meta_X, base_y, meta_y = chronological_meta_split(
             X,
             y,
-            self.config.model.stacking_meta_fraction,
+            self.config.model.stacking.meta_fraction,
         )
         self.base_models = fit_base_models(
             base_X,

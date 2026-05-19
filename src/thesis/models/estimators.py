@@ -89,9 +89,9 @@ def build_random_forest(config: Config) -> Any:
     from sklearn.ensemble import RandomForestClassifier
 
     return RandomForestClassifier(
-        n_estimators=config.model.random_forest_n_estimators,
-        max_depth=config.model.random_forest_max_depth,
-        min_samples_leaf=config.model.random_forest_min_samples_leaf,
+        n_estimators=config.model.random_forest.n_estimators,
+        max_depth=config.model.random_forest.max_depth,
+        min_samples_leaf=config.model.random_forest.min_samples_leaf,
         class_weight="balanced_subsample",
         random_state=config.workflow.random_seed,
         n_jobs=config.workflow.n_jobs,
@@ -102,7 +102,7 @@ def build_lightgbm(config: Config) -> Any:
     """Build LightGBM multiclass classifier."""
     import lightgbm as lgb
 
-    m = config.model
+    m = config.model.lightgbm
     return lgb.LGBMClassifier(
         num_leaves=m.num_leaves,
         max_depth=m.max_depth,

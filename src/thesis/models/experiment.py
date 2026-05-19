@@ -245,7 +245,7 @@ def _build_training_history(
         "validation_protocol": "walk_forward_with_chronological_meta_split",
         "base_models": ["logistic_regression", "random_forest", "lightgbm"],
         "meta_model": "logistic_regression",
-        "meta_fraction": config.model.stacking_meta_fraction,
+        "meta_fraction": config.model.stacking.meta_fraction,
         "n_features": len(feature_cols),
         "windows": len(results),
         "last_window_accuracy": results[-1].metrics["hybrid_stacking"]["accuracy"],

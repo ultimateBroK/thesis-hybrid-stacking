@@ -105,45 +105,66 @@ class FeaturesConfig:
 class LabelsConfig:
     """Triple-barrier label settings."""
 
-    atr_tp_multiplier: float = 2.0
-    atr_sl_multiplier: float = 2.0
+    atr_tp_multiplier: float = 2.5
+    atr_sl_multiplier: float = 2.5
     horizon_bars: int = 24
     num_classes: int = 3
     min_atr: float = 0.5
 
 
 @dataclass
-class LGBMConfig:
-    """Tabular model and stacking settings."""
+class LightGBMConfig:
+    """LightGBM hyperparameters."""
+
+    num_leaves: int = 31
+    max_depth: int = 6
+    learning_rate: float = 0.03
+    n_estimators: int = 800
+    min_child_samples: int = 40
+    subsample: float = 0.80
+    subsample_freq: int = 5
+    feature_fraction: float = 0.80
+    reg_alpha: float = 0.05
+    reg_lambda: float = 1.0
+    early_stopping_rounds: int = 30
+    lgbm_expanded_features: bool = False
+
+
+@dataclass
+class RandomForestConfig:
+    """Random Forest hyperparameters."""
+
+    n_estimators: int = 300
+    max_depth: int = 6
+    min_samples_leaf: int = 80
+
+
+@dataclass
+class StackingConfig:
+    """Stacking ensemble settings."""
+
+    base_models: list[str] = field(
+        default_factory=lambda: ["logistic_regression", "random_forest", "lightgbm"]
+    )
+    meta_model: str = "logistic_regression"
+    meta_fraction: float = 0.20
+    passthrough: bool = False
+    internal_folds: int = 0
+    internal_purge: int = 0
+    calibrate_base: bool = False
+    calibration_fraction: float = 0.0
+    prediction_confidence_threshold: float = 0.0
+
+
+@dataclass
+class ModelConfig:
+    """Model selection and training configuration."""
 
     architecture: str = "stacking"
     objective: str = "multiclass"
-    lgbm_expanded_features: bool = False
-    num_leaves: int = 15
-    max_depth: int = 4
-    learning_rate: float = 0.03
-    n_estimators: int = 300
-    min_child_samples: int = 80
-    subsample: float = 0.80
-    subsample_freq: int = 5
-    feature_fraction: float = 0.70
-    reg_alpha: float = 0.05
-    reg_lambda: float = 10.0
-    early_stopping_rounds: int = 30
-    stacking_base_models: list[str] = field(
-        default_factory=lambda: ["logistic_regression", "random_forest", "lightgbm"]
-    )
-    stacking_meta_model: str = "logistic_regression"
-    stacking_meta_fraction: float = 0.20
-    stacking_passthrough: bool = False
-    stacking_internal_folds: int = 0
-    stacking_internal_purge: int = 0
-    stacking_calibrate_base: bool = False
-    stacking_calibration_fraction: float = 0.0
-    prediction_confidence_threshold: float = 0.0
-    random_forest_n_estimators: int = 300
-    random_forest_max_depth: int = 6
-    random_forest_min_samples_leaf: int = 80
+    lightgbm: LightGBMConfig = field(default_factory=LightGBMConfig)
+    random_forest: RandomForestConfig = field(default_factory=RandomForestConfig)
+    stacking: StackingConfig = field(default_factory=StackingConfig)
 
 
 @dataclass
@@ -155,8 +176,8 @@ class BacktestConfig:
     spread_ticks: float = 35.0
     slippage_ticks: float = 5.0
     commission_per_lot: float = 10.0
-    atr_stop_multiplier: float = 2.0
-    atr_tp_multiplier: float = 2.0
+    atr_stop_multiplier: float = 2.5
+    atr_tp_multiplier: float = 2.5
     lots_per_trade: float = 0.02
     min_lots: float = 0.01
     max_lots: float = 0.5
@@ -224,7 +245,7 @@ class Config:
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
     labels: LabelsConfig = field(default_factory=LabelsConfig)
-    model: LGBMConfig = field(default_factory=LGBMConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     report_figures: ReportFiguresConfig = field(default_factory=ReportFiguresConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
@@ -237,7 +258,7 @@ _SECTION_MAP: dict[str, type] = {
     "validation": ValidationConfig,
     "features": FeaturesConfig,
     "labels": LabelsConfig,
-    "model": LGBMConfig,
+    "model": ModelConfig,
     "backtest": BacktestConfig,
     "report_figures": ReportFiguresConfig,
     "workflow": WorkflowConfig,
@@ -268,6 +289,25 @@ def _apply_section(
                 **_section_kwargs(
                     "features.multi_timeframe", MultiTimeframeConfig, mt_data
                 )
+            )
+        return
+
+    if section == "model":
+        lgbm_data = section_data.pop("lightgbm", None)
+        rf_data = section_data.pop("random_forest", None)
+        stacking_data = section_data.pop("stacking", None)
+        cfg.model = ModelConfig(**_section_kwargs(section, cls, section_data))
+        if lgbm_data is not None:
+            cfg.model.lightgbm = LightGBMConfig(
+                **_section_kwargs("model.lightgbm", LightGBMConfig, lgbm_data)
+            )
+        if rf_data is not None:
+            cfg.model.random_forest = RandomForestConfig(
+                **_section_kwargs("model.random_forest", RandomForestConfig, rf_data)
+            )
+        if stacking_data is not None:
+            cfg.model.stacking = StackingConfig(
+                **_section_kwargs("model.stacking", StackingConfig, stacking_data)
             )
         return
 
