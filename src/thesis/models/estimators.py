@@ -68,15 +68,17 @@ def build_logistic_regression(config: Config) -> Any:
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import RobustScaler
 
+    lr = config.model.logistic_regression
     return Pipeline(
         [
             ("scaler", RobustScaler()),
             (
                 "model",
                 LogisticRegression(
+                    C=lr.C,
                     class_weight="balanced",
-                    max_iter=1000,
-                    solver="lbfgs",
+                    max_iter=lr.max_iter,
+                    solver=lr.solver,
                     random_state=config.workflow.random_seed,
                 ),
             ),

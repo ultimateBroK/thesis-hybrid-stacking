@@ -43,11 +43,6 @@ def choose_model_features(df: pl.DataFrame, config: Config) -> list[str]:
 
 def train_walk_forward(config: Config) -> None:
     """Run fixed-feature walk-forward model experiment."""
-    if config.model.objective != "multiclass":
-        raise ValueError(
-            "Stage 3 is classification-only; set model.objective='multiclass'"
-        )
-
     dataset = load_model_dataset(config)
     feature_cols = choose_model_features(dataset, config)
     windows = build_walk_forward_windows(dataset, config)

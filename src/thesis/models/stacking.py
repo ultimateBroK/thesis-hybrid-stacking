@@ -46,10 +46,12 @@ def fit_meta_model(X: np.ndarray, y: np.ndarray, config: Config) -> Any:
         return DummyClassifier(strategy="most_frequent").fit(X, y)
     from sklearn.linear_model import LogisticRegression
 
+    meta = config.model.stacking_meta
     return LogisticRegression(
+        C=meta.C,
         class_weight="balanced",
-        max_iter=1000,
-        solver="lbfgs",
+        max_iter=meta.max_iter,
+        solver=meta.solver,
         random_state=config.workflow.random_seed,
     ).fit(X, y)
 

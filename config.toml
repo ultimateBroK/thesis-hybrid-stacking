@@ -18,27 +18,36 @@ atr_sl_multiplier = 2.5
 horizon_bars = 24
 
 # ── Model ────────────────────────────────────────────────────────────────────
-[model]
-architecture = "stacking"
-objective = "multiclass"
+# Architecture: Hybrid Stacking (LR + RF + LightGBM → meta LR)
 
-[model.lightgbm]
-num_leaves = 31
-max_depth = 6
-n_estimators = 800
-min_child_samples = 40
-feature_fraction = 0.80
-reg_lambda = 1.0
+[model.logistic_regression]
+C = 1.0
+max_iter = 1000
+solver = "lbfgs"
 
 [model.random_forest]
 n_estimators = 300
 max_depth = 6
 min_samples_leaf = 80
 
+[model.lightgbm]
+num_leaves = 31
+max_depth = 6
+learning_rate = 0.03
+n_estimators = 800
+min_child_samples = 40
+subsample = 0.80
+feature_fraction = 0.80
+reg_alpha = 0.05
+reg_lambda = 1.0
+
 [model.stacking]
-base_models = ["logistic_regression", "random_forest", "lightgbm"]
-meta_model = "logistic_regression"
 meta_fraction = 0.20
+
+[model.stacking_meta]
+C = 1.0
+max_iter = 1000
+solver = "lbfgs"
 
 # ── Backtesting ──────────────────────────────────────────────────────────────
 [backtest]

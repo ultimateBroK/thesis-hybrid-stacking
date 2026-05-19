@@ -35,12 +35,7 @@ MODEL_NAME_MAP = {
 
 def model_label(config: Config) -> str:
     """Return display label for configured model architecture."""
-    architecture = config.model.architecture
-    if architecture in ("static", "lgbm"):
-        return "LightGBM"
-    if architecture == "stacking":
-        return "Hybrid Stacking"
-    return f"{architecture.title()} Model"
+    return "Hybrid Stacking"
 
 
 def _fmt_pct(v: float) -> str:

@@ -140,31 +140,44 @@ class RandomForestConfig:
 
 
 @dataclass
+class LogisticRegressionConfig:
+    """Logistic Regression hyperparameters (base model)."""
+
+    C: float = 1.0
+    max_iter: int = 1000
+    solver: str = "lbfgs"
+
+
+@dataclass
 class StackingConfig:
     """Stacking ensemble settings."""
 
-    base_models: list[str] = field(
-        default_factory=lambda: ["logistic_regression", "random_forest", "lightgbm"]
-    )
-    meta_model: str = "logistic_regression"
     meta_fraction: float = 0.20
-    passthrough: bool = False
-    internal_folds: int = 0
-    internal_purge: int = 0
-    calibrate_base: bool = False
-    calibration_fraction: float = 0.0
-    prediction_confidence_threshold: float = 0.0
+
+
+@dataclass
+class StackingMetaConfig:
+    """Meta learner hyperparameters for stacking."""
+
+    C: float = 1.0
+    max_iter: int = 1000
+    solver: str = "lbfgs"
 
 
 @dataclass
 class ModelConfig:
-    """Model selection and training configuration."""
+    """Model training configuration.
 
-    architecture: str = "stacking"
-    objective: str = "multiclass"
+    Architecture: Hybrid Stacking (LR + RF + LightGBM → meta LR).
+    """
+
+    logistic_regression: LogisticRegressionConfig = field(
+        default_factory=LogisticRegressionConfig
+    )
     lightgbm: LightGBMConfig = field(default_factory=LightGBMConfig)
     random_forest: RandomForestConfig = field(default_factory=RandomForestConfig)
     stacking: StackingConfig = field(default_factory=StackingConfig)
+    stacking_meta: StackingMetaConfig = field(default_factory=StackingMetaConfig)
 
 
 @dataclass
@@ -293,10 +306,18 @@ def _apply_section(
         return
 
     if section == "model":
+        lr_data = section_data.pop("logistic_regression", None)
         lgbm_data = section_data.pop("lightgbm", None)
         rf_data = section_data.pop("random_forest", None)
         stacking_data = section_data.pop("stacking", None)
+        meta_data = section_data.pop("stacking_meta", None)
         cfg.model = ModelConfig(**_section_kwargs(section, cls, section_data))
+        if lr_data is not None:
+            cfg.model.logistic_regression = LogisticRegressionConfig(
+                **_section_kwargs(
+                    "model.logistic_regression", LogisticRegressionConfig, lr_data
+                )
+            )
         if lgbm_data is not None:
             cfg.model.lightgbm = LightGBMConfig(
                 **_section_kwargs("model.lightgbm", LightGBMConfig, lgbm_data)
@@ -308,6 +329,10 @@ def _apply_section(
         if stacking_data is not None:
             cfg.model.stacking = StackingConfig(
                 **_section_kwargs("model.stacking", StackingConfig, stacking_data)
+            )
+        if meta_data is not None:
+            cfg.model.stacking_meta = StackingMetaConfig(
+                **_section_kwargs("model.stacking_meta", StackingMetaConfig, meta_data)
             )
         return
 
