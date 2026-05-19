@@ -46,7 +46,11 @@ def predict_proba_aligned(
     X: np.ndarray,
     feature_cols: list[str] | None = None,
 ) -> np.ndarray:
-    """Predict probabilities in canonical class order."""
+    """Reorder probability columns to [-1, 0, 1].
+
+    Estimators may return classes in arbitrary order depending on
+    the order classes appear in training data.
+    """
     X_input = X
     fitted_names = getattr(model, "feature_names_in_", None)
     if (

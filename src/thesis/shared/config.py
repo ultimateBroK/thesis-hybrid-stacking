@@ -4,7 +4,6 @@ from dataclasses import dataclass, field, fields
 from functools import lru_cache
 import logging
 from pathlib import Path
-import re
 import tomllib
 from typing import Any
 
@@ -244,31 +243,6 @@ _SECTION_MAP: dict[str, type] = {
     "workflow": WorkflowConfig,
     "paths": PathsConfig,
 }
-
-
-def _timeframe_to_minutes(timeframe: str) -> int:
-    """Return minutes per bar for strings like 15M, 1H, 1D, or 1W."""
-    match = re.fullmatch(r"\s*(\d+)\s*([mhdwMHDW])\s*", timeframe)
-    if not match:
-        raise ValueError(
-            "Invalid timeframe format: "
-            f"{timeframe!r}. Expected forms like 15M, 1H, 4H, 1D, 1W."
-        )
-
-    qty = int(match.group(1))
-    unit = match.group(2).upper()
-    return qty * {"M": 1, "H": 60, "D": 1440, "W": 10080}[unit]
-
-
-def _scale_bars_by_timeframe(
-    base_bars: int,
-    base_timeframe: str,
-    target_timeframe: str,
-) -> int:
-    """Scale a bar count while preserving elapsed time."""
-    base_minutes = _timeframe_to_minutes(base_timeframe)
-    target_minutes = _timeframe_to_minutes(target_timeframe)
-    return max(1, int(round(base_bars * (base_minutes / target_minutes))))
 
 
 def _section_kwargs(section: str, cls: type, data: dict[str, Any]) -> dict[str, Any]:

@@ -159,11 +159,7 @@ _REGIME_INDICATOR_FEATURES: list[str] = ["volatility_regime", "trend_regime"]
 REGIME_FEATURES: list[str] = list(_REGIME_INDICATOR_FEATURES)
 
 
-def get_regime_feature_cols(config) -> list[str]:
-    """Return regime feature columns if enabled, empty list otherwise."""
-    if not getattr(config.features, "enable_regime_features", False):
-        return []
-    return list(REGIME_FEATURES)
+
 
 
 # ── Config-driven helpers ──
@@ -208,25 +204,4 @@ def build_feature_output_cols(config) -> list[str]:
     )
 
 
-def build_label_output_cols(config) -> list[str]:
-    """All columns that ``labels.parquet`` must contain.
 
-    Superset of feature output columns plus label metadata columns.
-    """
-    return sorted(set(build_feature_output_cols(config) + LABEL_META_COLS))
-
-
-def build_exclude_cols(config) -> frozenset[str]:
-    """Columns excluded from model training — the minimal non-feature set.
-
-    These columns are either identifiers (timestamp), raw price/volume data,
-    labelling artefacts, or helper/diagnostic columns that should not be
-    used as tabular model inputs.
-    """
-    return frozenset(
-        OHLCV_RAW_COLS
-        + OHLCV_OPTIONAL_COLS
-        + get_label_helper_cols(config)
-        + LABEL_META_COLS
-        + ["log_returns"]
-    )

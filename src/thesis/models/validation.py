@@ -24,12 +24,12 @@ class WalkForwardWindow:
 
     @property
     def train_len(self) -> int:
-        """Training bar count."""
+        """Bars available for fitting (used by min_train_bars gate)."""
         return self.train_end_idx - self.train_start_idx
 
     @property
     def test_len(self) -> int:
-        """Test bar count."""
+        """Bars reserved for out-of-sample evaluation."""
         return self.test_end_idx - self.test_start_idx
 
 

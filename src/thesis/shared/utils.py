@@ -36,14 +36,12 @@ class SimpleConsole:
 
 console = SimpleConsole()
 
-# Stage colour map (used by pipeline + training) — 4 stages
 STAGE_STYLES: dict[int, str] = {
     1: "bold blue",
     2: "bold green",
     3: "bold yellow",
     4: "bold cyan",
 }
-
 STAGE_LABELS: dict[int, str] = {
     1: "Market Data Preparation",
     2: "ML Dataset Construction",
@@ -57,9 +55,10 @@ def stage_header(stage: int) -> None:
     """Print a stage banner with concise log output."""
     _logger = logging.getLogger("thesis")
     label = STAGE_LABELS.get(stage, f"Stage {stage}")
+    style = STAGE_STYLES.get(stage, "")
     total = 4
     console.rule(f"STAGE {stage}/{total} | {label}")
-    _logger.info("STAGE %d/%d | %s", stage, total, label)
+    _logger.info("STAGE %d/%d | %s [style=%s]", stage, total, label, style)
 
 
 def stage_skip(stage: int, reason: str) -> None:

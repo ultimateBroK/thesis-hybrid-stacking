@@ -74,6 +74,7 @@ class ModelExperiment:
 
 
 def _model_display_name(name: str) -> str:
+    """Human-readable label for reports and charts (snake_case → Title Case)."""
     return {
         "logistic_regression": "Logistic Regression",
         "random_forest": "Random Forest",
@@ -216,6 +217,7 @@ def _combine_model_metrics(results: list[WindowResult]) -> dict[str, dict[str, A
 def _build_predictions_frame(
     results: list[WindowResult],
 ) -> pl.DataFrame:
+    """Collect hybrid-stacking OOF predictions + probabilities across all windows."""
     chunks: list[pl.DataFrame] = []
     for result in results:
         pred = next(p for p in result.predictions if p.model_name == "hybrid_stacking")
@@ -237,6 +239,7 @@ def _build_training_history(
     feature_cols: list[str],
     config: Config,
 ) -> dict[str, Any]:
+    """Architecture summary for the experiment manifest."""
     return {
         "architecture": "hybrid_stacking",
         "validation_protocol": "walk_forward_with_chronological_meta_split",
@@ -253,6 +256,7 @@ def _build_walk_forward_history(
     windows: list[WalkForwardWindow],
     results: list[WindowResult],
 ) -> dict[str, Any]:
+    """Per-window index ranges, row counts, and accuracy for reproducibility logs."""
     return {
         "num_windows": len(windows),
         "total_oof_predictions": sum(r.test_rows for r in results),

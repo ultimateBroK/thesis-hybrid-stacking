@@ -28,14 +28,6 @@ _MIN_BARS_FOR_SIGNAL = 2
 _MIN_ORDER_SIZE = 1
 
 
-def _calendar_day(value: object) -> object:
-    ts = pd.Timestamp(value)
-    if ts.tzinfo is None:
-        ts = ts.tz_localize("UTC")
-    ts_ny = ts.tz_convert("America/New_York")
-    return (ts_ny + pd.Timedelta(hours=7)).date()
-
-
 class MLSignalStrategy(Strategy):
     """Trade ML signals with ATR stops/TPs, confidence gate."""
 
@@ -54,9 +46,71 @@ class MLSignalStrategy(Strategy):
     daily_loss_limit = 0.03
     min_bars_between_trades = 0
 
-    def init(self) -> None:
-        """Register indicators and risk state."""
+    # ── helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _calendar_day(value: object) -> object:
+        """Map bar timestamp to calendar date (NY+7h for XAU/USD session)."""
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        ts_ny = ts.tz_convert("America/New_York")
+        return (ts_ny + pd.Timedelta(hours=7)).date()
+
+    def _normalize_signal(self) -> int:
+        """Map raw float signal to {-1, 0, 1}."""
+        raw = float(self.signals[-2])
+        if raw in (-1, 0, 1):
+            return int(raw)
+        return 1 if raw > 0 else (-1 if raw < 0 else 0)
+
+    def _init_risk_state(self) -> None:
+        """Seed drawdown / daily-loss tracking before first bar."""
         self._initial_capital = self.equity
+        self._entry_bar: dict[str, int] = {}
+        self._last_exit_bar: int = 0
+        self._position_was_open: bool = False
+        self._peak_equity: float = self.equity
+        self._dd_cooldown_left: int = 0
+        self._dd_cutoff_breached: bool = False
+        self._daily_start_equity: float = self.equity
+        self._current_date: object = None
+
+    def _check_drawdown_breaker(self) -> None:
+        """Halt trading when drawdown exceeds cutoff, start cooldown."""
+        if self.max_drawdown_cutoff <= 0 or self._peak_equity <= 0:
+            return
+        dd = (self._peak_equity - self.equity) / self._peak_equity
+        if dd >= self.max_drawdown_cutoff and not self._dd_cutoff_breached:
+            self._dd_cutoff_breached = True
+            self._dd_cooldown_left = self.dd_cooldown_bars
+            logger.warning("Drawdown breaker: %.1f%%", dd * 100)
+
+    def _track_daily_equity(self) -> None:
+        """Reset daily start equity on calendar-day boundary."""
+        bar_date = self._calendar_day(self.data.index[-1])
+        if self._current_date != bar_date:
+            self._current_date = bar_date
+            self._daily_start_equity = self.equity
+
+    def _place_order(self, direction: int, atr: float) -> None:
+        """Execute buy (direction=+1) or sell (direction=-1) with ATR SL/TP."""
+        lots = max(self.min_lots, min(self.lots_per_trade, self.max_lots))
+        size = max(_MIN_ORDER_SIZE, round(lots * self.contract_size))
+        close = self.data.Close[-1]
+        sl_sign = -1 if direction == 1 else 1
+        tp_sign = 1 if direction == 1 else -1
+        sl = close + sl_sign * atr * self.atr_stop_mult
+        tp = close + tp_sign * atr * self.atr_tp_mult if self.atr_tp_mult > 0 else None
+        tag = "long" if direction == 1 else "short"
+        self._entry_bar[tag] = len(self.data)
+        (self.buy if direction == 1 else self.sell)(size=size, sl=sl, tp=tp)
+        self._position_was_open = True
+
+    # ── lifecycle ────────────────────────────────────────────────────
+
+    def init(self) -> None:
+        """Register backtesting.py indicators."""
         self.signals = self.I(lambda: self.data.pred_label, name="signals", plot=False)
         self.atr = self.I(lambda: self.data.atr_14, name="ATR", plot=True)
         self._has_proba = hasattr(self.data, "pred_proba_class_minus1")
@@ -76,17 +130,10 @@ class MLSignalStrategy(Strategy):
                 name="proba_long",
                 plot=False,
             )
-        self._entry_bar: dict[str, int] = {}
-        self._last_exit_bar: int = 0
-        self._position_was_open: bool = False
-        self._peak_equity: float = self.equity
-        self._dd_cooldown_left: int = 0
-        self._dd_cutoff_breached: bool = False
-        self._daily_start_equity: float = self.equity
-        self._current_date: object = None
+        self._init_risk_state()
 
     def record_recent_exit(self) -> None:
-        """Track bar index when a position closes."""
+        """Snapshot bar index so min_bars_between_trades can enforce a gap."""
         if self._position_was_open and not self.position:
             self._last_exit_bar = len(self.data)
             self._position_was_open = False
@@ -94,37 +141,24 @@ class MLSignalStrategy(Strategy):
             self._entry_bar.pop("short", None)
 
     def _update_risk_state(self) -> None:
-        eq = self.equity
-        self._peak_equity = max(self._peak_equity, eq)
+        self._peak_equity = max(self._peak_equity, self.equity)
         if self._dd_cooldown_left > 0:
             self._dd_cooldown_left -= 1
-        if self.max_drawdown_cutoff > 0 and self._peak_equity > 0:
-            dd = (self._peak_equity - eq) / self._peak_equity
-            if dd >= self.max_drawdown_cutoff and not self._dd_cutoff_breached:
-                self._dd_cutoff_breached = True
-                self._dd_cooldown_left = self.dd_cooldown_bars
-                logger.warning("Drawdown breaker: %.1f%%", dd * 100)
-        bar_date = _calendar_day(self.data.index[-1])
-        if self._current_date != bar_date:
-            self._current_date = bar_date
-            self._daily_start_equity = eq
+        self._check_drawdown_breaker()
+        self._track_daily_equity()
 
     def has_enough_history(self) -> bool:
-        """Check minimum bars for signal lookup."""
+        """Wait until at least 2 bars are buffered for lookback."""
         return len(self.signals) >= _MIN_BARS_FOR_SIGNAL
 
     def read_trade_signal(self) -> tuple[int, float]:
-        """Read and normalize the ML signal, compute ATR."""
-        raw_signal = float(self.signals[-2])
-        if raw_signal in (-1, 0, 1):
-            signal = int(raw_signal)
-        else:
-            signal = 1 if raw_signal > 0 else (-1 if raw_signal < 0 else 0)
+        """Discretize signal and floor ATR so SL/TP are never zero."""
+        signal = self._normalize_signal()
         atr = max(float(self.atr[-1]), self.min_atr)
         return signal, atr
 
     def close_expired_position(self) -> None:
-        """Close position if horizon bars exceeded."""
+        """Force-close when the holding period exceeds horizon_bars."""
         if self.horizon_bars <= 0 or not self.position:
             return
         entry_bar = self._entry_bar.get("long") or self._entry_bar.get("short")
@@ -155,7 +189,7 @@ class MLSignalStrategy(Strategy):
         return True
 
     def can_open_trade(self, signal: int) -> bool:
-        """Check risk gates and confidence threshold."""
+        """Gate on risk limits *and* model confidence (if available)."""
         if not self._is_trading_allowed():
             return False
         if self.confidence_threshold > 0 and self._has_proba:
@@ -170,32 +204,12 @@ class MLSignalStrategy(Strategy):
         return True
 
     def open_trade(self, signal: int, atr: float) -> None:
-        """Place buy/sell order with ATR-based SL/TP."""
-        lots = max(self.min_lots, min(self.lots_per_trade, self.max_lots))
-        size = max(_MIN_ORDER_SIZE, round(lots * self.contract_size))
-        if signal == 1 and not self.position:
-            self._entry_bar["long"] = len(self.data)
-            sl = self.data.Close[-1] - atr * self.atr_stop_mult
-            tp = (
-                self.data.Close[-1] + atr * self.atr_tp_mult
-                if self.atr_tp_mult > 0
-                else None
-            )
-            self.buy(size=size, sl=sl, tp=tp)
-            self._position_was_open = True
-        elif signal == -1 and not self.position:
-            self._entry_bar["short"] = len(self.data)
-            sl = self.data.Close[-1] + atr * self.atr_stop_mult
-            tp = (
-                self.data.Close[-1] - atr * self.atr_tp_mult
-                if self.atr_tp_mult > 0
-                else None
-            )
-            self.sell(size=size, sl=sl, tp=tp)
-            self._position_was_open = True
+        """Delegate to _place_order once position slot is free."""
+        if signal in (1, -1) and not self.position:
+            self._place_order(signal, atr)
 
     def next(self) -> None:
-        """Evaluate signal, place orders if risk gates pass."""
+        """Bar-by-bar entry point called by backtesting.py."""
         self.record_recent_exit()
         self._update_risk_state()
         if not self.has_enough_history():
@@ -231,6 +245,7 @@ def _prepare_df(
     test_source: str = "<in-memory>",
     preds_source: str = "<in-memory>",
 ) -> pd.DataFrame:
+    """Join OHLCV + predictions on timestamp, validate coverage."""
     test = test_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     preds = preds_df.with_columns(pl.col("timestamp").cast(pl.Datetime("us")))
     if "pred_label" not in preds.columns:
@@ -401,7 +416,7 @@ def _load_backtest_data(config: Config) -> tuple[pd.DataFrame, str]:
 
 
 def compute_backtest(config: Config) -> BacktestResult:
-    """Load data, run FractionalBacktest, return (metrics, trades, bt)."""
+    """End-to-end: load → merge → run FractionalBacktest → (metrics, trades, bt)."""
     pdf, _ = _load_backtest_data(config)
     logger.info("Confidence threshold: %.2f", config.backtest.confidence_threshold)
     stats, bt = _run_fractional_backtest(pdf, config)
