@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+# Metric functions from reporting — these are pure computations, not report-specific
 from thesis.reporting.metrics import (
     DEFAULT_CLASSES,
     accuracy,

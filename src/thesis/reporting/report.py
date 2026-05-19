@@ -109,83 +109,97 @@ def load_prediction_stats(preds_path: Path) -> dict | None:
         return None
 
 
-def build_model_comparison_rows(
-    config: Config, pred_stats: dict | None
+def _add_current_session_row(
+    pred_stats: dict | None, config: Config
 ) -> list[dict[str, Any]]:
-    """Build compact model comparison rows for report tables."""
-    rows: list[dict[str, Any]] = []
-    if pred_stats:
-        rows.append(
-            {
-                "model": model_label(config),
-                "accuracy": pred_stats.get("accuracy"),
-                "macro_f1": pred_stats.get("macro_f1"),
-                "directional_accuracy": pred_stats.get("directional_accuracy"),
-                "source": "current_session",
-            }
-        )
+    if not pred_stats:
+        return []
+    return [
+        {
+            "model": model_label(config),
+            "accuracy": pred_stats.get("accuracy"),
+            "macro_f1": pred_stats.get("macro_f1"),
+            "directional_accuracy": pred_stats.get("directional_accuracy"),
+            "source": "current_session",
+        }
+    ]
+
+
+def _add_baseline_rows(config: Config, existing: set[str]) -> list[dict[str, Any]]:
     preds_path = Path(config.paths.predictions)
-    if preds_path.exists():
-        try:
-            df = pl.read_csv(preds_path)
-            y_true = df["true_label"].to_numpy()
-            close_path = Path(config.paths.ohlcv)
-            y_returns = np.zeros(len(y_true), dtype=np.float64)
-            if close_path.exists():
-                ohlcv = pl.read_parquet(close_path, columns=["close"])
-                close = ohlcv["close"].to_numpy()
-                if len(close) > 1:
-                    bar_returns = np.diff(close) / close[:-1]
-                    n = min(len(y_true), len(bar_returns))
-                    y_returns = bar_returns[-n:]
-                    y_true = y_true[-n:]
-            baselines = baselines_mod.run_all(
-                y_true, y_returns, seed=config.workflow.random_seed
-            )
-            for baseline_key, label in (
-                (  # noqa: FURB126
-                    "majority_class",
-                    "Majority Baseline",
-                ),
-            ):
-                if baseline_key not in baselines:
-                    continue
-                m = baselines[baseline_key]
-                rows.append(
-                    {
-                        "model": label,
-                        "accuracy": m.get("accuracy"),
-                        "macro_f1": m.get("macro_f1"),
-                        "directional_accuracy": m.get("directional_accuracy"),
-                        "source": "derived_baseline",
-                    }
-                )
-        except (ColumnNotFoundError, ValueError):
-            logger.warning("Failed to build baseline rows", exc_info=True)
-    session_dir = config.paths.session_dir
-    existing = {str(r["model"]).lower() for r in rows}
-    comparison_json = (
-        Path(session_dir) / "reports" / "model_comparison.json" if session_dir else None
-    )
-    if comparison_json and comparison_json.exists():
-        try:
-            model_comparison = json.loads(comparison_json.read_text())
-        except (OSError, json.JSONDecodeError):
-            model_comparison = {}
-        for key, metrics in model_comparison.items():
-            model_name = MODEL_NAME_MAP.get(key, str(key).replace("_", " ").title())
-            if model_name.lower() in existing:
+    if not preds_path.exists():
+        return []
+    try:
+        df = pl.read_csv(preds_path)
+        y_true = df["true_label"].to_numpy()
+        close_path = Path(config.paths.ohlcv)
+        y_returns = np.zeros(len(y_true), dtype=np.float64)
+        if close_path.exists():
+            ohlcv = pl.read_parquet(close_path, columns=["close"])
+            close = ohlcv["close"].to_numpy()
+            if len(close) > 1:
+                bar_returns = np.diff(close) / close[:-1]
+                n = min(len(y_true), len(bar_returns))
+                y_returns = bar_returns[-n:]
+                y_true = y_true[-n:]
+        baselines = baselines_mod.run_all(
+            y_true, y_returns, seed=config.workflow.random_seed
+        )
+        rows: list[dict[str, Any]] = []
+        for baseline_key, label in (("majority_class", "Majority Baseline"),):
+            if baseline_key not in baselines:
                 continue
+            if label.lower() in existing:
+                continue
+            m = baselines[baseline_key]
             rows.append(
                 {
-                    "model": model_name,
-                    "accuracy": metrics.get("accuracy"),
-                    "macro_f1": metrics.get("macro_f1"),
-                    "directional_accuracy": metrics.get("directional_accuracy"),
-                    "source": "walk_forward_model_comparison",
+                    "model": label,
+                    "accuracy": m.get("accuracy"),
+                    "macro_f1": m.get("macro_f1"),
+                    "directional_accuracy": m.get("directional_accuracy"),
+                    "source": "derived_baseline",
                 }
             )
-            existing.add(model_name.lower())
+            existing.add(label.lower())
+        return rows
+    except (ColumnNotFoundError, ValueError):
+        logger.warning("Failed to build baseline rows", exc_info=True)
+        return []
+
+
+def _add_json_comparison_rows(
+    session_dir: str | None, existing: set[str]
+) -> list[dict[str, Any]]:
+    if not session_dir:
+        return []
+    comparison_json = Path(session_dir) / "reports" / "model_comparison.json"
+    if not comparison_json.exists():
+        return []
+    try:
+        model_comparison = json.loads(comparison_json.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    rows: list[dict[str, Any]] = []
+    for key, metrics in model_comparison.items():
+        model_name = MODEL_NAME_MAP.get(key, str(key).replace("_", " ").title())
+        if model_name.lower() in existing:
+            continue
+        rows.append(
+            {
+                "model": model_name,
+                "accuracy": metrics.get("accuracy"),
+                "macro_f1": metrics.get("macro_f1"),
+                "directional_accuracy": metrics.get("directional_accuracy"),
+                "source": "walk_forward_model_comparison",
+            }
+        )
+        existing.add(model_name.lower())
+    return rows
+
+
+def _fill_missing_models(existing: set[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
     for model_name in (
         "Logistic Regression",
         "Random Forest",
@@ -203,6 +217,18 @@ def build_model_comparison_rows(
                 "source": "pending_experiment",
             }
         )
+    return rows
+
+
+def build_model_comparison_rows(
+    config: Config, pred_stats: dict | None
+) -> list[dict[str, Any]]:
+    """Build compact model comparison rows for report tables."""
+    rows = _add_current_session_row(pred_stats, config)
+    existing = {str(r["model"]).lower() for r in rows}
+    rows.extend(_add_baseline_rows(config, existing))
+    rows.extend(_add_json_comparison_rows(config.paths.session_dir, existing))
+    rows.extend(_fill_missing_models(existing))
     return rows
 
 
@@ -572,48 +598,6 @@ def _build_model_evaluation(
     return "\n".join(L)
 
 
-def write_model_comparison_csv(out_dir: Path, rows: list[dict[str, Any]]) -> Path:
-    """Write model comparison rows to CSV."""
-    import pandas as pd
-
-    csv_path = out_dir / "model_comparison.csv"
-    pd.DataFrame(rows).to_csv(csv_path, index=False)
-    return csv_path
-
-
-def _setup_matplotlib() -> None:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid", "ggplot"):
-        try:
-            plt.style.use(style)
-            break
-        except Exception:
-            continue
-    plt.rcParams.update(
-        {
-            "figure.dpi": 150,
-            "savefig.bbox": "tight",
-            "font.size": 10,
-            "axes.titlesize": 12,
-            "axes.labelsize": 10,
-        }
-    )
-
-
-def _prepare_report_dir(config: Config) -> Path:
-    out_dir = (
-        Path(config.paths.session_dir) / "reports"
-        if config.paths.session_dir
-        else Path("results")
-    )
-    out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir
-
-
 def _load_backtest_metrics(config: Config) -> dict:
     bt_path = Path(config.paths.backtest_results)
     if not bt_path.exists():
@@ -657,6 +641,48 @@ def _write_report_artifacts(
 
     model_cmp_csv = write_model_comparison_csv(out_dir, model_comparison_rows)
     logger.info("Model comparison saved: %s", model_cmp_csv)
+
+
+def write_model_comparison_csv(out_dir: Path, rows: list[dict[str, Any]]) -> Path:
+    """Write model comparison rows to CSV."""
+    import pandas as pd
+
+    csv_path = out_dir / "model_comparison.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    return csv_path
+
+
+def _setup_matplotlib() -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    for style in ("seaborn-v0_8-whitegrid", "seaborn-whitegrid", "ggplot"):
+        try:
+            plt.style.use(style)
+            break
+        except Exception:
+            continue
+    plt.rcParams.update(
+        {
+            "figure.dpi": 150,
+            "savefig.bbox": "tight",
+            "font.size": 10,
+            "axes.titlesize": 12,
+            "axes.labelsize": 10,
+        }
+    )
+
+
+def _prepare_report_dir(config: Config) -> Path:
+    out_dir = (
+        Path(config.paths.session_dir) / "reports"
+        if config.paths.session_dir
+        else Path("results")
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
 
 
 def _maybe_export_figures(config: Config, pred_stats: dict | None) -> None:

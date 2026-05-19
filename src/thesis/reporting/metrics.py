@@ -1,8 +1,4 @@
-"""Classification and regression metric functions.
-
-Merged from shared/metrics.py and stage_6_reporting/model_metrics.py.
-Canonical source for all metric computations.
-"""
+"""Classification and regression metric functions."""
 
 from __future__ import annotations
 
@@ -11,9 +7,6 @@ import numpy.typing as npt
 
 DEFAULT_CLASSES: list[int] = [-1, 0, 1]
 DEFAULT_CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
-
-
-# ── Core accuracy metrics ───────────────────────────────────────────
 
 
 def accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -66,9 +59,6 @@ def mda_binary(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
         return 0.0
     correct = (y_true[mask] == y_pred[mask]) & (y_pred[mask] != 0)
     return float(correct.mean())
-
-
-# ── F1 / precision / recall ─────────────────────────────────────────
 
 
 def _prf_for_class(
@@ -130,9 +120,6 @@ def precision_recall_f1_per_class(
     return result
 
 
-# ── Confusion matrices ───────────────────────────────────────────────
-
-
 def confusion_matrix(
     y_true: npt.NDArray,
     y_pred: npt.NDArray,
@@ -173,9 +160,6 @@ def direction_confusion_matrix(
     return cm
 
 
-# ── Baseline / high-confidence ───────────────────────────────────────
-
-
 def majority_baseline_accuracy(
     y_true: npt.NDArray, classes: list[int] | None = None
 ) -> float:
@@ -203,9 +187,6 @@ def high_confidence_accuracy(
         return {"accuracy": 0.0, "count": 0, "pct_of_total": 0.0}
     acc = float((y_true[mask] == y_pred[mask]).mean())
     return {"accuracy": acc, "count": count, "pct_of_total": count / total}
-
-
-# ── Regression metrics ───────────────────────────────────────────────
 
 
 def mae(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -244,9 +225,6 @@ def compute_regression_auxiliary(
         "rmse": rmse(y_true_returns, y_pred_returns),
         "r_squared": r_squared(y_true_returns, y_pred_returns),
     }
-
-
-# ── Aggregate ────────────────────────────────────────────────────────
 
 
 def compute_all_classification_metrics(

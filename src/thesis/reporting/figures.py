@@ -1,10 +1,4 @@
-"""Static report figure exports (Matplotlib).
-
-Renders PNG/SVG charts for thesis report from pipeline artifacts.
-Dashboard uses pyecharts — this module is the separate static renderer.
-
-Output: ``results/<session>/charts/``
-"""
+"""Static chart exports (Matplotlib) for thesis report."""
 
 from __future__ import annotations
 
@@ -60,6 +54,42 @@ def _load_label_counts(labels_path: Path) -> dict[str, int]:
             "Failed to load label counts from %s", labels_path, exc_info=True
         )
         return {}
+
+
+def _load_model_comparison_rows(session_dir: Path) -> list[dict[str, Any]]:
+    import pandas as pd
+
+    csv_path = session_dir / "reports" / "model_comparison.csv"
+    if not csv_path.exists():
+        return []
+    try:
+        return pd.read_csv(csv_path).to_dict("records")
+    except Exception:
+        logger.warning("Failed to load model comparison CSV", exc_info=True)
+        return []
+
+
+def _load_feature_importance(session_dir: Path) -> dict[str, float]:
+    fi_path = session_dir / "reports" / "feature_importance.json"
+    if not fi_path.exists():
+        return {}
+    try:
+        return json.loads(fi_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to load feature importance", exc_info=True)
+        return {}
+
+
+def _load_backtest_trades(config: Any) -> list[dict[str, Any]]:
+    bt_path = Path(config.paths.backtest_results) if hasattr(config, "paths") else None
+    if not bt_path or not bt_path.exists():
+        return []
+    try:
+        bt = json.loads(bt_path.read_text())
+        return bt.get("trades", [])
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to load backtest for equity curve", exc_info=True)
+        return []
 
 
 def export_label_distribution(
@@ -222,75 +252,6 @@ def export_equity_curve(
     _save(fig, output_path, dpi=dpi)
 
 
-def _export_label_dist_if_available(charts_dir: Path, config: Any, dpi: int) -> None:
-    labels_path = Path(config.paths.labels) if hasattr(config, "paths") else None
-    if not labels_path or not labels_path.exists():
-        return
-    label_counts = _load_label_counts(labels_path)
-    if label_counts:
-        export_label_distribution(
-            label_counts, charts_dir / "01_label_distribution.png", dpi=dpi
-        )
-
-
-def _export_model_cmp_if_available(
-    session_dir: Path, charts_dir: Path, dpi: int
-) -> None:
-    comparison_csv = session_dir / "reports" / "model_comparison.csv"
-    if not comparison_csv.exists():
-        return
-    import pandas as pd
-
-    df = pd.read_csv(comparison_csv)
-    rows = df.to_dict("records")
-    export_model_comparison(
-        rows, "accuracy", charts_dir / "02_accuracy_comparison.png", dpi=dpi
-    )
-    export_model_comparison(
-        rows, "macro_f1", charts_dir / "03_macro_f1_comparison.png", dpi=dpi
-    )
-
-
-def _export_cm_if_available(
-    charts_dir: Path, artifacts: dict[str, Any], dpi: int
-) -> None:
-    cm = artifacts.get("confusion_matrix") if artifacts else None
-    if cm:
-        export_confusion_matrix(
-            cm, output_path=charts_dir / "04_confusion_matrix.png", dpi=dpi
-        )
-
-
-def _export_fi_if_available(
-    session_dir: Path, charts_dir: Path, top_n: int, dpi: int
-) -> None:
-    fi_path = session_dir / "reports" / "feature_importance.json"
-    if not fi_path.exists():
-        return
-    try:
-        importance = json.loads(fi_path.read_text())
-        export_feature_importance(
-            importance, charts_dir / "05_feature_importance.png", top_n=top_n, dpi=dpi
-        )
-    except (OSError, json.JSONDecodeError):
-        logger.warning("Failed to load feature importance", exc_info=True)
-
-
-def _export_equity_if_available(
-    session_dir: Path, charts_dir: Path, config: Any, dpi: int
-) -> None:
-    bt_path = Path(config.paths.backtest_results) if hasattr(config, "paths") else None
-    if not bt_path or not bt_path.exists():
-        return
-    try:
-        bt = json.loads(bt_path.read_text())
-        trades = bt.get("trades", [])
-        cap = config.backtest.initial_capital
-        export_equity_curve(trades, cap, charts_dir / "06_equity_curve.png", dpi=dpi)
-    except (OSError, json.JSONDecodeError):
-        logger.warning("Failed to load backtest for equity curve", exc_info=True)
-
-
 def _write_chart_manifest(charts_dir: Path, dpi: int) -> None:
     manifest = {
         "charts": sorted(
@@ -313,11 +274,49 @@ def export_all_figures(
     charts_dir = session_dir / "reports" / "charts"
     charts_dir.mkdir(parents=True, exist_ok=True)
 
-    _export_label_dist_if_available(charts_dir, config, dpi)
-    _export_model_cmp_if_available(session_dir, charts_dir, dpi)
-    _export_cm_if_available(charts_dir, artifacts or {}, dpi)
-    _export_fi_if_available(session_dir, charts_dir, top_n_features, dpi)
-    _export_equity_if_available(session_dir, charts_dir, config, dpi)
+    labels_path = Path(config.paths.labels) if hasattr(config, "paths") else None
+    if labels_path and labels_path.exists():
+        label_counts = _load_label_counts(labels_path)
+        if label_counts:
+            export_label_distribution(
+                label_counts, charts_dir / "01_label_distribution.png", dpi=dpi
+            )
+
+    comparison_rows = _load_model_comparison_rows(session_dir)
+    if comparison_rows:
+        export_model_comparison(
+            comparison_rows,
+            "accuracy",
+            charts_dir / "02_accuracy_comparison.png",
+            dpi=dpi,
+        )
+        export_model_comparison(
+            comparison_rows,
+            "macro_f1",
+            charts_dir / "03_macro_f1_comparison.png",
+            dpi=dpi,
+        )
+
+    cm = (artifacts or {}).get("confusion_matrix")
+    if cm:
+        export_confusion_matrix(
+            cm, output_path=charts_dir / "04_confusion_matrix.png", dpi=dpi
+        )
+
+    importance = _load_feature_importance(session_dir)
+    if importance:
+        export_feature_importance(
+            importance,
+            charts_dir / "05_feature_importance.png",
+            top_n=top_n_features,
+            dpi=dpi,
+        )
+
+    trades = _load_backtest_trades(config)
+    if trades:
+        cap = config.backtest.initial_capital
+        export_equity_curve(trades, cap, charts_dir / "06_equity_curve.png", dpi=dpi)
+
     _write_chart_manifest(charts_dir, dpi)
 
     return charts_dir

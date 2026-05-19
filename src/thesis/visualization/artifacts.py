@@ -19,50 +19,32 @@ def _is_artifact_file(path: Path) -> bool:
     return path not in {Path(""), Path(".")} and path.is_file()
 
 
-def _read_parquet(path: Path) -> pl.DataFrame | None:
+def _safe_read(path: Path, reader: callable, *errors: type) -> Any | None:
     if not _is_artifact_file(path):
         return None
     try:
-        return pl.read_parquet(path)
-    except (FileNotFoundError, OSError) as exc:
+        return reader(path)
+    except errors as exc:
         logger.warning("Dashboard artifact unreadable: %s (%s)", path, exc)
         return None
+
+
+def _read_parquet(path: Path) -> pl.DataFrame | None:
+    return _safe_read(path, pl.read_parquet, FileNotFoundError, OSError)
 
 
 def _read_csv(path: Path) -> pl.DataFrame | None:
-    if not _is_artifact_file(path):
-        return None
-    try:
-        return pl.read_csv(path)
-    except (FileNotFoundError, OSError) as exc:
-        logger.warning("Dashboard artifact unreadable: %s (%s)", path, exc)
-        return None
+    return _safe_read(path, pl.read_csv, FileNotFoundError, OSError)
 
 
 def _read_json(path: Path) -> dict | None:
-    if not _is_artifact_file(path):
-        return None
-    try:
-        return json.loads(path.read_text())
-    except (FileNotFoundError, OSError, json.JSONDecodeError) as exc:
-        logger.warning("Dashboard artifact unreadable: %s (%s)", path, exc)
-        return None
-
-
-def _read_ohlcv(config: Config) -> pl.DataFrame | None:
-    return _read_parquet(Path(config.paths.ohlcv))
-
-
-def _read_features(config: Config) -> pl.DataFrame | None:
-    return _read_parquet(Path(config.paths.features))
-
-
-def _read_test_data(config: Config) -> pl.DataFrame | None:
-    return _read_parquet(Path(config.paths.test_data))
-
-
-def _read_labels(config: Config) -> pl.DataFrame | None:
-    return _read_parquet(Path(config.paths.labels))
+    return _safe_read(
+        path,
+        lambda p: json.loads(p.read_text()),
+        FileNotFoundError,
+        OSError,
+        json.JSONDecodeError,
+    )
 
 
 def _read_predictions(config: Config) -> pl.DataFrame | None:
@@ -112,10 +94,10 @@ def load_dashboard_artifacts(config: Config) -> dict[str, Any]:
     """Load session artifacts for chart builders and dashboard."""
     data: dict[str, Any] = {"session_dir": config.paths.session_dir}
 
-    data["ohlcv"] = _read_ohlcv(config)
-    data["features"] = _read_features(config)
-    data["test"] = _read_test_data(config)
-    data["labels"] = _read_labels(config)
+    data["ohlcv"] = _read_parquet(Path(config.paths.ohlcv))
+    data["features"] = _read_parquet(Path(config.paths.features))
+    data["test"] = _read_parquet(Path(config.paths.test_data))
+    data["labels"] = _read_parquet(Path(config.paths.labels))
     data["predictions"] = _read_predictions(config)
     data.update(_read_backtest_results(config))
     data["feature_importance"] = _read_feature_importance(config)
