@@ -95,7 +95,8 @@ def compute_normalized_confusion_matrix(
     """Row-normalized confusion matrix for ordered class labels."""
     if labels_order is None:
         labels_order = [-1, 1]
-    display_labels = ["Short (-1)", "Long (1)"]
+    label_names = {-1: "Short", 0: "Hold", 1: "Long"}
+    display_labels = [f"{label_names.get(c, str(c))} ({c})" for c in labels_order]
     n = len(labels_order)
 
     cm = np.zeros((n, n), dtype=int)

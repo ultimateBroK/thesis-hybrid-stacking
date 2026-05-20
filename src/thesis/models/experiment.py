@@ -12,9 +12,9 @@ import polars as pl
 from thesis.models.artifacts import proba_columns
 from thesis.models.baselines import compute_metrics, predict_majority_label
 from thesis.models.estimators import (
-    CLASS_ORDER,
     build_base_models,
     fit_model,
+    get_class_order,
     predict_proba_aligned,
 )
 from thesis.models.stacking import HybridStackingClassifier
@@ -26,10 +26,11 @@ logger = logging.getLogger("thesis")
 
 @dataclass(frozen=True)
 class WindowDataset:
-    """Feature/label arrays for one walk-forward window."""
+    """Feature/label/weight arrays for one walk-forward window."""
 
     train_x: np.ndarray
     train_y: np.ndarray
+    train_w: np.ndarray
     test_x: np.ndarray
     test_y: np.ndarray
     test_timestamps: np.ndarray
@@ -88,12 +89,19 @@ def slice_window_dataset(
     feature_cols: list[str],
     window: WalkForwardWindow,
 ) -> WindowDataset:
-    """Extract train/test arrays for one walk-forward window."""
+    """Extract train/test arrays with sample weights for one window."""
     train_df = dataset.slice(window.train_start_idx, window.train_len)
     test_df = dataset.slice(window.test_start_idx, window.test_len)
+    w_col = "sample_weight"
+    train_w = (
+        train_df[w_col].to_numpy().astype(np.float64)
+        if w_col in train_df.columns
+        else np.ones(len(train_df), dtype=np.float64)
+    )
     return WindowDataset(
         train_x=train_df.select(feature_cols).to_numpy(),
         train_y=train_df["label"].to_numpy().astype(np.int32),
+        train_w=train_w,
         test_x=test_df.select(feature_cols).to_numpy(),
         test_y=test_df["label"].to_numpy().astype(np.int32),
         test_timestamps=test_df["timestamp"].to_numpy(),
@@ -105,14 +113,17 @@ def train_models_for_window(
     feature_cols: list[str],
     config: Config,
 ) -> dict[str, Any]:
-    """Fit LR, RF, LightGBM, and Hybrid Stacking."""
+    """Fit LR, RF, LightGBM, and Hybrid Stacking with sample weights."""
     models = {
-        name: fit_model(model, data.train_x, data.train_y, feature_cols)
-        for name, model in build_base_models(config).items()
+        name: fit_model(model, data.train_x, data.train_y, feature_cols, data.train_w)
+        for name, model in build_base_models(
+            config, num_classes=config.labels.num_classes
+        ).items()
     }
     models["hybrid_stacking"] = HybridStackingClassifier(config, feature_cols).fit(
         data.train_x,
         data.train_y,
+        sample_weight=data.train_w,
     )
     return models
 
@@ -121,15 +132,19 @@ def predict_models_for_window(
     models: dict[str, Any],
     data: WindowDataset,
     feature_cols: list[str],
+    config: Config,
 ) -> list[ModelPrediction]:
     """Predict all trained models on the window test slice."""
+    class_order = get_class_order(config.labels.num_classes)
     predictions: list[ModelPrediction] = []
     for name, model in models.items():
-        proba = predict_proba_aligned(model, data.test_x, feature_cols)
+        proba = predict_proba_aligned(
+            model, data.test_x, feature_cols, target_order=class_order
+        )
         predictions.append(
             ModelPrediction(
                 model_name=name,
-                pred_label=CLASS_ORDER[np.argmax(proba, axis=1)].astype(np.int32),
+                pred_label=class_order[np.argmax(proba, axis=1)].astype(np.int32),
                 pred_proba=proba,
             )
         )
@@ -159,7 +174,7 @@ def run_one_window(
     """Train and evaluate one walk-forward window."""
     data = slice_window_dataset(dataset, feature_cols, window)
     models = train_models_for_window(data, feature_cols, config)
-    predictions = predict_models_for_window(models, data, feature_cols)
+    predictions = predict_models_for_window(models, data, feature_cols, config)
     hybrid_pred = next(p for p in predictions if p.model_name == "hybrid_stacking")
     logger.info(
         "Window %d: train=%d test=%d hybrid_acc=%.4f",
@@ -216,6 +231,7 @@ def _combine_model_metrics(results: list[WindowResult]) -> dict[str, dict[str, A
 
 def _build_predictions_frame(
     results: list[WindowResult],
+    class_order: np.ndarray,
 ) -> pl.DataFrame:
     """Collect hybrid-stacking OOF predictions + probabilities across all windows."""
     chunks: list[pl.DataFrame] = []
@@ -227,7 +243,7 @@ def _build_predictions_frame(
                     "timestamp": result.test_timestamps,
                     "true_label": result.test_y,
                     "pred_label": pred.pred_label,
-                    **proba_columns(pred.pred_proba, CLASS_ORDER),
+                    **proba_columns(pred.pred_proba, class_order),
                 }
             )
         )
@@ -244,7 +260,7 @@ def _build_training_history(
         "architecture": "hybrid_stacking",
         "validation_protocol": "walk_forward_with_chronological_meta_split",
         "base_models": ["logistic_regression", "random_forest", "lightgbm"],
-        "meta_model": "logistic_regression",
+        "meta_model": config.model.stacking_meta.learner,
         "meta_fraction": config.model.stacking.meta_fraction,
         "n_features": len(feature_cols),
         "windows": len(results),
@@ -294,7 +310,9 @@ def run_model_experiment(
         feature_cols=feature_cols,
         window_results=results,
         model_comparison=comparison,
-        oof_predictions=_build_predictions_frame(results),
+        oof_predictions=_build_predictions_frame(
+            results, get_class_order(config.labels.num_classes)
+        ),
         final_model=results[-1].final_model,
         final_lightgbm_model=results[-1].final_lightgbm_model,
         training_history=_build_training_history(results, feature_cols, config),

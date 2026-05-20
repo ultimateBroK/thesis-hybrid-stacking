@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 DEFAULT_CLASSES: list[int] = [-1, 1]
-DEFAULT_CLASS_NAMES: dict[int, str] = {-1: "Short", 1: "Long"}
+DEFAULT_CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
 
 
 def accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -132,17 +132,22 @@ def confusion_matrix(
 def direction_confusion_matrix(
     y_true: npt.NDArray,
     y_pred: npt.NDArray,
+    classes: list[int] | None = None,
+    class_names: dict[int, str] | None = None,
 ) -> dict[str, dict[str, int]]:
-    """Directional confusion matrix for Long/Short labels."""
-    yt = y_true
-    yp = y_pred
-    names = {-1: "Short", 1: "Long"}
+    """Directional confusion matrix for directional class labels."""
+    if classes is None:
+        classes = [-1, 1]
+    if class_names is None:
+        class_names = DEFAULT_CLASS_NAMES
     cm: dict[str, dict[str, int]] = {}
-    for tc in [-1, 1]:
+    for tc in classes:
         row: dict[str, int] = {}
-        for pc in [-1, 1]:
-            row[names[pc]] = int(((yt == tc) & (yp == pc)).sum())
-        cm[names[tc]] = row
+        for pc in classes:
+            row[class_names.get(pc, str(pc))] = int(
+                ((y_true == tc) & (y_pred == pc)).sum()
+            )
+        cm[class_names.get(tc, str(tc))] = row
     return cm
 
 
@@ -242,7 +247,9 @@ def compute_all_classification_metrics(
             y_true, y_pred, classes, class_names
         ),
         "confusion_matrix": confusion_matrix(y_true, y_pred, classes, class_names),
-        "direction_confusion_matrix": direction_confusion_matrix(y_true, y_pred),
+        "direction_confusion_matrix": direction_confusion_matrix(
+            y_true, y_pred, classes, class_names
+        ),
         "majority_baseline_accuracy": majority_baseline_accuracy(y_true, classes),
     }
 

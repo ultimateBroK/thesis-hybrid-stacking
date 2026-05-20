@@ -18,18 +18,20 @@ def compute_labels(
     sl_mult: float,
     horizon: int,
     min_atr: float,
+    num_classes: int = 2,
 ) -> tuple:
     """Triple-barrier scan with directional vertical-barrier exit.
 
     Per bar i: upper = close[i] + tp_mult * max(atr[i], min_atr),
     lower = close[i] - sl_mult * max(atr[i], min_atr).
     Scan i+1..i+horizon for first horizontal-barrier touch.
-    If neither barrier is hit, assign label by the sign of the return
-    at the vertical barrier (close[i+horizon] vs close[i]).
 
-    Labels: +1 (upper hit or positive return), -1 (lower hit or negative
-    return), -2 (censored — simultaneous hit, zero return, or insufficient
-    horizon).
+    num_classes=2 (binary): vertical-barrier hit → label by sign of return
+        at close[i+horizon] vs close[i].  Labels in {-2, -1, 1}.
+    num_classes=3 (ternary): vertical-barrier hit → label=0 (HOLD).
+        Labels in {-2, -1, 0, 1}.  AFML standard.
+
+    -2 = censored (simultaneous hit, zero return, or insufficient horizon).
 
     Returns (labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count).
     """
@@ -75,11 +77,14 @@ def compute_labels(
                 break
 
         if hit_offset < 0:
-            horizon_close = close[i + horizon]
-            if horizon_close > close[i]:
-                label = 1
-            elif horizon_close < close[i]:
-                label = -1
+            if num_classes == 3:
+                label = 0  # HOLD — no horizontal barrier triggered
+            else:
+                horizon_close = close[i + horizon]
+                if horizon_close > close[i]:
+                    label = 1
+                elif horizon_close < close[i]:
+                    label = -1
 
         labels[i] = label
         touched_bars[i] = hit_offset if hit_offset >= 0 else CENSORED_LABEL
