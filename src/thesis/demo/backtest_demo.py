@@ -58,9 +58,9 @@ class MLSignalStrategy(Strategy):
         return (ts_ny + pd.Timedelta(hours=7)).date()
 
     def _normalize_signal(self) -> int:
-        """Map raw signal to {-1, 0, 1}. Hold (0) → no trade."""
+        """Map raw float signal to {-1, 1}."""
         raw = float(self.signals[-2])
-        if raw in (-1, 0, 1):
+        if raw in (-1, 1):
             return int(raw)
         return 1 if raw > 0 else -1
 
@@ -185,8 +185,6 @@ class MLSignalStrategy(Strategy):
 
     def can_open_trade(self, signal: int) -> bool:
         """Gate on risk limits *and* model confidence (if available)."""
-        if signal == 0:
-            return False
         if not self._is_trading_allowed():
             return False
         if self.confidence_threshold > 0 and self._has_proba:
@@ -250,7 +248,6 @@ def _prepare_df(
     pred_cols = ["timestamp", "pred_label"]
     for col in (
         "pred_proba_class_minus1",
-        "pred_proba_class_0",
         "pred_proba_class_1",
     ):
         if col in preds.columns:

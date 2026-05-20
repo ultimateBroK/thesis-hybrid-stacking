@@ -22,22 +22,10 @@ def predict_majority_label(
     return np.full(n_rows, label, dtype=np.int32), label
 
 
-_CLASS_KEYS: dict[int, str] = {-1: "short_f1", 0: "hold_f1", 1: "long_f1"}
-
-_DEFAULT_CLASSES = [-1, 1]
-
-
-def _per_class_f1(
-    y_true: npt.NDArray,
-    y_pred: npt.NDArray,
-    classes: list[int] | None = None,
-) -> dict[str, float]:
-    """Per-class F1 for Short (-1), Hold (0), Long (+1)."""
-    if classes is None:
-        classes = _DEFAULT_CLASSES
+def _per_class_f1(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict[str, float]:
+    """Per-class F1 for label -1 (Short) and +1 (Long)."""
     result: dict[str, float] = {}
-    for cls in classes:
-        key = _CLASS_KEYS.get(cls, f"class{cls}_f1")
+    for cls, key in [(-1, "short_f1"), (1, "long_f1")]:
         tp = int(((y_pred == cls) & (y_true == cls)).sum())
         fp = int(((y_pred == cls) & (y_true != cls)).sum())
         fn = int(((y_pred != cls) & (y_true == cls)).sum())
@@ -47,18 +35,14 @@ def _per_class_f1(
     return result
 
 
-def compute_metrics(
-    y_true: npt.NDArray,
-    y_pred: npt.NDArray,
-    classes: list[int] | None = None,
-) -> dict[str, float]:
-    """Core classification metrics for binary or 3-class labels."""
+def compute_metrics(y_true: npt.NDArray, y_pred: npt.NDArray) -> dict[str, float]:
+    """Core classification metrics."""
     m: dict[str, float] = {
         "accuracy": accuracy(y_true, y_pred),
-        "macro_f1": macro_f1(y_true, y_pred, classes),
+        "macro_f1": macro_f1(y_true, y_pred),
         "directional_accuracy": directional_accuracy(y_true, y_pred),
     }
-    m.update(_per_class_f1(y_true, y_pred, classes))
+    m.update(_per_class_f1(y_true, y_pred))
     return m
 
 
@@ -66,10 +50,9 @@ def run_all(
     y_true: npt.NDArray,
     y_returns: npt.NDArray | None = None,
     seed: int | None = None,
-    classes: list[int] | None = None,
 ) -> dict[str, dict]:
     """Run thesis baseline: majority class only."""
     maj_pred, maj_cls = predict_majority_label(y_true, len(y_true))
-    metrics = compute_metrics(y_true, maj_pred, classes)
+    metrics = compute_metrics(y_true, maj_pred)
     metrics["majority_class_label"] = maj_cls
     return {"majority_class": metrics}

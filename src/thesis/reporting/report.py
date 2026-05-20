@@ -55,49 +55,35 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
-def load_prediction_stats(preds_path: Path, num_classes: int = 2) -> dict | None:
-    """Load prediction CSV and compute per-class classification statistics.
-
-    Supports binary (Short/Long) and ternary (Short/Hold/Long) label modes.
-    """
+def load_prediction_stats(preds_path: Path) -> dict | None:
+    """Load prediction CSV and compute classification statistics."""
     if not preds_path.exists():
         return None
     try:
         df = pl.read_csv(preds_path)
         true = df["true_label"].to_numpy()
         pred = df["pred_label"].to_numpy()
-
-        classes = [-1, 0, 1] if num_classes == 3 else [-1, 1]
-        class_names = {-1: "Short", 0: "Hold", 1: "Long"}
-
         proba_cols = [
-            f"pred_proba_class_{suffix}"
-            for cls in classes
-            for suffix in (["minus1"] if cls == -1 else ["0"] if cls == 0 else ["1"])
+            "pred_proba_class_minus1",
+            "pred_proba_class_1",
         ]
         proba = (
             df.select(proba_cols).to_numpy()
             if all(c in df.columns for c in proba_cols)
             else None
         )
-
-        raw = compute_all_classification_metrics(
-            true,
-            pred,
-            y_proba=proba,
-            classes=classes,
-            class_names=class_names,
-        )
+        raw = compute_all_classification_metrics(true, pred, y_proba=proba)
         per_class_metrics = raw["precision_recall_f1_per_class"]
+        class_map = {-1: "Short", 1: "Long"}
         per_class = {
-            class_names[c]: {
+            class_map[c]: {
                 "true_count": int((true == c).sum()),
                 "pred_count": int((pred == c).sum()),
-                "precision": float(per_class_metrics[class_names[c]]["precision"]),
-                "recall": float(per_class_metrics[class_names[c]]["recall"]),
-                "f1": float(per_class_metrics[class_names[c]]["f1"]),
+                "precision": float(per_class_metrics[class_map[c]]["precision"]),
+                "recall": float(per_class_metrics[class_map[c]]["recall"]),
+                "f1": float(per_class_metrics[class_map[c]]["f1"]),
             }
-            for c in classes
+            for c in (-1, 1)
         }
         result: dict[str, Any] = {
             "total": int(raw["total"]),
@@ -110,50 +96,11 @@ def load_prediction_stats(preds_path: Path, num_classes: int = 2) -> dict | None
             "per_class": per_class,
             "confusion_matrix": raw["confusion_matrix"],
             "direction_confusion_matrix": raw["direction_confusion_matrix"],
-            "num_classes": num_classes,
         }
-
-        if proba is not None:
-            result["threshold_sweep"] = _threshold_sweep(true, pred, proba, classes)
-
         return result
     except (ComputeError, ColumnNotFoundError, OSError):
         logger.warning("Failed to load prediction stats: %s", preds_path, exc_info=True)
         return None
-
-
-def _threshold_sweep(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    y_proba: np.ndarray,
-    classes: list[int],
-    thresholds: list[float] | None = None,
-) -> list[dict[str, float | int]]:
-    """Compute accuracy and trade count at each confidence threshold.
-
-    Filters predictions where max probability exceeds threshold.
-    """
-    if thresholds is None:
-        thresholds = [0.50, 0.55, 0.60, 0.65, 0.70]
-    max_proba = y_proba.max(axis=1)
-    total = len(y_true)
-    rows: list[dict[str, float | int]] = []
-    for t in thresholds:
-        mask = max_proba >= t
-        count = int(mask.sum())
-        if count == 0:
-            rows.append({"threshold": t, "accuracy": 0.0, "count": 0, "pct": 0.0})
-            continue
-        acc = float((y_true[mask] == y_pred[mask]).mean())
-        rows.append(
-            {
-                "threshold": t,
-                "accuracy": acc,
-                "count": count,
-                "pct": count / total * 100,
-            }
-        )
-    return rows
 
 
 def _add_current_session_row(
@@ -294,13 +241,7 @@ def _build_thesis_report(
 
     L.append("## 🎯 1. Mục tiêu")
     L.append("")
-    num_label_classes = config.labels.num_classes
-    label_mode_desc = (
-        "3 lớp: **Short / Hold / Long**"
-        if num_label_classes == 3
-        else "2 lớp: **Short / Long**"
-    )
-    L.append("Phân loại tín hiệu XAU/USD khung H1 thành " + label_mode_desc + ".")
+    L.append("Phân loại tín hiệu XAU/USD khung H1 thành 2 lớp: **Short / Long**.")
     L.append("Trọng tâm: đánh giá mô hình ML, không phải hệ thống giao dịch tự động.")
     L.append("")
 
@@ -362,11 +303,8 @@ def _build_thesis_report(
             total = len(df)
             L.append("**Phân phối nhãn:**")
             L.append("")
-            label_items = [(-1, "Short"), (1, "Long")]
-            if config.labels.num_classes == 3:
-                label_items = [(-1, "Short"), (0, "Hold"), (1, "Long")]
             L.append(_md_table(["Class", "Tỷ lệ"], []))
-            for label_val, name in label_items:
+            for label_val, name in [(-1, "Short"), (1, "Long")]:
                 count = int((df["label"] == label_val).sum())
                 pct = count / total * 100 if total > 0 else 0.0
                 L.append(f"| {name} | {pct:.1f}% |")
@@ -391,12 +329,7 @@ def _build_thesis_report(
     L.append("```")
     L.append("Base models dự đoán xác suất")
     L.append("→ Meta model học cách kết hợp")
-    predict_desc = (
-        "→ Dự đoán Short / Hold / Long"
-        if config.labels.num_classes == 3
-        else "→ Dự đoán Short / Long"
-    )
-    L.append(predict_desc)
+    L.append("→ Dự đoán Short / Long")
     L.append("```")
     L.append("")
 
@@ -630,19 +563,13 @@ def _build_model_evaluation(
     L.append("")
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
-        class_names_list = (
-            ["Short", "Hold", "Long"]
-            if pred_stats.get("num_classes", 2) == 3
-            else ["Short", "Long"]
-        )
         f1_scores = {
-            name: per_class.get(name, {}).get("f1", 0) for name in class_names_list
+            name: per_class.get(name, {}).get("f1", 0) for name in ("Short", "Long")
         }
-        nonzero_f1 = {k: v for k, v in f1_scores.items() if v > 0}
-        weakest = min(nonzero_f1, key=nonzero_f1.get) if nonzero_f1 else None
-        strongest = max(nonzero_f1, key=nonzero_f1.get) if nonzero_f1 else None
+        weakest = min(f1_scores, key=f1_scores.get)
+        strongest = max(f1_scores, key=f1_scores.get)
         class_rows: list[list[str]] = []
-        for class_name in class_names_list:
+        for class_name in ("Short", "Long"):
             pc = per_class.get(class_name, {})
             f1 = f1_scores.get(class_name, 0)
             if class_name == weakest:
@@ -668,36 +595,7 @@ def _build_model_evaluation(
         )
     L.append("")
 
-    L.append("## 4. Confidence Threshold Sweep")
-    L.append("")
-    sweep = pred_stats.get("threshold_sweep") if pred_stats else None
-    if sweep:
-        L.append(
-            _md_table(
-                ["Threshold", "Accuracy", "Predictions", "% Total"],
-                [
-                    [
-                        f"{r['threshold']:.2f}",
-                        _fmt_pct(r["accuracy"] * 100),
-                        str(r["count"]),
-                        f"{r['pct']:.1f}%",
-                    ]
-                    for r in sweep
-                ],
-            )
-        )
-        L.append("")
-        best = max(sweep, key=lambda r: r["accuracy"] if r["count"] > 0 else 0)
-        L.append(
-            f"> Best threshold = {best['threshold']:.2f} "
-            f"(accuracy={_fmt_pct(best['accuracy'] * 100)}, "
-            f"n={best['count']:,})"
-        )
-    else:
-        L.append("Threshold sweep requires probability predictions.")
-    L.append("")
-
-    L.append("## 5. So sánh mô hình")
+    L.append("## 4. So sánh mô hình")
     L.append("")
     best_base_name_eval = None
     best_base_acc_eval = 0.0
@@ -753,7 +651,7 @@ def _build_model_evaluation(
         L.append(f"| {model} | {acc} | {f1} | {note} |")
     L.append("")
 
-    L.append("## 6. Nhận xét ngắn")
+    L.append("## 5. Nhận xét ngắn")
     L.append("")
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
@@ -784,9 +682,9 @@ def _build_model_evaluation(
         L.append("- Không có dữ liệu dự đoán.")
     L.append("")
 
-    L.append("## 7. Hướng thử tiếp")
+    L.append("## 6. Hướng thử tiếp")
     L.append("")
-    L.append("1. Tối ưu ngưỡng confidence theo threshold sweep table ở section 4.")
+    L.append("1. Tối ưu ngưỡng confidence cho bài toán 2 class: Short / Long.")
     L.append("2. Giữ LightGBM làm baseline chính.")
     L.append(
         "3. So sánh xác suất Short/Long với kết quả backtest sau chi phí giao dịch."
@@ -807,9 +705,7 @@ def _load_backtest_metrics(config: Config) -> dict:
 
 def _load_report_inputs(config: Config) -> tuple[dict | None, list[dict[str, Any]]]:
     with console.status("[cyan]Building reports[/]"):
-        pred_stats = load_prediction_stats(
-            Path(config.paths.predictions), num_classes=config.labels.num_classes
-        )
+        pred_stats = load_prediction_stats(Path(config.paths.predictions))
         model_comparison_rows = build_model_comparison_rows(config, pred_stats)
     return pred_stats, model_comparison_rows
 

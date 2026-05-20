@@ -14,13 +14,6 @@ logger = logging.getLogger("thesis")
 CLASS_ORDER = np.array([-1, 1], dtype=np.int32)
 
 
-def get_class_order(num_classes: int) -> np.ndarray:
-    """Class label array for 2-class or 3-class labeling mode."""
-    if num_classes == 3:
-        return np.array([-1, 0, 1], dtype=np.int32)
-    return CLASS_ORDER
-
-
 def wrap_feature_matrix(X: np.ndarray, feature_cols: list[str]) -> Any:
     """Return DataFrame when estimator needs stable feature names."""
     import pandas as pd
@@ -37,16 +30,11 @@ def compute_class_weights(y: np.ndarray) -> dict[int, float]:
     return {int(c): float(w) for c, w in zip(classes, weights)}
 
 
-def align_proba(
-    proba: np.ndarray,
-    class_order: list[int] | np.ndarray,
-    target_order: np.ndarray | None = None,
-) -> np.ndarray:
-    """Reorder probability columns to match target label order."""
-    order = target_order if target_order is not None else CLASS_ORDER
-    aligned = np.zeros((len(proba), len(order)), dtype=np.float64)
+def align_proba(proba: np.ndarray, class_order: list[int] | np.ndarray) -> np.ndarray:
+    """Align estimator probabilities to [-1, 1]."""
+    aligned = np.zeros((len(proba), len(CLASS_ORDER)), dtype=np.float64)
     index_map = {int(c): i for i, c in enumerate(class_order)}
-    for target_idx, cls in enumerate(order):
+    for target_idx, cls in enumerate(CLASS_ORDER):
         src = index_map.get(int(cls))
         if src is not None:
             aligned[:, target_idx] = proba[:, src]
@@ -57,9 +45,8 @@ def predict_proba_aligned(
     model: Any,
     X: np.ndarray,
     feature_cols: list[str] | None = None,
-    target_order: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Reorder probability columns to target label order.
+    """Reorder probability columns to [-1, 1].
 
     Estimators may return classes in arbitrary order depending on
     the order classes appear in training data.
@@ -72,7 +59,7 @@ def predict_proba_aligned(
         and len(feature_cols) == X.shape[1]
     ):
         X_input = wrap_feature_matrix(X, feature_cols)
-    return align_proba(model.predict_proba(X_input), model.classes_, target_order)
+    return align_proba(model.predict_proba(X_input), model.classes_)
 
 
 def build_logistic_regression(config: Config) -> Any:
@@ -113,13 +100,12 @@ def build_random_forest(config: Config) -> Any:
     )
 
 
-def build_lightgbm(config: Config, num_classes: int = 2) -> Any:
-    """Build LightGBM classifier with binary or multiclass objective."""
+def build_lightgbm(config: Config) -> Any:
+    """Build LightGBM binary classifier."""
     import lightgbm as lgb
 
     m = config.model.lightgbm
-    objective = "multiclass" if num_classes > 2 else "binary"
-    kw: dict[str, Any] = dict(
+    return lgb.LGBMClassifier(
         num_leaves=m.num_leaves,
         max_depth=m.max_depth,
         learning_rate=m.learning_rate,
@@ -131,24 +117,21 @@ def build_lightgbm(config: Config, num_classes: int = 2) -> Any:
         reg_alpha=m.reg_alpha,
         reg_lambda=m.reg_lambda,
         interaction_constraints=[],
-        objective=objective,
+        objective="binary",
         random_state=config.workflow.random_seed,
         n_jobs=config.workflow.n_jobs,
         verbose=-1,
         use_missing=False,
         zero_as_missing=False,
     )
-    if num_classes > 2:
-        kw["num_class"] = num_classes
-    return lgb.LGBMClassifier(**kw)
 
 
-def build_base_models(config: Config, num_classes: int = 2) -> dict[str, Any]:
+def build_base_models(config: Config) -> dict[str, Any]:
     """Build fixed Stage 3 model set excluding Hybrid Stacking."""
     return {
         "logistic_regression": build_logistic_regression(config),
         "random_forest": build_random_forest(config),
-        "lightgbm": build_lightgbm(config, num_classes),
+        "lightgbm": build_lightgbm(config),
     }
 
 
@@ -162,17 +145,11 @@ def fit_lightgbm(
     X: np.ndarray,
     y: np.ndarray,
     feature_cols: list[str],
-    sample_weight: np.ndarray | None = None,
 ) -> Any:
-    """Fit LightGBM with sample weights and named feature matrix.
-
-    Uses sample_weight from average uniqueness (AFML Ch.4) instead of
-    class_weight, which produces poor probability estimates per LightGBM docs.
-    """
-    return model.fit(
+    """Fit LightGBM with class weights and named feature matrix."""
+    return model.set_params(class_weight=compute_class_weights(y)).fit(
         wrap_feature_matrix(X, feature_cols),
         y,
-        sample_weight=sample_weight,
     )
 
 
@@ -181,7 +158,6 @@ def fit_model(
     X: np.ndarray,
     y: np.ndarray,
     feature_cols: list[str] | None = None,
-    sample_weight: np.ndarray | None = None,
 ) -> Any:
     """Fit estimator, using dummy fallback for single-class folds."""
     if len(np.unique(y)) < 2:
@@ -189,13 +165,8 @@ def fit_model(
 
         return DummyClassifier(strategy="most_frequent").fit(X, y)
     if feature_cols and is_lightgbm_model(model):
-        return fit_lightgbm(model, X, y, feature_cols, sample_weight)
-    if sample_weight is None:
-        return model.fit(X, y)
-    # Pipeline step name is "model" — pass via model__sample_weight
-    if hasattr(model, "steps"):
-        return model.fit(X, y, model__sample_weight=sample_weight)
-    return model.fit(X, y, sample_weight=sample_weight)
+        return fit_lightgbm(model, X, y, feature_cols)
+    return model.fit(X, y)
 
 
 def fit_base_models(
@@ -203,13 +174,11 @@ def fit_base_models(
     y: np.ndarray,
     config: Config,
     feature_cols: list[str],
-    sample_weight: np.ndarray | None = None,
-    num_classes: int = 2,
 ) -> dict[str, Any]:
     """Fit LR, RF, and LightGBM on one training slice."""
     return {
-        name: fit_model(model, X, y, feature_cols, sample_weight)
-        for name, model in build_base_models(config, num_classes).items()
+        name: fit_model(model, X, y, feature_cols)
+        for name, model in build_base_models(config).items()
     }
 
 

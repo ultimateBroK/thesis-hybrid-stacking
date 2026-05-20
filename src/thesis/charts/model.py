@@ -57,10 +57,9 @@ def render_confusion_matrix_heatmap(
 def build_confusion_matrix_chart(
     true: np.ndarray,
     pred: np.ndarray,
-    labels_order: list[int] | None = None,
 ) -> HeatMap:
-    """Normalized confusion matrix heatmap for binary or ternary labels."""
-    matrix, labels = compute_normalized_confusion_matrix(true, pred, labels_order)
+    """Normalized confusion matrix heatmap for binary labels (Short/Long)."""
+    matrix, labels = compute_normalized_confusion_matrix(true, pred)
     return render_confusion_matrix_heatmap(matrix, labels)
 
 

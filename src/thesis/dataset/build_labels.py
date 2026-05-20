@@ -1,12 +1,9 @@
-"""Triple-barrier labeling for directional XAU/USD trading signals.
+"""Triple-barrier labeling for directional trading signals.
 
-Generates labels for training the Hybrid Stacking classifier:
-  - Binary mode (num_classes=2): +1 (long) / -1 (short), vertical-barrier
-    exit uses sign of return — no neutral class.
-  - Ternary mode (num_classes=3): +1 (long) / 0 (neutral) / -1 (short),
-    vertical-barrier exit with no horizontal-barrier hit → label 0 (neutral).
-
-Censored labels (-2, simultaneous barrier hits) are dropped as untradeable.
+Assigns +1 (long) / -1 (short) / -2 (censored) labels using ATR-scaled
+profit-taking and stop-loss barriers with a directional vertical-barrier exit:
+when neither horizontal barrier is hit within the horizon, the label is the
+sign of the return at the vertical barrier.
 
 Reference: López de Prado (2018), "Advances in Financial Machine Learning", Ch. 3.
 """
@@ -107,13 +104,10 @@ def _compute_triple_barrier(
     sl_mult: float,
     horizon: int,
     min_atr: float,
-    num_classes: int = 2,
 ) -> tuple:
     from thesis.dataset._label_numba import compute_labels as _numba_labels
 
-    return _numba_labels(
-        close, high, low, atr, tp_mult, sl_mult, horizon, min_atr, num_classes
-    )
+    return _numba_labels(close, high, low, atr, tp_mult, sl_mult, horizon, min_atr)
 
 
 def _attach_label_columns(
@@ -226,7 +220,6 @@ def build_labels(config: Config) -> None:
         sl_mult=config.labels.atr_sl_multiplier,
         horizon=config.labels.horizon_bars,
         min_atr=config.labels.min_atr,
-        num_classes=config.labels.num_classes,
     )
 
     logger.info(
