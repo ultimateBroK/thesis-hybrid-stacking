@@ -233,13 +233,13 @@ def build_correlation_heatmap(df: pl.DataFrame) -> HeatMap:
 
 
 def build_label_distribution_chart(df: pl.DataFrame) -> Bar:
-    """Bar chart for triple-barrier label distribution."""
+    """Bar chart for triple-barrier label distribution (Short/Long)."""
     labels = df["label"].to_numpy()
-    counts = {k: int((labels == k).sum()) for k in [-1, 0, 1]}
+    counts = {k: int((labels == k).sum()) for k in [-1, 1]}
     total = max(sum(counts.values()), 1)
 
-    names = ["Short (-1)", "Hold (0)", "Long (1)"]
-    values = [counts.get(k, 0) for k in [-1, 0, 1]]
+    names = ["Short (-1)", "Long (1)"]
+    values = [counts.get(k, 0) for k in [-1, 1]]
     percentages = [round(v / total * 100, 2) for v in values]
 
     return (

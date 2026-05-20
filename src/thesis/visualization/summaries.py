@@ -32,7 +32,7 @@ def _find_best_base_model(rows: list[dict]) -> str:
     return str(best.get("model", "N/A"))
 
 
-_CLASS_ID: dict[str, int] = {"Short": -1, "Hold": 0, "Long": 1}
+_CLASS_ID: dict[str, int] = {"Short": -1, "Long": 1}
 
 
 def compute_prediction_summary(data: dict) -> dict[str, object]:

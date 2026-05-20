@@ -46,7 +46,7 @@ def _load_label_counts(labels_path: Path) -> dict[str, int]:
     try:
         df = pl.read_parquet(labels_path, columns=["label"])
         counts = {}
-        for val, name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
+        for val, name in [(-1, "Short"), (1, "Long")]:
             counts[name] = int((df["label"] == val).sum())
         return counts
     except Exception:
@@ -97,16 +97,14 @@ def export_label_distribution(
     output_path: Path,
     dpi: int = 180,
 ) -> None:
-    """Bar chart: Short / Hold / Long counts."""
-    names = ["Short", "Hold", "Long"]
+    """Bar chart: Short / Long counts."""
+    names = ["Short", "Long"]
     counts = [label_counts.get(n, 0) for n in names]
     total = sum(counts) or 1
     pcts = [c / total * 100 for c in counts]
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    bars = ax.bar(
-        names, counts, color=["#e74c3c", "#95a5a6", "#2ecc71"], edgecolor="white"
-    )
+    bars = ax.bar(names, counts, color=["#e74c3c", "#2ecc71"], edgecolor="white")
     for bar, cnt, pct in zip(bars, counts, pcts):
         ax.text(
             bar.get_x() + bar.get_width() / 2,

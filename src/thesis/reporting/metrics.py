@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-DEFAULT_CLASSES: list[int] = [-1, 0, 1]
-DEFAULT_CLASS_NAMES: dict[int, str] = {-1: "Short", 0: "Hold", 1: "Long"}
+DEFAULT_CLASSES: list[int] = [-1, 1]
+DEFAULT_CLASS_NAMES: dict[int, str] = {-1: "Short", 1: "Long"}
 
 
 def accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
@@ -29,36 +29,23 @@ def balanced_accuracy(
 
 
 def directional_accuracy(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
-    """Accuracy on bars where both true and predicted labels are non-zero.
-
-    Hold-vs-direction mismatches excluded rather than counted as wrong.
-    """
-    mask = (y_true != 0) & (y_pred != 0)
-    if mask.sum() == 0:
-        return 0.0
-    return float((y_true[mask] == y_pred[mask]).mean())
+    """Directional accuracy for Short/Long labels."""
+    return accuracy(y_true, y_pred)
 
 
 def mda_no_hold(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
-    """Directional accuracy ignoring Hold predictions."""
-    mask = y_true != 0
-    if mask.sum() == 0:
-        return 0.0
-    return float((y_true[mask] == y_pred[mask]).mean())
+    """Directional accuracy retained for report compatibility."""
+    return accuracy(y_true, y_pred)
 
 
 def mda_including_hold(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
-    """Directional accuracy including Hold predictions."""
+    """Directional accuracy retained for report compatibility."""
     return accuracy(y_true, y_pred)
 
 
 def mda_binary(y_true: npt.NDArray, y_pred: npt.NDArray) -> float:
     """Binary directional accuracy (Long/Short only)."""
-    mask = y_true != 0
-    if mask.sum() == 0:
-        return 0.0
-    correct = (y_true[mask] == y_pred[mask]) & (y_pred[mask] != 0)
-    return float(correct.mean())
+    return accuracy(y_true, y_pred)
 
 
 def _prf_for_class(
@@ -106,9 +93,9 @@ def precision_recall_f1_per_class(
 ) -> dict[str, dict[str, float]]:
     """Per-class precision/recall/F1."""
     if classes is None:
-        classes = [-1, 0, 1]
+        classes = DEFAULT_CLASSES
     if class_names is None:
-        class_names = {-1: "Short", 0: "Hold", 1: "Long"}
+        class_names = DEFAULT_CLASS_NAMES
     result: dict[str, dict[str, float]] = {}
     for c in classes:
         prec, rec, f1 = _prf_for_class(y_true, y_pred, c)
@@ -128,9 +115,9 @@ def confusion_matrix(
 ) -> dict[str, dict[str, int]]:
     """Confusion matrix dict."""
     if classes is None:
-        classes = [-1, 0, 1]
+        classes = DEFAULT_CLASSES
     if class_names is None:
-        class_names = {-1: "Short", 0: "Hold", 1: "Long"}
+        class_names = DEFAULT_CLASS_NAMES
     cm: dict[str, dict[str, int]] = {}
     for tc in classes:
         row: dict[str, int] = {}
@@ -146,10 +133,9 @@ def direction_confusion_matrix(
     y_true: npt.NDArray,
     y_pred: npt.NDArray,
 ) -> dict[str, dict[str, int]]:
-    """Directional confusion matrix (Long/Short only)."""
-    mask = y_true != 0
-    yt = y_true[mask]
-    yp = y_pred[mask]
+    """Directional confusion matrix for Long/Short labels."""
+    yt = y_true
+    yp = y_pred
     names = {-1: "Short", 1: "Long"}
     cm: dict[str, dict[str, int]] = {}
     for tc in [-1, 1]:
@@ -165,7 +151,7 @@ def majority_baseline_accuracy(
 ) -> float:
     """Baseline accuracy (most frequent class)."""
     if classes is None:
-        classes = [-1, 0, 1]
+        classes = DEFAULT_CLASSES
     n = len(y_true)
     if n == 0:
         return 0.0

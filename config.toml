@@ -16,6 +16,7 @@ end = "2026-04-30"
 atr_tp_multiplier = 2.0
 atr_sl_multiplier = 2.0
 horizon_bars = 24
+num_classes = 2
 
 # ── Model ────────────────────────────────────────────────────────────────────
 # Architecture: Hybrid Stacking (LR + RF + LightGBM → meta learner)

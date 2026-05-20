@@ -11,7 +11,7 @@ from thesis.shared.config import Config
 
 logger = logging.getLogger("thesis")
 
-CLASS_ORDER = np.array([-1, 0, 1], dtype=np.int32)
+CLASS_ORDER = np.array([-1, 1], dtype=np.int32)
 
 
 def wrap_feature_matrix(X: np.ndarray, feature_cols: list[str]) -> Any:
@@ -31,7 +31,7 @@ def compute_class_weights(y: np.ndarray) -> dict[int, float]:
 
 
 def align_proba(proba: np.ndarray, class_order: list[int] | np.ndarray) -> np.ndarray:
-    """Align estimator probabilities to [-1, 0, 1]."""
+    """Align estimator probabilities to [-1, 1]."""
     aligned = np.zeros((len(proba), len(CLASS_ORDER)), dtype=np.float64)
     index_map = {int(c): i for i, c in enumerate(class_order)}
     for target_idx, cls in enumerate(CLASS_ORDER):
@@ -46,7 +46,7 @@ def predict_proba_aligned(
     X: np.ndarray,
     feature_cols: list[str] | None = None,
 ) -> np.ndarray:
-    """Reorder probability columns to [-1, 0, 1].
+    """Reorder probability columns to [-1, 1].
 
     Estimators may return classes in arbitrary order depending on
     the order classes appear in training data.
@@ -63,7 +63,7 @@ def predict_proba_aligned(
 
 
 def build_logistic_regression(config: Config) -> Any:
-    """Build scaled multinomial logistic regression."""
+    """Build scaled logistic regression classifier."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import RobustScaler
@@ -101,7 +101,7 @@ def build_random_forest(config: Config) -> Any:
 
 
 def build_lightgbm(config: Config) -> Any:
-    """Build LightGBM multiclass classifier."""
+    """Build LightGBM binary classifier."""
     import lightgbm as lgb
 
     m = config.model.lightgbm
@@ -117,8 +117,7 @@ def build_lightgbm(config: Config) -> Any:
         reg_alpha=m.reg_alpha,
         reg_lambda=m.reg_lambda,
         interaction_constraints=[],
-        objective="multiclass",
-        num_class=3,
+        objective="binary",
         random_state=config.workflow.random_seed,
         n_jobs=config.workflow.n_jobs,
         verbose=-1,

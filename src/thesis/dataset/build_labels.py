@@ -1,7 +1,11 @@
 """Triple-barrier labeling for directional trading signals.
 
-Assigns +1 (long) / 0 (hold) / -1 (short) / -2 (censored) labels
-using ATR-scaled profit-taking and stop-loss barriers.
+Assigns +1 (long) / -1 (short) / -2 (censored) labels using ATR-scaled
+profit-taking and stop-loss barriers with a directional vertical-barrier exit:
+when neither horizontal barrier is hit within the horizon, the label is the
+sign of the return at the vertical barrier.
+
+Reference: López de Prado (2018), "Advances in Financial Machine Learning", Ch. 3.
 """
 
 from __future__ import annotations

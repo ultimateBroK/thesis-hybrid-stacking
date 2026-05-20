@@ -73,7 +73,7 @@ def render_model_section(data: dict, config: object, session_dir: str) -> None:
     st.markdown(
         "Feature matrix -> Logistic Regression / Random Forest / LightGBM -> "
         "probability features -> meta Logistic Regression -> "
-        "final Short/Hold/Long label."
+        "final Short/Long label."
     )
 
     fi = data.get("feature_importance", {})
@@ -107,7 +107,7 @@ def render_evaluation_section(data: dict, config: object, session_dir: str) -> N
             cols[2],
             "Directional Acc.",
             f"{summary['directional_accuracy']:.1%}",
-            "Excludes Hold predictions",
+            "Short/Long prediction accuracy",
             "#22c55e",
         )
         render_metric_card(
@@ -130,7 +130,7 @@ def render_evaluation_section(data: dict, config: object, session_dir: str) -> N
     )
 
     st.subheader("Per-Class Performance")
-    cls_cols = st.columns(3)
+    cls_cols = st.columns(2)
     for idx, (name, m) in enumerate(summary["per_class"].items()):
         with cls_cols[idx]:
             st.markdown(f"**{name}**")

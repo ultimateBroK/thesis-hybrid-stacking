@@ -21,7 +21,7 @@ def proba_columns(
     class_order: list[int] | np.ndarray = CLASS_ORDER,
 ) -> dict[str, np.ndarray]:
     """Probability columns in canonical report format."""
-    suffix = {-1: "minus1", 0: "0", 1: "1"}
+    suffix = {-1: "minus1", 1: "1"}
     index_map = {int(c): i for i, c in enumerate(class_order)}
     return {
         f"pred_proba_class_{suffix[int(cls)]}": proba[:, index_map[int(cls)]]

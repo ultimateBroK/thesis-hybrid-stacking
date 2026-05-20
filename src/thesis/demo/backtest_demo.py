@@ -58,11 +58,11 @@ class MLSignalStrategy(Strategy):
         return (ts_ny + pd.Timedelta(hours=7)).date()
 
     def _normalize_signal(self) -> int:
-        """Map raw float signal to {-1, 0, 1}."""
+        """Map raw float signal to {-1, 1}."""
         raw = float(self.signals[-2])
-        if raw in (-1, 0, 1):
+        if raw in (-1, 1):
             return int(raw)
-        return 1 if raw > 0 else (-1 if raw < 0 else 0)
+        return 1 if raw > 0 else -1
 
     def _init_risk_state(self) -> None:
         """Seed drawdown / daily-loss tracking before first bar."""
@@ -118,11 +118,6 @@ class MLSignalStrategy(Strategy):
             self.proba_short = self.I(
                 lambda: self.data.pred_proba_class_minus1,
                 name="proba_short",
-                plot=False,
-            )
-            self.proba_hold = self.I(
-                lambda: self.data.pred_proba_class_0,
-                name="proba_hold",
                 plot=False,
             )
             self.proba_long = self.I(
@@ -253,7 +248,6 @@ def _prepare_df(
     pred_cols = ["timestamp", "pred_label"]
     for col in (
         "pred_proba_class_minus1",
-        "pred_proba_class_0",
         "pred_proba_class_1",
     ):
         if col in preds.columns:

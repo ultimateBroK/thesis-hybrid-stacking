@@ -107,7 +107,7 @@ class LabelsConfig:
     atr_tp_multiplier: float = 2.5
     atr_sl_multiplier: float = 2.5
     horizon_bars: int = 24
-    num_classes: int = 3
+    num_classes: int = 2
     min_atr: float = 0.5
 
 
@@ -160,7 +160,7 @@ class StackingMetaConfig:
 
     learner: str = "logistic_regression"  # "logistic_regression" or "lightgbm"
     # LR params
-    meta_C: float = 1.0
+    meta_C: float = 1.0  # noqa: N815 - keep TOML key compatible with sklearn C
     max_iter: int = 1000
     solver: str = "lbfgs"
     penalty: str = "l2"

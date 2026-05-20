@@ -34,7 +34,7 @@ def stack_probability_features(
     matrices, names = [], []
     for name in sorted(base_outputs):
         matrices.append(base_outputs[name])
-        names.extend(f"{name}_proba_{label}" for label in ("short", "hold", "long"))
+        names.extend(f"{name}_proba_{label}" for label in ("short", "long"))
     return np.hstack(matrices), names
 
 
@@ -56,8 +56,7 @@ def fit_meta_model(X: np.ndarray, y: np.ndarray, config: Config) -> Any:
         sample_weights = np.array([weight_dict[v] for v in y])
 
         return lgb.LGBMClassifier(
-            objective="multiclass",
-            num_class=n_classes,
+            objective="binary",
             num_leaves=meta.num_leaves,
             max_depth=meta.max_depth,
             learning_rate=meta.learning_rate,
@@ -154,5 +153,5 @@ class HybridStackingClassifier:
         )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Predict class label in {-1, 0, 1}."""
+        """Predict class label in {-1, 1}."""
         return CLASS_ORDER[np.argmax(self.predict_proba(X), axis=1)].astype(np.int32)

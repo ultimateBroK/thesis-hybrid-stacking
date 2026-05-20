@@ -19,11 +19,17 @@ def compute_labels(
     horizon: int,
     min_atr: float,
 ) -> tuple:
-    """Triple-barrier scan.
+    """Triple-barrier scan with directional vertical-barrier exit.
 
     Per bar i: upper = close[i] + tp_mult * max(atr[i], min_atr),
     lower = close[i] - sl_mult * max(atr[i], min_atr).
-    Scan i+1..i+horizon for first touch.
+    Scan i+1..i+horizon for first horizontal-barrier touch.
+    If neither barrier is hit, assign label by the sign of the return
+    at the vertical barrier (close[i+horizon] vs close[i]).
+
+    Labels: +1 (upper hit or positive return), -1 (lower hit or negative
+    return), -2 (censored — simultaneous hit, zero return, or insufficient
+    horizon).
 
     Returns (labels, upper_barriers, lower_barriers, touched_bars, ambiguous_count).
     """
@@ -45,7 +51,7 @@ def compute_labels(
             labels[i] = CENSORED_LABEL
             continue
 
-        label = 0
+        label = CENSORED_LABEL
         hit_offset = -1
 
         for j in range(i + 1, i + horizon + 1):
@@ -67,6 +73,13 @@ def compute_labels(
                 label = -1
                 hit_offset = j - i
                 break
+
+        if hit_offset < 0:
+            horizon_close = close[i + horizon]
+            if horizon_close > close[i]:
+                label = 1
+            elif horizon_close < close[i]:
+                label = -1
 
         labels[i] = label
         touched_bars[i] = hit_offset if hit_offset >= 0 else CENSORED_LABEL

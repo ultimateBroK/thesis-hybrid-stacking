@@ -65,7 +65,6 @@ def load_prediction_stats(preds_path: Path) -> dict | None:
         pred = df["pred_label"].to_numpy()
         proba_cols = [
             "pred_proba_class_minus1",
-            "pred_proba_class_0",
             "pred_proba_class_1",
         ]
         proba = (
@@ -75,7 +74,7 @@ def load_prediction_stats(preds_path: Path) -> dict | None:
         )
         raw = compute_all_classification_metrics(true, pred, y_proba=proba)
         per_class_metrics = raw["precision_recall_f1_per_class"]
-        class_map = {-1: "Short", 0: "Hold", 1: "Long"}
+        class_map = {-1: "Short", 1: "Long"}
         per_class = {
             class_map[c]: {
                 "true_count": int((true == c).sum()),
@@ -84,7 +83,7 @@ def load_prediction_stats(preds_path: Path) -> dict | None:
                 "recall": float(per_class_metrics[class_map[c]]["recall"]),
                 "f1": float(per_class_metrics[class_map[c]]["f1"]),
             }
-            for c in (-1, 0, 1)
+            for c in (-1, 1)
         }
         result: dict[str, Any] = {
             "total": int(raw["total"]),
@@ -242,9 +241,7 @@ def _build_thesis_report(
 
     L.append("## 🎯 1. Mục tiêu")
     L.append("")
-    L.append(
-        "Phân loại tín hiệu XAU/USD khung H1 thành 3 lớp: **Short / Hold / Long**."
-    )
+    L.append("Phân loại tín hiệu XAU/USD khung H1 thành 2 lớp: **Short / Long**.")
     L.append("Trọng tâm: đánh giá mô hình ML, không phải hệ thống giao dịch tự động.")
     L.append("")
 
@@ -307,7 +304,7 @@ def _build_thesis_report(
             L.append("**Phân phối nhãn:**")
             L.append("")
             L.append(_md_table(["Class", "Tỷ lệ"], []))
-            for label_val, name in [(-1, "Short"), (0, "Hold"), (1, "Long")]:
+            for label_val, name in [(-1, "Short"), (1, "Long")]:
                 count = int((df["label"] == label_val).sum())
                 pct = count / total * 100 if total > 0 else 0.0
                 L.append(f"| {name} | {pct:.1f}% |")
@@ -332,7 +329,7 @@ def _build_thesis_report(
     L.append("```")
     L.append("Base models dự đoán xác suất")
     L.append("→ Meta model học cách kết hợp")
-    L.append("→ Dự đoán Short / Hold / Long")
+    L.append("→ Dự đoán Short / Long")
     L.append("```")
     L.append("")
 
@@ -386,7 +383,9 @@ def _build_thesis_report(
         )
         L.append("")
         if acc < maj_bl:
-            L.append(f"> **Kết luận:** {model_label(config)} chưa vượt Majority Baseline.")
+            L.append(
+                f"> **Kết luận:** {model_label(config)} chưa vượt Majority Baseline."
+            )
         else:
             L.append(f"> **Kết luận:** {model_label(config)} vượt Majority Baseline.")
     else:
@@ -399,17 +398,12 @@ def _build_thesis_report(
         per_class = pred_stats.get("per_class", {})
         rows: list[list[str]] = []
         if per_class:
-            hold_f1 = per_class.get("Hold", {}).get("f1", 0)
-            if hold_f1 < 0.20:
-                rows.append(["Hold F1 rất thấp", f"F1 = {hold_f1:.4f}"])
-            elif hold_f1 < 0.35:
-                rows.append(["Hold F1 yếu", f"F1 = {hold_f1:.4f}"])
-            else:
-                rows.append(["Hold F1 chấp nhận được", f"F1 = {hold_f1:.4f}"])
-
             if acc < maj_bl:
                 rows.append(
-                    ["Stacking chưa vượt baseline", "Cần cải thiện base model diversity"]
+                    [
+                        "Stacking chưa vượt baseline",
+                        "Cần cải thiện base model diversity",
+                    ]
                 )
 
             da = pred_stats.get("directional_accuracy", 0)
@@ -468,16 +462,16 @@ def _build_thesis_report(
         a = float(row["accuracy"])
         if m == model_label(config):
             stacking_acc_val = a
-        elif m not in ("Majority Baseline",):
-            if a > best_base_acc_val:
-                best_base_name = m
-                best_base_acc_val = a
+        elif m not in ("Majority Baseline",) and a > best_base_acc_val:
+            best_base_name = m
+            best_base_acc_val = a
 
     if best_base_name and stacking_acc_val > 0:
         if stacking_acc_val >= best_base_acc_val:
             L.append(
                 f"{model_label(config)} ({_fmt_pct(stacking_acc_val * 100)}) "
-                f"vượt base tốt nhất {best_base_name} ({_fmt_pct(best_base_acc_val * 100)})."
+                f"vượt base tốt nhất {best_base_name} "
+                f"({_fmt_pct(best_base_acc_val * 100)})."
             )
         else:
             L.append(
@@ -485,7 +479,9 @@ def _build_thesis_report(
                 f"({_fmt_pct(stacking_acc_val * 100)}) chưa vượt base tốt nhất "
                 f"{best_base_name} ({_fmt_pct(best_base_acc_val * 100)})."
             )
-            L.append("Hướng cải thiện: tăng đa dạng base models, điều chỉnh meta learner.")
+            L.append(
+                "Hướng cải thiện: tăng đa dạng base models, điều chỉnh meta learner."
+            )
     else:
         L.append("Chưa có đủ dữ liệu so sánh base models.")
 
@@ -568,13 +564,12 @@ def _build_model_evaluation(
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
         f1_scores = {
-            name: per_class.get(name, {}).get("f1", 0)
-            for name in ("Short", "Hold", "Long")
+            name: per_class.get(name, {}).get("f1", 0) for name in ("Short", "Long")
         }
         weakest = min(f1_scores, key=f1_scores.get)
         strongest = max(f1_scores, key=f1_scores.get)
         class_rows: list[list[str]] = []
-        for class_name in ("Short", "Hold", "Long"):
+        for class_name in ("Short", "Long"):
             pc = per_class.get(class_name, {})
             f1 = f1_scores.get(class_name, 0)
             if class_name == weakest:
@@ -614,9 +609,10 @@ def _build_model_evaluation(
         ):
             continue
         m = r.get("model", "")
-        if m not in ("Majority Baseline", model_label(config)) and float(
-            r["accuracy"]
-        ) > best_base_acc_eval:
+        if (
+            m not in ("Majority Baseline", model_label(config))
+            and float(r["accuracy"]) > best_base_acc_eval
+        ):
             best_base_name_eval = m
             best_base_acc_eval = float(r["accuracy"])
 
@@ -659,11 +655,12 @@ def _build_model_evaluation(
     L.append("")
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
-        hold_f1 = per_class.get("Hold", {}).get("f1", 0)
-
         if stacking_acc_eval is not None and best_base_name_eval:
             if stacking_acc_eval >= best_base_acc_eval:
-                L.append(f"- ✅ {model_label(config)} vượt base tốt nhất ({best_base_name_eval}).")
+                L.append(
+                    f"- ✅ {model_label(config)} vượt base tốt nhất "
+                    f"({best_base_name_eval})."
+                )
             else:
                 L.append(f"- ⚠️ {model_label(config)} chưa vượt {best_base_name_eval}.")
         else:
@@ -677,13 +674,6 @@ def _build_model_evaluation(
         else:
             L.append("- 🟡 Directional Accuracy ở mức trung bình.")
 
-        if hold_f1 < 0.20:
-            L.append("- 🔴 Class Hold rất khó học (F1 < 0.20).")
-        elif hold_f1 < 0.35:
-            L.append(f"- 🟡 Class Hold yếu (F1 = {hold_f1:.4f}).")
-        else:
-            L.append(f"- 🟢 Class Hold chấp nhận được (F1 = {hold_f1:.4f}).")
-
         L.append(
             "- ✅ Pipeline ML hợp lệ: feature causal, triple-barrier label, "
             "walk-forward validation."
@@ -694,9 +684,11 @@ def _build_model_evaluation(
 
     L.append("## 6. Hướng thử tiếp")
     L.append("")
-    L.append("1. Thử bài toán 2 class: Short / Long.")
+    L.append("1. Tối ưu ngưỡng confidence cho bài toán 2 class: Short / Long.")
     L.append("2. Giữ LightGBM làm baseline chính.")
-    L.append("3. Cải thiện label Hold hoặc bỏ Hold khỏi thí nghiệm phụ.")
+    L.append(
+        "3. So sánh xác suất Short/Long với kết quả backtest sau chi phí giao dịch."
+    )
     L.append("")
 
     return "\n".join(L)

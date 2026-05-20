@@ -58,7 +58,7 @@ def build_confusion_matrix_chart(
     true: np.ndarray,
     pred: np.ndarray,
 ) -> HeatMap:
-    """Normalized confusion matrix heatmap for 3-class labels."""
+    """Normalized confusion matrix heatmap for binary labels (Short/Long)."""
     matrix, labels = compute_normalized_confusion_matrix(true, pred)
     return render_confusion_matrix_heatmap(matrix, labels)
 
