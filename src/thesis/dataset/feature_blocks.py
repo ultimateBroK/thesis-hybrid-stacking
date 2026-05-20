@@ -19,8 +19,6 @@ from thesis.dataset.indicators import (
     add_rsi,
     add_session_dummies,
     add_tick_count_zscore,
-    add_trend_regime,
-    add_volatility_regime,
     add_volume_zscore,
     add_vwap,
 )
@@ -67,12 +65,8 @@ def add_time_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
 
 
 def add_optional_regime_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:
-    """Add regime features when enabled by config."""
-    if not config.features.enable_regime_features:
-        return df
-    df = add_volatility_regime(df, config)
-    df = add_trend_regime(df, config)
-    return add_regime(df, config)
+    """Add regime features (currently none active)."""
+    return df
 
 
 def create_model_features(df: pl.DataFrame, config: Config) -> pl.DataFrame:

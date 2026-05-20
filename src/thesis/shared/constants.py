@@ -153,10 +153,9 @@ LABEL_META_COLS: list[str] = [
 ]
 """Metadata columns produced by the triple-barrier labelling stage."""
 
-# ── Regime feature column names (only active when enable_regime_features=True) ──
+# ── Regime feature column names ──
 
-_REGIME_INDICATOR_FEATURES: list[str] = ["volatility_regime", "trend_regime"]
-REGIME_FEATURES: list[str] = list(_REGIME_INDICATOR_FEATURES)
+REGIME_FEATURES: list[str] = []
 
 
 
@@ -168,10 +167,9 @@ REGIME_FEATURES: list[str] = list(_REGIME_INDICATOR_FEATURES)
 def get_static_feature_cols(config) -> list[str]:
     """Return the static (non-sequential) feature columns from config."""
     cols = list(config.features.static_feature_cols)
-    if getattr(config.features, "enable_regime_features", False):
-        for c in REGIME_FEATURES:
-            if c not in cols:
-                cols.append(c)
+    for c in REGIME_FEATURES:
+        if c not in cols:
+            cols.append(c)
     return cols
 
 
@@ -188,18 +186,13 @@ def build_feature_output_cols(config) -> list[str]:
 
     Note: Stage 3 only consumes model-facing features produced by Stage 2.
     """
-    regime_indicator_cols = (
-        _REGIME_INDICATOR_FEATURES
-        if getattr(config.features, "enable_regime_features", False)
-        else []
-    )
     base_cols = list(config.features.static_feature_cols)
     return sorted(
         set(
             OHLCV_RAW_COLS
             + get_label_helper_cols(config)
             + base_cols
-            + regime_indicator_cols
+            + REGIME_FEATURES
         )
     )
 

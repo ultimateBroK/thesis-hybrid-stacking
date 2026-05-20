@@ -94,7 +94,6 @@ class FeaturesConfig:
     ema_fast_span: int = 34
     ema_slow_span: int = 89
     correlation_threshold: float = 0.75
-    enable_regime_features: bool = False
     static_feature_cols: list[str] = field(
         default_factory=lambda: list(CORE_STATIC_FEATURES)
     )
@@ -159,16 +158,32 @@ class StackingConfig:
 class StackingMetaConfig:
     """Meta learner hyperparameters for stacking."""
 
-    C: float = 1.0
+    learner: str = "logistic_regression"  # "logistic_regression" or "lightgbm"
+    # LR params
+    meta_C: float = 1.0
     max_iter: int = 1000
     solver: str = "lbfgs"
+    penalty: str = "l2"
+    l1_ratio: float | None = None
+    # LightGBM params
+    num_leaves: int = 7
+    max_depth: int = 2
+    learning_rate: float = 0.03
+    n_estimators: int = 150
+    min_child_samples: int = 80
+    subsample: float = 0.80
+    subsample_freq: int = 1
+    feature_fraction: float = 1.0
+    reg_alpha: float = 0.5
+    reg_lambda: float = 5.0
+    min_split_gain: float = 0.01
 
 
 @dataclass
 class ModelConfig:
     """Model training configuration.
 
-    Architecture: Hybrid Stacking (LR + RF + LightGBM → meta LR).
+    Architecture: Hybrid Stacking (LR + RF + LightGBM → meta learner).
     """
 
     logistic_regression: LogisticRegressionConfig = field(

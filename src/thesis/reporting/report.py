@@ -373,16 +373,22 @@ def _build_thesis_report(
                         f"{macro_f1:.4f}",
                         "⚠️ Yếu" if macro_f1 < 0.35 else "🟡",
                     ],
-                    ["Directional Accuracy", _fmt_pct(dir_acc * 100), "⚠️ Gần random"],
+                    [
+                        "Directional Accuracy",
+                        _fmt_pct(dir_acc * 100),
+                        "⚠️ Gần random"
+                        if dir_acc < 0.55
+                        else ("🟢 Có edge" if dir_acc > 0.60 else "🟡"),
+                    ],
                     ["Majority Baseline", _fmt_pct(maj_bl * 100), "Tham chiếu"],
                 ],
             )
         )
         L.append("")
         if acc < maj_bl:
-            L.append("> **Kết luận:** Hybrid Stacking chưa vượt Majority Baseline.")
+            L.append(f"> **Kết luận:** {model_label(config)} chưa vượt Majority Baseline.")
         else:
-            L.append("> **Kết luận:** Hybrid Stacking vượt Majority Baseline.")
+            L.append(f"> **Kết luận:** {model_label(config)} vượt Majority Baseline.")
     else:
         L.append("Không có kết quả dự đoán.")
     L.append("")
@@ -391,19 +397,33 @@ def _build_thesis_report(
     L.append("")
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
-        L.append(
-            _md_table(
-                ["Vấn đề", "Giải thích"],
-                [
-                    [
-                        "Hold F1 thấp",
-                        f"F1 = {per_class.get('Hold', {}).get('f1', 0):.4f}",
-                    ],
-                    ["Stacking chưa hiệu quả", "Base models có thể dự đoán giống nhau"],
-                    ["Directional Accuracy yếu", "Tín hiệu hướng giá chưa đủ rõ"],
-                ],
-            )
-        )
+        rows: list[list[str]] = []
+        if per_class:
+            hold_f1 = per_class.get("Hold", {}).get("f1", 0)
+            if hold_f1 < 0.20:
+                rows.append(["Hold F1 rất thấp", f"F1 = {hold_f1:.4f}"])
+            elif hold_f1 < 0.35:
+                rows.append(["Hold F1 yếu", f"F1 = {hold_f1:.4f}"])
+            else:
+                rows.append(["Hold F1 chấp nhận được", f"F1 = {hold_f1:.4f}"])
+
+            if acc < maj_bl:
+                rows.append(
+                    ["Stacking chưa vượt baseline", "Cần cải thiện base model diversity"]
+                )
+
+            da = pred_stats.get("directional_accuracy", 0)
+            if da < 0.55:
+                rows.append(["Directional Accuracy gần random", f"DA = {da:.4f}"])
+            elif da < 0.60:
+                rows.append(["Directional Accuracy trung bình", f"DA = {da:.4f}"])
+            else:
+                rows.append(["Directional Accuracy có edge", f"DA = {da:.4f}"])
+
+        if rows:
+            L.append(_md_table(["Vấn đề", "Giải thích"], rows))
+        else:
+            L.append("Không có vấn đề đáng kể.")
     else:
         L.append("Không có dữ liệu phân tích.")
     L.append("")
@@ -435,12 +455,40 @@ def _build_thesis_report(
     L.append("- Triple-barrier labeling")
     L.append("- Walk-forward validation")
     L.append("- Baseline comparison")
-    L.append("- Hybrid Stacking model")
+    L.append(f"- {model_label(config)} model")
     L.append("")
-    L.append("Tuy nhiên, kết quả hiện tại cho thấy Hybrid Stacking chưa vượt")
-    L.append("LightGBM đơn lẻ.")
-    L.append("Hướng cải thiện: giảm nhiễu class Hold, thử bài toán 2 class,")
-    L.append("tăng đa dạng base models.")
+
+    best_base_name = None
+    best_base_acc_val = 0.0
+    stacking_acc_val = 0.0
+    for row in model_comparison_rows:
+        if row.get("accuracy") is None:
+            continue
+        m = row.get("model", "")
+        a = float(row["accuracy"])
+        if m == model_label(config):
+            stacking_acc_val = a
+        elif m not in ("Majority Baseline",):
+            if a > best_base_acc_val:
+                best_base_name = m
+                best_base_acc_val = a
+
+    if best_base_name and stacking_acc_val > 0:
+        if stacking_acc_val >= best_base_acc_val:
+            L.append(
+                f"{model_label(config)} ({_fmt_pct(stacking_acc_val * 100)}) "
+                f"vượt base tốt nhất {best_base_name} ({_fmt_pct(best_base_acc_val * 100)})."
+            )
+        else:
+            L.append(
+                f"Tuy nhiên, kết quả hiện tại cho thấy {model_label(config)} "
+                f"({_fmt_pct(stacking_acc_val * 100)}) chưa vượt base tốt nhất "
+                f"{best_base_name} ({_fmt_pct(best_base_acc_val * 100)})."
+            )
+            L.append("Hướng cải thiện: tăng đa dạng base models, điều chỉnh meta learner.")
+    else:
+        L.append("Chưa có đủ dữ liệu so sánh base models.")
+
     L.append("")
 
     return "\n".join(L)
@@ -495,8 +543,18 @@ def _build_model_evaluation(
                         f"{macro_f1:.4f}",
                         "⚠️ Yếu" if macro_f1 < 0.35 else "🟡",
                     ],
-                    ["Directional Accuracy", _fmt_pct(dir_acc * 100), "⚠️ Gần random"],
-                    ["Balanced Accuracy", _fmt_pct(bal_acc * 100), "⚠️ Chưa tốt"],
+                    [
+                        "Directional Accuracy",
+                        _fmt_pct(dir_acc * 100),
+                        "⚠️ Gần random"
+                        if dir_acc < 0.55
+                        else ("🟢 Có edge" if dir_acc > 0.60 else "🟡"),
+                    ],
+                    [
+                        "Balanced Accuracy",
+                        _fmt_pct(bal_acc * 100),
+                        "⚠️ Thấp" if bal_acc < 0.40 else "🟡",
+                    ],
                     ["Total Predictions", f"{pred_stats.get('total', 0):,}", ""],
                 ],
             )
@@ -509,38 +567,65 @@ def _build_model_evaluation(
     L.append("")
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
+        f1_scores = {
+            name: per_class.get(name, {}).get("f1", 0)
+            for name in ("Short", "Hold", "Long")
+        }
+        weakest = min(f1_scores, key=f1_scores.get)
+        strongest = max(f1_scores, key=f1_scores.get)
+        class_rows: list[list[str]] = []
+        for class_name in ("Short", "Hold", "Long"):
+            pc = per_class.get(class_name, {})
+            f1 = f1_scores.get(class_name, 0)
+            if class_name == weakest:
+                remark = "🔴 Yếu nhất"
+            elif class_name == strongest:
+                remark = "🟢 Tốt nhất"
+            else:
+                remark = "🟡"
+            class_rows.append(
+                [
+                    class_name,
+                    f"{pc.get('precision', 0):.4f}",
+                    f"{pc.get('recall', 0):.4f}",
+                    f"{f1:.4f}",
+                    remark,
+                ]
+            )
         L.append(
             _md_table(
                 ["Class", "Precision", "Recall", "F1", "Nhận xét"],
-                [
-                    [
-                        "Short",
-                        f"{per_class.get('Short', {}).get('precision', 0):.4f}",
-                        f"{per_class.get('Short', {}).get('recall', 0):.4f}",
-                        f"{per_class.get('Short', {}).get('f1', 0):.4f}",
-                        "Trung bình",
-                    ],
-                    [
-                        "Hold",
-                        f"{per_class.get('Hold', {}).get('precision', 0):.4f}",
-                        f"{per_class.get('Hold', {}).get('recall', 0):.4f}",
-                        f"{per_class.get('Hold', {}).get('f1', 0):.4f}",
-                        "🔴 Yếu nhất",
-                    ],
-                    [
-                        "Long",
-                        f"{per_class.get('Long', {}).get('precision', 0):.4f}",
-                        f"{per_class.get('Long', {}).get('recall', 0):.4f}",
-                        f"{per_class.get('Long', {}).get('f1', 0):.4f}",
-                        "Tốt nhất",
-                    ],
-                ],
+                class_rows,
             )
         )
     L.append("")
 
     L.append("## 4. So sánh mô hình")
     L.append("")
+    best_base_name_eval = None
+    best_base_acc_eval = 0.0
+    for r in model_comparison_rows:
+        if r.get("accuracy") is None:
+            continue
+        if r.get("source") not in (
+            "derived_baseline",
+            "current_session",
+            "walk_forward_model_comparison",
+        ):
+            continue
+        m = r.get("model", "")
+        if m not in ("Majority Baseline", model_label(config)) and float(
+            r["accuracy"]
+        ) > best_base_acc_eval:
+            best_base_name_eval = m
+            best_base_acc_eval = float(r["accuracy"])
+
+    stacking_acc_eval: float | None = None
+    for r in model_comparison_rows:
+        if r.get("model") == model_label(config) and r.get("accuracy"):
+            stacking_acc_eval = float(r["accuracy"])
+            break
+
     L.append(_md_table(["Model", "Accuracy", "Macro F1", "Ghi chú"], []))
     for row in model_comparison_rows:
         if row.get("source") not in (
@@ -553,10 +638,17 @@ def _build_model_evaluation(
         acc = _fmt_pct(float(row["accuracy"]) * 100) if row.get("accuracy") else "N/A"
         f1 = f"{float(row['macro_f1']):.4f}" if row.get("macro_f1") else "N/A"
         if row.get("source") == "current_session":
-            note = "⚠️ Chưa vượt LightGBM"
+            if stacking_acc_eval and best_base_acc_eval:
+                note = (
+                    "✅ Vượt base tốt nhất"
+                    if stacking_acc_eval >= best_base_acc_eval
+                    else "⚠️ Chưa vượt base tốt nhất"
+                )
+            else:
+                note = "Model chính"
         elif model == "Majority Baseline":
             note = "Baseline đơn giản"
-        elif model == "LightGBM":
+        elif model == best_base_name_eval:
             note = "✅ Base tốt nhất"
         else:
             note = "Base model"
@@ -568,13 +660,30 @@ def _build_model_evaluation(
     if pred_stats:
         per_class = pred_stats.get("per_class", {})
         hold_f1 = per_class.get("Hold", {}).get("f1", 0)
-        L.append("- ⚠️ Hybrid Stacking chưa vượt LightGBM.")
-        L.append(
-            "- 🔴 Class Hold khó học nhất."
-            if hold_f1 < 0.20
-            else "- 🟡 Class Hold yếu."
-        )
-        L.append("- ⚠️ Directional Accuracy gần random, chưa có edge rõ.")
+
+        if stacking_acc_eval is not None and best_base_name_eval:
+            if stacking_acc_eval >= best_base_acc_eval:
+                L.append(f"- ✅ {model_label(config)} vượt base tốt nhất ({best_base_name_eval}).")
+            else:
+                L.append(f"- ⚠️ {model_label(config)} chưa vượt {best_base_name_eval}.")
+        else:
+            L.append(f"- {model_label(config)}: chưa đủ dữ liệu so sánh.")
+
+        da = pred_stats.get("directional_accuracy", 0)
+        if da < 0.55:
+            L.append("- ⚠️ Directional Accuracy gần random, chưa có edge rõ.")
+        elif da > 0.60:
+            L.append("- ✅ Directional Accuracy cho thấy có edge định hướng.")
+        else:
+            L.append("- 🟡 Directional Accuracy ở mức trung bình.")
+
+        if hold_f1 < 0.20:
+            L.append("- 🔴 Class Hold rất khó học (F1 < 0.20).")
+        elif hold_f1 < 0.35:
+            L.append(f"- 🟡 Class Hold yếu (F1 = {hold_f1:.4f}).")
+        else:
+            L.append(f"- 🟢 Class Hold chấp nhận được (F1 = {hold_f1:.4f}).")
+
         L.append(
             "- ✅ Pipeline ML hợp lệ: feature causal, triple-barrier label, "
             "walk-forward validation."

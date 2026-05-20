@@ -11,6 +11,7 @@ from thesis.models.artifacts import save_model_experiment
 from thesis.models.experiment import run_model_experiment
 from thesis.models.validation import build_walk_forward_windows
 from thesis.shared.config import Config
+from thesis.shared.constants import get_static_feature_cols
 
 logger = logging.getLogger("thesis")
 
@@ -34,8 +35,8 @@ def load_model_dataset(config: Config) -> pl.DataFrame:
 
 
 def choose_model_features(df: pl.DataFrame, config: Config) -> list[str]:
-    """Choose fixed Stage 2 feature columns for Stage 3."""
-    features = [c for c in config.features.static_feature_cols if c in df.columns]
+    """Choose fixed Stage 2 feature columns for Stage 3 (includes regime if enabled)."""
+    features = [c for c in get_static_feature_cols(config) if c in df.columns]
     if not features:
         raise ValueError("No configured model features found in ML dataset")
     return features

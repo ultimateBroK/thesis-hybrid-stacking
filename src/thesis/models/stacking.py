@@ -39,25 +39,67 @@ def stack_probability_features(
 
 
 def fit_meta_model(X: np.ndarray, y: np.ndarray, config: Config) -> Any:
-    """Fit logistic-regression meta learner."""
+    """Fit meta-learner on stacked base-model probability features."""
     if len(np.unique(y)) < 2:
         from sklearn.dummy import DummyClassifier
 
         return DummyClassifier(strategy="most_frequent").fit(X, y)
-    from sklearn.linear_model import LogisticRegression
 
     meta = config.model.stacking_meta
+    n_classes = len(CLASS_ORDER)
+
+    if meta.learner == "lightgbm":
+        import lightgbm as lgb
+
+        classes, counts = np.unique(y, return_counts=True)
+        weight_dict = {c: len(y) / (n_classes * cnt) for c, cnt in zip(classes, counts)}
+        sample_weights = np.array([weight_dict[v] for v in y])
+
+        return lgb.LGBMClassifier(
+            objective="multiclass",
+            num_class=n_classes,
+            num_leaves=meta.num_leaves,
+            max_depth=meta.max_depth,
+            learning_rate=meta.learning_rate,
+            n_estimators=meta.n_estimators,
+            min_child_samples=meta.min_child_samples,
+            subsample=meta.subsample,
+            subsample_freq=meta.subsample_freq,
+            colsample_bytree=meta.feature_fraction,
+            reg_alpha=meta.reg_alpha,
+            reg_lambda=meta.reg_lambda,
+            min_split_gain=meta.min_split_gain,
+            random_state=config.workflow.random_seed,
+            n_jobs=config.workflow.n_jobs,
+            verbose=-1,
+        ).fit(X, y, sample_weight=sample_weights)
+
+    # Default: logistic regression
+    from sklearn.linear_model import LogisticRegression
+
+    lr_penalty = meta.penalty
+    lr_solver = meta.solver
+    lr_kwargs: dict[str, Any] = {}
+
+    if meta.l1_ratio is not None and meta.penalty == "elasticnet":
+        lr_kwargs["l1_ratio"] = meta.l1_ratio
+
+    if lr_penalty in ("l1", "elasticnet"):
+        lr_solver = "saga"
+
     return LogisticRegression(
-        C=meta.C,
+        C=meta.meta_C,
+        penalty=lr_penalty,
         class_weight="balanced",
         max_iter=meta.max_iter,
-        solver=meta.solver,
+        solver=lr_solver,
         random_state=config.workflow.random_seed,
+        **lr_kwargs,
     ).fit(X, y)
 
 
 class HybridStackingClassifier:
-    """LR/RF/LightGBM base probabilities feeding logistic meta learner."""
+    """LR/RF/LightGBM base probabilities feeding a configurable meta learner."""
 
     def __init__(self, config: Config, feature_cols: list[str]) -> None:
         """Store config and fixed feature names."""
